@@ -845,7 +845,6 @@ impl<T: StylePropValue + 'static> StylePropValue for Vec<T> {
         )
     }
 
-
     fn content_hash(&self) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut h = rustc_hash::FxHasher::default();

@@ -712,7 +712,9 @@ fn resolve_selectors(
     // Validate cached selectors in debug builds
     #[cfg(debug_assertions)]
     debug_assert!(
-        style.cached_selectors.contains(style.compute_selectors_slow()),
+        style
+            .cached_selectors
+            .contains(style.compute_selectors_slow()),
         "cached_selectors {:?} missing bits from computed {:?}",
         style.cached_selectors,
         style.compute_selectors_slow()

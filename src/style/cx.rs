@@ -290,8 +290,8 @@ impl<'a> StyleCx<'a> {
             let (style_hash, cacheable) = {
                 let mut vs = view_state.borrow_mut();
                 let style_hash = vs.style_content_hash();
-                let cacheable = vs.style_is_cacheable()
-                    && !self.class_context.has_structural_selectors();
+                let cacheable =
+                    vs.style_is_cacheable() && !self.class_context.has_structural_selectors();
                 (style_hash, cacheable)
             };
 

@@ -305,11 +305,7 @@ impl StyleCache {
     /// 2. Slow path: inherited_equal() comparison - for equivalent but different instances
     ///
     /// Returns `Some(CacheHit)` if found, `None` otherwise.
-    pub fn get(
-        &mut self,
-        key: &StyleCacheKey,
-        parent_style: &Style,
-    ) -> Option<CacheHit> {
+    pub fn get(&mut self, key: &StyleCacheKey, parent_style: &Style) -> Option<CacheHit> {
         self.clock += 1;
 
         if let Some(bucket) = self.cache.get_mut(key)
@@ -374,9 +370,7 @@ impl StyleCache {
     /// - Structural selectors (`:first-child`, `:nth-child`) depend on position
     /// - Context values resolve against inherited context, but hash to a constant
     pub fn is_cacheable(style: &Style) -> bool {
-        !style.map.is_empty()
-            && !style.has_structural_selectors()
-            && !style.has_context_values()
+        !style.map.is_empty() && !style.has_structural_selectors() && !style.has_context_values()
     }
 
     /// Clear the entire cache.
@@ -930,10 +924,25 @@ mod tests {
             ..Default::default()
         };
 
-        let key1 = StyleCacheKey::new(&style, &state_without, ScreenSizeBp::Xs, &classes, &class_context);
-        let key2 = StyleCacheKey::new(&style, &state_with, ScreenSizeBp::Xs, &classes, &class_context);
+        let key1 = StyleCacheKey::new(
+            &style,
+            &state_without,
+            ScreenSizeBp::Xs,
+            &classes,
+            &class_context,
+        );
+        let key2 = StyleCacheKey::new(
+            &style,
+            &state_with,
+            ScreenSizeBp::Xs,
+            &classes,
+            &class_context,
+        );
 
-        assert_ne!(key1, key2, "is_focus_within should produce different cache keys");
+        assert_ne!(
+            key1, key2,
+            "is_focus_within should produce different cache keys"
+        );
     }
 
     #[test]

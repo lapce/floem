@@ -113,37 +113,33 @@ fn bench_identical_styles(c: &mut Criterion) {
     // Restyle with warm cache — the primary cache use case.
     // Views have hover selectors so request_style(Hover) triggers needs_resolve_nested_maps.
     for size in [10, 50, 100, 200].iter() {
-        group.bench_with_input(
-            BenchmarkId::new("restyle", size),
-            size,
-            |b, &size| {
-                let root = TestRoot::new();
-                let views: Vec<_> = (0..size)
-                    .map(|_| {
-                        Empty::new().style(|s| {
-                            s.size(20.0, 20.0)
-                                .background(palette::css::CORAL)
-                                .padding(2.0)
-                                .margin(1.0)
-                                .hover(|s| s.background(palette::css::LIGHT_CORAL))
-                        })
+        group.bench_with_input(BenchmarkId::new("restyle", size), size, |b, &size| {
+            let root = TestRoot::new();
+            let views: Vec<_> = (0..size)
+                .map(|_| {
+                    Empty::new().style(|s| {
+                        s.size(20.0, 20.0)
+                            .background(palette::css::CORAL)
+                            .padding(2.0)
+                            .margin(1.0)
+                            .hover(|s| s.background(palette::css::LIGHT_CORAL))
                     })
-                    .collect();
-                let ids: Vec<_> = views.iter().map(|v| v.view_id()).collect();
-                let container = Stack::from_iter(views).style(|s| s.size(400.0, 400.0));
-                let mut harness = HeadlessHarness::new_with_size(root, container, 400.0, 400.0);
+                })
+                .collect();
+            let ids: Vec<_> = views.iter().map(|v| v.view_id()).collect();
+            let container = Stack::from_iter(views).style(|s| s.size(400.0, 400.0));
+            let mut harness = HeadlessHarness::new_with_size(root, container, 400.0, 400.0);
 
-                b.iter(|| {
-                    for id in &ids {
-                        id.request_style(floem::style::recalc::StyleReason::with_selector(
-                            floem::style::StyleSelector::Hover,
-                        ));
-                    }
-                    harness.recompute_styles();
-                    black_box(harness.root_id());
-                });
-            },
-        );
+            b.iter(|| {
+                for id in &ids {
+                    id.request_style(floem::style::recalc::StyleReason::with_selector(
+                        floem::style::StyleSelector::Hover,
+                    ));
+                }
+                harness.recompute_styles();
+                black_box(harness.root_id());
+            });
+        });
     }
 
     group.finish();

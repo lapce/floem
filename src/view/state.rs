@@ -311,7 +311,7 @@ impl StyleStack {
 
     /// Whether the top-of-stack style is cacheable (no structural selectors, no context values).
     pub fn is_cacheable(&self) -> bool {
-        self.cache.last().map_or(false, |s| {
+        self.cache.last().is_some_and(|s| {
             !s.map.is_empty() && !s.has_structural_selectors() && !s.has_context_values()
         })
     }
