@@ -284,14 +284,63 @@ impl<'a> StyleCx<'a> {
             self.reason.needs_resolve_nested_maps() || self.reason.needs_animation();
 
         if self.reason.needs_resolve_nested_maps() {
-            // Cache miss or dirty - compute style
-            view_state.borrow_mut().compute_combined(
-                &mut self.view_interact_state,
-                self.window_state.screen_size_bp,
-                view_class,
-                &self.inherited,
-                &self.class_context,
-            );
+            use super::cache::{StyleCache, StyleCacheKey};
+
+            // Get the base style for cache key computation.
+            // This requires a temporary borrow_mut because style() lazily recomputes.
+            let base_style = view_state.borrow_mut().style();
+            let cacheable = StyleCache::is_cacheable(&base_style)
+                && !self.class_context.has_structural_selectors();
+
+            let cache_key = if cacheable {
+                Some(StyleCacheKey::new(
+                    &base_style,
+                    &self.view_interact_state,
+                    self.window_state.screen_size_bp,
+                    &classes,
+                    &self.class_context,
+                ))
+            } else {
+                None
+            };
+            drop(base_style);
+
+            let cache_hit = cache_key
+                .as_ref()
+                .and_then(|key| self.window_state.style_cache.get(key, &self.inherited));
+
+            if let Some(hit) = cache_hit {
+                // Cache hit — restore all compute_combined() outputs
+                let mut vs = view_state.borrow_mut();
+                vs.combined_pre_animation_style = hit.combined_style.clone();
+                vs.combined_style = hit.combined_style;
+                vs.has_style_selectors = hit.has_style_selectors;
+                vs.post_compute_combined_interaction = hit.post_interact;
+                self.view_interact_state.is_hidden |= hit.post_interact.hidden;
+                self.view_interact_state.is_selected |= hit.post_interact.selected;
+                self.view_interact_state.is_disabled |= hit.post_interact.disabled;
+            } else {
+                // Cache miss — compute normally
+                view_state.borrow_mut().compute_combined(
+                    &mut self.view_interact_state,
+                    self.window_state.screen_size_bp,
+                    view_class,
+                    &self.inherited,
+                    &self.class_context,
+                );
+
+                // Insert into cache
+                if let Some(key) = cache_key {
+                    let vs = view_state.borrow();
+                    self.window_state.style_cache.insert(
+                        key,
+                        &vs.combined_style,
+                        vs.has_style_selectors,
+                        vs.post_compute_combined_interaction,
+                        &self.inherited,
+                    );
+                }
+            }
         } else {
             // Fast path: nested-map resolution was skipped, so reapply the view-local
             // interaction state saved from the last combined-style computation.

@@ -4,7 +4,7 @@ use crate::{
     action::exec_after_animation_frame,
     inspector::CaptureState,
     platform::menu_types::MenuId,
-    style::{StyleSelectors, recalc::StyleReason},
+    style::{StyleCache, StyleSelectors, recalc::StyleReason},
     view::ViewStorage,
 };
 
@@ -170,8 +170,7 @@ pub struct WindowState {
 
     /// Cache for style resolution results.
     /// Views with identical styles and interaction states can share resolved styles.
-    // no need for style cache
-    // pub(crate) style_cache: StyleCache,
+    pub(crate) style_cache: StyleCache,
 
     /// The default theme style containing class definitions for built-in components.
     /// This is used as the root style context for all views when no parent exists.
@@ -248,6 +247,7 @@ impl WindowState {
             grid_bps: GridBreakpoints::default(),
             context_menu: HashMap::new(),
             capture: None,
+            style_cache: StyleCache::new(),
             default_theme: theme,
             default_theme_inherited: inherited,
             needs_layout: true,
@@ -323,6 +323,7 @@ impl WindowState {
         let inherited = Self::extract_inherited_props(&new_theme);
         self.default_theme = new_theme;
         self.default_theme_inherited = inherited;
+        self.style_cache.clear();
     }
 
     /// This removes a view from the app state.
@@ -1234,6 +1235,7 @@ impl WindowState {
         let bp = self.grid_bps.get_width_bp(size.width);
         if bp != self.screen_size_bp {
             self.screen_size_bp = bp;
+            self.style_cache.clear();
             self.root_view_id.request_style(StyleReason::with_selectors(
                 StyleSelectors::empty().responsive(),
             ));

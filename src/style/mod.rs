@@ -874,6 +874,11 @@ pub struct Style {
     /// Updated incrementally when selectors are added via `apply_iter`, `set_selector`, etc.
     /// Enables O(1) checks in `resolve_selectors` to skip absent selectors.
     cached_selectors: StyleSelectors,
+    /// Cached flag indicating whether this style contains any context-dependent values.
+    /// Styles with context values cannot be reliably cached because their content_hash()
+    /// is constant (all context values hash to 1), so different context values produce
+    /// the same cache key despite resolving to different output.
+    has_context_values: bool,
     /// The effect context that was active when this style was created.
     /// This is restored when evaluating context mappings and selectors to ensure
     /// reactive dependencies are tracked correctly.
@@ -896,6 +901,7 @@ impl Style {
             has_class_maps: false,
             has_inherited: false,
             cached_selectors: StyleSelectors::empty(),
+            has_context_values: false,
             effect_context,
         }
     }
@@ -992,6 +998,24 @@ impl Style {
 
     pub(crate) fn merge_id(&self) -> u64 {
         self.merge_id
+    }
+
+    /// Returns the raw pointer of the inner `Rc<FxHashMap>` as a `usize`.
+    /// Used by the style cache for O(1) identity comparison.
+    pub(crate) fn map_ptr(&self) -> usize {
+        Rc::as_ptr(&self.map) as usize
+    }
+
+    /// Whether this style contains any context-dependent values.
+    pub(crate) fn has_context_values(&self) -> bool {
+        self.has_context_values
+    }
+
+    /// Whether this style contains structural selectors (`:first-child`, `:nth-child`, etc.).
+    /// Styles with structural selectors depend on `child_index`/`sibling_count` which are
+    /// per-position values not captured in the cache key, so they must be excluded from caching.
+    pub(crate) fn has_structural_selectors(&self) -> bool {
+        self.map.contains_key(&structural_selectors_key())
     }
 
     pub fn class_maps_eq(&self, other: &Style) -> SmallVec<[StyleClassRef; 4]> {
@@ -1379,6 +1403,7 @@ impl Style {
         let over_merge_id = over.merge_id;
         let effect_context = over.effect_context.clone();
         self.apply_iter(over.map.iter(), effect_context);
+        self.has_context_values |= over.has_context_values;
         self.merge_id = combine_merge_ids(self.merge_id, over_merge_id);
     }
 
@@ -2518,6 +2543,7 @@ impl Style {
             StyleValue::Val(value) => StyleMapValue::Val(value),
             StyleValue::Animated(value) => StyleMapValue::Animated(value),
             StyleValue::Context(value) => {
+                self.has_context_values = true;
                 let previous_value = previous_value.clone();
                 StyleMapValue::Context(ContextValue::new(move |style| {
                     let mut base_style = style.clone();
