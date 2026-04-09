@@ -277,6 +277,9 @@ impl RetainedDisplayList {
             return;
         }
 
+        let mut child_items: Vec<StackingContextItem> = Vec::new();
+        collect_stacking_context_items_into(element_id, box_tree, &mut child_items);
+
         let paints_this_node = if is_drag_preview {
             true
         } else {
@@ -284,9 +287,6 @@ impl RetainedDisplayList {
                 .world_bounds(element_id.0)
                 .is_none_or(|bounds| bounds.area() != 0.0)
         };
-
-        let mut child_items: Vec<StackingContextItem> = Vec::new();
-        collect_stacking_context_items_into(element_id, box_tree, &mut child_items);
 
         if paints_this_node {
             let (slot, is_new) = match existing.remove(&element_id) {

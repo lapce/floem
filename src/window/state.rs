@@ -23,11 +23,11 @@ use crate::{
     action::add_update_message,
     context::FrameUpdate,
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
-    platform::Instant,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
     paint::PaintStats,
     paint::display_list::RetainedDisplayList,
+    platform::Instant,
     style::{CursorStyle, Style, StyleSelector, theme::default_theme},
     view::{LayoutNodeCx, MeasureCx, VIEW_STORAGE, ViewId},
 };

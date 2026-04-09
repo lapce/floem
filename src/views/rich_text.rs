@@ -1,7 +1,7 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use floem_reactive::Effect;
 use crate::text::{Attrs, AttrsList, AttrsOwned};
+use floem_reactive::Effect;
 use peniko::{Color, color::palette};
 use smallvec::{SmallVec, smallvec};
 use taffy::tree::NodeId;
@@ -185,10 +185,7 @@ impl<'a> RichSpan<'a> {
         self
     }
 
-    pub fn line_height(
-        mut self,
-        line_height: crate::text::LineHeightValue,
-    ) -> RichSpan<'a> {
+    pub fn line_height(mut self, line_height: crate::text::LineHeightValue) -> RichSpan<'a> {
         self.attrs = self.attrs.line_height(line_height);
         self
     }

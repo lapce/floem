@@ -4,8 +4,8 @@
 mod values_extended_scene;
 pub(crate) use values_extended_scene::scene_debug_view_with_size;
 
-use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
 use crate::text::{FontWeight, LineHeightValue};
+use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
 use peniko::color::{HueDirection, palette};
 use peniko::kurbo::{self, Affine, Point, Shape, Stroke, Vec2};
 use peniko::{

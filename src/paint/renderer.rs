@@ -51,9 +51,8 @@ use std::sync::Arc;
 
 use crate::gpu_resources::GpuResources;
 use imaging::{
-    BlurredRoundedRect, ClipRef, FillRef, GlyphRunRef, GroupRef, ImageBufferTarget,
-    ImageRenderer, PaintSink, RenderSource, RgbaImage, StrokeRef, TextureRenderer,
-    TextureViewTarget,
+    BlurredRoundedRect, ClipRef, FillRef, GlyphRunRef, GroupRef, ImageBufferTarget, ImageRenderer,
+    PaintSink, RenderSource, RgbaImage, StrokeRef, TextureRenderer, TextureViewTarget,
 };
 use peniko::ImageData;
 use peniko::kurbo::Size;
@@ -618,7 +617,10 @@ impl WindowRenderer for TargetGpuWindowRenderer {
                 .render_source_to_texture(source, surface_texture.texture.clone())
                 .expect("failed to render gpu target"),
             GpuAcceptedRenderer::TextureView { backend, .. } => backend
-                .render_source_to_texture(source, TextureViewTarget::new(&texture_view, width, height))
+                .render_source_to_texture(
+                    source,
+                    TextureViewTarget::new(&texture_view, width, height),
+                )
                 .expect("failed to render gpu target"),
         }
         let prepare = Duration::ZERO;
@@ -698,7 +700,10 @@ impl WindowRenderer for ImageWindowRenderer {
         self.scratch.resize(width, height);
         let rendered = self
             .backend
-            .render_source_into(source, ImageBufferTarget::from_rgba_image(&mut self.scratch))
+            .render_source_into(
+                source,
+                ImageBufferTarget::from_rgba_image(&mut self.scratch),
+            )
             .is_ok();
         let scene = scene_start.elapsed();
         let present = if rendered {
@@ -918,13 +923,9 @@ fn choose_default_renderer(cx: NewRendererCx) -> Result<WindowBackend, String> {
             return cx.into_renderer(
                 AcceptedRenderer::Image {
                     backend: Box::new(
-                        imaging_tiny_skia::TinySkiaCpuCopyRenderer::new_with_size(
-                            width,
-                            height,
-                        )
-                        .map_err(|err| err.to_string())?,
-                    )
-                    ,
+                        imaging_tiny_skia::TinySkiaCpuCopyRenderer::new_with_size(width, height)
+                            .map_err(|err| err.to_string())?,
+                    ),
                     name: "Tiny Skia CPU",
                 },
                 None,

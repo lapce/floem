@@ -5,9 +5,10 @@ use crate::{
     app::{AppUpdateEvent, add_app_update_event},
     event::{EventPropagation, listener},
     inspector::{
-        CAPTURE, Capture, CaptureView, CapturedView, RUNNING, add_event,
+        CAPTURE, Capture, CaptureView, CapturedElement, InspectorSelection, RUNNING, add_event,
         data::{CapturedData, CapturedDatas},
-        find_view, header, selected_view, stats, update_select_view_id,
+        find_view, header, selected_view, selection_matches_view, stats, update_select_element_id,
+        update_select_view_id,
     },
     new_window,
     prelude::*,
@@ -194,8 +195,6 @@ fn capture_view(
     let size = capture_.window_size;
     let image_width = size.width;
     let image_height = size.height;
-    let renderer = capture_.renderer.clone();
-
     let image = if let Some(window) = window {
         Img::new(window.clone()).into_any()
     } else {
@@ -258,7 +257,7 @@ fn capture_view(
         |it| *it,
         move |it| {
             match it {
-                0 => selected_view(&capture_sig.get(), capture_view.selected).into_any(),
+                0 => selected_view(&capture_sig.get(), capture_view).into_any(),
                 1 => Stack::vertical((header("Stats"), stats(&capture_sig.get()))).into_any(),
                 _ => panic!(),
             }
@@ -479,10 +478,14 @@ fn tree_node(
                 .width_full()
                 .keyboard_navigable()
                 .text_clip()
-                .apply_if(selected.get() == Some(id), |s| s.set_selected(true))
+                .apply_if(selection_matches_view(selected.get(), id), |s| {
+                    s.set_selected(true)
+                })
         })
-        .action(move || selected.set(Some(id)))
-        .on_event_cont(el::PointerEnter, move |_, _| highlighted.set(Some(id)));
+        .action(move || selected.set(Some(InspectorSelection::View(id))))
+        .on_event_cont(el::PointerEnter, move |_, _| {
+            highlighted.set(Some(InspectorSelection::View(id)))
+        });
     let row = add_event(
         row,
         view.view_conf.name.clone(),
@@ -586,9 +589,8 @@ pub struct InspectorImageView {
     capture: Rc<Capture>,
     capture_view: CaptureView,
     datas: RwSignal<CapturedDatas>,
-    data_id_to_view: HashMap<String, ViewId>,
-    element_to_data_id: HashMap<ElementId, String>,
-    contain_ids: Vec<ViewId>,
+    element_to_capture_element: HashMap<ElementId, ElementId>,
+    contain_ids: Vec<ElementId>,
     contain_index: usize,
     selected_overlay_color: Color,
     selected_overlay_border_color: Color,
@@ -612,17 +614,19 @@ impl InspectorImageView {
             id.request_paint();
         });
         id.add_child(child);
-        let data_id_to_view = datas.get_untracked().visible_data_id_map();
-        let mut element_to_data_id = HashMap::new();
-        register_capture_elements(id, &capture.root, &mut element_to_data_id);
+        let mut element_to_capture_element = HashMap::new();
+        register_capture_elements(
+            id,
+            &capture.state.elements_root,
+            &mut element_to_capture_element,
+        );
         id.request_box_tree_commit();
         Self {
             id: id.get_element_id(),
             capture,
             capture_view,
             datas,
-            data_id_to_view,
-            element_to_data_id,
+            element_to_capture_element,
             contain_ids: Vec::new(),
             contain_index: 0,
             selected_overlay_color: css::DODGER_BLUE.with_alpha(0.5),
@@ -632,34 +636,39 @@ impl InspectorImageView {
         }
     }
 
-    fn overlay_rect(&self, id: Option<ViewId>) -> Option<Rect> {
-        let view = id.and_then(|id| self.capture.root.find(id))?;
+    fn overlay_rect(&self, selection: Option<InspectorSelection>) -> Option<Rect> {
+        let bounds = match selection? {
+            InspectorSelection::View(id) => self.capture.root.find(id)?.world_bounds,
+            InspectorSelection::Element(id) => {
+                self.capture.state.elements_root.find(id)?.world_bounds
+            }
+        };
         Some(Rect::new(
-            5.0 + view.world_bounds.x0 + 1.0,
-            5.0 + view.world_bounds.y0 + 1.0,
-            5.0 + view.world_bounds.x1 + 1.0,
-            5.0 + view.world_bounds.y1 + 1.0,
+            5.0 + bounds.x0 + 1.0,
+            5.0 + bounds.y0 + 1.0,
+            5.0 + bounds.x1 + 1.0,
+            5.0 + bounds.y1 + 1.0,
         ))
     }
 }
 
 fn register_capture_elements(
     owner_id: ViewId,
-    root: &Rc<CapturedView>,
-    element_to_data_id: &mut HashMap<ElementId, String>,
+    root: &Rc<CapturedElement>,
+    element_to_capture_element: &mut HashMap<ElementId, ElementId>,
 ) {
     fn register_one(
         owner_id: ViewId,
-        captured: &Rc<CapturedView>,
+        captured: &Rc<CapturedElement>,
         parent_element: ElementId,
-        element_to_data_id: &mut HashMap<ElementId, String>,
+        element_to_capture_element: &mut HashMap<ElementId, ElementId>,
     ) {
-        let is_visible = captured.direct_style.builtin().display() != taffy::Display::None
-            && captured.world_bounds.area() > 0.0;
+        let is_visible =
+            captured.flags.contains(NodeFlags::VISIBLE) && captured.world_bounds.area() > 0.0;
 
         let mut next_parent = parent_element;
         if is_visible {
-            let element = owner_id.create_child_element_id(0);
+            let element = owner_id.create_child_element_id(captured.z_index);
             let rect = Rect::new(
                 6.0 + captured.world_bounds.x0,
                 6.0 + captured.world_bounds.y0,
@@ -678,16 +687,16 @@ fn register_capture_elements(
             );
             drop(bt);
             element.set_local_bounds(rect);
-            element_to_data_id.insert(element, captured.id_data_str.clone());
+            element_to_capture_element.insert(element, captured.id);
             next_parent = element;
         }
         for child in &captured.children {
-            register_one(owner_id, child, next_parent, element_to_data_id);
+            register_one(owner_id, child, next_parent, element_to_capture_element);
         }
     }
 
     let root_element = owner_id.get_element_id();
-    register_one(owner_id, root, root_element, element_to_data_id);
+    register_one(owner_id, root, root_element, element_to_capture_element);
 }
 
 impl View for InspectorImageView {
@@ -733,7 +742,12 @@ impl View for InspectorImageView {
                             if let Some(id) = self.contain_ids.get(self.contain_index).copied() {
                                 cx.window_state.request_paint(self.id);
                                 self.id.owning_id().request_paint();
-                                update_select_view_id(id, &self.capture_view, false, self.datas);
+                                update_select_element_id(
+                                    id,
+                                    &self.capture_view,
+                                    false,
+                                    Some(self.datas),
+                                );
                                 return EventPropagation::Stop;
                             }
                         }
@@ -744,7 +758,12 @@ impl View for InspectorImageView {
                             if let Some(id) = self.contain_ids.get(self.contain_index).copied() {
                                 cx.window_state.request_paint(self.id);
                                 self.id.owning_id().request_paint();
-                                update_select_view_id(id, &self.capture_view, false, self.datas);
+                                update_select_element_id(
+                                    id,
+                                    &self.capture_view,
+                                    false,
+                                    Some(self.datas),
+                                );
                                 return EventPropagation::Stop;
                             }
                         }
@@ -758,15 +777,17 @@ impl View for InspectorImageView {
                     self.contain_ids.extend(
                         hit_path
                             .iter()
-                            .filter_map(|id| self.element_to_data_id.get(id))
-                            .filter_map(|data_id| self.data_id_to_view.get(data_id).copied()),
+                            .filter_map(|id| self.element_to_capture_element.get(id).copied()),
                     );
                 }
                 cx.window_state.request_paint(self.id);
                 self.contain_index = 0;
-                self.capture_view
-                    .highlighted
-                    .set(self.contain_ids.last().copied());
+                self.capture_view.highlighted.set(
+                    self.contain_ids
+                        .last()
+                        .copied()
+                        .map(InspectorSelection::Element),
+                );
             }
             Event::Pointer(PointerEvent::Up(_)) => {
                 self.contain_ids.clear();
@@ -774,15 +795,14 @@ impl View for InspectorImageView {
                     self.contain_ids.extend(
                         hit_path
                             .iter()
-                            .filter_map(|id| self.element_to_data_id.get(id))
-                            .filter_map(|data_id| self.data_id_to_view.get(data_id).copied()),
+                            .filter_map(|id| self.element_to_capture_element.get(id).copied()),
                     );
                 }
                 self.contain_index = 0;
                 if let Some(id) = self.contain_ids.last().copied() {
                     cx.window_state.request_paint(self.id);
                     self.id.owning_id().request_paint();
-                    update_select_view_id(id, &self.capture_view, false, self.datas);
+                    update_select_element_id(id, &self.capture_view, false, Some(self.datas));
                     return EventPropagation::Stop;
                 }
             }

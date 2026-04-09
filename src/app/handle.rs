@@ -1,5 +1,5 @@
-use dpi::PhysicalPosition;
 use crate::gpu_resources::GpuResources;
+use dpi::PhysicalPosition;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use ui_events_winit::WindowEventTranslation;
@@ -41,15 +41,15 @@ struct PendingContextMenu {
     pos: Option<Point>,
 }
 
-struct AnimationTimerState {
+struct PacedRedrawTimerState {
     token: Option<TimerToken>,
-    next_deadline: Instant,
+    deadline: Instant,
 }
 
 pub(crate) struct ApplicationHandle {
     window_handles: HashMap<winit::window::WindowId, WindowHandle>,
     timers: HashMap<TimerToken, Timer>,
-    animation_timers: HashMap<winit::window::WindowId, AnimationTimerState>,
+    paced_redraw_timers: HashMap<winit::window::WindowId, PacedRedrawTimerState>,
     pending_context_menus: Vec<PendingContextMenu>,
     pub(crate) event_listener: Option<Box<AppEventCallback>>,
     pub(crate) gpu_resources: Option<GpuResources>,
@@ -63,7 +63,7 @@ impl ApplicationHandle {
         Self {
             window_handles: HashMap::new(),
             timers: HashMap::new(),
-            animation_timers: HashMap::new(),
+            paced_redraw_timers: HashMap::new(),
             pending_context_menus: Vec::new(),
             event_listener: None,
             gpu_resources: None,
@@ -396,7 +396,10 @@ impl ApplicationHandle {
             }
             WindowEvent::Occluded(occluded) => {
                 window_handle.set_occluded(occluded);
-                if !occluded && !window_handle.window_state.scheduled_updates.is_empty() {
+                if !occluded
+                    && (!window_handle.window_state.scheduled_updates.is_empty()
+                        || window_handle.window_state.has_pending_render())
+                {
                     self.request_update();
                 }
             }
@@ -447,6 +450,10 @@ impl ApplicationHandle {
             }
         }
         if !is_redraw {
+            self.request_update();
+        } else if let Some(window_handle) = self.window_handles.get(&window_id)
+            && !window_handle.window_state.scheduled_updates.is_empty()
+        {
             self.request_update();
         }
         self.update_control_flow(event_loop);
@@ -669,7 +676,7 @@ impl ApplicationHandle {
     }
 
     fn close_window(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
-        self.cancel_animation_timer(window_id, event_loop);
+        self.cancel_paced_redraw_timer(window_id, event_loop);
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
             handle.destroy();
         }
@@ -705,7 +712,7 @@ impl ApplicationHandle {
         event_loop: &dyn ActiveEventLoop,
     ) -> bool {
         let mut any_work_remaining = false;
-        let mut animation_timer_changes = Vec::new();
+        let mut paced_redraw_timer_changes = Vec::new();
 
         for (window_id, handle) in self.window_handles.iter_mut() {
             handle.process_scheduled_updates();
@@ -715,22 +722,26 @@ impl ApplicationHandle {
             }
 
             let has_scheduled_updates = !handle.window_state.scheduled_updates.is_empty();
-            animation_timer_changes.push((*window_id, has_scheduled_updates));
+            let needs_frame = handle.window_state.has_pending_render() || has_scheduled_updates;
+            let frame_interval = handle
+                .window
+                .current_monitor()
+                .and_then(|m| m.current_video_mode())
+                .and_then(|v| v.refresh_rate_millihertz())
+                .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
+                .unwrap_or(Duration::from_millis(8));
+            let now = Instant::now();
+            let redraw_deadline = handle.redraw_deadline(frame_interval, now);
+            let should_request_redraw =
+                needs_frame && handle.can_render_now() && now >= redraw_deadline;
+            paced_redraw_timer_changes.push((
+                *window_id,
+                needs_frame && !should_request_redraw,
+                redraw_deadline,
+            ));
 
-            if (handle.window_state.has_pending_render() || has_scheduled_updates)
-                && handle.can_render_now()
-            {
+            if should_request_redraw {
                 handle.window.request_redraw();
-                let frame_interval = handle
-                    .window
-                    .current_monitor()
-                    .and_then(|m| m.current_video_mode())
-                    .and_then(|v| v.refresh_rate_millihertz())
-                    .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
-                    .unwrap_or(Duration::from_millis(8));
-                if handle.window_state.has_pending_render() {
-                    handle.render_frame_if_due(frame_interval);
-                }
             }
 
             if !done || start.elapsed() >= budget {
@@ -751,11 +762,11 @@ impl ApplicationHandle {
             }
         }
 
-        for (window_id, should_run) in animation_timer_changes {
+        for (window_id, should_run, deadline) in paced_redraw_timer_changes {
             if should_run {
-                self.ensure_animation_timer(window_id, event_loop);
+                self.ensure_paced_redraw_timer(window_id, deadline, event_loop);
             } else {
-                self.cancel_animation_timer(window_id, event_loop);
+                self.cancel_paced_redraw_timer(window_id, event_loop);
             }
         }
 
@@ -797,38 +808,44 @@ impl ApplicationHandle {
         self.fire_timer(event_loop);
     }
 
-    fn ensure_animation_timer(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
-        let frame_duration = self.frame_duration_for_window(&window_id);
-        let now = Instant::now();
-        let deadline = match self.animation_timers.entry(window_id) {
+    fn ensure_paced_redraw_timer(
+        &mut self,
+        window_id: WindowId,
+        deadline: Instant,
+        event_loop: &dyn ActiveEventLoop,
+    ) {
+        let deadline = if deadline <= Instant::now() {
+            Instant::now()
+        } else {
+            deadline
+        };
+
+        let deadline = match self.paced_redraw_timers.entry(window_id) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 let state = entry.get_mut();
-                if state.token.is_some() {
+                if state.token.is_some() && state.deadline <= deadline {
                     return;
-                }
-                while state.next_deadline <= now {
-                    state.next_deadline += frame_duration;
                 }
                 let token = TimerToken::next();
                 state.token = Some(token);
-                state.next_deadline
+                state.deadline = deadline;
+                deadline
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
                 let token = TimerToken::next();
-                let deadline = now + frame_duration;
-                entry.insert(AnimationTimerState {
+                entry.insert(PacedRedrawTimerState {
                     token: Some(token),
-                    next_deadline: deadline,
+                    deadline,
                 });
                 deadline
             }
         };
 
         let token = self
-            .animation_timers
+            .paced_redraw_timers
             .get(&window_id)
             .and_then(|state| state.token)
-            .expect("animation timer token should exist when arming");
+            .expect("paced redraw timer token should exist when arming");
         self.request_timer(
             Timer {
                 token,
@@ -841,8 +858,8 @@ impl ApplicationHandle {
         );
     }
 
-    fn cancel_animation_timer(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
-        if let Some(state) = self.animation_timers.remove(&window_id)
+    fn cancel_paced_redraw_timer(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
+        if let Some(state) = self.paced_redraw_timers.remove(&window_id)
             && let Some(token) = state.token
         {
             self.remove_timer(&token, event_loop);
@@ -896,16 +913,11 @@ impl ApplicationHandle {
                         continue;
                     }
 
-                    let animation_frame_duration =
-                        timer.window_id.map(|window_id| self.frame_duration_for_window(&window_id));
                     if let Some(window_id) = timer.window_id
-                        && let Some(state) = self.animation_timers.get_mut(&window_id)
+                        && let Some(state) = self.paced_redraw_timers.get_mut(&window_id)
                         && state.token == Some(token)
                     {
                         state.token = None;
-                        if let Some(frame_duration) = animation_frame_duration {
-                            state.next_deadline += frame_duration;
-                        }
                     }
 
                     (timer.action)(token);

@@ -25,10 +25,10 @@ use crate::{
         DragEvent, DragToken, Event, FocusEvent, InteractionEvent, Phase, PointerCaptureEvent,
         WindowEvent, drag_state::DragEventDispatch, dropped_file::FileDragEvent, path::hit_test,
     },
+    platform::Instant,
     style::{StyleSelector, StyleSelectors, recalc::StyleReason},
     view::{VIEW_STORAGE, View},
     window::WindowState,
-    platform::Instant,
 };
 
 static START_TIME: LazyLock<StdInstant> = LazyLock::new(StdInstant::now);

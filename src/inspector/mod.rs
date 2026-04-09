@@ -16,7 +16,7 @@ use crate::{
     AnyView, Clipboard, ElementId, ViewId, WindowState,
     event::EventPropagation,
     inspector::data::CapturedDatas,
-    platform::Duration,
+    platform::{Duration, Instant},
     prelude::*,
     style::{
         BorderRadius, FontSizeCx, Length, LengthAuto, OverflowX, OverflowY, StrokeWrap, Style,
@@ -25,6 +25,7 @@ use crate::{
 };
 
 use std::{cell::Cell, collections::HashMap, fmt::Display, rc::Rc};
+use understory_box_tree::NodeFlags;
 
 use crate::views::TabSelectorClass;
 use taffy::{
@@ -564,6 +565,45 @@ impl CapturedView {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct CapturedElement {
+    id: ElementId,
+    world_bounds: Rect,
+    local_bounds: Rect,
+    z_index: i32,
+    flags: NodeFlags,
+    focused: bool,
+    scene: Scene,
+    children: Vec<Rc<CapturedElement>>,
+}
+
+impl CapturedElement {
+    fn find(&self, id: ElementId) -> Option<&CapturedElement> {
+        if self.id == id {
+            return Some(self);
+        }
+        self.children
+            .iter()
+            .filter_map(|child| child.find(id))
+            .next()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum InspectorSelection {
+    View(ViewId),
+    Element(ElementId),
+}
+
+impl InspectorSelection {
+    fn owner_view_id(self) -> ViewId {
+        match self {
+            Self::View(id) => id,
+            Self::Element(id) => id.owning_id(),
+        }
+    }
+}
+
 pub struct Capture {
     pub root: Rc<CapturedView>,
     pub timings: TimingReport,
@@ -607,14 +647,16 @@ pub struct TimingStat {
 
 #[derive(Clone, Debug, Default)]
 pub struct TimingReport {
+    pub anchor: Option<Instant>,
     pub total: Duration,
     pub stats: Vec<TimingStat>,
     pub spans: Vec<TimingSpan>,
 }
 
 impl TimingReport {
-    pub fn new(total: Duration) -> Self {
+    pub fn new(anchor: Option<Instant>, total: Duration) -> Self {
         Self {
+            anchor,
             total,
             stats: Vec::new(),
             spans: Vec::new(),
@@ -647,38 +689,65 @@ impl TimingReport {
     }
 }
 
-#[derive(Default)]
 pub struct CaptureState {
     computed_styles: HashMap<ViewId, Style>,
-    scenes: HashMap<ViewId, Scene>,
+    elements_root: Rc<CapturedElement>,
+    elements_by_view: HashMap<ViewId, Vec<ElementId>>,
 }
 
 impl CaptureState {
     pub(crate) fn collect_from(root: ViewId, window_state: &WindowState) -> Self {
-        fn collect(
-            id: ViewId,
-            window_state: &WindowState,
-            computed_styles: &mut HashMap<ViewId, Style>,
-            scenes: &mut HashMap<ViewId, Scene>,
-        ) {
+        fn collect_views(id: ViewId, computed_styles: &mut HashMap<ViewId, Style>) {
             computed_styles.insert(id, id.state().borrow().computed_style.clone());
-            let mut scene = Scene::new();
-            if let Some(element) = window_state.display_list.element(id.get_element_id()) {
-                replay(&element.paint.scene, &mut scene);
-                replay(&element.post.scene, &mut scene);
-            }
-            scenes.insert(id, scene);
             for child in id.children() {
-                collect(child, window_state, computed_styles, scenes);
+                collect_views(child, computed_styles);
             }
         }
 
+        fn collect_elements(
+            id: ElementId,
+            window_state: &WindowState,
+            box_tree: &crate::BoxTree,
+            elements_by_view: &mut HashMap<ViewId, Vec<ElementId>>,
+        ) -> Rc<CapturedElement> {
+            let mut scene = Scene::new();
+            if let Some(element) = window_state.display_list.element(id) {
+                replay(&element.paint.scene, &mut scene);
+                replay(&element.post.scene, &mut scene);
+            }
+            elements_by_view.entry(id.owning_id()).or_default().push(id);
+            let children = box_tree
+                .children_of(id.0)
+                .iter()
+                .filter_map(|child| box_tree.element_id_of(*child))
+                .map(|child| collect_elements(child, window_state, box_tree, elements_by_view))
+                .collect();
+            Rc::new(CapturedElement {
+                id,
+                world_bounds: box_tree.world_bounds(id.0).unwrap_or_default(),
+                local_bounds: box_tree.local_bounds(id.0).unwrap_or_default(),
+                z_index: box_tree.z_index(id.0).unwrap_or(0),
+                flags: box_tree.flags(id.0).unwrap_or_default(),
+                focused: window_state.focus_state.current_path().last() == Some(&id),
+                scene,
+                children,
+            })
+        }
+
         let mut computed_styles = HashMap::new();
-        let mut scenes = HashMap::new();
-        collect(root, window_state, &mut computed_styles, &mut scenes);
+        collect_views(root, &mut computed_styles);
+        let mut elements_by_view = HashMap::new();
+        let box_tree = window_state.box_tree.borrow();
+        let elements_root = collect_elements(
+            root.get_element_id(),
+            window_state,
+            &box_tree,
+            &mut elements_by_view,
+        );
         Self {
             computed_styles,
-            scenes,
+            elements_root,
+            elements_by_view,
         }
     }
 }
@@ -1126,14 +1195,17 @@ fn stats(capture: &Capture) -> impl IntoView + use<> {
     .style(|s| s.width_full().gap(8.0))
 }
 
-fn selected_view(
-    capture: &Rc<Capture>,
-    selected: RwSignal<Option<ViewId>>,
-) -> impl IntoView + use<> {
+fn selected_view(capture: &Rc<Capture>, capture_view: CaptureView) -> impl IntoView + use<> {
     let capture = capture.clone();
 
-    let dyn_view_builder = move |selected_value: Option<ViewId>| {
-        if let Some(view) = selected_value.and_then(|id| capture.root.find(id)) {
+    let dyn_view_builder = move |selected_value: Option<InspectorSelection>| {
+        let Some(selection) = selected_value else {
+            return Label::new("No selection")
+                .style(|s| s.padding(5.0))
+                .into_any();
+        };
+        let owner_view_id = selection.owner_view_id();
+        if let Some(view) = capture.root.find(owner_view_id) {
             let name = info("View Debug", view.name.clone());
             let id = info("Id", format!("{:?}", view.id));
             let count = info("Child Count", format!("{}", view.children.len()));
@@ -1229,14 +1301,6 @@ fn selected_view(
                 .get(&view.id)
                 .cloned()
                 .unwrap_or_default();
-            let scene = capture
-                .state
-                .scenes
-                .get(&view.id)
-                .cloned()
-                .unwrap_or_default();
-            let scene_size = Size::new(view.taffy.size.width as f64, view.taffy.size.height as f64);
-
             let selected_view_info = Stack::vertical_from_iter(
                 [name, id, count, x, y, w, h, tx, ty, tw, th]
                     .into_iter()
@@ -1275,55 +1339,134 @@ fn selected_view(
             let selected_view_panel =
                 Stack::vertical((header("Selected View"), selected_view_summary))
                     .style(|s| s.width_full().min_size(0., 0.).flex_grow(1.));
-            let active_tab = RwSignal::new(0);
-            let style_scene_tabs = Stack::vertical((
-                Stack::horizontal((
-                    "style"
-                        .class(TabSelectorClass)
-                        .style(move |s| s.set_selected(active_tab.get() == 0))
-                        .action(move || active_tab.set(0)),
-                    "scene"
-                        .class(TabSelectorClass)
-                        .style(move |s| s.set_selected(active_tab.get() == 1))
-                        .action(move || active_tab.set(1)),
-                ))
-                .style(|s| s.gap(8.0).padding_bottom(4.0)),
-                tab(move || Some(active_tab.get()), move || [0, 1], |it| *it, {
-                    let style = style.clone();
-                    let direct_style = view.direct_style.clone();
-                    let scene = scene.clone();
-                    move |it| match it {
-                        0 => style
-                            .debug_view(Some(&direct_style))
-                            .style(|s| s.height_full().flex_grow(1.))
-                            .scroll()
-                            .style(|s| {
-                                s.set(OverflowX, taffy::Overflow::Scroll)
-                                    .set(OverflowY, taffy::Overflow::Visible)
-                                    .height_full()
-                                    .flex_grow(1.)
-                            })
-                            .into_any(),
-                        1 => scene_debug_view_with_size(scene.clone(), scene_size)
-                            .style(|s| s.height_full().flex_grow(1.))
-                            .scroll()
-                            .style(|s| {
-                                s.set(OverflowX, taffy::Overflow::Scroll)
-                                    .set(OverflowY, taffy::Overflow::Visible)
-                                    .height_full()
-                                    .flex_grow(1.)
-                            })
-                            .into_any(),
-                        _ => panic!(),
-                    }
-                })
-                .style(|s| s.width_full().height_full().min_size(0.0, 0.0)),
+            let owned_elements =
+                selected_box_nodes_by_view(&capture, view.id, capture_view, "Box Nodes");
+            let style_panel = Stack::vertical((
+                header("Style"),
+                style
+                    .debug_view(Some(&view.direct_style))
+                    .style(|s| s.height_full().flex_grow(1.))
+                    .scroll()
+                    .style(|s| {
+                        s.set(OverflowX, taffy::Overflow::Scroll)
+                            .set(OverflowY, taffy::Overflow::Visible)
+                            .height_full()
+                            .flex_grow(1.)
+                    }),
             ))
             .style(|s| s.width_full().min_size(0., 0.).flex_grow(1.));
 
-            Stack::vertical((selected_view_panel, style_scene_tabs))
-                .style(|s| s.width_full().flex_shrink(0.).gap(10).min_size(0., 0.))
-                .into_any()
+            let selected_element_panel = match selection {
+                InspectorSelection::Element(element_id) => capture
+                    .state
+                    .elements_root
+                    .find(element_id)
+                    .and_then(|element| {
+                        if element.id.is_view() {
+                            return None;
+                        }
+                        let info_rows = [
+                            info(
+                                "Node",
+                                if element.id.is_view() {
+                                    format!("{:?} (primary view element)", element.id.0)
+                                } else {
+                                    format!("{:?}", element.id.0)
+                                },
+                            ),
+                            info(
+                                "Kind",
+                                if element.id.is_view() {
+                                    "view".into()
+                                } else {
+                                    "box node".into()
+                                },
+                            ),
+                            info("Child Count", element.children.len().to_string()),
+                            info("Flags", format!("{:?}", element.flags)),
+                            info("Focused", element.focused.to_string()),
+                            info("World X", format_float(element.world_bounds.x0)),
+                            info("World Y", format_float(element.world_bounds.y0)),
+                            info("World Width", format_float(element.world_bounds.width())),
+                            info("World Height", format_float(element.world_bounds.height())),
+                            info("Local X", format_float(element.local_bounds.x0)),
+                            info("Local Y", format_float(element.local_bounds.y0)),
+                            info("Local Width", format_float(element.local_bounds.width())),
+                            info("Local Height", format_float(element.local_bounds.height())),
+                        ];
+                        let summary = Stack::vertical_from_iter(
+                            info_rows.into_iter().enumerate().map(|(idx, row)| {
+                                row.style(move |s| {
+                                    s.padding(3).with_theme(move |s, t| {
+                                        s.apply_if(idx.is_multiple_of(2), |s| {
+                                            s.background(t.bg_base())
+                                        })
+                                        .apply_if(!idx.is_multiple_of(2), |s| {
+                                            s.background(t.bg_elevated())
+                                        })
+                                    })
+                                })
+                            }),
+                        )
+                        .style(|s| s.flex_grow(1.).height_full().gap(2.0))
+                        .scroll()
+                        .style(|s| {
+                            s.set(OverflowX, taffy::Overflow::Scroll)
+                                .set(OverflowY, taffy::Overflow::Visible)
+                                .width_full()
+                        });
+                        let scene = scene_debug_view_with_size(
+                            element.scene.clone(),
+                            element.local_bounds.size(),
+                        )
+                        .style(|s| s.height_full().flex_grow(1.))
+                        .scroll()
+                        .style(|s| {
+                            s.set(OverflowX, taffy::Overflow::Scroll)
+                                .set(OverflowY, taffy::Overflow::Visible)
+                                .height_full()
+                                .flex_grow(1.)
+                        });
+                        Stack::vertical((
+                            header("Selected Box Node"),
+                            summary,
+                            header("Selected Node Scene"),
+                            scene,
+                        ))
+                        .style(|s| s.width_full().min_size(0., 0.).flex_grow(1.))
+                        .into_any()
+                        .into()
+                    }),
+                InspectorSelection::View(_) => None,
+            };
+
+            match selected_element_panel {
+                Some(selected_element_panel) => {
+                    let child_elements = capture
+                        .state
+                        .elements_root
+                        .find(match selection {
+                            InspectorSelection::Element(id) => id,
+                            InspectorSelection::View(_) => unreachable!(),
+                        })
+                        .map(|element| {
+                            selected_box_nodes(
+                                element.children.iter().map(|child| child.id).collect(),
+                                capture_view,
+                                "Child Box Nodes",
+                            )
+                        })
+                        .unwrap_or_else(|| {
+                            selected_box_nodes(Vec::new(), capture_view, "Child Box Nodes")
+                        });
+                    Stack::vertical((selected_element_panel, child_elements))
+                        .style(|s| s.width_full().flex_shrink(0.).gap(10).min_size(0., 0.))
+                        .into_any()
+                }
+                None => Stack::vertical((selected_view_panel, style_panel, owned_elements))
+                    .style(|s| s.width_full().flex_shrink(0.).gap(10).min_size(0., 0.))
+                    .into_any(),
+            }
         } else {
             Label::new("No selection")
                 .style(|s| s.padding(5.0))
@@ -1331,15 +1474,15 @@ fn selected_view(
         }
     };
 
-    dyn_container(move || selected.get(), dyn_view_builder)
+    dyn_container(move || capture_view.selected.get(), dyn_view_builder)
 }
 
 #[derive(Clone, Copy)]
 struct CaptureView {
     expanding_selection: RwSignal<Option<(ViewId, bool)>>,
     scroll_to: RwSignal<Option<ViewId>>,
-    selected: RwSignal<Option<ViewId>>,
-    highlighted: RwSignal<Option<ViewId>>,
+    selected: RwSignal<Option<InspectorSelection>>,
+    highlighted: RwSignal<Option<InspectorSelection>>,
 }
 
 thread_local! {
@@ -1373,6 +1516,59 @@ fn find_view(name: &str, views: &Rc<CapturedView>) -> Vec<ViewId> {
             init.append(&mut item);
             init
         })
+}
+
+fn selected_box_nodes_by_view(
+    capture: &Rc<Capture>,
+    view_id: ViewId,
+    capture_view: CaptureView,
+    title: &'static str,
+) -> impl IntoView {
+    let elements = capture
+        .state
+        .elements_by_view
+        .get(&view_id)
+        .cloned()
+        .unwrap_or_default();
+    selected_box_nodes(elements, capture_view, title)
+}
+
+fn selected_box_nodes(
+    elements: Vec<ElementId>,
+    capture_view: CaptureView,
+    title: &'static str,
+) -> impl IntoView {
+    Stack::vertical((
+        header(title),
+        Stack::vertical_from_iter(elements.into_iter().map(move |element_id| {
+            let is_primary = element_id.is_view();
+            let label = if is_primary {
+                format!("{:?}  primary view element", element_id.0)
+            } else {
+                format!("{:?}  box node", element_id.0)
+            };
+            Label::new(label)
+                .style(move |s| {
+                    s.padding(4.0).keyboard_navigable().with_theme(move |s, t| {
+                        s.apply_if(
+                            capture_view.selected.get()
+                                == Some(InspectorSelection::Element(element_id)),
+                            |s| s.background(t.bg_elevated()).color(t.primary()),
+                        )
+                    })
+                })
+                .on_event_cont(crate::event::listener::PointerEnter, move |_, _| {
+                    capture_view
+                        .highlighted
+                        .set(Some(InspectorSelection::Element(element_id)));
+                })
+                .action(move || {
+                    update_select_element_id(element_id, &capture_view, false, None);
+                })
+                .into_any()
+        })),
+    ))
+    .style(|s| s.width_full().gap(4.0))
 }
 
 fn find_relative_view_by_id_without_self(
@@ -1434,14 +1630,41 @@ fn update_select_view_id(
     request_focus: bool,
     datas: RwSignal<CapturedDatas>,
 ) {
-    capture.selected.set(Some(id));
-    capture.highlighted.set(Some(id));
+    capture.selected.set(Some(InspectorSelection::View(id)));
+    capture.highlighted.set(Some(InspectorSelection::View(id)));
     capture.expanding_selection.set(Some((id, request_focus)));
     Effect::batch(|| {
         datas.update(|x| {
             x.focus(id);
         });
     });
+}
+
+fn update_select_element_id(
+    id: ElementId,
+    capture: &CaptureView,
+    request_focus: bool,
+    datas: Option<RwSignal<CapturedDatas>>,
+) {
+    let owner_id = id.owning_id();
+    capture.selected.set(Some(InspectorSelection::Element(id)));
+    capture
+        .highlighted
+        .set(Some(InspectorSelection::Element(id)));
+    capture
+        .expanding_selection
+        .set(Some((owner_id, request_focus)));
+    if let Some(datas) = datas {
+        Effect::batch(|| {
+            datas.update(|x| {
+                x.focus(owner_id);
+            });
+        });
+    }
+}
+
+fn selection_matches_view(selection: Option<InspectorSelection>, id: ViewId) -> bool {
+    selection.is_some_and(|selection| selection.owner_view_id() == id)
 }
 
 #[derive(Debug, Default, Clone)]

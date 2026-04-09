@@ -1,8 +1,6 @@
 use imaging::{
     Composite, Filter,
-    record::{
-        AppliedMask, Clip, Command, Context, Draw, Geometry, Group, Mask, Scene, replay,
-    },
+    record::{AppliedMask, Clip, Command, Context, Draw, Geometry, Group, Mask, Scene, replay},
 };
 use peniko::{
     Color,
@@ -469,10 +467,7 @@ fn command_card(title: impl Into<String>, body: AnyView) -> AnyView {
     .into_any()
 }
 
-fn resolve_command(
-    scene: &Scene,
-    command: &Command,
-) -> ResolvedCommand {
+fn resolve_command(scene: &Scene, command: &Command) -> ResolvedCommand {
     match command {
         Command::PushContext(id) => ResolvedCommand::PushContext(scene.context(*id).clone()),
         Command::PopContext => ResolvedCommand::PopContext,

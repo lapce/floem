@@ -101,6 +101,7 @@ pub(crate) struct WindowHandle {
             + Sync,
     >,
     last_presented_at: Instant,
+    estimated_frame_lead_time: Duration,
     is_occluded: bool,
     pending_timing: FrameTimingAccumulator,
     last_timing_report: Option<TimingReport>,
@@ -127,6 +128,14 @@ impl FrameTimingAccumulator {
     fn total(&self) -> Duration {
         self.style + self.layout + self.box_tree_pending_updates + self.box_tree_commit
     }
+}
+
+fn max_duration(a: Duration, b: Duration) -> Duration {
+    if a >= b { a } else { b }
+}
+
+fn min_duration(a: Duration, b: Duration) -> Duration {
+    if a <= b { a } else { b }
 }
 
 impl Drop for WindowHandle {
@@ -259,6 +268,7 @@ impl WindowHandle {
             gpu_resources,
             renderer_chooser,
             last_presented_at: Instant::now(),
+            estimated_frame_lead_time: Duration::from_millis(1),
             is_occluded: false,
             pending_timing: FrameTimingAccumulator::default(),
             last_timing_report: None,
@@ -329,8 +339,12 @@ impl WindowHandle {
         os_scale: f64,
         size: Size,
     ) -> PaintState {
-        let backend =
-            crate::paint::renderer::NewRendererCx::build_cpu(renderer_chooser, window, os_scale, size);
+        let backend = crate::paint::renderer::NewRendererCx::build_cpu(
+            renderer_chooser,
+            window,
+            os_scale,
+            size,
+        );
         PaintState::Initialized { backend }
     }
 
@@ -425,6 +439,7 @@ impl WindowHandle {
             gpu_resources: None,
             renderer_chooser: crate::paint::renderer::default_renderer(),
             last_presented_at: Instant::now(),
+            estimated_frame_lead_time: Duration::from_millis(1),
             is_occluded: false,
             pending_timing: FrameTimingAccumulator::default(),
             last_timing_report: None,
@@ -861,10 +876,19 @@ impl WindowHandle {
             self.window_state.clear_pending_damage();
             let presented = paint.presented;
             if presented {
-                self.last_presented_at = Instant::now();
                 let update = mem::take(&mut self.pending_timing);
-                self.last_timing_report =
-                    Some(Self::build_timing_report("Frame Cycle", update, paint));
+                self.update_frame_lead_estimate(update.total() + paint.total);
+                let frame_end = Instant::now();
+                self.last_presented_at = frame_end;
+                let frame_start = frame_end
+                    .checked_sub(update.total() + paint.total)
+                    .unwrap_or(frame_end);
+                self.last_timing_report = Some(Self::build_timing_report(
+                    "Frame Cycle",
+                    frame_start,
+                    update,
+                    paint,
+                ));
             }
             return presented;
         }
@@ -873,12 +897,13 @@ impl WindowHandle {
 
     fn build_timing_report(
         root_label: &'static str,
+        anchor: Instant,
         update: FrameTimingAccumulator,
         paint: crate::paint::renderer::PaintTiming,
     ) -> TimingReport {
         let update_total = update.total();
         let total = update_total + paint.total;
-        let mut timings = TimingReport::new(total);
+        let mut timings = TimingReport::new(Some(anchor), total);
         timings.push_stat(root_label, total, TimingKind::Total);
         if update_total > Duration::ZERO {
             timings.push_stat("Update", update_total, TimingKind::Update);
@@ -1190,18 +1215,19 @@ impl WindowHandle {
         let box_tree_duration = self.commit_box_tree();
         let paint = self.paint();
         let capture_output = self.capture_image();
-        let timings = Self::build_timing_report(
-            "Capture Cycle",
-            FrameTimingAccumulator {
-                style: style_duration,
-                layout: layout_timing.total,
-                taffy: layout_timing.taffy,
-                box_tree_update: layout_timing.box_tree_update,
-                box_tree_pending_updates: Duration::ZERO,
-                box_tree_commit: box_tree_duration,
-            },
-            paint,
-        );
+        let update = FrameTimingAccumulator {
+            style: style_duration,
+            layout: layout_timing.total,
+            taffy: layout_timing.taffy,
+            box_tree_update: layout_timing.box_tree_update,
+            box_tree_pending_updates: Duration::ZERO,
+            box_tree_commit: box_tree_duration,
+        };
+        let capture_end = Instant::now();
+        let capture_start = capture_end
+            .checked_sub(update.total() + paint.total)
+            .unwrap_or(capture_end);
+        let timings = Self::build_timing_report("Capture Cycle", capture_start, update, paint);
         let window_size = self.window_state.root_size;
         let state = CaptureState::collect_from(self.id, &self.window_state);
 
@@ -1225,15 +1251,23 @@ impl WindowHandle {
         self.process_update_no_paint();
     }
 
-    pub(crate) fn render_frame_if_due(&mut self, min_frame_interval: Duration) -> bool {
-        if !self.window_state.has_pending_render() {
-            return false;
-        }
-        if self.last_presented_at.elapsed() < min_frame_interval {
-            return false;
-        }
-        self.render_frame();
-        true
+    pub(crate) fn redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
+        let earliest_present = self.last_presented_at + frame_interval;
+        let max_lead = frame_interval
+            .checked_div(2)
+            .unwrap_or(Duration::from_millis(1));
+        let lead_time = min_duration(
+            max_duration(self.estimated_frame_lead_time, Duration::from_millis(1)),
+            max_lead,
+        );
+
+        earliest_present.checked_sub(lead_time).unwrap_or(now)
+    }
+
+    fn update_frame_lead_estimate(&mut self, observed_cpu_time: Duration) {
+        let target = observed_cpu_time + Duration::from_micros(500);
+        self.estimated_frame_lead_time = max_duration(self.estimated_frame_lead_time, target);
+        self.estimated_frame_lead_time = (self.estimated_frame_lead_time * 7 + target) / 8;
     }
 
     pub(crate) fn set_occluded(&mut self, is_occluded: bool) {
