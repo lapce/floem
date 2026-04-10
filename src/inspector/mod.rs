@@ -611,6 +611,8 @@ pub struct Capture {
     pub taffy_depth: usize,
     /// Captured window image in render-target pixels, if the backend supports capture.
     pub window: Option<peniko::ImageData>,
+    /// Capture failure from the active renderer, if image capture failed.
+    pub window_capture_error: Option<String>,
     /// Logical capture size used by layout/box-tree coordinates and inspector overlays.
     pub window_size: Size,
     pub state: CaptureState,

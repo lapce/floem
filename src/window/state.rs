@@ -1297,11 +1297,13 @@ impl WindowState {
     /// Requests that the paint pass will run for `id` on the next frame, and ensures new frame is
     /// scheduled to happen.
     pub fn schedule_paint(&mut self, id: ElementId) {
-        self.next_frame_dirty_paint_elements.insert(id);
+        self.next_frame_dirty_paint_elements
+            .extend(self.paint_invalidation_ids(id));
     }
 
     pub fn request_paint(&mut self, id: impl Into<ElementId>) {
-        self.dirty_paint_elements.insert(id.into());
+        self.dirty_paint_elements
+            .extend(self.paint_invalidation_ids(id.into()));
     }
 
     pub fn take_dirty_paint_elements(&mut self) -> FxHashSet<ElementId> {
@@ -1318,6 +1320,15 @@ impl WindowState {
 
     pub fn clear_pending_paint(&mut self) {
         self.dirty_paint_elements.clear();
+    }
+
+    fn paint_invalidation_ids(&self, id: ElementId) -> Vec<ElementId> {
+        if !id.is_view() {
+            return vec![id];
+        }
+
+        let box_tree = self.box_tree.borrow();
+        box_tree.element_ids_for_view(id.owning_id())
     }
 
     pub fn clear_pending_damage(&mut self) {

@@ -51,14 +51,15 @@ use std::sync::Arc;
 
 use crate::gpu_resources::GpuResources;
 use imaging::{
-    BlurredRoundedRect, ClipRef, FillRef, GlyphRunRef, GroupRef, ImageBufferTarget, ImageRenderer,
-    PaintSink, RenderSource, RgbaImage, StrokeRef,
+    BlurredRoundedRect, ClipRef, FillRef, GlyphRunRef, GroupRef, ImageBufferFormat,
+    ImageBufferTarget, ImageRenderer, PaintSink, RenderSource, RgbaImage, StrokeRef,
 };
 use imaging_wgpu::{TextureRenderer, TextureViewTarget};
 use peniko::ImageData;
 use peniko::kurbo::Size;
 use softbuffer::{Context, Surface};
 use std::num::NonZeroU32;
+use wgpu::util::TextureBlitter;
 use winit::window::Window;
 
 use crate::platform::{Duration, Instant};
@@ -93,58 +94,38 @@ impl NewRendererCx {
         }
     }
 
-    fn into_renderer(
+    fn into_cpu_renderer(self, backend: CpuRenderer) -> Result<WindowBackend, String> {
+        let size = self.normalized_size();
+        Ok(Box::new(ImageWindowRenderer {
+            backend,
+            target: CpuWindowTarget::new(self.window, size.width as u32, size.height as u32)?,
+            scratch: RgbaImage::new(size.width.max(1.0) as u32, size.height.max(1.0) as u32),
+        }))
+    }
+
+    fn into_gpu_renderer(
         self,
-        renderer: AcceptedRenderer,
-        preferred_texture_format: Option<wgpu::TextureFormat>,
+        backend: GpuRenderer,
+        surface_format: wgpu::TextureFormat,
     ) -> Result<WindowBackend, String> {
         let size = self.normalized_size();
-        match renderer {
-            AcceptedRenderer::Image { backend, name } => Ok(Box::new(ImageWindowRenderer {
-                backend,
-                name,
-                target: CpuWindowTarget::new(self.window, size.width as u32, size.height as u32)?,
-                scratch: RgbaImage::new(size.width.max(1.0) as u32, size.height.max(1.0) as u32),
-            })),
-            AcceptedRenderer::Texture { backend, name } => {
-                let gpu_resources = self
-                    .gpu_resources
-                    .ok_or_else(|| "renderer requires GPU".to_string())?;
-                let surface = self
-                    .surface
-                    .ok_or_else(|| "renderer requires GPU surface".to_string())?;
-                Ok(Box::new(TargetGpuWindowRenderer {
-                    backend: GpuAcceptedRenderer::Texture { backend, name },
-                    target: GpuWindowTarget::new(
-                        &gpu_resources,
-                        surface,
-                        size.width as u32,
-                        size.height as u32,
-                        self.transparent,
-                        preferred_texture_format,
-                    )?,
-                }))
-            }
-            AcceptedRenderer::TextureView { backend, name } => {
-                let gpu_resources = self
-                    .gpu_resources
-                    .ok_or_else(|| "renderer requires GPU".to_string())?;
-                let surface = self
-                    .surface
-                    .ok_or_else(|| "renderer requires GPU surface".to_string())?;
-                Ok(Box::new(TargetGpuWindowRenderer {
-                    backend: GpuAcceptedRenderer::TextureView { backend, name },
-                    target: GpuWindowTarget::new(
-                        &gpu_resources,
-                        surface,
-                        size.width as u32,
-                        size.height as u32,
-                        self.transparent,
-                        preferred_texture_format,
-                    )?,
-                }))
-            }
-        }
+        let gpu_resources = self
+            .gpu_resources
+            .ok_or_else(|| "renderer requires GPU".to_string())?;
+        let surface = self
+            .surface
+            .ok_or_else(|| "renderer requires GPU surface".to_string())?;
+        Ok(Box::new(TargetGpuWindowRenderer {
+            backend,
+            target: GpuWindowTarget::new(
+                &gpu_resources,
+                surface,
+                size.width as u32,
+                size.height as u32,
+                self.transparent,
+                Some(surface_format),
+            )?,
+        }))
     }
 }
 
@@ -167,60 +148,6 @@ fn rgba_image_into_image_data(image: RgbaImage) -> ImageData {
         height: image.height,
         alpha_type: peniko::ImageAlphaType::Alpha,
     }
-}
-
-trait TextureWindowRenderer:
-    TextureRenderer<TextureTarget = wgpu::Texture, Texture = wgpu::Texture>
-{
-}
-
-impl<T> TextureWindowRenderer for T where
-    T: TextureRenderer<TextureTarget = wgpu::Texture, Texture = wgpu::Texture>
-{
-}
-
-trait TextureViewWindowRenderer:
-    TextureRenderer<TextureTarget = TextureViewTarget, Texture = wgpu::Texture>
-{
-}
-
-impl<T> TextureViewWindowRenderer for T where
-    T: TextureRenderer<TextureTarget = TextureViewTarget, Texture = wgpu::Texture>
-{
-}
-
-#[allow(
-    dead_code,
-    reason = "Some renderer variants are only constructed when optional GPU backends are enabled."
-)]
-enum AcceptedRenderer {
-    Image {
-        backend: Box<dyn ImageRenderer>,
-        name: &'static str,
-    },
-    Texture {
-        backend: Box<dyn TextureWindowRenderer>,
-        name: &'static str,
-    },
-    TextureView {
-        backend: Box<dyn TextureViewWindowRenderer>,
-        name: &'static str,
-    },
-}
-
-#[allow(
-    dead_code,
-    reason = "Some renderer variants are only constructed when optional GPU backends are enabled."
-)]
-enum GpuAcceptedRenderer {
-    Texture {
-        backend: Box<dyn TextureWindowRenderer>,
-        name: &'static str,
-    },
-    TextureView {
-        backend: Box<dyn TextureViewWindowRenderer>,
-        name: &'static str,
-    },
 }
 
 impl NewRendererCx {
@@ -301,7 +228,9 @@ struct CpuWindowTarget<W> {
 }
 
 struct GpuWindowTarget {
+    blitter: TextureBlitter,
     device: wgpu::Device,
+    queue: wgpu::Queue,
     pub surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
 }
@@ -347,6 +276,7 @@ pub struct CaptureTiming {
 #[derive(Clone, Debug, Default)]
 pub struct CaptureOutput {
     pub image: Option<ImageData>,
+    pub error: Option<String>,
     pub timing: CaptureTiming,
 }
 
@@ -387,15 +317,135 @@ impl WindowRenderer for NullWindowBackend {
     reason = "CPU image presentation may be unused when no CPU renderer is enabled in the current build."
 )]
 struct ImageWindowRenderer {
-    backend: Box<dyn ImageRenderer>,
-    name: &'static str,
+    backend: CpuRenderer,
     target: CpuWindowTarget<Arc<dyn Window>>,
     scratch: RgbaImage,
 }
 
+enum DirectOrCopy<T> {
+    Direct(T),
+    Copy(T),
+}
+
+impl<T> DirectOrCopy<T> {
+    fn direct(value: T) -> Self {
+        Self::Direct(value)
+    }
+
+    fn copy(value: T) -> Self {
+        Self::Copy(value)
+    }
+}
+
+struct CpuRenderer {
+    backend: DirectOrCopy<CpuRendererBackend>,
+    name: &'static str,
+}
+
+enum CpuRendererBackend {
+    Image {
+        backend: Box<dyn ImageRenderer>,
+        direct_format: Option<ImageBufferFormat>,
+    },
+}
+
+impl CpuRenderer {
+    fn direct_image(
+        backend: impl ImageRenderer + 'static,
+        direct_format: ImageBufferFormat,
+        name: &'static str,
+    ) -> Self {
+        Self {
+            backend: DirectOrCopy::direct(CpuRendererBackend::Image {
+                backend: Box::new(backend),
+                direct_format: Some(direct_format),
+            }),
+            name,
+        }
+    }
+
+    fn copy_image(backend: impl ImageRenderer + 'static, name: &'static str) -> Self {
+        Self {
+            backend: DirectOrCopy::copy(CpuRendererBackend::Image {
+                backend: Box::new(backend),
+                direct_format: None,
+            }),
+            name,
+        }
+    }
+}
+
 struct TargetGpuWindowRenderer {
-    backend: GpuAcceptedRenderer,
+    backend: GpuRenderer,
     target: GpuWindowTarget,
+}
+
+struct GpuRenderer {
+    backend: DirectOrCopy<GpuRendererBackend>,
+    name: &'static str,
+}
+
+#[allow(
+    dead_code,
+    reason = "Some GPU backend variants are only constructed when optional renderers are enabled."
+)]
+enum GpuRendererBackend {
+    Texture(Box<dyn TextureRenderer<TextureTarget = wgpu::Texture, Texture = wgpu::Texture>>),
+    TextureView(
+        Box<dyn TextureRenderer<TextureTarget = TextureViewTarget, Texture = wgpu::Texture>>,
+    ),
+}
+
+impl GpuRenderer {
+    #[allow(
+        dead_code,
+        reason = "Texture-target GPU constructors are only used when optional renderers are enabled."
+    )]
+    fn direct_texture(
+        backend: impl TextureRenderer<TextureTarget = wgpu::Texture, Texture = wgpu::Texture> + 'static,
+        name: &'static str,
+    ) -> Self {
+        Self {
+            backend: DirectOrCopy::direct(GpuRendererBackend::Texture(Box::new(backend))),
+            name,
+        }
+    }
+
+    #[allow(
+        dead_code,
+        reason = "Texture-target GPU constructors are only used when optional renderers are enabled."
+    )]
+    fn copy_texture(
+        backend: impl TextureRenderer<TextureTarget = wgpu::Texture, Texture = wgpu::Texture> + 'static,
+        name: &'static str,
+    ) -> Self {
+        Self {
+            backend: DirectOrCopy::copy(GpuRendererBackend::Texture(Box::new(backend))),
+            name,
+        }
+    }
+
+    fn direct_texture_view(
+        backend: impl TextureRenderer<TextureTarget = TextureViewTarget, Texture = wgpu::Texture>
+        + 'static,
+        name: &'static str,
+    ) -> Self {
+        Self {
+            backend: DirectOrCopy::direct(GpuRendererBackend::TextureView(Box::new(backend))),
+            name,
+        }
+    }
+
+    fn copy_texture_view(
+        backend: impl TextureRenderer<TextureTarget = TextureViewTarget, Texture = wgpu::Texture>
+        + 'static,
+        name: &'static str,
+    ) -> Self {
+        Self {
+            backend: DirectOrCopy::copy(GpuRendererBackend::TextureView(Box::new(backend))),
+            name,
+        }
+    }
 }
 
 impl GpuWindowTarget {
@@ -438,7 +488,9 @@ impl GpuWindowTarget {
         surface.configure(&gpu_resources.device, &config);
 
         Ok(Self {
+            blitter: TextureBlitter::new(&gpu_resources.device, config.format),
             device: gpu_resources.device.clone(),
+            queue: gpu_resources.queue.clone(),
             surface,
             config,
         })
@@ -455,6 +507,19 @@ impl GpuWindowTarget {
     fn gpu_surface(&self) -> &wgpu::Surface<'static> {
         &self.surface
     }
+
+    fn copy_texture_to_surface(&self, source: &wgpu::Texture, target: &wgpu::Texture) {
+        let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+        let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("floem window texture copy"),
+            });
+        self.blitter
+            .copy(&self.device, &mut encoder, &source_view, &target_view);
+        self.queue.submit([encoder.finish()]);
+    }
 }
 
 #[allow(
@@ -465,6 +530,17 @@ impl<W> CpuWindowTarget<W>
 where
     W: Clone + raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle,
 {
+    fn direct_image_format() -> Option<ImageBufferFormat> {
+        #[cfg(target_endian = "little")]
+        {
+            Some(ImageBufferFormat::Bgra8Unorm)
+        }
+        #[cfg(not(target_endian = "little"))]
+        {
+            None
+        }
+    }
+
     fn new(window: W, width: u32, height: u32) -> Result<Self, String> {
         let context = Context::new(window.clone()).map_err(|err| err.to_string())?;
         let mut surface = Surface::new(&context, window).map_err(|err| err.to_string())?;
@@ -524,6 +600,56 @@ where
             present_call,
         }
     }
+
+    fn present_direct(
+        &mut self,
+        size: Size,
+        format: ImageBufferFormat,
+        render: impl FnOnce(ImageBufferTarget<'_>) -> bool,
+    ) -> (bool, Duration, PresentTiming) {
+        let start = Instant::now();
+        let acquire_start = start;
+        let mut buffer = self
+            .surface
+            .buffer_mut()
+            .expect("failed to get the surface buffer");
+        let acquire_surface = acquire_start.elapsed();
+        let width = size.width.max(1.0) as u32;
+        let height = size.height.max(1.0) as u32;
+        let bytes = unsafe {
+            std::slice::from_raw_parts_mut(
+                buffer.as_mut_ptr().cast::<u8>(),
+                buffer.len() * std::mem::size_of::<u32>(),
+            )
+        };
+        let scene_start = Instant::now();
+        let rendered = render(ImageBufferTarget {
+            data: bytes,
+            width,
+            height,
+            bytes_per_row: width as usize * std::mem::size_of::<u32>(),
+            format,
+        });
+        let scene = scene_start.elapsed();
+        let present_call_start = Instant::now();
+        if rendered {
+            buffer
+                .present()
+                .expect("failed to present the surface buffer");
+        }
+        let present_call = present_call_start.elapsed();
+        (
+            rendered,
+            scene,
+            PresentTiming {
+                total: start.elapsed(),
+                acquire_surface,
+                compose: Duration::ZERO,
+                submit: Duration::ZERO,
+                present_call,
+            },
+        )
+    }
 }
 
 impl WindowRenderer for TargetGpuWindowRenderer {
@@ -540,22 +666,50 @@ impl WindowRenderer for TargetGpuWindowRenderer {
             .get_current_texture()
             .expect("failed to acquire surface texture");
         let acquire_surface = acquire_start.elapsed();
-        let texture_view = surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
         let prepare_start = Instant::now();
         let width = size.width.max(1.0) as u32;
         let height = size.height.max(1.0) as u32;
         match &mut self.backend {
-            GpuAcceptedRenderer::Texture { backend, .. } => backend
+            GpuRenderer {
+                backend: DirectOrCopy::Direct(GpuRendererBackend::Texture(backend)),
+                ..
+            } => backend
                 .render_source_into_texture(source, surface_texture.texture.clone())
                 .expect("failed to render gpu target"),
-            GpuAcceptedRenderer::TextureView { backend, .. } => backend
-                .render_source_into_texture(
-                    source,
-                    TextureViewTarget::new(&texture_view, width, height),
-                )
-                .expect("failed to render gpu target"),
+            GpuRenderer {
+                backend: DirectOrCopy::Direct(GpuRendererBackend::TextureView(backend)),
+                ..
+            } => {
+                let texture_view = surface_texture
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
+                backend
+                    .render_source_into_texture(
+                        source,
+                        TextureViewTarget::new(&texture_view, width, height),
+                    )
+                    .expect("failed to render gpu target");
+            }
+            GpuRenderer {
+                backend: DirectOrCopy::Copy(GpuRendererBackend::Texture(backend)),
+                ..
+            } => {
+                let texture = backend
+                    .render_source_texture(source, width, height)
+                    .expect("failed to render gpu target");
+                self.target
+                    .copy_texture_to_surface(&texture, &surface_texture.texture);
+            }
+            GpuRenderer {
+                backend: DirectOrCopy::Copy(GpuRendererBackend::TextureView(backend)),
+                ..
+            } => {
+                let texture = backend
+                    .render_source_texture(source, width, height)
+                    .expect("failed to render gpu target");
+                self.target
+                    .copy_texture_to_surface(&texture, &surface_texture.texture);
+            }
         }
         let prepare = Duration::ZERO;
         let scene = prepare_start.elapsed();
@@ -586,17 +740,34 @@ impl WindowRenderer for TargetGpuWindowRenderer {
         let width = size.width.max(1.0) as u32;
         let height = size.height.max(1.0) as u32;
         let mut image = RgbaImage::new(width, height);
-        let rendered = match &mut self.backend {
-            GpuAcceptedRenderer::Texture { backend, .. } => backend
-                .render_source_into(source, ImageBufferTarget::from_rgba_image(&mut image))
-                .is_ok(),
-            GpuAcceptedRenderer::TextureView { backend, .. } => backend
-                .render_source_into(source, ImageBufferTarget::from_rgba_image(&mut image))
-                .is_ok(),
+        let result = match &mut self.backend {
+            GpuRenderer {
+                backend: DirectOrCopy::Direct(GpuRendererBackend::Texture(backend)),
+                ..
+            }
+            | GpuRenderer {
+                backend: DirectOrCopy::Copy(GpuRendererBackend::Texture(backend)),
+                ..
+            } => backend.render_source_into(source, ImageBufferTarget::from_rgba_image(&mut image)),
+            GpuRenderer {
+                backend: DirectOrCopy::Direct(GpuRendererBackend::TextureView(backend)),
+                ..
+            }
+            | GpuRenderer {
+                backend: DirectOrCopy::Copy(GpuRendererBackend::TextureView(backend)),
+                ..
+            } => backend.render_source_into(source, ImageBufferTarget::from_rgba_image(&mut image)),
         };
+        let error = result.err().map(|err| {
+            let error = err.to_string();
+            eprintln!("{} capture failed: {error}", self.backend.name);
+            error
+        });
+        let rendered = error.is_none();
         let scene = scene_start.elapsed();
         CaptureOutput {
             image: rendered.then(|| rgba_image_into_image_data(image)),
+            error,
             timing: CaptureTiming {
                 total: total_start.elapsed(),
                 scene,
@@ -606,10 +777,7 @@ impl WindowRenderer for TargetGpuWindowRenderer {
     }
 
     fn debug_info(&mut self) -> String {
-        match &self.backend {
-            GpuAcceptedRenderer::Texture { name, .. } => format!("Renderer: {name}"),
-            GpuAcceptedRenderer::TextureView { name, .. } => format!("Renderer: {name}"),
-        }
+        format!("Renderer: {}", self.backend.name)
     }
 
     fn gpu_surface(&self) -> Option<&wgpu::Surface<'static>> {
@@ -631,19 +799,38 @@ impl WindowRenderer for ImageWindowRenderer {
         let scene_start = total_start;
         let width = size.width.max(1.0) as u32;
         let height = size.height.max(1.0) as u32;
-        self.scratch.resize(width, height);
-        let rendered = self
-            .backend
-            .render_source_into(
-                source,
-                ImageBufferTarget::from_rgba_image(&mut self.scratch),
-            )
-            .is_ok();
-        let scene = scene_start.elapsed();
-        let present = if rendered {
-            self.target.present_rgba(&self.scratch)
-        } else {
-            PresentTiming::default()
+        let (rendered, scene, present) = match &mut self.backend {
+            CpuRenderer {
+                backend:
+                    DirectOrCopy::Direct(CpuRendererBackend::Image {
+                        backend,
+                        direct_format,
+                    }),
+                ..
+            } => self.target.present_direct(
+                size,
+                direct_format.expect("direct cpu renderer missing direct image format"),
+                |target| backend.render_source_into(source, target).is_ok(),
+            ),
+            CpuRenderer {
+                backend: DirectOrCopy::Copy(CpuRendererBackend::Image { backend, .. }),
+                ..
+            } => {
+                self.scratch.resize(width, height);
+                let rendered = backend
+                    .render_source_into(
+                        source,
+                        ImageBufferTarget::from_rgba_image(&mut self.scratch),
+                    )
+                    .is_ok();
+                let scene = scene_start.elapsed();
+                let present = if rendered {
+                    self.target.present_rgba(&self.scratch)
+                } else {
+                    PresentTiming::default()
+                };
+                (rendered, scene, present)
+            }
         };
         PaintTiming {
             presented: rendered,
@@ -660,13 +847,26 @@ impl WindowRenderer for ImageWindowRenderer {
         let width = size.width.max(1.0) as u32;
         let height = size.height.max(1.0) as u32;
         let mut image = RgbaImage::new(width, height);
-        let rendered = self
-            .backend
-            .render_source_into(source, ImageBufferTarget::from_rgba_image(&mut image))
-            .is_ok();
+        let result = match &mut self.backend {
+            CpuRenderer {
+                backend: DirectOrCopy::Direct(CpuRendererBackend::Image { backend, .. }),
+                ..
+            }
+            | CpuRenderer {
+                backend: DirectOrCopy::Copy(CpuRendererBackend::Image { backend, .. }),
+                ..
+            } => backend.render_source_into(source, ImageBufferTarget::from_rgba_image(&mut image)),
+        };
+        let error = result.err().map(|err| {
+            let error = err.to_string();
+            eprintln!("{} capture failed: {error}", self.backend.name);
+            error
+        });
+        let rendered = error.is_none();
         let scene = scene_start.elapsed();
         CaptureOutput {
             image: rendered.then(|| rgba_image_into_image_data(image)),
+            error,
             timing: CaptureTiming {
                 total: total_start.elapsed(),
                 scene,
@@ -676,7 +876,7 @@ impl WindowRenderer for ImageWindowRenderer {
     }
 
     fn debug_info(&mut self) -> String {
-        format!("Renderer: {}", self.name)
+        format!("Renderer: {}", self.backend.name)
     }
 }
 
@@ -696,6 +896,30 @@ pub(crate) fn uninitialized_backend() -> WindowBackend {
     })
 }
 
+fn pick_supported_image_format(
+    renderer_formats: &[ImageBufferFormat],
+    target_format: Option<ImageBufferFormat>,
+) -> Option<ImageBufferFormat> {
+    target_format.filter(|format| renderer_formats.contains(format))
+}
+
+fn pick_supported_texture_format(
+    surface_formats: &[wgpu::TextureFormat],
+    renderer_formats: &[wgpu::TextureFormat],
+) -> Option<wgpu::TextureFormat> {
+    surface_formats
+        .iter()
+        .copied()
+        .find(|format| renderer_formats.contains(format))
+}
+
+fn is_srgb_texture_format(format: wgpu::TextureFormat) -> bool {
+    matches!(
+        format,
+        wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb
+    )
+}
+
 fn choose_default_renderer(cx: NewRendererCx) -> Result<WindowBackend, String> {
     #[allow(
         unreachable_code,
@@ -703,112 +927,115 @@ fn choose_default_renderer(cx: NewRendererCx) -> Result<WindowBackend, String> {
     )]
     {
         #[cfg(feature = "vello")]
-        if let Some(gpu) = cx.gpu()
-            && let Some(surface_format) = gpu
+        if let Some(gpu) = cx.gpu() {
+            let fallback_surface_format = gpu
                 .surface_formats()
                 .iter()
                 .copied()
-                .find(|format| matches!(format, wgpu::TextureFormat::Rgba8Unorm))
-        {
+                .find(|format| !is_srgb_texture_format(*format));
             let device = gpu.gpu_resources.device.clone();
             let queue = gpu.gpu_resources.queue.clone();
-            return cx.into_renderer(
-                AcceptedRenderer::TextureView {
-                    backend: Box::new(
-                        imaging_vello::VelloRenderer::new(device, queue)
-                            .map_err(|err| err.to_string())?,
-                    ),
-                    name: "Vello GPU",
-                },
-                Some(surface_format),
-            );
+            let backend =
+                imaging_vello::VelloRenderer::new(device, queue).map_err(|err| err.to_string())?;
+            if let Some(surface_format) = pick_supported_texture_format(
+                gpu.surface_formats(),
+                &backend.supported_texture_formats(),
+            ) {
+                return cx.into_gpu_renderer(
+                    GpuRenderer::direct_texture_view(backend, "Vello GPU"),
+                    surface_format,
+                );
+            }
+            if let Some(surface_format) = fallback_surface_format {
+                return cx.into_gpu_renderer(
+                    GpuRenderer::copy_texture_view(backend, "Vello GPU"),
+                    surface_format,
+                );
+            }
         }
 
         #[cfg(feature = "vger")]
-        if let Some(gpu) = cx.gpu()
-            && let Some(surface_format) = gpu.surface_formats().iter().copied().find(|format| {
-                matches!(
-                    format,
-                    wgpu::TextureFormat::Rgba8Unorm
-                        | wgpu::TextureFormat::Rgba8UnormSrgb
-                        | wgpu::TextureFormat::Bgra8Unorm
-                        | wgpu::TextureFormat::Bgra8UnormSrgb
-                )
-            })
-        {
+        if let Some(gpu) = cx.gpu() {
+            let fallback_surface_format = gpu
+                .surface_formats()
+                .iter()
+                .copied()
+                .find(|format| !is_srgb_texture_format(*format));
             let adapter = gpu.gpu_resources.adapter.clone();
             let device = gpu.gpu_resources.device.clone();
             let queue = gpu.gpu_resources.queue.clone();
             let width = cx.size.width.max(1.0) as u32;
             let height = cx.size.height.max(1.0) as u32;
-            return cx.into_renderer(
-                AcceptedRenderer::TextureView {
-                    backend: Box::new(
-                        floem_vger_renderer::VgerRenderer::new(
-                            adapter,
-                            device,
-                            queue,
-                            width,
-                            height,
-                            surface_format,
-                        )
-                        .map_err(|err| err.to_string())?,
-                    ),
-                    name: "Vger GPU",
-                },
-                Some(surface_format),
-            );
+            let backend =
+                floem_vger_renderer::VgerRenderer::new(adapter, device, queue, width, height)
+                    .map_err(|err| err.to_string())?;
+            if let Some(surface_format) = pick_supported_texture_format(
+                gpu.surface_formats(),
+                &backend.supported_texture_formats(),
+            ) {
+                return cx.into_gpu_renderer(
+                    GpuRenderer::direct_texture_view(backend, "Vger GPU"),
+                    surface_format,
+                );
+            }
+            if let Some(surface_format) = fallback_surface_format {
+                return cx.into_gpu_renderer(
+                    GpuRenderer::copy_texture_view(backend, "Vger GPU"),
+                    surface_format,
+                );
+            }
         }
 
         #[cfg(feature = "skia")]
-        if let Some(gpu) = cx.gpu()
-            && let Some(surface_format) = gpu.surface_formats().iter().copied().find(|format| {
-                matches!(
-                    format,
-                    wgpu::TextureFormat::Rgba8Unorm
-                        // | wgpu::TextureFormat::Rgba8UnormSrgb
-                        | wgpu::TextureFormat::Bgra8Unorm // | wgpu::TextureFormat::Bgra8UnormSrgb
-                                                          // | wgpu::TextureFormat::Rgb10a2Unorm
-                                                          // | wgpu::TextureFormat::Rgba16Unorm
-                                                          // | wgpu::TextureFormat::Rgba16Float
-                )
-            })
-        {
+        if let Some(gpu) = cx.gpu() {
+            let fallback_surface_format = gpu.surface_formats().first().copied();
             let adapter = gpu.gpu_resources.adapter.clone();
             let device = gpu.gpu_resources.device.clone();
             let queue = gpu.gpu_resources.queue.clone();
-            return cx.into_renderer(
-                AcceptedRenderer::Texture {
-                    backend: Box::new(
-                        imaging_skia::SkiaGpuRenderer::new(adapter, device, queue)
-                            .map_err(|err| err.to_string())?,
-                    ),
-                    name: "Skia GPU",
-                },
-                Some(surface_format),
-            );
+            let backend = imaging_skia::SkiaRenderer::new(adapter, device, queue)
+                .map_err(|err| err.to_string())?;
+            if let Some(surface_format) = pick_supported_texture_format(
+                gpu.surface_formats(),
+                &backend.supported_texture_formats(),
+            ) {
+                return cx.into_gpu_renderer(
+                    GpuRenderer::direct_texture(backend, "Skia GPU"),
+                    surface_format,
+                );
+            }
+            if let Some(surface_format) = fallback_surface_format {
+                return cx.into_gpu_renderer(
+                    GpuRenderer::copy_texture(backend, "Skia GPU"),
+                    surface_format,
+                );
+            }
         }
 
         #[cfg(feature = "vello-hybrid")]
-        if let Some(gpu) = cx.gpu()
-            && let Some(surface_format) = gpu.surface_formats().iter().copied().find(|format| {
-                matches!(
-                    format,
-                    wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb
-                )
-            })
-        {
+        if let Some(gpu) = cx.gpu() {
+            let fallback_surface_format = gpu
+                .surface_formats()
+                .iter()
+                .copied()
+                .find(|format| !is_srgb_texture_format(*format));
             let device = gpu.gpu_resources.device.clone();
             let queue = gpu.gpu_resources.queue.clone();
-            return cx.into_renderer(
-                AcceptedRenderer::TextureView {
-                    backend: Box::new(imaging_vello_hybrid::VelloHybridRenderer::new(
-                        device, queue,
-                    )),
-                    name: "Vello Hybrid GPU",
-                },
-                Some(surface_format),
-            );
+            let backend = imaging_vello_hybrid::VelloHybridRenderer::new(device, queue);
+            if let Some(surface_format) = pick_supported_texture_format(
+                gpu.surface_formats(),
+                &backend.supported_texture_formats(),
+            ) {
+                return cx.into_gpu_renderer(
+                    GpuRenderer::direct_texture_view(backend, "Vello Hybrid GPU"),
+                    surface_format,
+                );
+            }
+            if let Some(surface_format) = fallback_surface_format {
+                return cx.into_gpu_renderer(
+                    GpuRenderer::copy_texture_view(backend, "Vello Hybrid GPU"),
+                    surface_format,
+                );
+            }
         }
 
         #[cfg(feature = "vello-cpu")]
@@ -817,40 +1044,50 @@ fn choose_default_renderer(cx: NewRendererCx) -> Result<WindowBackend, String> {
                 .map_err(|_| "width exceeds vello cpu limit".to_string())?;
             let height = u16::try_from(cx.size.height.max(1.0) as u32)
                 .map_err(|_| "height exceeds vello cpu limit".to_string())?;
-            return cx.into_renderer(
-                AcceptedRenderer::Image {
-                    backend: Box::new(imaging_vello_cpu::VelloCpuRenderer::new(width, height)),
-                    name: "Vello CPU",
-                },
-                None,
-            );
+            let backend = imaging_vello_cpu::VelloCpuRenderer::new(width, height);
+            if let Some(format) = pick_supported_image_format(
+                &backend.supported_image_formats(),
+                CpuWindowTarget::<Arc<dyn Window>>::direct_image_format(),
+            ) {
+                return cx.into_cpu_renderer(CpuRenderer::direct_image(
+                    backend,
+                    format,
+                    "Vello CPU",
+                ));
+            }
+            return cx.into_cpu_renderer(CpuRenderer::copy_image(backend, "Vello CPU"));
         }
 
         #[cfg(feature = "skia-cpu")]
         {
-            return cx.into_renderer(
-                AcceptedRenderer::Image {
-                    backend: Box::new(imaging_skia::SkiaCpuCopyRenderer::new()),
-                    name: "Skia CPU",
-                },
-                None,
-            );
+            let backend = imaging_skia::SkiaCpuRenderer::new();
+            if let Some(format) = pick_supported_image_format(
+                &backend.supported_image_formats(),
+                CpuWindowTarget::<Arc<dyn Window>>::direct_image_format(),
+            ) {
+                return cx
+                    .into_cpu_renderer(CpuRenderer::direct_image(backend, format, "Skia CPU"));
+            }
+            return cx.into_cpu_renderer(CpuRenderer::copy_image(backend, "Skia CPU"));
         }
 
         #[cfg(feature = "tiny-skia")]
         {
             let width = cx.size.width.max(1.0) as u32;
             let height = cx.size.height.max(1.0) as u32;
-            return cx.into_renderer(
-                AcceptedRenderer::Image {
-                    backend: Box::new(
-                        imaging_tiny_skia::TinySkiaCpuCopyRenderer::new_with_size(width, height)
-                            .map_err(|err| err.to_string())?,
-                    ),
-                    name: "Tiny Skia CPU",
-                },
-                None,
-            );
+            let backend = imaging_tiny_skia::TinySkiaRenderer::new_with_size(width, height)
+                .map_err(|err| err.to_string())?;
+            if let Some(format) = pick_supported_image_format(
+                &backend.supported_image_formats(),
+                CpuWindowTarget::<Arc<dyn Window>>::direct_image_format(),
+            ) {
+                return cx.into_cpu_renderer(CpuRenderer::direct_image(
+                    backend,
+                    format,
+                    "Tiny Skia CPU",
+                ));
+            }
+            return cx.into_cpu_renderer(CpuRenderer::copy_image(backend, "Tiny Skia CPU"));
         }
 
         #[cfg(feature = "vello-cpu")]
@@ -859,13 +1096,18 @@ fn choose_default_renderer(cx: NewRendererCx) -> Result<WindowBackend, String> {
                 .map_err(|_| "width exceeds vello_cpu limit".to_string())?;
             let height = u16::try_from(cx.size.height.max(1.0) as u32)
                 .map_err(|_| "height exceeds vello_cpu limit".to_string())?;
-            return cx.into_renderer(
-                AcceptedRenderer::Image {
-                    backend: Box::new(imaging_vello_cpu::VelloCpuRenderer::new(width, height)),
-                    name: "Vello CPU",
-                },
-                None,
-            );
+            let backend = imaging_vello_cpu::VelloCpuRenderer::new(width, height);
+            if let Some(format) = pick_supported_image_format(
+                &backend.supported_image_formats(),
+                CpuWindowTarget::<Arc<dyn Window>>::direct_image_format(),
+            ) {
+                return cx.into_cpu_renderer(CpuRenderer::direct_image(
+                    backend,
+                    format,
+                    "Vello CPU",
+                ));
+            }
+            return cx.into_cpu_renderer(CpuRenderer::copy_image(backend, "Vello CPU"));
         }
 
         Err("no renderer available for this window target".to_string())

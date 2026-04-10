@@ -279,14 +279,6 @@ impl BoxTree {
         true
     }
 
-    pub(crate) fn retained_transform_boundary(
-        &self,
-        id: understory_box_tree::NodeId,
-    ) -> Option<TransformClass> {
-        self.element_meta(id)
-            .and_then(|meta| meta.retained_transform_boundary)
-    }
-
     pub(crate) fn set_retained_transform_boundary(
         &mut self,
         id: understory_box_tree::NodeId,

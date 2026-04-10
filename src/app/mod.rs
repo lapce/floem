@@ -34,9 +34,9 @@ use crate::{
     view::IntoView,
     window::{WindowConfig, WindowCreation},
 };
+use handle::ApplicationHandle;
 #[cfg(all(feature = "subduction", target_os = "macos"))]
 use subduction_core::timing::FrameTick;
-use handle::ApplicationHandle;
 
 pub(crate) type AppEventCallback = dyn Fn(AppEvent);
 

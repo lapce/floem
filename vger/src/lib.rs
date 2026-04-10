@@ -5,11 +5,11 @@ use std::sync::mpsc;
 use anyhow::Result;
 use floem_vger_rs::{GlyphImage, PaintIndex, Vger};
 use imaging::{
-    BlurredRoundedRect, ClipRef, FillRef, GlyphRunRef, GroupRef, ImageBufferTarget,
-    ImageRenderer, ImageRendererError, PaintSink, RenderSource, StrokeRef,
-    record::Glyph,
+    BlurredRoundedRect, ClipRef, FillRef, GlyphRunRef, GroupRef, ImageBufferFormat,
+    ImageBufferTarget, ImageRenderer, ImageRendererError, PaintSink, RenderSource, StrokeRef,
+    record::Glyph, render::ImageTargetError,
 };
-use imaging_wgpu::{TextureRenderer, TextureRendererError, TextureViewTarget};
+use imaging_wgpu::{TextureRenderer, TextureRendererError, TextureTargetError, TextureViewTarget};
 use peniko::kurbo::Stroke;
 use peniko::{Blob, LinearGradientPosition};
 use peniko::{
@@ -45,9 +45,6 @@ pub struct VgerRenderer {
     device: Arc<Device>,
     queue: Arc<Queue>,
     vger: Vger,
-    texture_format: TextureFormat,
-    texture: Option<wgpu::Texture>,
-    view: Option<wgpu::TextureView>,
     size: (u32, u32),
     transform: Affine,
     clip: Option<Rect>,
@@ -60,7 +57,6 @@ impl VgerRenderer {
         queue: wgpu::Queue,
         width: u32,
         height: u32,
-        texture_format: TextureFormat,
     ) -> Result<Self> {
         if adapter.get_info().device_type == DeviceType::Cpu {
             return Err(anyhow::anyhow!("only cpu adapter found"));
@@ -81,15 +77,13 @@ impl VgerRenderer {
 
         let device = Arc::new(device);
         let queue = Arc::new(queue);
-        let vger = floem_vger_rs::Vger::new(device.clone(), queue.clone(), texture_format);
+        let vger =
+            floem_vger_rs::Vger::new(device.clone(), queue.clone(), TextureFormat::Rgba8Unorm);
 
         Ok(Self {
             device,
             queue,
             vger,
-            texture_format,
-            texture: None,
-            view: None,
             size: (width, height),
             transform: Affine::IDENTITY,
             clip: None,
@@ -97,10 +91,6 @@ impl VgerRenderer {
     }
 
     pub fn begin(&mut self, width: u32, height: u32) {
-        if self.size != (width, height) && self.texture.is_some() {
-            self.texture = None;
-            self.view = None;
-        }
         self.size = (width, height);
         self.transform = Affine::IDENTITY;
         self.clip = None;
@@ -174,27 +164,39 @@ impl PaintSink for VgerRenderer {
 }
 
 impl VgerRenderer {
-    fn finish(&mut self) {
-        let _ = self.render_to_texture_output();
+    fn create_texture(&self, width: u32, height: u32) -> wgpu::Texture {
+        self.device.create_texture(&wgpu::TextureDescriptor {
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
+            label: Some("floem_vger render_texture"),
+            view_formats: &[TextureFormat::Rgba8Unorm],
+        })
     }
 }
 
-impl VgerRenderer {
-    fn set_target(
-        &mut self,
-        size: peniko::kurbo::Size,
-        target: TextureViewTarget,
-    ) -> Result<(), String> {
-        let texture_format = target.view.texture().format();
-        if self.texture_format != texture_format {
-            self.texture_format = texture_format;
-            self.vger =
-                floem_vger_rs::Vger::new(self.device.clone(), self.queue.clone(), texture_format);
-        }
-        self.texture = None;
-        self.view = Some(target.view);
-        self.begin(size.width as u32, size.height as u32);
-        Ok(())
+fn supported_texture_formats() -> Vec<TextureFormat> {
+    vec![TextureFormat::Rgba8Unorm]
+}
+
+fn texture_format_for_image(format: ImageBufferFormat) -> Option<TextureFormat> {
+    match format {
+        ImageBufferFormat::Rgba8Unorm => Some(TextureFormat::Rgba8Unorm),
+        ImageBufferFormat::Rgba8UnormSrgb
+        | ImageBufferFormat::Bgra8Unorm
+        | ImageBufferFormat::Bgra8UnormSrgb => None,
+        ImageBufferFormat::Rgb10a2Unorm
+        | ImageBufferFormat::Rgba16Unorm
+        | ImageBufferFormat::Rgba16Float => None,
     }
 }
 
@@ -202,17 +204,23 @@ impl TextureRenderer for VgerRenderer {
     type TextureTarget = TextureViewTarget;
     type Texture = wgpu::Texture;
 
+    fn supported_texture_formats(&self) -> Vec<TextureFormat> {
+        supported_texture_formats()
+    }
+
     fn render_source_into_texture(
         &mut self,
         source: &mut dyn RenderSource,
         target: Self::TextureTarget,
     ) -> Result<(), TextureRendererError> {
-        let size = peniko::kurbo::Size::new(target.width as f64, target.height as f64);
-        self.set_target(size, target)
-            .map_err(std::io::Error::other)
-            .map_err(TextureRendererError::backend)?;
+        if target.view.texture().format() != TextureFormat::Rgba8Unorm {
+            return Err(TextureRendererError::Target(
+                TextureTargetError::UnsupportedTextureFormat,
+            ));
+        }
+        self.begin(target.width, target.height);
         source.paint_into(self);
-        self.finish();
+        self.encode_to_view(&target.view);
         Ok(())
     }
 
@@ -224,35 +232,37 @@ impl TextureRenderer for VgerRenderer {
     ) -> Result<Self::Texture, TextureRendererError> {
         self.begin(width, height);
         source.paint_into(self);
-        self.finish();
-        self.texture
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| TextureRendererError::backend(std::io::Error::other(
-                "vger backend did not produce a texture output",
-            )))
+        let texture = self.create_texture(width, height);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.encode_to_view(&view);
+        Ok(texture)
     }
 }
 
 impl ImageRenderer for VgerRenderer {
+    fn supported_image_formats(&self) -> Vec<ImageBufferFormat> {
+        vec![ImageBufferFormat::Rgba8Unorm]
+    }
+
     fn render_source_into(
         &mut self,
         source: &mut dyn RenderSource,
         target: ImageBufferTarget<'_>,
     ) -> Result<(), ImageRendererError> {
-        self.begin(target.width, target.height);
-        source.paint_into(self);
-        let view = self
-            .render_to_texture_output()
-            .ok_or_else(|| {
-                ImageRendererError::backend(std::io::Error::other(
-                    "vger backend did not produce a texture output",
-                ))
-            })?;
+        texture_format_for_image(target.format).ok_or(ImageRendererError::Target(
+            ImageTargetError::UnsupportedTargetFormat,
+        ))?;
+        let texture = <Self as TextureRenderer>::render_source_texture(
+            self,
+            source,
+            target.width,
+            target.height,
+        )
+        .map_err(map_texture_to_image_error)?;
         read_texture_into(
             self.device.as_ref(),
             self.queue.as_ref(),
-            view.texture(),
+            &texture,
             target.width,
             target.height,
             target.data,
@@ -465,13 +475,6 @@ impl VgerRenderer {
         floem_vger_rs::defs::LocalRect::new(origin, size)
     }
 
-    fn render_to_texture_output(&mut self) -> Option<wgpu::TextureView> {
-        self.ensure_offscreen_target();
-        let view = self.view.as_ref()?.clone();
-        self.encode_to_view(&view);
-        Some(view)
-    }
-
     fn encode_to_view(&mut self, view: &wgpu::TextureView) {
         let desc = wgpu::RenderPassDescriptor {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -488,32 +491,26 @@ impl VgerRenderer {
 
         self.vger.encode(&desc);
     }
+}
 
-    fn ensure_offscreen_target(&mut self) {
-        if self.texture.is_some() && self.view.is_some() {
-            return;
-        }
-
-        let texture_desc = wgpu::TextureDescriptor {
-            size: wgpu::Extent3d {
-                width: self.size.0,
-                height: self.size.1,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: self.texture_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                | wgpu::TextureUsages::COPY_SRC
-                | wgpu::TextureUsages::TEXTURE_BINDING,
-            label: Some("render_texture"),
-            view_formats: &[self.texture_format],
-        };
-        let texture = self.device.create_texture(&texture_desc);
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        self.texture = Some(texture);
-        self.view = Some(view);
+fn map_texture_to_image_error(error: TextureRendererError) -> ImageRendererError {
+    match error {
+        TextureRendererError::Content(error) => ImageRendererError::Content(error),
+        TextureRendererError::Target(error) => match error {
+            TextureTargetError::InvalidTarget(_) | TextureTargetError::UnsupportedTextureFormat => {
+                ImageRendererError::Target(ImageTargetError::UnsupportedTargetFormat)
+            }
+            TextureTargetError::DimensionsTooLarge => {
+                ImageRendererError::backend(std::io::Error::other(error))
+            }
+            TextureTargetError::CreateGpuContext(_)
+            | TextureTargetError::CreateGpuSurface
+            | TextureTargetError::UnsupportedGpuBackend => {
+                ImageRendererError::backend(std::io::Error::other(error))
+            }
+        },
+        TextureRendererError::Unsupported(error) => ImageRendererError::Unsupported(error),
+        TextureRendererError::Backend(error) => ImageRendererError::Backend(error),
     }
 }
 

@@ -191,6 +191,7 @@ fn capture_view(
     };
     let datas = RwSignal::new(CapturedDatas::init_from_view(capture.root.clone()));
     let window = capture.window.clone();
+    let window_capture_error = capture.window_capture_error.clone();
     let capture_ = capture.clone();
     let size = capture_.window_size;
     let image_width = size.width;
@@ -208,8 +209,23 @@ fn capture_view(
             .width(image_width + 2.0)
             .height(image_height + 2.0)
             .keyboard_navigable()
-    });
+    })
+    .into_any();
     let image_view = InspectorImageView::new(image, capture.clone(), capture_view, datas);
+    let error_overlay = if let Some(error) = window_capture_error {
+        Label::new(format!("Capture failed\n{error}"))
+            .style(|s| {
+                s.absolute()
+                    .inset_left(6.0)
+                    .inset_top(6.0)
+                    .padding(8.0)
+                    .color(palette::css::CRIMSON)
+                    .background(palette::css::WHITE.with_alpha(0.92))
+            })
+            .into_any()
+    } else {
+        ().into_any()
+    };
     let recapture = Button::new("Recapture").action(move || {
         add_app_update_event(AppUpdateEvent::CaptureWindow {
             window_id,
@@ -305,13 +321,19 @@ fn capture_view(
     let left = Stack::vertical((
         header("Captured Window"),
         Resizable::new((
-            image_view.scroll().style(|s| {
-                s.min_size(0, 0)
-                    .flex_grow(1.)
-                    .grid()
-                    .items_center()
-                    .justify_items(AlignItems::Center)
-            }),
+            Stack::new((
+                image_view
+                    .scroll()
+                    .style(|s| {
+                        s.min_size(0, 0)
+                            .flex_grow(1.)
+                            .grid()
+                            .items_center()
+                            .justify_items(AlignItems::Center)
+                    })
+                    .into_any(),
+                error_overlay,
+            )),
             tabs,
         ))
         .custom_sizes(move || vec![(0, size.height.min(500.))])

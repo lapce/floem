@@ -474,7 +474,8 @@ impl ProfilerTimelineView {
 
         let visible = self.viewport.visible_world_range();
         let desired_origin = visible.start.max(0.0);
-        let rebase_threshold = (256.0 / self.viewport.zoom().abs().max(f64::MIN_POSITIVE)).max(1e-9);
+        let rebase_threshold =
+            (256.0 / self.viewport.zoom().abs().max(f64::MIN_POSITIVE)).max(1e-9);
         if (desired_origin - self.content_origin_x).abs() < rebase_threshold {
             return false;
         }
@@ -519,8 +520,7 @@ impl ProfilerTimelineView {
         let box_tree = self.id.box_tree();
         let transform_changed = box_tree
             .borrow_mut()
-            .set_local_transform(self.content_element.0, transform)
-        ;
+            .set_local_transform(self.content_element.0, transform);
         if transform_changed || rebased {
             self.id.request_box_tree_commit();
             window_state.request_paint(self.id.get_element_id());
@@ -694,7 +694,10 @@ impl View for ProfilerTimelineView {
                 };
                 cx.painter
                     .stroke(
-                        Line::new((x, TIMELINE_PADDING - 2.0), (x, total_height - TIMELINE_PADDING + 2.0)),
+                        Line::new(
+                            (x, TIMELINE_PADDING - 2.0),
+                            (x, total_height - TIMELINE_PADDING + 2.0),
+                        ),
                         &Stroke::new(if is_selected { 1.5 } else { 1.0 }),
                         &Brush::Solid(color),
                     )
@@ -809,10 +812,13 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
         .iter()
         .enumerate()
         .filter_map(|(index, frame)| {
-            frame.start.zip(origin).map(|(start, origin)| TimelineFrameMarker {
-                index,
-                start: start.saturating_duration_since(origin),
-            })
+            frame
+                .start
+                .zip(origin)
+                .map(|(start, origin)| TimelineFrameMarker {
+                    index,
+                    start: start.saturating_duration_since(origin),
+                })
         })
         .collect::<Vec<_>>()
         .into();
@@ -905,8 +911,8 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
             hovered_event,
             selected_frame,
         )
-            .style(|s| s.size_full())
-            .into_any()
+        .style(|s| s.size_full())
+        .into_any()
     };
 
     let timeline = Stack::vertical((header("Timeline"), timeline))

@@ -14,6 +14,7 @@ use std::cell::Cell;
 use std::panic::Location;
 
 use parking_lot::{Mutex, MutexGuard};
+use smallvec::SmallVec;
 
 use crate::{
     SignalGet, SignalUpdate,
@@ -617,12 +618,16 @@ impl SignalState {
         result
     }
 
-    pub(crate) fn subscriber_ids(&self) -> HashSet<Id> {
+    pub(crate) fn subscriber_ids(&self) -> SmallVec<[Id; 3]> {
         self.subscribers.lock().iter().copied().collect()
     }
 
+    pub(crate) fn take_subscriber_ids(&self) -> SmallVec<[Id; 3]> {
+        self.subscribers.lock().drain().collect()
+    }
+
     pub(crate) fn run_effects(&self) {
-        let ids: smallvec::SmallVec<[_; 3]> = self.subscriber_ids().into_iter().collect();
+        let ids = self.subscriber_ids();
         let on_ui_thread = Runtime::is_ui_thread();
 
         if !on_ui_thread {

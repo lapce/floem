@@ -19,8 +19,8 @@ use winit::window::{
     ImeCapabilities, ImeEnableRequest, ImeHint, ImePurpose, ImeRequest, ImeRequestData,
 };
 
-use crate::gpu_resources::GpuResources;
 use crate::frame_clock::{FrameClock, new_window_frame_clock};
+use crate::gpu_resources::GpuResources;
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
 use imaging::{FillRef, PaintSink, Painter};
 use peniko::color::palette;
@@ -52,10 +52,10 @@ use crate::{
         Event, GlobalEventCx, ImeEvent, WindowEvent, clear_hit_test_cache,
         dropped_file::FileDragEvent,
     },
+    frame::FrameTime,
     inspector::{
         self, Capture, CaptureState, CapturedView, TimingKind, TimingReport, profiler::Profile,
     },
-    frame::FrameTime,
     message::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE,
         DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES, UpdateMessage,
@@ -876,9 +876,7 @@ impl WindowHandle {
             let presented = paint.presented;
             if presented {
                 let update = mem::take(&mut self.pending_timing);
-                let useful_draw_cpu = paint
-                    .total
-                    .saturating_sub(paint.present.acquire_surface);
+                let useful_draw_cpu = paint.total.saturating_sub(paint.present.acquire_surface);
                 let frame_end = Instant::now();
                 self.frame_clock
                     .observe_presented(update.total(), useful_draw_cpu, frame_end);
@@ -1306,6 +1304,7 @@ impl WindowHandle {
             taffy_node_count: self.id.taffy().borrow().total_node_count(),
             taffy_depth: get_taffy_depth(self.id.taffy(), taffy_root_node),
             window: capture_output.image,
+            window_capture_error: capture_output.error,
             window_size,
             root: Rc::new(root),
             state,

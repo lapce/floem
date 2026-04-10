@@ -348,20 +348,20 @@ impl View for Svg {
             let brush = self.svg_style.color_brush();
             let mut scene = Scene::new();
             let mut painter = Painter::new(&mut scene);
-            if let Some(brush) = brush.as_ref() {
-                let bounds = document.size().to_rect();
-                painter.with_masked_group(
-                    MaskMode::Alpha,
-                    |mask| {
-                        let _ = document.render(mask, &RenderOptions::default());
-                    },
-                    |painter| {
-                        painter.fill(bounds, brush).draw();
-                    },
-                );
-            } else {
-                let _ = document.render(&mut painter, &RenderOptions::default());
-            }
+            // if let Some(brush) = brush.as_ref() {
+            //     let bounds = document.size().to_rect();
+            //     painter.with_masked_group(
+            //         MaskMode::Alpha,
+            //         |mask| {
+            //             let _ = document.render(mask, &RenderOptions::default());
+            //         },
+            //         |painter| {
+            //             painter.fill(bounds, brush).draw();
+            //         },
+            //     );
+            // } else {
+            let _ = document.render(&mut painter, &RenderOptions::default());
+            // }
             replay_transformed(&scene, cx.painter.sink_mut(), transform);
         }
     }

@@ -102,7 +102,7 @@ impl Id {
 
     fn cleanup_signal(signal: Option<SignalState>) {
         if let Some(signal) = signal {
-            for effect_id in signal.subscriber_ids() {
+            for effect_id in signal.take_subscriber_ids() {
                 // Drop any effect that was subscribed to this signal so it can't linger
                 // with dangling dependencies.
                 effect_id.dispose();

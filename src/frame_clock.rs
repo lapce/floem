@@ -9,7 +9,9 @@ use crate::{Application, app::UserEvent};
 #[cfg(all(feature = "subduction", target_os = "macos"))]
 use objc2::MainThreadMarker;
 #[cfg(all(feature = "subduction", target_os = "macos"))]
-use subduction_backend_apple::{DisplayLink, compute_present_hints, now as subduction_now, timebase};
+use subduction_backend_apple::{
+    DisplayLink, compute_present_hints, now as subduction_now, timebase,
+};
 #[cfg(all(feature = "subduction", target_os = "windows"))]
 use subduction_backend_windows::{
     compute_present_hints as windows_compute_present_hints, make_tick as windows_make_tick,
@@ -60,7 +62,11 @@ pub(crate) fn new_window_frame_clock(window_id: WindowId, output_id: u32) -> Box
     #[cfg(all(feature = "subduction", target_os = "macos"))]
     {
         if let Some(mtm) = MainThreadMarker::new() {
-            return Box::new(SubductionFrameClock::new(window_id, OutputId(output_id), mtm));
+            return Box::new(SubductionFrameClock::new(
+                window_id,
+                OutputId(output_id),
+                mtm,
+            ));
         }
     }
 
@@ -299,7 +305,9 @@ impl SubductionPlanState {
         background_rendering: bool,
     ) -> FrameTime {
         if let Some(plan) = self.latest_plan {
-            let predicted_present = plan.present_time.map(|present| self.host_to_instant(present));
+            let predicted_present = plan
+                .present_time
+                .map(|present| self.host_to_instant(present));
             return FrameTime {
                 now: self.host_to_instant(plan.semantic_time),
                 interval: PresentationInterval {
@@ -478,8 +486,11 @@ impl FrameClock for SubductionFrameClock {
         draw_cpu_time_excluding_acquire: Duration,
         presented_at: Instant,
     ) {
-        self.plan_state
-            .observe_presented(update_cpu_time, draw_cpu_time_excluding_acquire, presented_at);
+        self.plan_state.observe_presented(
+            update_cpu_time,
+            draw_cpu_time_excluding_acquire,
+            presented_at,
+        );
     }
 
     fn set_active(&mut self, active: bool) {
@@ -624,8 +635,11 @@ impl FrameClock for WindowsSubductionFrameClock {
         presented_at: Instant,
     ) {
         self.prev_present_time = Some(self.plan_state.instant_to_host(presented_at));
-        self.plan_state
-            .observe_presented(update_cpu_time, draw_cpu_time_excluding_acquire, presented_at);
+        self.plan_state.observe_presented(
+            update_cpu_time,
+            draw_cpu_time_excluding_acquire,
+            presented_at,
+        );
     }
 
     fn set_active(&mut self, active: bool) {

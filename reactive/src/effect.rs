@@ -1,4 +1,6 @@
-use std::{any::Any, cell::RefCell, collections::HashSet, marker::PhantomData, mem, rc::Rc};
+use std::{any::Any, cell::RefCell, collections::HashSet, marker::PhantomData, rc::Rc};
+
+use smallvec::SmallVec;
 
 use crate::{
     id::Id,
@@ -17,7 +19,7 @@ pub trait EffectTrait: Any {
     fn id(&self) -> Id;
     fn run(&self) -> bool;
     fn add_observer(&self, id: Id);
-    fn clear_observers(&self) -> HashSet<Id>;
+    fn clear_observers(&self) -> SmallVec<[Id; 4]>;
     fn priority(&self) -> EffectPriority {
         EffectPriority::Normal
     }
@@ -342,8 +344,8 @@ where
         self.observers.borrow_mut().insert(id);
     }
 
-    fn clear_observers(&self) -> HashSet<Id> {
-        mem::take(&mut *self.observers.borrow_mut())
+    fn clear_observers(&self) -> SmallVec<[Id; 4]> {
+        self.observers.borrow_mut().drain().collect()
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -377,8 +379,8 @@ where
         self.observers.borrow_mut().insert(id);
     }
 
-    fn clear_observers(&self) -> HashSet<Id> {
-        mem::take(&mut *self.observers.borrow_mut())
+    fn clear_observers(&self) -> SmallVec<[Id; 4]> {
+        self.observers.borrow_mut().drain().collect()
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -419,19 +421,24 @@ impl SignalTracker {
     /// Updates the tracking function used for [SignalTracker].
     pub fn track<T: 'static>(&self, f: impl FnOnce() -> T) -> T {
         Runtime::assert_ui_thread();
-        // Clear any previous tracking by disposing the old effect
-        self.id.dispose();
-
         let prev_effect = RUNTIME.with(|runtime| runtime.current_effect.borrow_mut().take());
-
-        let tracking_effect: Rc<dyn EffectTrait> = Rc::new(TrackingEffect {
-            id: self.id,
-            observers: RefCell::new(HashSet::default()),
-            on_change: self.on_change.clone(),
+        let tracking_effect = RUNTIME.with(|runtime| {
+            if let Some(effect) = runtime.get_effect(self.id) {
+                self.id.dispose_children();
+                observer_clean_up(&effect);
+                effect
+            } else {
+                let tracking_effect: Rc<dyn EffectTrait> = Rc::new(TrackingEffect {
+                    id: self.id,
+                    observers: RefCell::new(HashSet::default()),
+                    on_change: self.on_change.clone(),
+                });
+                runtime.register_effect(&tracking_effect);
+                tracking_effect
+            }
         });
 
         RUNTIME.with(|runtime| {
-            runtime.register_effect(&tracking_effect);
             *runtime.current_effect.borrow_mut() = Some(tracking_effect.clone());
         });
 
@@ -469,8 +476,8 @@ impl EffectTrait for TrackingEffect {
         self.observers.borrow_mut().insert(id);
     }
 
-    fn clear_observers(&self) -> HashSet<Id> {
-        mem::take(&mut *self.observers.borrow_mut())
+    fn clear_observers(&self) -> SmallVec<[Id; 4]> {
+        self.observers.borrow_mut().drain().collect()
     }
 
     fn as_any(&self) -> &dyn Any {

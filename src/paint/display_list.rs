@@ -20,6 +20,8 @@ use crate::{
     view::stacking::{StackingContextItem, collect_stacking_context_items_into},
 };
 
+const COMPOSED_SCENE_MIN_SUBTREE_SIZE: usize = 8;
+
 /// Transform class describing when recorded content remains valid.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum TransformClass {
@@ -141,6 +143,9 @@ struct DisplayNode {
     parent: Option<DisplayNodeSlot>,
     children: ChildList,
     display: ElementDisplayList,
+    composed_scene: Scene,
+    composed_dirty: bool,
+    subtree_size: usize,
 }
 
 #[derive(Default)]
@@ -254,6 +259,72 @@ impl RetainedDisplayList {
         Some(&self.node(slot)?.children.ordered)
     }
 
+    pub(crate) fn mark_composed_dirty(&mut self, id: ElementId) {
+        self.mark_composed_dirty_from_slot(self.find_slot(id));
+    }
+
+    pub(crate) fn ensure_composed_scene(&mut self, slot: DisplayNodeSlot) {
+        if !self.slot_has_composed_scene(slot) {
+            return;
+        }
+
+        let (dirty, child_slots) = match self.node(slot) {
+            Some(node) => (node.composed_dirty, node.children.ordered.clone()),
+            None => return,
+        };
+        if !dirty {
+            return;
+        }
+
+        for child in child_slots.iter().copied() {
+            if self.slot_has_composed_scene(child) {
+                self.ensure_composed_scene(child);
+            }
+        }
+
+        let mut composed = {
+            let node = self.node_mut(slot).expect("display list node missing");
+            let mut scene = mem::take(&mut node.composed_scene);
+            scene.clear();
+            scene
+        };
+
+        let snapshot = {
+            let node = self.node(slot).expect("display list node missing");
+            node.display.snapshot
+        };
+        if let Some(snapshot) = snapshot {
+            self.append_node_contents_to_scene(slot, &mut composed, snapshot.world_transform);
+        }
+
+        let node = self.node_mut(slot).expect("display list node missing");
+        node.composed_scene = composed;
+        node.composed_dirty = false;
+    }
+
+    pub(crate) fn composed_scene(&self, slot: DisplayNodeSlot) -> Option<&Scene> {
+        Some(&self.node(slot)?.composed_scene)
+    }
+
+    pub(crate) fn snapshot_for_slot(&self, slot: DisplayNodeSlot) -> Option<ElementSnapshot> {
+        self.node(slot)?.display.snapshot
+    }
+
+    pub(crate) fn slot_has_composed_scene(&self, slot: DisplayNodeSlot) -> bool {
+        let Some(node) = self.node(slot) else {
+            return false;
+        };
+        if !node.caches_composed_scene() {
+            return false;
+        }
+        let Some(parent) = node.parent else {
+            return true;
+        };
+        !self
+            .node(parent)
+            .is_some_and(DisplayNode::caches_composed_scene)
+    }
+
     fn sync_branch(
         &mut self,
         element_id: ElementId,
@@ -314,19 +385,41 @@ impl RetainedDisplayList {
             } else {
                 None
             };
+            let subtree_size = 1 + children
+                .ordered
+                .iter()
+                .map(|child| {
+                    self.node(*child)
+                        .map(|child_node| child_node.subtree_size)
+                        .unwrap_or(0)
+                })
+                .sum::<usize>();
             let node = self.node_mut(slot).expect("display list node missing");
+            let structure_changed = node.parent != parent
+                || node.children.ordered != children.ordered
+                || node.subtree_size != subtree_size;
             node.element_id = Some(element_id);
             node.parent = parent;
             node.children = children;
+            node.subtree_size = subtree_size;
             if let Some(display) = inactive_display {
                 node.display = display;
             }
+            if is_new || structure_changed {
+                node.composed_dirty = true;
+            }
+            let parent_to_mark = if is_new || structure_changed {
+                node.parent
+            } else {
+                None
+            };
             self.slot_by_id.insert(element_id, slot);
             active_ids.insert(element_id);
             if is_new {
                 newly_active_ids.insert(element_id);
             }
             out.push(slot);
+            self.mark_composed_dirty_from_slot(parent_to_mark);
         } else {
             for child in child_items {
                 self.sync_branch(
@@ -384,6 +477,286 @@ impl RetainedDisplayList {
     fn node_mut(&mut self, slot: DisplayNodeSlot) -> Option<&mut DisplayNode> {
         self.nodes.get_mut(slot.0)?.as_mut()
     }
+
+    fn mark_composed_dirty_from_slot(&mut self, mut current: Option<DisplayNodeSlot>) {
+        while let Some(slot) = current {
+            let Some(node) = self.node_mut(slot) else {
+                break;
+            };
+            node.composed_dirty = true;
+            current = node.parent;
+        }
+    }
+
+    fn append_node_contents_to_scene(
+        &self,
+        slot: DisplayNodeSlot,
+        scene: &mut Scene,
+        scene_world_transform: Affine,
+    ) {
+        let Some(node) = self.node(slot) else {
+            return;
+        };
+        let Some(snapshot) = node.display.snapshot else {
+            return;
+        };
+        // The composed scene is flattened into a single coordinate space rooted at
+        // `scene_world_transform`, so every descendant transform must be expressed
+        // relative to that same anchor.
+        let local_transform = scene_world_transform.inverse() * snapshot.world_transform;
+
+        scene.reserve_like(&node.display.paint.scene);
+        scene.reserve_like(&node.display.post.scene);
+        if let Some(clip) = snapshot.clip {
+            let _ = scene.push_clip(Clip::Fill {
+                transform: local_transform,
+                shape: Geometry::RoundedRect(clip),
+                fill_rule: peniko::Fill::NonZero,
+            });
+        }
+        scene.append_transformed(&node.display.paint.scene, local_transform);
+        for child in &node.children.ordered {
+            let Some(child_node) = self.node(*child) else {
+                continue;
+            };
+            if self.slot_has_composed_scene(*child) && !child_node.composed_dirty {
+                let Some(child_snapshot) = child_node.display.snapshot else {
+                    continue;
+                };
+                let child_transform =
+                    scene_world_transform.inverse() * child_snapshot.world_transform;
+                scene.reserve_like(&child_node.composed_scene);
+                scene.append_transformed(&child_node.composed_scene, child_transform);
+            } else {
+                self.append_node_contents_to_scene(*child, scene, scene_world_transform);
+            }
+        }
+        scene.append_transformed(&node.display.post.scene, local_transform);
+        if snapshot.clip.is_some() {
+            scene.pop_clip();
+        }
+    }
+}
+
+impl DisplayNode {
+    fn caches_composed_scene(&self) -> bool {
+        self.subtree_size >= COMPOSED_SCENE_MIN_SUBTREE_SIZE
+    }
+}
+
+#[doc(hidden)]
+pub mod bench_support {
+    use super::*;
+    use crate::ViewId;
+    use imaging::{PaintSink, record::replay};
+    use peniko::Color;
+    use std::collections::VecDeque;
+
+    #[derive(Clone, Copy, Debug)]
+    pub enum TreeShape {
+        Deep,
+        Broad,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    pub enum InvalidationDepth {
+        Shallow,
+        Deep,
+    }
+
+    pub struct SyntheticDisplayList {
+        list: RetainedDisplayList,
+        root_slot: DisplayNodeSlot,
+        shallow_id: ElementId,
+        deep_id: ElementId,
+        scene_commands: usize,
+        mutation_epoch: u32,
+    }
+
+    impl SyntheticDisplayList {
+        pub fn new(node_count: usize, scene_commands: usize, shape: TreeShape) -> Self {
+            assert!(node_count >= 1);
+            let mut list = RetainedDisplayList::default();
+            let (root_slot, root_id) = attach_node(
+                &mut list,
+                None,
+                snapshot(Affine::IDENTITY),
+                make_scene(scene_commands, 0),
+            );
+
+            let mut shallow_id = root_id;
+            let mut deep_id = root_id;
+
+            match shape {
+                TreeShape::Deep => {
+                    let mut parent = root_slot;
+                    for idx in 1..node_count {
+                        let offset = idx as f64;
+                        let (slot, element_id) = attach_node(
+                            &mut list,
+                            Some(parent),
+                            snapshot(Affine::translate((offset, offset * 0.25))),
+                            make_scene(scene_commands, idx as u32),
+                        );
+                        if idx == 1 {
+                            shallow_id = element_id;
+                        }
+                        deep_id = element_id;
+                        parent = slot;
+                    }
+                }
+                TreeShape::Broad => {
+                    let mut frontier = VecDeque::from([root_slot]);
+                    let mut parent = root_slot;
+                    let mut remaining_at_parent = 8usize;
+                    for idx in 1..node_count {
+                        if remaining_at_parent == 0 {
+                            parent = frontier.pop_front().expect("broad tree parent");
+                            remaining_at_parent = 8;
+                        }
+                        let offset = idx as f64;
+                        let (slot, element_id) = attach_node(
+                            &mut list,
+                            Some(parent),
+                            snapshot(Affine::translate((offset * 0.5, offset * 0.125))),
+                            make_scene(scene_commands, idx as u32),
+                        );
+                        if idx == 1 {
+                            shallow_id = element_id;
+                        }
+                        deep_id = element_id;
+                        frontier.push_back(slot);
+                        remaining_at_parent -= 1;
+                    }
+                }
+            }
+
+            finalize_subtree_sizes(&mut list, root_slot);
+
+            Self {
+                list,
+                root_slot,
+                shallow_id,
+                deep_id,
+                scene_commands,
+                mutation_epoch: node_count as u32,
+            }
+        }
+
+        pub fn compose_root(&mut self) {
+            self.list.ensure_composed_scene(self.root_slot);
+        }
+
+        pub fn invalidate(&mut self, depth: InvalidationDepth) {
+            let element_id = match depth {
+                InvalidationDepth::Shallow => self.shallow_id,
+                InvalidationDepth::Deep => self.deep_id,
+            };
+            let slot = self.list.find_slot(element_id).expect("bench node");
+            self.mutation_epoch = self.mutation_epoch.wrapping_add(1);
+            let node = self.list.node_mut(slot).expect("bench node");
+            node.display
+                .paint
+                .set_scene(make_scene(self.scene_commands, self.mutation_epoch));
+            self.list.mark_composed_dirty(element_id);
+        }
+
+        pub fn mark_dirty(&mut self, depth: InvalidationDepth) {
+            let element_id = match depth {
+                InvalidationDepth::Shallow => self.shallow_id,
+                InvalidationDepth::Deep => self.deep_id,
+            };
+            self.list.mark_composed_dirty(element_id);
+        }
+
+        pub fn replay_composed<S: PaintSink>(&mut self, sink: &mut S) {
+            self.list.ensure_composed_scene(self.root_slot);
+            if let Some(scene) = self.list.composed_scene(self.root_slot) {
+                replay(scene, sink);
+            }
+        }
+    }
+
+    fn attach_node(
+        list: &mut RetainedDisplayList,
+        parent: Option<DisplayNodeSlot>,
+        snapshot: ElementSnapshot,
+        paint_scene: Scene,
+    ) -> (DisplayNodeSlot, ElementId) {
+        let element_id = ViewId::new().get_element_id();
+        let slot = list.alloc_slot(element_id);
+        {
+            let node = list.node_mut(slot).expect("bench node");
+            node.parent = parent;
+            node.display.snapshot = Some(snapshot);
+            node.display.paint.set_scene(paint_scene);
+            node.display.post.set_scene(Scene::new());
+            node.composed_dirty = true;
+        }
+        list.slot_by_id.insert(element_id, slot);
+        if let Some(parent) = parent {
+            list.node_mut(parent)
+                .expect("bench parent")
+                .children
+                .ordered
+                .push(slot);
+        } else {
+            list.roots.push(slot);
+        }
+        (slot, element_id)
+    }
+
+    fn finalize_subtree_sizes(list: &mut RetainedDisplayList, slot: DisplayNodeSlot) -> usize {
+        let child_slots = list.child_slots(slot).expect("bench children").to_vec();
+        let subtree_size = 1 + child_slots
+            .into_iter()
+            .map(|child| finalize_subtree_sizes(list, child))
+            .sum::<usize>();
+        list.node_mut(slot).expect("bench node").subtree_size = subtree_size;
+        subtree_size
+    }
+
+    fn snapshot(world_transform: Affine) -> ElementSnapshot {
+        ElementSnapshot {
+            local_bounds: Rect::new(0.0, 0.0, 100.0, 40.0),
+            clip: None,
+            world_transform,
+        }
+    }
+
+    fn make_scene(command_count: usize, seed: u32) -> Scene {
+        let mut scene = Scene::new();
+        for idx in 0..command_count {
+            let offset = f64::from(seed) + idx as f64;
+            let rect = Rect::new(offset, offset * 0.5, offset + 10.0, offset * 0.5 + 8.0);
+            let color = if idx % 2 == 0 {
+                Color::from_rgb8(0x33, 0x66, 0x99)
+            } else {
+                Color::from_rgb8(0xaa, 0x55, 0x22)
+            };
+            let draw = if idx % 3 == 0 {
+                Draw::Stroke {
+                    transform: Affine::translate((offset * 0.25, offset * 0.1)),
+                    stroke: peniko::kurbo::Stroke::new(1.0),
+                    brush: color.into(),
+                    brush_transform: None,
+                    shape: Geometry::Rect(rect),
+                    composite: imaging::Composite::default(),
+                }
+            } else {
+                Draw::Fill {
+                    transform: Affine::translate((offset * 0.25, offset * 0.1)),
+                    fill_rule: peniko::Fill::NonZero,
+                    brush: color.into(),
+                    brush_transform: None,
+                    shape: Geometry::Rect(rect),
+                    composite: imaging::Composite::default(),
+                }
+            };
+            let _ = scene.draw(draw);
+        }
+        scene
+    }
 }
 
 pub struct RecordingRenderer<'a> {
@@ -430,18 +803,17 @@ impl PaintSink for RecordingRenderer<'_> {
     }
 }
 
-pub(crate) fn replay_stage(
-    stage: &ElementStage,
+pub(crate) fn replay_scene(
+    scene: &Scene,
     sink: &mut dyn PaintSink,
     base_transform: Affine,
     render_size: Size,
-    _local_damage: Option<&[Rect]>,
 ) {
     let mut sink = SanitizingSink {
         inner: sink,
         render_size,
     };
-    replay_transformed(&stage.scene, &mut sink, base_transform);
+    replay_transformed(scene, &mut sink, base_transform);
 }
 
 pub(crate) fn replay_view_clip(
@@ -620,6 +992,7 @@ fn constrain_infinite_rect(rect: Rect, transform: Affine, render_size: Size) -> 
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
+    use crate::ViewId;
     use imaging::Composite;
     use peniko::{Color, Fill};
 
@@ -632,6 +1005,108 @@ mod tests {
             shape: Geometry::Rect(rect),
             composite: Composite::default(),
         }
+    }
+
+    fn fill_draw_with_color(rect: Rect, transform: Affine, color: Color) -> Draw {
+        Draw::Fill {
+            transform,
+            fill_rule: Fill::NonZero,
+            brush: color.into(),
+            brush_transform: None,
+            shape: Geometry::Rect(rect),
+            composite: Composite::default(),
+        }
+    }
+
+    fn scene_with_draw(draw: Draw) -> Scene {
+        let mut scene = Scene::new();
+        let _ = scene.draw(draw);
+        scene
+    }
+
+    fn scene_with_clip_and_draw(clip: RoundedRect, clip_transform: Affine, draw: Draw) -> Scene {
+        let mut scene = Scene::new();
+        let _ = scene.push_clip(Clip::Fill {
+            transform: clip_transform,
+            shape: Geometry::RoundedRect(clip),
+            fill_rule: Fill::NonZero,
+        });
+        let _ = scene.draw(draw);
+        scene.pop_clip();
+        scene
+    }
+
+    fn snapshot(world_transform: Affine, clip: Option<RoundedRect>) -> ElementSnapshot {
+        ElementSnapshot {
+            local_bounds: Rect::new(0.0, 0.0, 100.0, 100.0),
+            clip,
+            world_transform,
+        }
+    }
+
+    fn attach_node(
+        list: &mut RetainedDisplayList,
+        parent: Option<DisplayNodeSlot>,
+        snapshot: ElementSnapshot,
+        paint_scene: Scene,
+        post_scene: Scene,
+    ) -> (DisplayNodeSlot, ElementId) {
+        let element_id = ViewId::new().get_element_id();
+        let slot = list.alloc_slot(element_id);
+        {
+            let node = list.node_mut(slot).expect("node");
+            node.parent = parent;
+            node.display.snapshot = Some(snapshot);
+            node.display.paint.set_scene(paint_scene);
+            node.display.post.set_scene(post_scene);
+            node.composed_dirty = true;
+        }
+        list.slot_by_id.insert(element_id, slot);
+        if let Some(parent) = parent {
+            list.node_mut(parent)
+                .expect("parent")
+                .children
+                .ordered
+                .push(slot);
+        } else {
+            list.roots.push(slot);
+        }
+        (slot, element_id)
+    }
+
+    fn finalize_subtree_sizes(list: &mut RetainedDisplayList, slot: DisplayNodeSlot) -> usize {
+        let children = list.child_slots(slot).expect("children").to_vec();
+        let subtree_size = 1 + children
+            .into_iter()
+            .map(|child| finalize_subtree_sizes(list, child))
+            .sum::<usize>();
+        let node = list.node_mut(slot).expect("node");
+        node.subtree_size = subtree_size;
+        subtree_size
+    }
+
+    fn make_cached_root_with_fillers(
+        root_snapshot: ElementSnapshot,
+        root_paint: Scene,
+        root_post: Scene,
+        filler_count: usize,
+    ) -> (RetainedDisplayList, DisplayNodeSlot, ElementId) {
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, root_id) =
+            attach_node(&mut list, None, root_snapshot, root_paint, root_post);
+        for i in 0..filler_count {
+            let filler_transform = Affine::translate((100.0 + i as f64, 200.0 + i as f64));
+            let filler_snapshot = snapshot(filler_transform, None);
+            let _ = attach_node(
+                &mut list,
+                Some(root_slot),
+                filler_snapshot,
+                Scene::new(),
+                Scene::new(),
+            );
+        }
+        finalize_subtree_sizes(&mut list, root_slot);
+        (list, root_slot, root_id)
     }
 
     #[test]
@@ -700,5 +1175,181 @@ mod tests {
         assert_eq!(constrained.x1, 200.0);
         assert_eq!(constrained.y0, 10.0);
         assert_eq!(constrained.y1, 20.0);
+    }
+
+    #[test]
+    fn composed_scene_flattens_transforms_and_clips() {
+        let root_clip = RoundedRect::from_rect(Rect::new(0.0, 0.0, 40.0, 30.0), 4.0);
+        let child_clip = RoundedRect::from_rect(Rect::new(1.0, 2.0, 9.0, 12.0), 2.0);
+        let root_snapshot = snapshot(Affine::translate((10.0, 20.0)), Some(root_clip));
+        let root_paint = scene_with_draw(fill_draw(
+            Rect::new(0.0, 0.0, 5.0, 5.0),
+            Affine::translate((1.0, 2.0)),
+        ));
+        let (mut list, root_slot, _) =
+            make_cached_root_with_fillers(root_snapshot, root_paint, Scene::new(), 6);
+
+        let child_snapshot = snapshot(Affine::translate((15.0, 27.0)), Some(child_clip));
+        let child_scene = scene_with_clip_and_draw(
+            child_clip,
+            Affine::translate((0.5, 1.5)),
+            fill_draw(Rect::new(0.0, 0.0, 3.0, 4.0), Affine::translate((3.0, 4.0))),
+        );
+        let _ = attach_node(
+            &mut list,
+            Some(root_slot),
+            child_snapshot,
+            child_scene,
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        assert!(list.slot_has_composed_scene(root_slot));
+        list.ensure_composed_scene(root_slot);
+
+        let mut expected = Scene::new();
+        let _ = expected.push_clip(Clip::Fill {
+            transform: Affine::IDENTITY,
+            shape: Geometry::RoundedRect(root_clip),
+            fill_rule: Fill::NonZero,
+        });
+        let _ = expected.draw(fill_draw(
+            Rect::new(0.0, 0.0, 5.0, 5.0),
+            Affine::translate((1.0, 2.0)),
+        ));
+        let _ = expected.push_clip(Clip::Fill {
+            transform: Affine::translate((5.0, 7.0)),
+            shape: Geometry::RoundedRect(child_clip),
+            fill_rule: Fill::NonZero,
+        });
+        let _ = expected.push_clip(Clip::Fill {
+            transform: Affine::translate((5.5, 8.5)),
+            shape: Geometry::RoundedRect(child_clip),
+            fill_rule: Fill::NonZero,
+        });
+        let _ = expected.draw(fill_draw(
+            Rect::new(0.0, 0.0, 3.0, 4.0),
+            Affine::translate((8.0, 11.0)),
+        ));
+        expected.pop_clip();
+        expected.pop_clip();
+        expected.pop_clip();
+
+        assert_eq!(list.composed_scene(root_slot), Some(&expected));
+    }
+
+    #[test]
+    fn composed_scene_avoids_nested_cached_subtrees_and_keeps_correct_transform() {
+        let root_snapshot = snapshot(Affine::translate((50.0, 60.0)), None);
+        let root_paint = scene_with_draw(fill_draw(
+            Rect::new(0.0, 0.0, 2.0, 2.0),
+            Affine::translate((1.0, 1.0)),
+        ));
+        let (mut list, root_slot, _) =
+            make_cached_root_with_fillers(root_snapshot, root_paint, Scene::new(), 6);
+
+        let child_snapshot = snapshot(Affine::translate((70.0, 90.0)), None);
+        let child_paint = scene_with_draw(fill_draw(
+            Rect::new(0.0, 0.0, 4.0, 4.0),
+            Affine::translate((2.0, 3.0)),
+        ));
+        let (child_slot, _) = attach_node(
+            &mut list,
+            Some(root_slot),
+            child_snapshot,
+            child_paint,
+            Scene::new(),
+        );
+        for i in 0..7 {
+            let grandchild_snapshot =
+                snapshot(Affine::translate((75.0 + i as f64, 95.0 + i as f64)), None);
+            let grandchild_scene = if i == 0 {
+                scene_with_draw(fill_draw(
+                    Rect::new(0.0, 0.0, 1.0, 1.0),
+                    Affine::translate((4.0, 5.0)),
+                ))
+            } else {
+                Scene::new()
+            };
+            let _ = attach_node(
+                &mut list,
+                Some(child_slot),
+                grandchild_snapshot,
+                grandchild_scene,
+                Scene::new(),
+            );
+        }
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        assert!(list.slot_has_composed_scene(root_slot));
+        assert!(!list.slot_has_composed_scene(child_slot));
+        list.ensure_composed_scene(root_slot);
+
+        let mut expected = Scene::new();
+        let _ = expected.draw(fill_draw(
+            Rect::new(0.0, 0.0, 2.0, 2.0),
+            Affine::translate((1.0, 1.0)),
+        ));
+        let _ = expected.draw(fill_draw(
+            Rect::new(0.0, 0.0, 4.0, 4.0),
+            Affine::translate((22.0, 33.0)),
+        ));
+        let _ = expected.draw(fill_draw(
+            Rect::new(0.0, 0.0, 1.0, 1.0),
+            Affine::translate((29.0, 40.0)),
+        ));
+
+        assert_eq!(list.composed_scene(root_slot), Some(&expected));
+    }
+
+    #[test]
+    fn composed_scene_rebuilds_when_child_stage_changes() {
+        let root_snapshot = snapshot(Affine::translate((10.0, 10.0)), None);
+        let (mut list, root_slot, _) =
+            make_cached_root_with_fillers(root_snapshot, Scene::new(), Scene::new(), 6);
+
+        let child_snapshot = snapshot(Affine::translate((15.0, 17.0)), None);
+        let child_scene = scene_with_draw(fill_draw_with_color(
+            Rect::new(0.0, 0.0, 2.0, 2.0),
+            Affine::translate((1.0, 1.0)),
+            Color::BLACK,
+        ));
+        let (child_slot, child_id) = attach_node(
+            &mut list,
+            Some(root_slot),
+            child_snapshot,
+            child_scene,
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        list.ensure_composed_scene(root_slot);
+        let first = list
+            .composed_scene(root_slot)
+            .cloned()
+            .expect("composed scene");
+
+        let updated_child_scene = scene_with_draw(fill_draw_with_color(
+            Rect::new(0.0, 0.0, 3.0, 3.0),
+            Affine::translate((2.0, 2.0)),
+            Color::WHITE,
+        ));
+        list.node_mut(child_slot)
+            .expect("child node")
+            .display
+            .paint
+            .set_scene(updated_child_scene);
+        list.mark_composed_dirty(child_id);
+        list.ensure_composed_scene(root_slot);
+
+        let mut expected = Scene::new();
+        let _ = expected.draw(fill_draw_with_color(
+            Rect::new(0.0, 0.0, 3.0, 3.0),
+            Affine::translate((7.0, 9.0)),
+            Color::WHITE,
+        ));
+
+        assert_ne!(list.composed_scene(root_slot), Some(&first));
+        assert_eq!(list.composed_scene(root_slot), Some(&expected));
     }
 }

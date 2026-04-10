@@ -6,6 +6,8 @@ use std::{
     rc::Rc,
 };
 
+use smallvec::SmallVec;
+
 use crate::{
     SignalGet, SignalWith,
     effect::{EffectPriority, EffectTrait, observer_clean_up},
@@ -291,8 +293,8 @@ where
         self.observers.borrow_mut().insert(id);
     }
 
-    fn clear_observers(&self) -> HashSet<Id> {
-        std::mem::take(&mut *self.observers.borrow_mut())
+    fn clear_observers(&self) -> SmallVec<[Id; 4]> {
+        self.observers.borrow_mut().drain().collect()
     }
 
     fn priority(&self) -> EffectPriority {
