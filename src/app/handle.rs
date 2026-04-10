@@ -46,9 +46,15 @@ struct PacedRedrawTimerState {
     deadline: Instant,
 }
 
+struct PacedPrepareTimerState {
+    token: Option<TimerToken>,
+    deadline: Instant,
+}
+
 pub(crate) struct ApplicationHandle {
     window_handles: HashMap<winit::window::WindowId, WindowHandle>,
     timers: HashMap<TimerToken, Timer>,
+    paced_prepare_timers: HashMap<winit::window::WindowId, PacedPrepareTimerState>,
     paced_redraw_timers: HashMap<winit::window::WindowId, PacedRedrawTimerState>,
     pending_context_menus: Vec<PendingContextMenu>,
     pub(crate) event_listener: Option<Box<AppEventCallback>>,
@@ -63,6 +69,7 @@ impl ApplicationHandle {
         Self {
             window_handles: HashMap::new(),
             timers: HashMap::new(),
+            paced_prepare_timers: HashMap::new(),
             paced_redraw_timers: HashMap::new(),
             pending_context_menus: Vec::new(),
             event_listener: None,
@@ -169,6 +176,14 @@ impl ApplicationHandle {
                     }
                     timer.deadline = Instant::now() + self.frame_duration_for_window(&window_id);
                     self.request_timer(timer, event_loop);
+                }
+                AppUpdateEvent::RequestAnimationFrame {
+                    window_id,
+                    callback,
+                } => {
+                    if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                        handle.window_state.request_animation_frame(callback);
+                    }
                 }
                 AppUpdateEvent::CancelTimer { timer } => {
                     self.remove_timer(&timer, event_loop);
@@ -397,7 +412,8 @@ impl ApplicationHandle {
             WindowEvent::Occluded(occluded) => {
                 window_handle.set_occluded(occluded);
                 if !occluded
-                    && (!window_handle.window_state.scheduled_updates.is_empty()
+                    && (window_handle.window_state.has_next_frame_work()
+                        || window_handle.window_state.has_pending_begin_frame_callbacks()
                         || window_handle.window_state.has_pending_render())
                 {
                     self.request_update();
@@ -449,11 +465,10 @@ impl ApplicationHandle {
                 }
             }
         }
+        if is_redraw {
+            self.schedule_window_frame_if_needed(window_id, event_loop);
+        }
         if !is_redraw {
-            self.request_update();
-        } else if let Some(window_handle) = self.window_handles.get(&window_id)
-            && !window_handle.window_state.scheduled_updates.is_empty()
-        {
             self.request_update();
         }
         self.update_control_flow(event_loop);
@@ -676,6 +691,7 @@ impl ApplicationHandle {
     }
 
     fn close_window(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
+        self.cancel_paced_prepare_timer(window_id, event_loop);
         self.cancel_paced_redraw_timer(window_id, event_loop);
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
             handle.destroy();
@@ -712,17 +728,15 @@ impl ApplicationHandle {
         event_loop: &dyn ActiveEventLoop,
     ) -> bool {
         let mut any_work_remaining = false;
+        let mut paced_prepare_timer_changes = Vec::new();
         let mut paced_redraw_timer_changes = Vec::new();
 
         for (window_id, handle) in self.window_handles.iter_mut() {
-            handle.process_scheduled_updates();
             let done = handle.process_update_budgeted(start, budget);
             if !done {
                 any_work_remaining = true;
             }
 
-            let has_scheduled_updates = !handle.window_state.scheduled_updates.is_empty();
-            let needs_frame = handle.window_state.has_pending_render() || has_scheduled_updates;
             let frame_interval = handle
                 .window
                 .current_monitor()
@@ -731,13 +745,29 @@ impl ApplicationHandle {
                 .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
                 .unwrap_or(Duration::from_millis(8));
             let now = Instant::now();
-            let redraw_deadline = handle.redraw_deadline(frame_interval, now);
-            let should_request_redraw =
-                needs_frame && handle.can_render_now() && now >= redraw_deadline;
+            let should_prepare_frame = handle.can_render_now()
+                && handle.has_preparable_frame_work()
+                && now >= handle.frame_prepare_deadline(frame_interval, now);
+
+            if should_prepare_frame {
+                handle.prepare_frame_if_needed();
+            }
+
+            let now = Instant::now();
+            let prepare_deadline = handle.frame_prepare_deadline(frame_interval, now);
+            let should_request_redraw = handle.window_state.has_pending_render()
+                && handle.can_render_now()
+                && now >= handle.redraw_deadline(frame_interval, now);
+
+            paced_prepare_timer_changes.push((
+                *window_id,
+                handle.can_render_now() && handle.has_preparable_frame_work(),
+                prepare_deadline,
+            ));
             paced_redraw_timer_changes.push((
                 *window_id,
-                needs_frame && !should_request_redraw,
-                redraw_deadline,
+                handle.window_state.has_pending_render() && !should_request_redraw,
+                handle.redraw_deadline(frame_interval, now),
             ));
 
             if should_request_redraw {
@@ -762,6 +792,14 @@ impl ApplicationHandle {
             }
         }
 
+        for (window_id, should_run, deadline) in paced_prepare_timer_changes {
+            if should_run {
+                self.ensure_paced_prepare_timer(window_id, deadline, event_loop);
+            } else {
+                self.cancel_paced_prepare_timer(window_id, event_loop);
+            }
+        }
+
         for (window_id, should_run, deadline) in paced_redraw_timer_changes {
             if should_run {
                 self.ensure_paced_redraw_timer(window_id, deadline, event_loop);
@@ -771,6 +809,69 @@ impl ApplicationHandle {
         }
 
         any_work_remaining
+    }
+
+    fn schedule_window_frame_if_needed(
+        &mut self,
+        window_id: WindowId,
+        event_loop: &dyn ActiveEventLoop,
+    ) {
+        let Some((
+            can_render_now,
+            needs_prepare,
+            needs_redraw,
+            prepare_deadline,
+            redraw_deadline,
+            window,
+        )) = self
+            .window_handles
+            .get(&window_id)
+            .map(|handle| {
+                let can_render_now = handle.can_render_now();
+                let frame_interval = self.frame_duration_for_window(&window_id);
+                let now = Instant::now();
+                let prepare_deadline = handle.frame_prepare_deadline(frame_interval, now);
+                let redraw_deadline = handle.redraw_deadline(frame_interval, now);
+                (
+                    can_render_now,
+                    handle.has_preparable_frame_work(),
+                    handle.window_state.has_pending_render(),
+                    prepare_deadline,
+                    redraw_deadline,
+                    handle.window.clone(),
+                )
+            })
+        else {
+            self.cancel_paced_redraw_timer(window_id, event_loop);
+            return;
+        };
+
+        if !can_render_now {
+            self.cancel_paced_prepare_timer(window_id, event_loop);
+            self.cancel_paced_redraw_timer(window_id, event_loop);
+            return;
+        }
+
+        let now = Instant::now();
+        if needs_prepare {
+            if now >= prepare_deadline {
+                self.cancel_paced_prepare_timer(window_id, event_loop);
+                self.request_update();
+            } else {
+                self.ensure_paced_prepare_timer(window_id, prepare_deadline, event_loop);
+            }
+        } else {
+            self.cancel_paced_prepare_timer(window_id, event_loop);
+        }
+
+        if needs_redraw && now >= redraw_deadline {
+            self.cancel_paced_redraw_timer(window_id, event_loop);
+            window.request_redraw();
+        } else if needs_redraw {
+            self.ensure_paced_redraw_timer(window_id, redraw_deadline, event_loop);
+        } else {
+            self.cancel_paced_redraw_timer(window_id, event_loop);
+        }
     }
 
     fn frame_duration_for_window(&self, window_id: &winit::window::WindowId) -> Duration {
@@ -806,6 +907,56 @@ impl ApplicationHandle {
     fn request_timer(&mut self, timer: Timer, event_loop: &dyn ActiveEventLoop) {
         self.timers.insert(timer.token, timer);
         self.fire_timer(event_loop);
+    }
+
+    fn ensure_paced_prepare_timer(
+        &mut self,
+        window_id: WindowId,
+        deadline: Instant,
+        event_loop: &dyn ActiveEventLoop,
+    ) {
+        let deadline = if deadline <= Instant::now() {
+            Instant::now()
+        } else {
+            deadline
+        };
+
+        let deadline = match self.paced_prepare_timers.entry(window_id) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                let state = entry.get_mut();
+                if state.token.is_some() && state.deadline <= deadline {
+                    return;
+                }
+                let token = TimerToken::next();
+                state.token = Some(token);
+                state.deadline = deadline;
+                deadline
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                let token = TimerToken::next();
+                entry.insert(PacedPrepareTimerState {
+                    token: Some(token),
+                    deadline,
+                });
+                deadline
+            }
+        };
+
+        let token = self
+            .paced_prepare_timers
+            .get(&window_id)
+            .and_then(|state| state.token)
+            .expect("paced prepare timer token should exist when arming");
+        self.request_timer(
+            Timer {
+                token,
+                action: Box::new(|_| {}),
+                deadline,
+                is_animation: true,
+                window_id: Some(window_id),
+            },
+            event_loop,
+        );
     }
 
     fn ensure_paced_redraw_timer(
@@ -856,6 +1007,18 @@ impl ApplicationHandle {
             },
             event_loop,
         );
+    }
+
+    fn cancel_paced_prepare_timer(
+        &mut self,
+        window_id: WindowId,
+        event_loop: &dyn ActiveEventLoop,
+    ) {
+        if let Some(state) = self.paced_prepare_timers.remove(&window_id)
+            && let Some(token) = state.token
+        {
+            self.remove_timer(&token, event_loop);
+        }
     }
 
     fn cancel_paced_redraw_timer(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
@@ -911,6 +1074,13 @@ impl ApplicationHandle {
                         timer.deadline = now + Duration::from_millis(100);
                         self.timers.insert(token, timer);
                         continue;
+                    }
+
+                    if let Some(window_id) = timer.window_id
+                        && let Some(state) = self.paced_prepare_timers.get_mut(&window_id)
+                        && state.token == Some(token)
+                    {
+                        state.token = None;
                     }
 
                     if let Some(window_id) = timer.window_id

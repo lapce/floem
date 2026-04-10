@@ -3,10 +3,9 @@ use smallvec::SmallVec;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    ElementId, custom_event,
+    custom_event,
     event::{EventPropagation, Phase},
     platform::menu::Menu,
-    style::recalc::StyleReason,
 };
 
 pub type EventCallback = dyn FnMut(&mut EventCx) -> EventPropagation;
@@ -266,13 +265,6 @@ impl VisualChanged {
 }
 
 pub(crate) type CleanupListeners = Vec<Rc<dyn Fn()>>;
-
-pub(crate) enum FrameUpdate {
-    Style(ElementId, StyleReason),
-    Layout,
-    BoxTreeCommit,
-    Paint(ElementId),
-}
 
 // Re-export EventCx from event module for backward compatibility
 pub use crate::event::EventCx;

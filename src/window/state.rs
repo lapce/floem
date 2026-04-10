@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
-    action::exec_after_animation_frame,
+    frame::FrameTime,
     platform::menu_types::MenuId,
     style::{StyleSelectors, recalc::StyleReason},
     view::ViewStorage,
@@ -21,7 +21,6 @@ use std::rc::Rc;
 use crate::{
     BoxTree, ElementId,
     action::add_update_message,
-    context::FrameUpdate,
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
@@ -138,8 +137,11 @@ pub struct WindowState {
     /// - events: combines with [`Self::os_scale`] so pointer/file-drag coordinates resolve into the
     ///   same logical space used by layout and the box tree
     pub(crate) user_scale: f64,
-    pub(crate) scheduled_updates: Vec<FrameUpdate>,
     pub(crate) style_dirty: FxHashMap<ViewId, StyleReason>,
+    pub(crate) next_frame_style_dirty: FxHashMap<ElementId, StyleReason>,
+    pub(crate) next_frame_needs_layout: bool,
+    pub(crate) next_frame_needs_box_tree_commit: bool,
+    pub(crate) next_frame_dirty_paint_elements: FxHashSet<ElementId>,
     pub(crate) responsive_selector_views: FxHashMap<ViewId, ()>,
     pub(crate) disabled_selector_views: FxHashMap<ViewId, ()>,
     pub(crate) selected_selector_views: FxHashMap<ViewId, ()>,
@@ -196,6 +198,7 @@ pub struct WindowState {
     pub(crate) profile_events_enabled: bool,
     pub(crate) profile_event_depth: usize,
     pub(crate) profile_events: Vec<QueuedProfileEvent>,
+    pub(crate) begin_frame_callbacks: Vec<Box<dyn FnOnce(FrameTime)>>,
 }
 
 #[derive(Clone, Debug)]
@@ -230,8 +233,11 @@ impl WindowState {
             root_size: Size::ZERO,
             fixed_elements: FxHashSet::default(),
             screen_size_bp: ScreenSizeBp::Xs,
-            scheduled_updates: vec![FrameUpdate::Paint(root_element_id)],
             dirty_paint_elements: FxHashSet::from_iter([root_element_id]),
+            next_frame_style_dirty: FxHashMap::default(),
+            next_frame_needs_layout: false,
+            next_frame_needs_box_tree_commit: false,
+            next_frame_dirty_paint_elements: FxHashSet::default(),
             pending_damage_rects: Vec::new(),
             style_dirty: Default::default(),
             responsive_selector_views: FxHashMap::default(),
@@ -272,7 +278,44 @@ impl WindowState {
             profile_events_enabled: false,
             profile_event_depth: 0,
             profile_events: Vec::new(),
+            begin_frame_callbacks: Vec::new(),
         }
+    }
+
+    pub(crate) fn request_animation_frame(&mut self, callback: Box<dyn FnOnce(FrameTime)>) {
+        self.begin_frame_callbacks.push(callback);
+    }
+
+    pub(crate) fn has_pending_begin_frame_callbacks(&self) -> bool {
+        !self.begin_frame_callbacks.is_empty()
+    }
+
+    pub(crate) fn has_next_frame_work(&self) -> bool {
+        !self.next_frame_style_dirty.is_empty()
+            || self.next_frame_needs_layout
+            || self.next_frame_needs_box_tree_commit
+            || !self.next_frame_dirty_paint_elements.is_empty()
+            || self.has_pending_begin_frame_callbacks()
+    }
+
+    pub(crate) fn take_begin_frame_callbacks(&mut self) -> Vec<Box<dyn FnOnce(FrameTime)>> {
+        std::mem::take(&mut self.begin_frame_callbacks)
+    }
+
+    pub(crate) fn promote_next_frame_work(&mut self) {
+        for (element_id, reason) in std::mem::take(&mut self.next_frame_style_dirty) {
+            self.mark_style_dirty_with(element_id, reason);
+        }
+        if self.next_frame_needs_layout {
+            self.needs_layout = true;
+            self.next_frame_needs_layout = false;
+        }
+        if self.next_frame_needs_box_tree_commit {
+            self.needs_box_tree_commit = true;
+            self.next_frame_needs_box_tree_commit = false;
+        }
+        self.dirty_paint_elements
+            .extend(std::mem::take(&mut self.next_frame_dirty_paint_elements));
     }
 
     pub(crate) fn begin_profile_event(&mut self, name: String) -> Option<(Instant, String, usize)> {
@@ -965,6 +1008,7 @@ impl WindowState {
     /// correctness, or damage-driven cursor/hover updates.
     pub fn commit_box_tree(&mut self) {
         self.invalidate_focus_nav_cache();
+        let mut should_request_next_drag_frame = false;
         if let Some(dragging) = self.drag_tracker.active_drag.as_mut()
             && let Some(dragging_preview) = dragging.dragging_preview.clone()
         {
@@ -1012,11 +1056,14 @@ impl WindowState {
 
             // Schedule next animation frame if needed
             if dragging.should_schedule_animation_frame() {
-                let timer = exec_after_animation_frame(move |_| {
-                    add_update_message(UpdateMessage::RequestBoxTreeCommit);
-                });
-                dragging.animation_timer = Some(timer);
+                dragging.animation_timer = None;
+                should_request_next_drag_frame = true;
             }
+        }
+        if should_request_next_drag_frame {
+            self.request_animation_frame(Box::new(move |_| {
+                add_update_message(UpdateMessage::RequestBoxTreeCommit);
+            }));
         }
 
         // Clean up completed animations
@@ -1229,26 +1276,28 @@ impl WindowState {
     /// Use this when a style update should be scoped to a sub-element owned by a view,
     /// rather than always targeting the owning view element.
     pub fn schedule_style_with_target(&mut self, element_id: ElementId, reason: StyleReason) {
-        self.scheduled_updates
-            .push(FrameUpdate::Style(element_id, reason));
+        self.next_frame_style_dirty
+            .entry(element_id)
+            .and_modify(|existing| existing.merge(reason.clone()))
+            .or_insert(reason);
     }
 
     /// Requests that the layout pass will run for `id` on the next frame, and ensures new frame is
     /// scheduled to happen.
     pub fn schedule_layout(&mut self) {
-        self.scheduled_updates.push(FrameUpdate::Layout);
+        self.next_frame_needs_layout = true;
     }
 
     /// Requests that the box tree be commited pass will run for `id` on the next frame, and ensures new frame is
     /// scheduled to happen.
     pub fn schedule_box_tree_commit(&mut self) {
-        self.scheduled_updates.push(FrameUpdate::BoxTreeCommit);
+        self.next_frame_needs_box_tree_commit = true;
     }
 
     /// Requests that the paint pass will run for `id` on the next frame, and ensures new frame is
     /// scheduled to happen.
     pub fn schedule_paint(&mut self, id: ElementId) {
-        self.scheduled_updates.push(FrameUpdate::Paint(id));
+        self.next_frame_dirty_paint_elements.insert(id);
     }
 
     pub fn request_paint(&mut self, id: impl Into<ElementId>) {

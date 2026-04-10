@@ -18,6 +18,7 @@ use crate::platform::{Duration, Instant};
 
 use crate::{
     app::{AppUpdateEvent, add_app_update_event},
+    frame::FrameTime,
     message::{UPDATE_MESSAGES, UpdateMessage},
     platform::menu::Menu,
     view::View,
@@ -214,6 +215,29 @@ pub fn exec_after_animation_frame(action: impl FnOnce(TimerToken) + 'static) -> 
         window_id,
     });
     token
+}
+
+/// Execute a callback at the next begin-frame opportunity for the current window.
+///
+/// Unlike [`exec_after_animation_frame`], this is driven by the window's redraw path rather than
+/// by a timer that approximates the display interval.
+pub fn request_animation_frame(action: impl FnOnce(FrameTime) + 'static) {
+    let view = get_current_view();
+    let Some(window_id) = view.window_id() else {
+        return;
+    };
+
+    let action = move |frame_time| {
+        let current_view = get_current_view();
+        set_current_view(view.root());
+        action(frame_time);
+        set_current_view(current_view);
+    };
+
+    add_app_update_event(AppUpdateEvent::RequestAnimationFrame {
+        window_id,
+        callback: Box::new(action),
+    });
 }
 
 /// Debounce an action.

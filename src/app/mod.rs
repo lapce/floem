@@ -28,6 +28,7 @@ use winit::{
 
 use crate::{
     action::{Timer, TimerToken},
+    frame::FrameTime,
     inspector::{Capture, profiler::Profile},
     platform::clipboard::Clipboard,
     view::IntoView,
@@ -197,6 +198,10 @@ pub(crate) enum AppUpdateEvent {
     RequestAnimationTimer {
         timer: Timer,
         window_id: WindowId,
+    },
+    RequestAnimationFrame {
+        window_id: WindowId,
+        callback: Box<dyn FnOnce(FrameTime)>,
     },
     CancelTimer {
         timer: TimerToken,

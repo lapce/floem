@@ -12,7 +12,7 @@ use peniko::kurbo::{Point, Size};
 
 use crate::{
     AnyView,
-    action::{add_overlay, exec_after_animation_frame, remove_overlay},
+    action::{add_overlay, remove_overlay, request_animation_frame},
     context::{Phases, VisualChangedListener},
     custom_event,
     event::{Event, EventPropagation, Phase, RouteKind, listener},
@@ -610,7 +610,7 @@ impl<T: Clone + std::cmp::PartialEq + std::fmt::Debug> Dropdown<T> {
 
         let list = self.build_list_view();
         let list_id = list.id();
-        exec_after_animation_frame(move |_| {
+        request_animation_frame(move |_| {
             // we need to requet focus once the list has been styled and made visible or else it will not be considered focusable
             list_id.request_focus();
         });

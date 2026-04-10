@@ -188,8 +188,8 @@ impl HeadlessHarness {
     /// assert!(needs_repaint, "Style change should trigger repaint");
     /// ```
     pub fn process_update_no_paint(&mut self) {
-        // Process any scheduled updates (style/layout requests from previous frame)
-        self.window_handle.process_scheduled_updates();
+        // Promote any next-frame work when the harness explicitly advances.
+        self.window_handle.window_state.promote_next_frame_work();
 
         // Run style and layout passes, returning whether paint is needed
         self.window_handle.process_update_no_paint()
@@ -449,7 +449,7 @@ impl HeadlessHarness {
     /// This is useful for testing transitions, which schedule style updates
     /// to animate across frames.
     pub fn has_scheduled_updates(&self) -> bool {
-        !self.window_handle.window_state.scheduled_updates.is_empty()
+        self.window_handle.window_state.has_next_frame_work()
     }
 
     /// Check if a view is in the style_dirty set.

@@ -46,7 +46,7 @@ use crate::views::{Container, Decorators, Stack};
 use crate::{
     Application,
     app::UserEvent,
-    context::{FrameUpdate, LayoutChanged, StyleCx, UpdateCx, VisualChanged},
+    context::{LayoutChanged, StyleCx, UpdateCx, VisualChanged},
     event::{
         Event, GlobalEventCx, ImeEvent, WindowEvent, clear_hit_test_cache,
         dropped_file::FileDragEvent,
@@ -54,6 +54,7 @@ use crate::{
     inspector::{
         self, Capture, CaptureState, CapturedView, TimingKind, TimingReport, profiler::Profile,
     },
+    frame::{FrameTime, PresentationInterval},
     message::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE,
         DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES, UpdateMessage,
@@ -101,10 +102,13 @@ pub(crate) struct WindowHandle {
             + Sync,
     >,
     last_presented_at: Instant,
-    estimated_frame_lead_time: Duration,
+    estimated_frame_prepare_lead_time: Duration,
+    estimated_draw_lead_time: Duration,
     is_occluded: bool,
     pending_timing: FrameTimingAccumulator,
     last_timing_report: Option<TimingReport>,
+    frame_counter: u64,
+    frame_prepared: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -268,10 +272,13 @@ impl WindowHandle {
             gpu_resources,
             renderer_chooser,
             last_presented_at: Instant::now(),
-            estimated_frame_lead_time: Duration::from_millis(1),
+            estimated_frame_prepare_lead_time: Duration::from_millis(1),
+            estimated_draw_lead_time: Duration::from_millis(1),
             is_occluded: false,
             pending_timing: FrameTimingAccumulator::default(),
             last_timing_report: None,
+            frame_counter: 0,
+            frame_prepared: false,
         };
         if paint_state_initialized {
             window_handle.init_renderer();
@@ -439,10 +446,13 @@ impl WindowHandle {
             gpu_resources: None,
             renderer_chooser: crate::paint::renderer::default_renderer(),
             last_presented_at: Instant::now(),
-            estimated_frame_lead_time: Duration::from_millis(1),
+            estimated_frame_prepare_lead_time: Duration::from_millis(1),
+            estimated_draw_lead_time: Duration::from_millis(1),
             is_occluded: false,
             pending_timing: FrameTimingAccumulator::default(),
             last_timing_report: None,
+            frame_counter: 0,
+            frame_prepared: false,
         };
 
         window_handle
@@ -850,26 +860,8 @@ impl WindowHandle {
         start.elapsed()
     }
 
-    /// Process any scheduled updates (style/layout/paint requests from previous frame).
-    /// This converts scheduled updates to immediate requests.
-    pub(crate) fn process_scheduled_updates(&mut self) {
-        for update in mem::take(&mut self.window_state.scheduled_updates) {
-            match update {
-                FrameUpdate::Layout => {
-                    self.window_state.needs_layout = true;
-                }
-                FrameUpdate::BoxTreeCommit => {
-                    self.window_state.needs_box_tree_commit = true;
-                }
-                FrameUpdate::Style(id, reason) => {
-                    self.window_state.mark_style_dirty_with(id, reason);
-                }
-                FrameUpdate::Paint(id) => self.window_state.request_paint(id),
-            }
-        }
-    }
-
     pub(crate) fn render_frame(&mut self) -> bool {
+        self.prepare_frame_if_needed();
         let renderer_ready = matches!(self.paint_state, PaintState::Initialized { .. });
         if self.window_state.has_pending_render() && renderer_ready {
             let paint = self.paint();
@@ -877,7 +869,11 @@ impl WindowHandle {
             let presented = paint.presented;
             if presented {
                 let update = mem::take(&mut self.pending_timing);
-                self.update_frame_lead_estimate(update.total() + paint.total);
+                self.update_frame_prepare_lead_estimate(update.total());
+                let useful_draw_cpu = paint
+                    .total
+                    .saturating_sub(paint.present.acquire_surface);
+                self.update_draw_lead_estimate(useful_draw_cpu);
                 let frame_end = Instant::now();
                 self.last_presented_at = frame_end;
                 let frame_start = frame_end
@@ -890,9 +886,62 @@ impl WindowHandle {
                     paint,
                 ));
             }
+            self.frame_prepared = false;
             return presented;
         }
+        self.frame_prepared = false;
         false
+    }
+
+    pub(crate) fn prepare_frame_if_needed(&mut self) -> bool {
+        if self.frame_prepared || !self.window_state.has_next_frame_work() {
+            return false;
+        }
+
+        self.window_state.promote_next_frame_work();
+        self.run_begin_frame_callbacks();
+        self.process_update_no_paint();
+        self.frame_prepared = true;
+        true
+    }
+
+    pub(crate) fn has_preparable_frame_work(&self) -> bool {
+        !self.frame_prepared && self.window_state.has_next_frame_work()
+    }
+
+    fn current_frame_time(&self) -> FrameTime {
+        let now = Instant::now();
+        let frame_interval = self
+            .window
+            .current_monitor()
+            .and_then(|m| m.current_video_mode())
+            .and_then(|v| v.refresh_rate_millihertz())
+            .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
+            .unwrap_or(Duration::from_millis(8));
+        let predicted_present = now.checked_add(frame_interval);
+        FrameTime {
+            now,
+            interval: PresentationInterval {
+                deadline_min: now,
+                deadline_max: predicted_present.unwrap_or(now),
+                predicted_present,
+                background_rendering: false,
+            },
+            frame_interval,
+            frame_index: self.frame_counter,
+        }
+    }
+
+    fn run_begin_frame_callbacks(&mut self) {
+        if !self.window_state.has_pending_begin_frame_callbacks() {
+            return;
+        }
+        let frame_time = self.current_frame_time();
+        self.frame_counter = self.frame_counter.saturating_add(1);
+        let callbacks = self.window_state.take_begin_frame_callbacks();
+        for callback in callbacks {
+            callback(frame_time);
+        }
     }
 
     fn build_timing_report(
@@ -1251,23 +1300,47 @@ impl WindowHandle {
         self.process_update_no_paint();
     }
 
+    pub(crate) fn frame_prepare_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
+        let earliest_present = self.last_presented_at + frame_interval;
+        let max_total_lead = frame_interval
+            .checked_sub(Duration::from_millis(1))
+            .unwrap_or(frame_interval);
+        let lead_time = min_duration(
+            max_duration(
+                self.estimated_frame_prepare_lead_time + self.estimated_draw_lead_time,
+                Duration::from_millis(1),
+            ),
+            max_total_lead,
+        );
+
+        earliest_present.checked_sub(lead_time).unwrap_or(now)
+    }
+
     pub(crate) fn redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
         let earliest_present = self.last_presented_at + frame_interval;
         let max_lead = frame_interval
             .checked_div(2)
             .unwrap_or(Duration::from_millis(1));
         let lead_time = min_duration(
-            max_duration(self.estimated_frame_lead_time, Duration::from_millis(1)),
+            max_duration(self.estimated_draw_lead_time, Duration::from_millis(1)),
             max_lead,
         );
 
         earliest_present.checked_sub(lead_time).unwrap_or(now)
     }
 
-    fn update_frame_lead_estimate(&mut self, observed_cpu_time: Duration) {
+    fn update_frame_prepare_lead_estimate(&mut self, observed_cpu_time: Duration) {
         let target = observed_cpu_time + Duration::from_micros(500);
-        self.estimated_frame_lead_time = max_duration(self.estimated_frame_lead_time, target);
-        self.estimated_frame_lead_time = (self.estimated_frame_lead_time * 7 + target) / 8;
+        self.estimated_frame_prepare_lead_time =
+            max_duration(self.estimated_frame_prepare_lead_time, target);
+        self.estimated_frame_prepare_lead_time =
+            (self.estimated_frame_prepare_lead_time * 7 + target) / 8;
+    }
+
+    fn update_draw_lead_estimate(&mut self, observed_cpu_time: Duration) {
+        let target = observed_cpu_time + Duration::from_micros(500);
+        self.estimated_draw_lead_time = max_duration(self.estimated_draw_lead_time, target);
+        self.estimated_draw_lead_time = (self.estimated_draw_lead_time * 7 + target) / 8;
     }
 
     pub(crate) fn set_occluded(&mut self, is_occluded: bool) {
