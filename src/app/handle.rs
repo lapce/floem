@@ -53,6 +53,7 @@ struct PacedPrepareTimerState {
 
 pub(crate) struct ApplicationHandle {
     window_handles: HashMap<winit::window::WindowId, WindowHandle>,
+    next_output_id: u32,
     timers: HashMap<TimerToken, Timer>,
     paced_prepare_timers: HashMap<winit::window::WindowId, PacedPrepareTimerState>,
     paced_redraw_timers: HashMap<winit::window::WindowId, PacedRedrawTimerState>,
@@ -68,6 +69,7 @@ impl ApplicationHandle {
     pub(crate) fn new(config: AppConfig) -> Self {
         Self {
             window_handles: HashMap::new(),
+            next_output_id: 0,
             timers: HashMap::new(),
             paced_prepare_timers: HashMap::new(),
             paced_redraw_timers: HashMap::new(),
@@ -134,6 +136,20 @@ impl ApplicationHandle {
                     menu,
                     pos,
                 });
+            }
+            #[cfg(all(feature = "subduction", target_os = "macos"))]
+            UserEvent::SubductionFrameTick { window_id, tick } => {
+                if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                    handle.receive_frame_tick(tick);
+                    handle.sync_frame_clock_activity();
+                    if handle.can_render_now()
+                        && (handle.has_preparable_frame_work()
+                            || handle.window_state.has_pending_begin_frame_callbacks()
+                            || handle.window_state.has_pending_render())
+                    {
+                        self.request_update();
+                    }
+                }
             }
         }
     }
@@ -335,14 +351,9 @@ impl ApplicationHandle {
                 let size: LogicalSize<f64> = size.to_logical(window_handle.window_state.os_scale);
                 let size = Size::new(size.width, size.height);
                 window_handle.size(size);
-
                 #[cfg(target_os = "macos")]
-                window_handle.set_presents_with_transaction(true);
-
-                frame_presented = window_handle.render_frame();
-
-                #[cfg(target_os = "macos")]
-                window_handle.set_presents_with_transaction(false);
+                window_handle.request_presents_with_transaction_on_next_frame();
+                window_handle.window.request_redraw();
             }
             WindowEvent::Moved(position) => {
                 let position: LogicalPosition<f64> =
@@ -467,6 +478,9 @@ impl ApplicationHandle {
         }
         if is_redraw {
             self.schedule_window_frame_if_needed(window_id, event_loop);
+        }
+        if let Some(handle) = self.window_handles.get_mut(&window_id) {
+            handle.sync_frame_clock_activity();
         }
         if !is_redraw {
             self.request_update();
@@ -677,8 +691,11 @@ impl ApplicationHandle {
             }
         }
         let window_id = window.id();
+        let output_id = self.next_output_id;
+        self.next_output_id = self.next_output_id.saturating_add(1);
         let window_handle = WindowHandle::new(
             window,
+            output_id,
             self.gpu_resources.clone(),
             renderer_chooser,
             self.config.wgpu_features,
@@ -733,6 +750,7 @@ impl ApplicationHandle {
 
         for (window_id, handle) in self.window_handles.iter_mut() {
             let done = handle.process_update_budgeted(start, budget);
+            handle.sync_frame_clock_activity();
             if !done {
                 any_work_remaining = true;
             }
@@ -745,6 +763,7 @@ impl ApplicationHandle {
                 .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
                 .unwrap_or(Duration::from_millis(8));
             let now = Instant::now();
+            handle.refresh_frame_clock(frame_interval, now);
             let should_prepare_frame = handle.can_render_now()
                 && handle.has_preparable_frame_work()
                 && now >= handle.frame_prepare_deadline(frame_interval, now);
@@ -816,6 +835,16 @@ impl ApplicationHandle {
         window_id: WindowId,
         event_loop: &dyn ActiveEventLoop,
     ) {
+        if let Some(handle) = self.window_handles.get_mut(&window_id) {
+            let frame_interval = handle
+                .window
+                .current_monitor()
+                .and_then(|m| m.current_video_mode())
+                .and_then(|v| v.refresh_rate_millihertz())
+                .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
+                .unwrap_or(Duration::from_millis(8));
+            handle.refresh_frame_clock(frame_interval, Instant::now());
+        }
         let Some((
             can_render_now,
             needs_prepare,

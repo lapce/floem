@@ -34,6 +34,8 @@ use crate::{
     view::IntoView,
     window::{WindowConfig, WindowCreation},
 };
+#[cfg(all(feature = "subduction", target_os = "macos"))]
+use subduction_core::timing::FrameTick;
 use handle::ApplicationHandle;
 
 pub(crate) type AppEventCallback = dyn Fn(AppEvent);
@@ -170,6 +172,11 @@ pub(crate) enum UserEvent {
         window_id: WindowId,
         menu: MenuWrapper,
         pos: Option<Point>,
+    },
+    #[cfg(all(feature = "subduction", target_os = "macos"))]
+    SubductionFrameTick {
+        window_id: WindowId,
+        tick: FrameTick,
     },
 }
 

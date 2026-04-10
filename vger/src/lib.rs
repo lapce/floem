@@ -6,10 +6,10 @@ use anyhow::Result;
 use floem_vger_rs::{GlyphImage, PaintIndex, Vger};
 use imaging::{
     BlurredRoundedRect, ClipRef, FillRef, GlyphRunRef, GroupRef, ImageBufferTarget,
-    ImageRenderer, ImageRendererError, PaintSink, RenderSource, StrokeRef, TextureRenderer,
-    TextureRendererError, TextureViewTarget,
+    ImageRenderer, ImageRendererError, PaintSink, RenderSource, StrokeRef,
     record::Glyph,
 };
+use imaging_wgpu::{TextureRenderer, TextureRendererError, TextureViewTarget};
 use peniko::kurbo::Stroke;
 use peniko::{Blob, LinearGradientPosition};
 use peniko::{
@@ -200,8 +200,9 @@ impl VgerRenderer {
 
 impl TextureRenderer for VgerRenderer {
     type TextureTarget = TextureViewTarget;
+    type Texture = wgpu::Texture;
 
-    fn render_source_to_texture(
+    fn render_source_into_texture(
         &mut self,
         source: &mut dyn RenderSource,
         target: Self::TextureTarget,
@@ -213,6 +214,23 @@ impl TextureRenderer for VgerRenderer {
         source.paint_into(self);
         self.finish();
         Ok(())
+    }
+
+    fn render_source_texture(
+        &mut self,
+        source: &mut dyn RenderSource,
+        width: u32,
+        height: u32,
+    ) -> Result<Self::Texture, TextureRendererError> {
+        self.begin(width, height);
+        source.paint_into(self);
+        self.finish();
+        self.texture
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| TextureRendererError::backend(std::io::Error::other(
+                "vger backend did not produce a texture output",
+            )))
     }
 }
 

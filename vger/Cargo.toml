@@ -14,7 +14,8 @@ package = "floem-vger"
 [dependencies]
 image = { workspace = true }
 peniko = { workspace = true }
-imaging = { workspace = true, features = ["wgpu"] }
+imaging = { workspace = true, features = ["std"] }
+imaging_wgpu = { workspace = true }
 imaging_vello_cpu = { path = "../../imaging/imaging_vello_cpu" }
 wgpu = { workspace = true }
 parley = { workspace = true }

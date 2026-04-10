@@ -20,6 +20,7 @@ use winit::window::{
 };
 
 use crate::gpu_resources::GpuResources;
+use crate::frame_clock::{FrameClock, new_window_frame_clock};
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
 use imaging::{FillRef, PaintSink, Painter};
 use peniko::color::palette;
@@ -54,7 +55,7 @@ use crate::{
     inspector::{
         self, Capture, CaptureState, CapturedView, TimingKind, TimingReport, profiler::Profile,
     },
-    frame::{FrameTime, PresentationInterval},
+    frame::FrameTime,
     message::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE,
         DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES, UpdateMessage,
@@ -101,14 +102,12 @@ pub(crate) struct WindowHandle {
             + Send
             + Sync,
     >,
-    last_presented_at: Instant,
-    estimated_frame_prepare_lead_time: Duration,
-    estimated_draw_lead_time: Duration,
     is_occluded: bool,
+    #[cfg(target_os = "macos")]
+    next_presents_with_transaction: bool,
     pending_timing: FrameTimingAccumulator,
     last_timing_report: Option<TimingReport>,
-    frame_counter: u64,
-    frame_prepared: bool,
+    frame_clock: Box<dyn FrameClock>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -132,14 +131,6 @@ impl FrameTimingAccumulator {
     fn total(&self) -> Duration {
         self.style + self.layout + self.box_tree_pending_updates + self.box_tree_commit
     }
-}
-
-fn max_duration(a: Duration, b: Duration) -> Duration {
-    if a >= b { a } else { b }
-}
-
-fn min_duration(a: Duration, b: Duration) -> Duration {
-    if a <= b { a } else { b }
 }
 
 impl Drop for WindowHandle {
@@ -167,6 +158,7 @@ impl WindowHandle {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         window: Box<dyn winit::window::Window>,
+        output_id: u32,
         gpu_resources: Option<GpuResources>,
         renderer_chooser: Arc<
             dyn Fn(
@@ -271,14 +263,12 @@ impl WindowHandle {
             event_reducer: WindowEventReducer::default(),
             gpu_resources,
             renderer_chooser,
-            last_presented_at: Instant::now(),
-            estimated_frame_prepare_lead_time: Duration::from_millis(1),
-            estimated_draw_lead_time: Duration::from_millis(1),
             is_occluded: false,
+            #[cfg(target_os = "macos")]
+            next_presents_with_transaction: false,
             pending_timing: FrameTimingAccumulator::default(),
             last_timing_report: None,
-            frame_counter: 0,
-            frame_prepared: false,
+            frame_clock: new_window_frame_clock(window_id, output_id),
         };
         if paint_state_initialized {
             window_handle.init_renderer();
@@ -445,14 +435,12 @@ impl WindowHandle {
             event_reducer: WindowEventReducer::default(),
             gpu_resources: None,
             renderer_chooser: crate::paint::renderer::default_renderer(),
-            last_presented_at: Instant::now(),
-            estimated_frame_prepare_lead_time: Duration::from_millis(1),
-            estimated_draw_lead_time: Duration::from_millis(1),
             is_occluded: false,
+            #[cfg(target_os = "macos")]
+            next_presents_with_transaction: false,
             pending_timing: FrameTimingAccumulator::default(),
             last_timing_report: None,
-            frame_counter: 0,
-            frame_prepared: false,
+            frame_clock: new_window_frame_clock(window_id, 0),
         };
 
         window_handle
@@ -491,6 +479,7 @@ impl WindowHandle {
         // Now that the renderer is initialized, draw the first frame
         self.render_frame();
         self.window.set_visible(true);
+        self.sync_frame_clock_activity();
     }
 
     pub fn event(&mut self, event: Event) {
@@ -862,20 +851,37 @@ impl WindowHandle {
 
     pub(crate) fn render_frame(&mut self) -> bool {
         self.prepare_frame_if_needed();
+        self.render_paint_frame()
+    }
+
+    fn render_paint_frame(&mut self) -> bool {
         let renderer_ready = matches!(self.paint_state, PaintState::Initialized { .. });
         if self.window_state.has_pending_render() && renderer_ready {
+            #[cfg(target_os = "macos")]
+            let presents_with_transaction = self.next_presents_with_transaction;
+            #[cfg(target_os = "macos")]
+            if presents_with_transaction {
+                self.set_presents_with_transaction_now(true);
+            }
+
             let paint = self.paint();
+
+            #[cfg(target_os = "macos")]
+            if presents_with_transaction {
+                self.set_presents_with_transaction_now(false);
+                self.next_presents_with_transaction = false;
+            }
+
             self.window_state.clear_pending_damage();
             let presented = paint.presented;
             if presented {
                 let update = mem::take(&mut self.pending_timing);
-                self.update_frame_prepare_lead_estimate(update.total());
                 let useful_draw_cpu = paint
                     .total
                     .saturating_sub(paint.present.acquire_surface);
-                self.update_draw_lead_estimate(useful_draw_cpu);
                 let frame_end = Instant::now();
-                self.last_presented_at = frame_end;
+                self.frame_clock
+                    .observe_presented(update.total(), useful_draw_cpu, frame_end);
                 let frame_start = frame_end
                     .checked_sub(update.total() + paint.total)
                     .unwrap_or(frame_end);
@@ -886,50 +892,52 @@ impl WindowHandle {
                     paint,
                 ));
             }
-            self.frame_prepared = false;
+            self.frame_clock.clear_prepared_frame();
             return presented;
         }
-        self.frame_prepared = false;
+        self.frame_clock.clear_prepared_frame();
         false
     }
 
     pub(crate) fn prepare_frame_if_needed(&mut self) -> bool {
-        if self.frame_prepared || !self.window_state.has_next_frame_work() {
+        if !self
+            .frame_clock
+            .has_preparable_frame_work(self.window_state.has_next_frame_work())
+        {
             return false;
         }
 
+        self.frame_clock.note_frame_prepare_started(Instant::now());
         self.window_state.promote_next_frame_work();
         self.run_begin_frame_callbacks();
         self.process_update_no_paint();
-        self.frame_prepared = true;
+        self.frame_clock.mark_frame_prepared();
         true
     }
 
     pub(crate) fn has_preparable_frame_work(&self) -> bool {
-        !self.frame_prepared && self.window_state.has_next_frame_work()
+        self.frame_clock
+            .has_preparable_frame_work(self.window_state.has_next_frame_work())
     }
 
     fn current_frame_time(&self) -> FrameTime {
         let now = Instant::now();
-        let frame_interval = self
-            .window
+        let frame_interval = self.frame_interval();
+        self.frame_clock
+            .current_frame_time(frame_interval, now, false)
+    }
+
+    fn frame_interval(&self) -> Duration {
+        self.window
             .current_monitor()
             .and_then(|m| m.current_video_mode())
             .and_then(|v| v.refresh_rate_millihertz())
             .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
-            .unwrap_or(Duration::from_millis(8));
-        let predicted_present = now.checked_add(frame_interval);
-        FrameTime {
-            now,
-            interval: PresentationInterval {
-                deadline_min: now,
-                deadline_max: predicted_present.unwrap_or(now),
-                predicted_present,
-                background_rendering: false,
-            },
-            frame_interval,
-            frame_index: self.frame_counter,
-        }
+            .unwrap_or(Duration::from_millis(8))
+    }
+
+    pub(crate) fn refresh_frame_clock(&mut self, frame_interval: Duration, now: Instant) {
+        self.frame_clock.refresh_schedule(frame_interval, now);
     }
 
     fn run_begin_frame_callbacks(&mut self) {
@@ -937,11 +945,24 @@ impl WindowHandle {
             return;
         }
         let frame_time = self.current_frame_time();
-        self.frame_counter = self.frame_counter.saturating_add(1);
+        self.frame_clock.note_begin_frame_callbacks_ran();
         let callbacks = self.window_state.take_begin_frame_callbacks();
         for callback in callbacks {
             callback(frame_time);
         }
+    }
+
+    #[cfg(all(feature = "subduction", target_os = "macos"))]
+    pub(crate) fn receive_frame_tick(&mut self, tick: subduction_core::timing::FrameTick) {
+        self.frame_clock.receive_frame_tick(tick);
+    }
+
+    pub(crate) fn sync_frame_clock_activity(&mut self) {
+        let active = self.can_render_now()
+            && (self.window_state.has_next_frame_work()
+                || self.window_state.has_pending_begin_frame_callbacks()
+                || self.window_state.has_pending_render());
+        self.frame_clock.set_active(active);
     }
 
     fn build_timing_report(
@@ -1301,46 +1322,11 @@ impl WindowHandle {
     }
 
     pub(crate) fn frame_prepare_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
-        let earliest_present = self.last_presented_at + frame_interval;
-        let max_total_lead = frame_interval
-            .checked_sub(Duration::from_millis(1))
-            .unwrap_or(frame_interval);
-        let lead_time = min_duration(
-            max_duration(
-                self.estimated_frame_prepare_lead_time + self.estimated_draw_lead_time,
-                Duration::from_millis(1),
-            ),
-            max_total_lead,
-        );
-
-        earliest_present.checked_sub(lead_time).unwrap_or(now)
+        self.frame_clock.frame_prepare_deadline(frame_interval, now)
     }
 
     pub(crate) fn redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
-        let earliest_present = self.last_presented_at + frame_interval;
-        let max_lead = frame_interval
-            .checked_div(2)
-            .unwrap_or(Duration::from_millis(1));
-        let lead_time = min_duration(
-            max_duration(self.estimated_draw_lead_time, Duration::from_millis(1)),
-            max_lead,
-        );
-
-        earliest_present.checked_sub(lead_time).unwrap_or(now)
-    }
-
-    fn update_frame_prepare_lead_estimate(&mut self, observed_cpu_time: Duration) {
-        let target = observed_cpu_time + Duration::from_micros(500);
-        self.estimated_frame_prepare_lead_time =
-            max_duration(self.estimated_frame_prepare_lead_time, target);
-        self.estimated_frame_prepare_lead_time =
-            (self.estimated_frame_prepare_lead_time * 7 + target) / 8;
-    }
-
-    fn update_draw_lead_estimate(&mut self, observed_cpu_time: Duration) {
-        let target = observed_cpu_time + Duration::from_micros(500);
-        self.estimated_draw_lead_time = max_duration(self.estimated_draw_lead_time, target);
-        self.estimated_draw_lead_time = (self.estimated_draw_lead_time * 7 + target) / 8;
+        self.frame_clock.redraw_deadline(frame_interval, now)
     }
 
     pub(crate) fn set_occluded(&mut self, is_occluded: bool) {
@@ -2104,7 +2090,12 @@ impl WindowHandle {
     }
 
     #[cfg(target_os = "macos")]
-    pub(crate) fn set_presents_with_transaction(&mut self, value: bool) {
+    pub(crate) fn request_presents_with_transaction_on_next_frame(&mut self) {
+        self.next_presents_with_transaction = true;
+    }
+
+    #[cfg(target_os = "macos")]
+    fn set_presents_with_transaction_now(&mut self, value: bool) {
         #[cfg(not(any(feature = "vello", feature = "vger", feature = "skia")))]
         let _ = value;
 

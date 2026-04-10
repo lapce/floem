@@ -52,8 +52,9 @@ use std::sync::Arc;
 use crate::gpu_resources::GpuResources;
 use imaging::{
     BlurredRoundedRect, ClipRef, FillRef, GlyphRunRef, GroupRef, ImageBufferTarget, ImageRenderer,
-    PaintSink, RenderSource, RgbaImage, StrokeRef, TextureRenderer, TextureViewTarget,
+    PaintSink, RenderSource, RgbaImage, StrokeRef,
 };
+use imaging_wgpu::{TextureRenderer, TextureViewTarget};
 use peniko::ImageData;
 use peniko::kurbo::Size;
 use softbuffer::{Context, Surface};
@@ -168,123 +169,56 @@ fn rgba_image_into_image_data(image: RgbaImage) -> ImageData {
     }
 }
 
-trait TextureImageRenderer: TextureRenderer<TextureTarget = wgpu::Texture> + ImageRenderer {}
-
-impl<T> TextureImageRenderer for T where
-    T: TextureRenderer<TextureTarget = wgpu::Texture> + ImageRenderer
+trait TextureWindowRenderer:
+    TextureRenderer<TextureTarget = wgpu::Texture, Texture = wgpu::Texture>
 {
 }
 
-trait TextureViewImageRenderer:
-    TextureRenderer<TextureTarget = TextureViewTarget> + ImageRenderer
+impl<T> TextureWindowRenderer for T where
+    T: TextureRenderer<TextureTarget = wgpu::Texture, Texture = wgpu::Texture>
 {
 }
 
-impl<T> TextureViewImageRenderer for T where
-    T: TextureRenderer<TextureTarget = TextureViewTarget> + ImageRenderer
+trait TextureViewWindowRenderer:
+    TextureRenderer<TextureTarget = TextureViewTarget, Texture = wgpu::Texture>
 {
 }
 
-struct TextureAndImageRenderer<T, I> {
-    texture: T,
-    image: I,
-}
-
-impl<T, I> TextureAndImageRenderer<T, I> {
-    fn new(texture: T, image: I) -> Self {
-        Self { texture, image }
-    }
-}
-
-impl<T, I> TextureRenderer for TextureAndImageRenderer<T, I>
-where
-    T: TextureRenderer<TextureTarget = wgpu::Texture>,
+impl<T> TextureViewWindowRenderer for T where
+    T: TextureRenderer<TextureTarget = TextureViewTarget, Texture = wgpu::Texture>
 {
-    type TextureTarget = wgpu::Texture;
-
-    fn render_source_to_texture(
-        &mut self,
-        source: &mut dyn RenderSource,
-        target: Self::TextureTarget,
-    ) -> Result<(), imaging::TextureRendererError> {
-        self.texture.render_source_to_texture(source, target)
-    }
 }
 
-impl<T, I> ImageRenderer for TextureAndImageRenderer<T, I>
-where
-    I: ImageRenderer,
-{
-    fn render_source_into(
-        &mut self,
-        source: &mut dyn RenderSource,
-        target: ImageBufferTarget<'_>,
-    ) -> Result<(), imaging::ImageRendererError> {
-        self.image.render_source_into(source, target)
-    }
-}
-
-struct TextureViewAndImageRenderer<T, I> {
-    texture: T,
-    image: I,
-}
-
-impl<T, I> TextureViewAndImageRenderer<T, I> {
-    fn new(texture: T, image: I) -> Self {
-        Self { texture, image }
-    }
-}
-
-impl<T, I> TextureRenderer for TextureViewAndImageRenderer<T, I>
-where
-    T: TextureRenderer<TextureTarget = TextureViewTarget>,
-{
-    type TextureTarget = TextureViewTarget;
-
-    fn render_source_to_texture(
-        &mut self,
-        source: &mut dyn RenderSource,
-        target: Self::TextureTarget,
-    ) -> Result<(), imaging::TextureRendererError> {
-        self.texture.render_source_to_texture(source, target)
-    }
-}
-
-impl<T, I> ImageRenderer for TextureViewAndImageRenderer<T, I>
-where
-    I: ImageRenderer,
-{
-    fn render_source_into(
-        &mut self,
-        source: &mut dyn RenderSource,
-        target: ImageBufferTarget<'_>,
-    ) -> Result<(), imaging::ImageRendererError> {
-        self.image.render_source_into(source, target)
-    }
-}
-
+#[allow(
+    dead_code,
+    reason = "Some renderer variants are only constructed when optional GPU backends are enabled."
+)]
 enum AcceptedRenderer {
     Image {
         backend: Box<dyn ImageRenderer>,
         name: &'static str,
     },
     Texture {
-        backend: Box<dyn TextureImageRenderer>,
+        backend: Box<dyn TextureWindowRenderer>,
         name: &'static str,
     },
     TextureView {
-        backend: Box<dyn TextureViewImageRenderer>,
+        backend: Box<dyn TextureViewWindowRenderer>,
         name: &'static str,
     },
 }
 
+#[allow(
+    dead_code,
+    reason = "Some renderer variants are only constructed when optional GPU backends are enabled."
+)]
 enum GpuAcceptedRenderer {
     Texture {
-        backend: Box<dyn TextureImageRenderer>,
+        backend: Box<dyn TextureWindowRenderer>,
         name: &'static str,
     },
     TextureView {
-        backend: Box<dyn TextureViewImageRenderer>,
+        backend: Box<dyn TextureViewWindowRenderer>,
         name: &'static str,
     },
 }
@@ -614,10 +548,10 @@ impl WindowRenderer for TargetGpuWindowRenderer {
         let height = size.height.max(1.0) as u32;
         match &mut self.backend {
             GpuAcceptedRenderer::Texture { backend, .. } => backend
-                .render_source_to_texture(source, surface_texture.texture.clone())
+                .render_source_into_texture(source, surface_texture.texture.clone())
                 .expect("failed to render gpu target"),
             GpuAcceptedRenderer::TextureView { backend, .. } => backend
-                .render_source_to_texture(
+                .render_source_into_texture(
                     source,
                     TextureViewTarget::new(&texture_view, width, height),
                 )
@@ -770,23 +704,20 @@ fn choose_default_renderer(cx: NewRendererCx) -> Result<WindowBackend, String> {
     {
         #[cfg(feature = "vello")]
         if let Some(gpu) = cx.gpu()
-            && let Some(surface_format) = gpu.surface_formats().iter().copied().find(|format| {
-                matches!(
-                    format,
-                    wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb
-                )
-            })
+            && let Some(surface_format) = gpu
+                .surface_formats()
+                .iter()
+                .copied()
+                .find(|format| matches!(format, wgpu::TextureFormat::Rgba8Unorm))
         {
             let device = gpu.gpu_resources.device.clone();
             let queue = gpu.gpu_resources.queue.clone();
             return cx.into_renderer(
                 AcceptedRenderer::TextureView {
-                    backend: Box::new(TextureViewAndImageRenderer::new(
-                        imaging_vello::VelloTargetRenderer::new(device.clone(), queue.clone())
-                            .map_err(|err| err.to_string())?,
+                    backend: Box::new(
                         imaging_vello::VelloRenderer::new(device, queue)
                             .map_err(|err| err.to_string())?,
-                    )),
+                    ),
                     name: "Vello GPU",
                 },
                 Some(surface_format),
@@ -848,16 +779,10 @@ fn choose_default_renderer(cx: NewRendererCx) -> Result<WindowBackend, String> {
             let queue = gpu.gpu_resources.queue.clone();
             return cx.into_renderer(
                 AcceptedRenderer::Texture {
-                    backend: Box::new(TextureAndImageRenderer::new(
-                        imaging_skia::SkiaGpuTargetRenderer::new(
-                            adapter.clone(),
-                            device.clone(),
-                            queue.clone(),
-                        )
-                        .map_err(|err| err.to_string())?,
+                    backend: Box::new(
                         imaging_skia::SkiaGpuRenderer::new(adapter, device, queue)
                             .map_err(|err| err.to_string())?,
-                    )),
+                    ),
                     name: "Skia GPU",
                 },
                 Some(surface_format),
@@ -877,12 +802,8 @@ fn choose_default_renderer(cx: NewRendererCx) -> Result<WindowBackend, String> {
             let queue = gpu.gpu_resources.queue.clone();
             return cx.into_renderer(
                 AcceptedRenderer::TextureView {
-                    backend: Box::new(TextureViewAndImageRenderer::new(
-                        imaging_vello_hybrid::VelloHybridTargetRenderer::new(
-                            device.clone(),
-                            queue.clone(),
-                        ),
-                        imaging_vello_hybrid::VelloHybridRenderer::new(device, queue),
+                    backend: Box::new(imaging_vello_hybrid::VelloHybridRenderer::new(
+                        device, queue,
                     )),
                     name: "Vello Hybrid GPU",
                 },

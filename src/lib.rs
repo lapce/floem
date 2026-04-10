@@ -198,6 +198,7 @@ pub mod context;
 pub mod event;
 pub mod ext_event;
 pub mod frame;
+pub(crate) mod frame_clock;
 mod inspector;
 pub mod layout;
 mod message;

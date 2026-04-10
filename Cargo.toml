@@ -60,6 +60,7 @@ ui-events-winit = { path = "./ui-events-winit", package = "ui-events-floem-winit
 dpi = { version = "0.1.2", default-features = false }
 rustc-hash = "2.1"
 imaging = { path = "../imaging/imaging", package = "imaging" }
+imaging_wgpu = { path = "../imaging/imaging_wgpu", package = "imaging_wgpu", features = ["wgpu-28"] }
 svg_imaging = { path = "../imaging/svg_imaging", package = "svg_imaging" }
 
 [dependencies]
@@ -68,7 +69,8 @@ sha2 = "0.10"
 bitflags = "2.9"
 indexmap = "2"
 rustc-hash.workspace = true
-imaging = { workspace = true, features = ["wgpu"] }
+imaging = { workspace = true, features = ["std"] }
+imaging_wgpu = { workspace = true }
 svg_imaging.workspace = true
 smallvec = "1.15"
 educe = "0.6"
@@ -95,8 +97,9 @@ imaging_vello_cpu = { path = "../imaging/imaging_vello_cpu", optional = true }
 imaging_vello_hybrid = { path = "../imaging/imaging_vello_hybrid", optional = true }
 floem_reactive = { path = "reactive", version = "0.2.0" }
 floem-editor-core = { path = "editor-core", version = "0.2.0", optional = true }
-subduction_core = { git = "https://github.com/jrmoulton/subduction.git", branch = "bump-wgpu", package = "subduction_core", optional = true, features = ["std"] }
-subduction_backend_wgpu = { git = "https://github.com/jrmoulton/subduction.git", branch = "bump-wgpu", package = "subduction_backend_wgpu", optional = true }
+subduction_core = { path = "../subduction/subduction_core", package = "subduction_core", optional = true, features = ["std"] }
+subduction_backend_wgpu = { path = "../subduction/subduction_backend_wgpu", package = "subduction_backend_wgpu", optional = true }
+subduction_backend_apple = { path = "../subduction/subduction_backend_apple", package = "subduction_backend_apple", optional = true, default-features = false, features = ["ca-display-link"] }
 copypasta = { version = "0.10", default-features = false, features = [
   "wayland",
   "x11",
@@ -142,6 +145,7 @@ wgpu = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 clipboard-win = "5.4"
+subduction_backend_windows = { path = "../subduction/subduction_backend_windows", package = "subduction_backend_windows", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", default-features = false }
@@ -204,7 +208,7 @@ tokio = ["dep:tokio"]
 # rfd (file dialog) async runtime
 crossbeam = ["dep:crossbeam"]
 localization = ["dep:fluent-bundle", "dep:unic-langid", "dep:sys-locale", "dep:ouroboros"]
-subduction = ["dep:subduction_core", "dep:subduction_backend_wgpu"]
+subduction = ["dep:subduction_core", "dep:subduction_backend_wgpu", "dep:subduction_backend_apple", "dep:subduction_backend_windows"]
 
 [dev-dependencies]
 criterion = { version = "0.8.1", features = ["html_reports"] }

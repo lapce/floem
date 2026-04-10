@@ -1444,6 +1444,7 @@ dependencies = [
  "imaging_vello",
  "imaging_vello_cpu",
  "imaging_vello_hybrid",
+ "imaging_wgpu",
  "imbl",
  "indexmap",
  "lapce-xi-rope",
@@ -1467,7 +1468,9 @@ dependencies = [
  "softbuffer",
  "strum",
  "strum_macros",
+ "subduction_backend_apple",
  "subduction_backend_wgpu",
+ "subduction_backend_windows",
  "subduction_core",
  "svg_imaging",
  "swash",
@@ -1758,6 +1761,7 @@ dependencies = [
  "image 0.25.10",
  "imaging",
  "imaging_vello_cpu",
+ "imaging_wgpu",
  "parley",
  "peniko",
  "swash",
@@ -2488,6 +2492,7 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash 0.2.0",
+ "rustc-std-workspace-alloc",
 ]
 
 [[package]]
@@ -2767,7 +2772,6 @@ version = "0.0.1"
 dependencies = [
  "kurbo",
  "peniko",
- "wgpu",
 ]
 
 [[package]]
@@ -2777,6 +2781,7 @@ dependencies = [
  "ash",
  "foreign-types-shared 0.3.1",
  "imaging",
+ "imaging_wgpu",
  "kurbo",
  "oaty",
  "peniko",
@@ -2803,6 +2808,7 @@ name = "imaging_vello"
 version = "0.0.1"
 dependencies = [
  "imaging",
+ "imaging_wgpu",
  "kurbo",
  "peniko",
  "vello",
@@ -2824,10 +2830,19 @@ name = "imaging_vello_hybrid"
 version = "0.0.1"
 dependencies = [
  "imaging",
+ "imaging_wgpu",
  "kurbo",
  "peniko",
  "vello_common",
  "vello_hybrid",
+ "wgpu",
+]
+
+[[package]]
+name = "imaging_wgpu"
+version = "0.0.1"
+dependencies = [
+ "imaging",
  "wgpu",
 ]
 
@@ -2910,6 +2925,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "078ea7b7c29a2b4df841a7f6ac8775ff6074020c6776d48491ce2268e068f972"
 dependencies = [
  "unic-langid",
+]
+
+[[package]]
+name = "invalidation"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f67508d5f48cfefd99f534c87837a755edd94c60f87d8cfc3b14e521a7f07a6"
+dependencies = [
+ "hashbrown 0.16.1",
 ]
 
 [[package]]
@@ -4015,15 +4039,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ordered-channel"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95be4d57809897b5a7539fc15a7dfe0e84141bc3dfaa2e9b1b27caa90acf61ab"
-dependencies = [
- "crossbeam-channel",
-]
-
-[[package]]
 name = "ordered-float"
 version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4972,6 +4987,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94300abf3f1ae2e2b8ffb7b58043de3d399c73fa6f4b73826402a5c457614dbe"
 
 [[package]]
+name = "rustc-std-workspace-alloc"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9d441c3b2ebf55cebf796bfdc265d67fa09db17b7bb6bd4be75c509e1e8fec3"
+
+[[package]]
 name = "rustc_version"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5610,9 +5631,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "subduction_backend_apple"
+version = "0.0.1"
+dependencies = [
+ "hashbrown 0.16.1",
+ "kurbo",
+ "objc2 0.6.4",
+ "objc2-core-foundation",
+ "objc2-foundation 0.3.2",
+ "objc2-quartz-core 0.3.2",
+ "subduction_core",
+]
+
+[[package]]
 name = "subduction_backend_wgpu"
 version = "0.0.1"
-source = "git+https://github.com/jrmoulton/subduction.git?branch=bump-wgpu#16ad0dd1a59a2c83d47c28cc94001c0e8deb3f77"
 dependencies = [
  "bytemuck",
  "subduction_core",
@@ -5620,12 +5653,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "subduction_core"
+name = "subduction_backend_windows"
 version = "0.0.1"
-source = "git+https://github.com/jrmoulton/subduction.git?branch=bump-wgpu#16ad0dd1a59a2c83d47c28cc94001c0e8deb3f77"
 dependencies = [
  "kurbo",
- "understory_dirty",
+ "subduction_core",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
+ "windows-numerics",
+]
+
+[[package]]
+name = "subduction_core"
+version = "0.0.1"
+dependencies = [
+ "invalidation",
+ "kurbo",
 ]
 
 [[package]]
@@ -5884,15 +5927,6 @@ dependencies = [
  "proc-macro2 1.0.106",
  "quote 1.0.45",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "thread_local"
-version = "1.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
-dependencies = [
- "cfg-if",
 ]
 
 [[package]]
@@ -6309,14 +6343,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "understory_dirty"
-version = "0.1.0"
-source = "git+https://github.com/endoli/understory.git?rev=e66fecdc521b57b76bb3b28ddc70ce3944926664#e66fecdc521b57b76bb3b28ddc70ce3944926664"
-dependencies = [
- "hashbrown 0.16.1",
-]
-
-[[package]]
 name = "understory_event_state"
 version = "0.1.0"
 source = "git+https://github.com/jrmoulton/understory?rev=2c2abb8c4bd9#2c2abb8c4bd9bcca1168e51cbc614d8cfd2d3910"
@@ -6573,11 +6599,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a678f91c7524a3a9ac9a19df9f83552866ec70b2ca26441b916a6b219b6aa2de"
 dependencies = [
  "bytemuck",
- "crossbeam-channel",
  "hashbrown 0.16.1",
- "ordered-channel",
- "rayon",
- "thread_local",
  "vello_api",
  "vello_common",
 ]
