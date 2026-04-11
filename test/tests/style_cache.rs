@@ -524,3 +524,162 @@ fn test_cache_rapid_updates() {
         }
     }
 }
+
+// ============================================================================
+// Structural Selector Tests (cache exclusion)
+// ============================================================================
+
+/// Test that structural selectors (:first-child, :last-child) produce correct
+/// per-position styles. These styles are excluded from the cache because they
+/// depend on child_index/sibling_count which aren't in the cache key.
+#[test]
+#[serial]
+fn test_cache_with_structural_selectors() {
+    let root = TestRoot::new();
+
+    let views: Vec<_> = (0..5)
+        .map(|_| {
+            Empty::new().style(|s| {
+                s.size(50.0, 50.0)
+                    .background(palette::css::GRAY)
+                    .first_child(|s| s.background(palette::css::RED))
+                    .last_child(|s| s.background(palette::css::BLUE))
+            })
+        })
+        .collect();
+
+    let ids: Vec<_> = views.iter().map(|v| v.view_id()).collect();
+    let container = Stack::from_iter(views).style(|s| s.size(300.0, 300.0));
+    let harness = HeadlessHarness::new_with_size(root, container, 300.0, 300.0);
+
+    // First child should be RED
+    let bg_first = harness.get_computed_style(ids[0]).get(Background);
+    assert!(
+        matches!(bg_first, Some(Brush::Solid(c)) if c == palette::css::RED),
+        "First child should be RED, got {:?}",
+        bg_first
+    );
+
+    // Last child should be BLUE
+    let bg_last = harness.get_computed_style(ids[4]).get(Background);
+    assert!(
+        matches!(bg_last, Some(Brush::Solid(c)) if c == palette::css::BLUE),
+        "Last child should be BLUE, got {:?}",
+        bg_last
+    );
+
+    // Middle children should be GRAY
+    for &id in &ids[1..4] {
+        let bg = harness.get_computed_style(id).get(Background);
+        assert!(
+            matches!(bg, Some(Brush::Solid(c)) if c == palette::css::GRAY),
+            "Middle child should be GRAY, got {:?}",
+            bg
+        );
+    }
+}
+
+// ============================================================================
+// Selected State Tests
+// ============================================================================
+
+/// Test that selected state changes correctly affect styles.
+#[test]
+#[serial]
+fn test_cache_with_selected_state() {
+    let root = TestRoot::new();
+    let selected_signal = RwSignal::new(false);
+
+    let view = Empty::new().style(|s| {
+        s.size(100.0, 100.0)
+            .background(palette::css::WHITE)
+            .selected(|s| s.background(palette::css::GOLD))
+    });
+    let view_id = view.view_id();
+
+    let container = Container::new(view)
+        .style(move |s| s.size(150.0, 150.0).set_selected(selected_signal.get()));
+
+    let mut harness = HeadlessHarness::new_with_size(root, container, 150.0, 150.0);
+
+    // Initial: should be WHITE
+    let style = harness.get_computed_style(view_id);
+    let bg = style.get(Background);
+    assert!(
+        matches!(bg, Some(Brush::Solid(c)) if c == palette::css::WHITE),
+        "Initial should be WHITE, got {:?}",
+        bg
+    );
+
+    // Select
+    selected_signal.set(true);
+    harness.rebuild();
+
+    let style = harness.get_computed_style(view_id);
+    let bg = style.get(Background);
+    assert!(
+        matches!(bg, Some(Brush::Solid(c)) if c == palette::css::GOLD),
+        "Selected should be GOLD, got {:?}",
+        bg
+    );
+
+    // Deselect
+    selected_signal.set(false);
+    harness.rebuild();
+
+    let style = harness.get_computed_style(view_id);
+    let bg = style.get(Background);
+    assert!(
+        matches!(bg, Some(Brush::Solid(c)) if c == palette::css::WHITE),
+        "Deselected should be WHITE, got {:?}",
+        bg
+    );
+}
+
+// ============================================================================
+// Active State Tests
+// ============================================================================
+
+/// Test that active state (pointer down) correctly affects styles.
+#[test]
+#[serial]
+fn test_cache_with_active_state() {
+    let root = TestRoot::new();
+    let view = Empty::new().style(|s| {
+        s.size(100.0, 100.0)
+            .background(palette::css::GRAY)
+            .active(|s| s.background(palette::css::ORANGE))
+    });
+    let id = view.view_id();
+
+    let mut harness = HeadlessHarness::new_with_size(root, view, 100.0, 100.0);
+
+    // Initial: should be GRAY
+    let style = harness.get_computed_style(id);
+    let bg = style.get(Background);
+    assert!(
+        matches!(bg, Some(Brush::Solid(c)) if c == palette::css::GRAY),
+        "Initial should be GRAY"
+    );
+
+    // Pointer down (active)
+    harness.pointer_move(50.0, 50.0);
+    harness.pointer_down(50.0, 50.0);
+    let style = harness.get_computed_style(id);
+    let bg = style.get(Background);
+    assert!(
+        matches!(bg, Some(Brush::Solid(c)) if c == palette::css::ORANGE),
+        "Active should be ORANGE, got {:?}",
+        bg
+    );
+
+    // Pointer up (no longer active)
+    harness.pointer_up(50.0, 50.0);
+    let style = harness.get_computed_style(id);
+    let bg = style.get(Background);
+    assert!(
+        matches!(bg, Some(Brush::Solid(c)) if c == palette::css::GRAY),
+        "After pointer up should be GRAY, got {:?}",
+        bg
+    );
+}

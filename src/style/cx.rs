@@ -214,6 +214,7 @@ impl<'a> StyleCx<'a> {
         // Phase 2: Build interaction state for selector matching
         // ─────────────────────────────────────────────────────────────────────
         let view_interact_state = Self::get_interact_state(window_state, view_id);
+        let now = window_state.frame_start;
 
         Self {
             window_state,
@@ -221,7 +222,7 @@ impl<'a> StyleCx<'a> {
             inherited,
             class_context,
             direct: Default::default(),
-            now: Instant::now(),
+            now,
             view_interact_state,
             reason,
             targeted_elements,
@@ -283,14 +284,65 @@ impl<'a> StyleCx<'a> {
             self.reason.needs_resolve_nested_maps() || self.reason.needs_animation();
 
         if self.reason.needs_resolve_nested_maps() {
-            // Cache miss or dirty - compute style
-            view_state.borrow_mut().compute_combined(
-                &mut self.view_interact_state,
-                self.window_state.screen_size_bp,
-                view_class,
-                &self.inherited,
-                &self.class_context,
-            );
+            use super::cache::StyleCacheKey;
+
+            // Get metadata without cloning the full style
+            let (style_hash, cacheable) = {
+                let mut vs = view_state.borrow_mut();
+                let style_hash = vs.style_content_hash();
+                let cacheable =
+                    vs.style_is_cacheable() && !self.class_context.has_structural_selectors();
+                (style_hash, cacheable)
+            };
+
+            let cache_key = if cacheable {
+                Some(StyleCacheKey::new_from_hash(
+                    style_hash,
+                    &self.view_interact_state,
+                    self.window_state.screen_size_bp,
+                    &classes,
+                    &self.class_context,
+                ))
+            } else {
+                None
+            };
+
+            let cache_hit = cache_key
+                .as_ref()
+                .and_then(|key| self.window_state.style_cache.get(key, &self.inherited));
+
+            if let Some(hit) = cache_hit {
+                // Cache hit — restore all compute_combined() outputs, no Style clone needed
+                let mut vs = view_state.borrow_mut();
+                vs.combined_pre_animation_style = hit.combined_style.clone();
+                vs.combined_style = hit.combined_style;
+                vs.has_style_selectors = hit.has_style_selectors;
+                vs.post_compute_combined_interaction = hit.post_interact;
+                self.view_interact_state.is_hidden |= hit.post_interact.hidden;
+                self.view_interact_state.is_selected |= hit.post_interact.selected;
+                self.view_interact_state.is_disabled |= hit.post_interact.disabled;
+            } else {
+                // Cache miss — compute normally (style() clone happens inside compute_combined)
+                view_state.borrow_mut().compute_combined(
+                    &mut self.view_interact_state,
+                    self.window_state.screen_size_bp,
+                    view_class,
+                    &self.inherited,
+                    &self.class_context,
+                );
+
+                // Insert into cache
+                if let Some(key) = cache_key {
+                    let vs = view_state.borrow();
+                    self.window_state.style_cache.insert(
+                        key,
+                        &vs.combined_style,
+                        vs.has_style_selectors,
+                        vs.post_compute_combined_interaction,
+                        &self.inherited,
+                    );
+                }
+            }
         } else {
             // Fast path: nested-map resolution was skipped, so reapply the view-local
             // interaction state saved from the last combined-style computation.
@@ -358,7 +410,7 @@ impl<'a> StyleCx<'a> {
 
             // Compute the final style by merging inherited context with direct style
             let mut computed_style = self.inherited.clone();
-            computed_style.apply_mut(self.direct.clone());
+            computed_style.apply_mut(&self.direct);
             computed_style = computed_style.with_inherited_context(&self.inherited);
 
             // ─────────────────────────────────────────────────────────────────────

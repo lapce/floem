@@ -24,11 +24,12 @@
 //! - Styles with container queries (future)
 //! - Styles that depend on element-specific attributes
 
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::rc::Rc;
 
-use rustc_hash::FxHasher;
+use super::cx::InheritedInteractionCx;
+use super::selectors::StyleSelectors;
+
+use rustc_hash::{FxHashMap, FxHasher};
 
 use super::Style;
 use crate::layout::responsive::ScreenSizeBp;
@@ -49,12 +50,16 @@ const PRUNE_TARGET: usize = 192;
 /// on lookup by comparing parent inherited styles.
 #[derive(Clone, Debug)]
 pub struct StyleCacheKey {
-    /// Hash of the input style's properties.
+    /// Content hash of the input style's properties.
+    /// Enables cross-view cache sharing for styles with identical content.
     style_hash: u64,
     /// Packed interaction state bits.
     interaction_bits: u16,
     /// Screen size breakpoint.
     screen_size: ScreenSizeBp,
+    /// Window width in bits — needed for responsive selectors with exact pixel thresholds
+    /// (e.g. `max_window_width(700.0)`) that aren't captured by the discrete breakpoint.
+    window_width_bits: u64,
     /// Hash of the applied classes.
     classes_hash: u64,
     /// Pointer to the class context Rc (used as identity).
@@ -71,15 +76,35 @@ impl StyleCacheKey {
         interact_state: &InteractionState,
         screen_size_bp: ScreenSizeBp,
         classes: &[StyleClassRef],
-        class_context: &Rc<Style>,
+        class_context: &Style,
+    ) -> Self {
+        Self::new_from_hash(
+            style.content_hash(),
+            interact_state,
+            screen_size_bp,
+            classes,
+            class_context,
+        )
+    }
+
+    /// Create a cache key from a pre-computed content hash.
+    ///
+    /// This avoids needing a `&Style` reference, allowing the caller to
+    /// use a cached hash without cloning the full style.
+    pub fn new_from_hash(
+        style_hash: u64,
+        interact_state: &InteractionState,
+        screen_size_bp: ScreenSizeBp,
+        classes: &[StyleClassRef],
+        class_context: &Style,
     ) -> Self {
         Self {
-            style_hash: style.content_hash(),
+            style_hash,
             interaction_bits: interact_state.to_bits(),
             screen_size: screen_size_bp,
+            window_width_bits: interact_state.window_width.to_bits(),
             classes_hash: hash_classes(classes),
-            // O(1) pointer comparison instead of O(n) content_hash
-            class_context_ptr: Rc::as_ptr(class_context) as usize,
+            class_context_ptr: class_context.map_ptr(),
         }
     }
 }
@@ -89,6 +114,7 @@ impl PartialEq for StyleCacheKey {
         self.style_hash == other.style_hash
             && self.interaction_bits == other.interaction_bits
             && self.screen_size == other.screen_size
+            && self.window_width_bits == other.window_width_bits
             && self.classes_hash == other.classes_hash
             && self.class_context_ptr == other.class_context_ptr
     }
@@ -101,24 +127,37 @@ impl Hash for StyleCacheKey {
         self.style_hash.hash(state);
         self.interaction_bits.hash(state);
         self.screen_size.hash(state);
+        self.window_width_bits.hash(state);
         self.classes_hash.hash(state);
         self.class_context_ptr.hash(state);
     }
 }
 
+/// The result of a cache hit, containing all outputs of `compute_combined()`.
+pub struct CacheHit {
+    /// The resolved combined style.
+    pub combined_style: Style,
+    /// The detected style selectors.
+    pub has_style_selectors: Option<StyleSelectors>,
+    /// View-local interaction flags derived from the combined style.
+    pub post_interact: InheritedInteractionCx,
+}
+
 /// A single cached entry with parent context for validation.
 struct CacheEntry {
-    /// The resolved style.
-    computed_style: Rc<Style>,
+    /// The resolved combined style.
+    combined_style: Style,
+    /// The detected style selectors.
+    has_style_selectors: Option<StyleSelectors>,
+    /// View-local interaction flags derived from the combined style.
+    post_interact: InheritedInteractionCx,
     /// The parent's inherited style at the time of caching.
     /// Used for validation on lookup (Chromium's approach).
-    parent_inherited: Rc<Style>,
-    /// Raw pointer to the parent style's Rc data for fast equality check.
-    /// During tree traversal, siblings share the same parent Rc<Style>,
+    parent_inherited: Style,
+    /// Pointer to the parent's inner map Rc for fast equality check.
+    /// During tree traversal, siblings share the same parent Style,
     /// so pointer comparison avoids expensive inherited_equal() calls.
-    parent_rc_ptr: *const Style,
-    /// Whether classes were applied during resolution.
-    classes_applied: bool,
+    parent_map_ptr: usize,
     /// Last access time for LRU eviction.
     last_access: u64,
 }
@@ -138,26 +177,34 @@ impl CacheBucket {
     /// Find an entry that matches the parent's inherited style.
     ///
     /// Uses a two-tier lookup strategy (inspired by Chromium):
-    /// 1. Fast path: pointer comparison - if the parent Rc is the same object,
+    /// 1. Fast path: pointer comparison - if the parent's inner map Rc is the same,
     ///    contents are guaranteed identical (common for siblings in tree traversal)
-    /// 2. Slow path: compare inherited property values for different Rc instances
+    /// 2. Slow path: compare inherited property values for different instances
     ///    that may have equivalent content
-    fn find(&mut self, parent_style: &Rc<Style>, clock: u64) -> Option<(Rc<Style>, bool)> {
-        let parent_ptr = Rc::as_ptr(parent_style);
+    fn find(&mut self, parent_style: &Style, clock: u64) -> Option<CacheHit> {
+        let parent_ptr = parent_style.map_ptr();
 
         for entry in &mut self.entries {
-            // Fast path: same Rc instance (very common during tree traversal)
-            if std::ptr::eq(entry.parent_rc_ptr, parent_ptr) {
+            // Fast path: same inner Rc instance (very common during tree traversal)
+            if entry.parent_map_ptr == parent_ptr {
                 entry.last_access = clock;
-                return Some((entry.computed_style.clone(), entry.classes_applied));
+                return Some(CacheHit {
+                    combined_style: entry.combined_style.clone(),
+                    has_style_selectors: entry.has_style_selectors,
+                    post_interact: entry.post_interact,
+                });
             }
         }
 
-        // Slow path: check for equivalent inherited values in different Rc instances
+        // Slow path: check for equivalent inherited values in different instances
         for entry in &mut self.entries {
             if entry.parent_inherited.inherited_equal(parent_style) {
                 entry.last_access = clock;
-                return Some((entry.computed_style.clone(), entry.classes_applied));
+                return Some(CacheHit {
+                    combined_style: entry.combined_style.clone(),
+                    has_style_selectors: entry.has_style_selectors,
+                    post_interact: entry.post_interact,
+                });
             }
         }
 
@@ -167,10 +214,11 @@ impl CacheBucket {
     /// Add an entry, evicting oldest if at capacity.
     fn add(
         &mut self,
-        computed_style: Style,
+        combined_style: Style,
+        has_style_selectors: Option<StyleSelectors>,
+        post_interact: InheritedInteractionCx,
         parent_inherited: Style,
-        parent_rc_ptr: *const Style,
-        classes_applied: bool,
+        parent_map_ptr: usize,
         clock: u64,
     ) {
         // Evict oldest if at capacity
@@ -186,10 +234,11 @@ impl CacheBucket {
         }
 
         self.entries.push(CacheEntry {
-            computed_style: Rc::new(computed_style),
-            parent_inherited: Rc::new(parent_inherited),
-            parent_rc_ptr,
-            classes_applied,
+            combined_style,
+            has_style_selectors,
+            post_interact,
+            parent_inherited,
+            parent_map_ptr,
             last_access: clock,
         });
     }
@@ -212,7 +261,7 @@ impl CacheBucket {
 /// on lookup to ensure correctness (matching Chromium's MatchedPropertiesCache).
 pub struct StyleCache {
     /// The cached style buckets, keyed by style hash.
-    cache: HashMap<StyleCacheKey, CacheBucket>,
+    cache: FxHashMap<StyleCacheKey, CacheBucket>,
     /// Virtual clock for LRU purposes.
     clock: u64,
     /// Total number of entries across all buckets.
@@ -239,7 +288,7 @@ impl StyleCache {
     /// Create a new empty style cache.
     pub fn new() -> Self {
         Self {
-            cache: HashMap::with_capacity(MAX_CACHE_BUCKETS),
+            cache: FxHashMap::with_capacity_and_hasher(MAX_CACHE_BUCKETS, Default::default()),
             clock: 0,
             total_entries: 0,
             stats: CacheStatsMut::default(),
@@ -252,15 +301,11 @@ impl StyleCache {
     /// we verify that the parent's inherited properties are equal.
     ///
     /// Uses a two-tier lookup for performance:
-    /// 1. Fast path: pointer comparison (O(1)) - hits when same Rc instance
-    /// 2. Slow path: inherited_equal() comparison - for equivalent but different Rc instances
+    /// 1. Fast path: pointer comparison (O(1)) - hits when same inner map Rc
+    /// 2. Slow path: inherited_equal() comparison - for equivalent but different instances
     ///
-    /// Returns `Some((style, classes_applied))` if found, `None` otherwise.
-    pub fn get(
-        &mut self,
-        key: &StyleCacheKey,
-        parent_style: &Rc<Style>,
-    ) -> Option<(Rc<Style>, bool)> {
+    /// Returns `Some(CacheHit)` if found, `None` otherwise.
+    pub fn get(&mut self, key: &StyleCacheKey, parent_style: &Style) -> Option<CacheHit> {
         self.clock += 1;
 
         if let Some(bucket) = self.cache.get_mut(key)
@@ -277,13 +322,14 @@ impl StyleCache {
     /// Insert a style resolution result into the cache.
     ///
     /// We store the parent's inherited style so we can validate on lookup.
-    /// The parent Rc pointer is stored for fast pointer-based lookups.
+    /// The parent's inner map pointer is stored for fast pointer-based lookups.
     pub fn insert(
         &mut self,
         key: StyleCacheKey,
-        computed_style: Style,
-        parent_style: &Rc<Style>,
-        classes_applied: bool,
+        combined_style: &Style,
+        has_style_selectors: Option<StyleSelectors>,
+        post_interact: InheritedInteractionCx,
+        parent_style: &Style,
     ) {
         // Prune if we have too many entries
         if self.total_entries >= MAX_CACHE_BUCKETS * MAX_ENTRIES_PER_BUCKET {
@@ -296,16 +342,17 @@ impl StyleCache {
         // Extract only inherited properties from parent for storage
         let parent_inherited = parent_style.inherited();
         // Store pointer for fast comparison during lookup
-        let parent_rc_ptr = Rc::as_ptr(parent_style);
+        let parent_map_ptr = parent_style.map_ptr();
 
         let bucket = self.cache.entry(key).or_insert_with(CacheBucket::new);
 
         let old_len = bucket.len();
         bucket.add(
-            computed_style,
+            combined_style.clone(),
+            has_style_selectors,
+            post_interact,
             parent_inherited,
-            parent_rc_ptr,
-            classes_applied,
+            parent_map_ptr,
             self.clock,
         );
         let new_len = bucket.len();
@@ -319,14 +366,11 @@ impl StyleCache {
     /// Check if a style is cacheable.
     ///
     /// Some styles cannot be safely cached because their computed value
-    /// depends on factors not captured in the cache key.
+    /// depends on factors not captured in the cache key:
+    /// - Structural selectors (`:first-child`, `:nth-child`) depend on position
+    /// - Context values resolve against inherited context, but hash to a constant
     pub fn is_cacheable(style: &Style) -> bool {
-        // TODO: Add checks for:
-        // - Viewport-relative units (vw, vh, vmin, vmax)
-        // - Container queries
-        // - attr() functions
-        // For now, assume all styles are cacheable
-        !style.map.is_empty()
+        !style.map.is_empty() && !style.has_structural_selectors() && !style.has_context_values()
     }
 
     /// Clear the entire cache.
@@ -464,6 +508,9 @@ impl InteractionState {
         if self.using_keyboard_navigation {
             bits |= 1 << 7;
         }
+        if self.is_focus_within {
+            bits |= 1 << 8;
+        }
         bits
     }
 }
@@ -477,30 +524,26 @@ impl Style {
     pub fn content_hash(&self) -> u64 {
         use crate::style::props::StyleKeyInfo;
 
-        let mut hasher = FxHasher::default();
+        // Use XOR-based order-independent hashing to avoid Vec allocation + sort.
+        // Each entry is independently hashed and XOR'd into the accumulator.
+        // We mix in the entry count separately to distinguish e.g. {A} from {A, B}
+        // when their entry hashes happen to cancel.
+        let mut combined: u64 = 0;
+        let mut count_hasher = FxHasher::default();
+        self.map.len().hash(&mut count_hasher);
 
-        // Hash the number of entries
-        self.map.len().hash(&mut hasher);
+        for (key, value) in self.map.iter() {
+            let mut entry_hasher = FxHasher::default();
+            std::ptr::hash(key.info, &mut entry_hasher);
 
-        let mut entries: Vec<_> = self.map.iter().collect();
-        entries.sort_unstable_by_key(|(key, _)| key.info as *const _ as usize);
-
-        // Hash each key and value based on content
-        for (key, value) in entries {
-            // Hash the key's info pointer as identity
-            std::ptr::hash(key.info, &mut hasher);
-
-            // Hash value content based on key type
             match key.info {
                 StyleKeyInfo::Prop(prop_info) => {
-                    // Use the property's content_hash via hash_any
                     let value_hash = (prop_info.hash_any)(value.as_ref());
-                    value_hash.hash(&mut hasher);
+                    value_hash.hash(&mut entry_hasher);
                 }
                 StyleKeyInfo::Selector(_) | StyleKeyInfo::Class(_) => {
-                    // These contain nested Style maps - hash recursively
                     if let Some(nested_style) = value.downcast_ref::<Style>() {
-                        nested_style.content_hash().hash(&mut hasher);
+                        nested_style.content_hash().hash(&mut entry_hasher);
                     }
                 }
                 StyleKeyInfo::StructuralSelectors
@@ -508,14 +551,14 @@ impl Style {
                 | StyleKeyInfo::DeferredEffects
                 | StyleKeyInfo::DebugGroup(_)
                 | StyleKeyInfo::Transition => {
-                    // Context mappings and transitions use pointer hash for identity
-                    // since closures can't be meaningfully hashed
-                    std::ptr::hash(std::rc::Rc::as_ptr(value), &mut hasher);
+                    std::ptr::hash(std::rc::Rc::as_ptr(value), &mut entry_hasher);
                 }
             }
+
+            combined ^= entry_hasher.finish();
         }
 
-        hasher.finish()
+        combined ^ count_hasher.finish()
     }
 
     /// Check if the inherited properties of this style equal another's.
@@ -575,51 +618,64 @@ mod tests {
         assert_eq!(bits & (1 << 2), 0); // not disabled (bit 2)
     }
 
+    /// Default interaction values for cache test entries.
+    const DEFAULT_POST_INTERACT: InheritedInteractionCx = InheritedInteractionCx {
+        disabled: false,
+        selected: false,
+        hidden: false,
+    };
+
+    /// Helper to insert a style into the cache with default interaction/selector values.
+    fn cache_insert(cache: &mut StyleCache, key: StyleCacheKey, style: &Style, parent: &Style) {
+        cache.insert(key, style, None, DEFAULT_POST_INTERACT, parent);
+    }
+
     #[test]
     fn test_cache_insert_and_get() {
         let mut cache = StyleCache::new();
         let style = Style::new();
-        let parent_style = Rc::new(Style::new());
+        let parent_style = Style::new();
 
         let key = StyleCacheKey {
             style_hash: 123,
             interaction_bits: 0,
             screen_size: ScreenSizeBp::Xs,
+            window_width_bits: 0,
             classes_hash: 0,
             class_context_ptr: 0,
         };
 
-        cache.insert(key.clone(), style, &parent_style, false);
+        cache_insert(&mut cache, key.clone(), &style, &parent_style);
 
         let result = cache.get(&key, &parent_style);
         assert!(result.is_some());
-        assert!(!result.unwrap().1); // classes_applied = false
     }
 
     #[test]
     fn test_cache_parent_validation() {
         let mut cache = StyleCache::new();
         let style = Style::new();
-        let parent_style1 = Rc::new(Style::new().background(css::RED));
-        let parent_style2 = Rc::new(Style::new().background(css::BLUE));
+        let parent_style1 = Style::new().background(css::RED);
+        let parent_style2 = Style::new().background(css::BLUE);
 
         let key = StyleCacheKey {
             style_hash: 123,
             interaction_bits: 0,
             screen_size: ScreenSizeBp::Xs,
+            window_width_bits: 0,
             classes_hash: 0,
             class_context_ptr: 0,
         };
 
         // Insert with parent_style1
-        cache.insert(key.clone(), style.clone(), &parent_style1, false);
+        cache_insert(&mut cache, key.clone(), &style, &parent_style1);
 
         // Lookup with same parent should hit (fast path: pointer comparison)
         let result = cache.get(&key, &parent_style1);
         assert!(result.is_some());
 
-        // Lookup with different parent Rc but same content should also hit (slow path)
-        let parent_style1_clone = Rc::new(Style::new().background(css::RED));
+        // Lookup with different Style but same content should also hit (slow path)
+        let parent_style1_clone = Style::new().background(css::RED);
         let result = cache.get(&key, &parent_style1_clone);
         assert!(result.is_some()); // background is not inherited, so inherited_equal returns true
 
@@ -631,12 +687,13 @@ mod tests {
     fn test_cache_stats() {
         let mut cache = StyleCache::new();
         let style = Style::new();
-        let parent_style = Rc::new(Style::new());
+        let parent_style = Style::new();
 
         let key = StyleCacheKey {
             style_hash: 123,
             interaction_bits: 0,
             screen_size: ScreenSizeBp::Xs,
+            window_width_bits: 0,
             classes_hash: 0,
             class_context_ptr: 0,
         };
@@ -645,7 +702,7 @@ mod tests {
         let _ = cache.get(&key, &parent_style);
 
         // Insert
-        cache.insert(key.clone(), style, &parent_style, false);
+        cache_insert(&mut cache, key.clone(), &style, &parent_style);
 
         // Hit
         let _ = cache.get(&key, &parent_style);
@@ -660,25 +717,26 @@ mod tests {
     fn test_cache_pointer_fast_path() {
         let mut cache = StyleCache::new();
         let style = Style::new();
-        let parent_style = Rc::new(Style::new());
+        let parent_style = Style::new();
 
         let key = StyleCacheKey {
             style_hash: 123,
             interaction_bits: 0,
             screen_size: ScreenSizeBp::Xs,
+            window_width_bits: 0,
             classes_hash: 0,
             class_context_ptr: 0,
         };
 
-        cache.insert(key.clone(), style, &parent_style, false);
+        cache_insert(&mut cache, key.clone(), &style, &parent_style);
 
-        // Same Rc instance should hit via fast path (pointer comparison)
+        // Same Style instance should hit via fast path (pointer comparison on inner map Rc)
         let result = cache.get(&key, &parent_style);
         assert!(result.is_some());
 
-        // Different Rc instance with same content should still hit via slow path
-        let different_rc = Rc::new(Style::new());
-        let result = cache.get(&key, &different_rc);
+        // Different Style instance with same content should still hit via slow path
+        let different_style = Style::new();
+        let result = cache.get(&key, &different_style);
         assert!(result.is_some()); // Empty styles have equal inherited props
     }
 
@@ -695,54 +753,51 @@ mod tests {
     fn test_different_class_context_causes_cache_miss() {
         let mut cache = StyleCache::new();
         let style = Style::new();
-        let parent_style = Rc::new(Style::new());
+        let parent_style = Style::new();
 
-        // Create two keys with different class_context_hash
+        // Create two keys with different class_context_ptr
         let key1 = StyleCacheKey {
             style_hash: 123,
             interaction_bits: 0,
             screen_size: ScreenSizeBp::Xs,
+            window_width_bits: 0,
             classes_hash: 0,
-            class_context_ptr: 100, // Different class context pointer
+            class_context_ptr: 100,
         };
 
         let key2 = StyleCacheKey {
             style_hash: 123,
             interaction_bits: 0,
             screen_size: ScreenSizeBp::Xs,
+            window_width_bits: 0,
             classes_hash: 0,
-            class_context_ptr: 200, // Different class context pointer
+            class_context_ptr: 200,
         };
 
         // Insert with key1
-        cache.insert(key1.clone(), style.clone(), &parent_style, false);
+        cache_insert(&mut cache, key1.clone(), &style, &parent_style);
 
         // Lookup with key1 should hit
         let result = cache.get(&key1, &parent_style);
         assert!(result.is_some(), "Same key should hit cache");
 
-        // Lookup with key2 (different class_context_hash) should miss
+        // Lookup with key2 (different class_context_ptr) should miss
         let result = cache.get(&key2, &parent_style);
         assert!(
             result.is_none(),
-            "Different class_context_hash should cause cache miss"
+            "Different class_context_ptr should cause cache miss"
         );
 
         // Insert with key2
-        cache.insert(key2.clone(), style.clone(), &parent_style, true);
+        cache_insert(&mut cache, key2.clone(), &style, &parent_style);
 
         // Now key2 should hit
         let result = cache.get(&key2, &parent_style);
         assert!(result.is_some(), "After insert, key2 should hit");
-        assert!(result.unwrap().1, "classes_applied should be true for key2");
 
         // key1 should still hit with its original value
         let result = cache.get(&key1, &parent_style);
         assert!(result.is_some(), "key1 should still hit");
-        assert!(
-            !result.unwrap().1,
-            "classes_applied should be false for key1"
-        );
     }
 
     #[test]
@@ -752,8 +807,8 @@ mod tests {
         let interact_state = InteractionState::default();
         let classes: Vec<StyleClassRef> = vec![];
 
-        let class_context1 = Rc::new(Style::new());
-        let class_context2 = Rc::new(Style::new().background(css::RED));
+        let class_context1 = Style::new();
+        let class_context2 = Style::new().background(css::RED);
 
         let key1 = StyleCacheKey::new(
             &style,
@@ -839,6 +894,115 @@ mod tests {
         assert_ne!(
             initial_hash, final_hash,
             "Class context hash should change after applying class maps"
+        );
+    }
+
+    #[test]
+    fn test_content_hash_is_order_independent() {
+        // Two styles with same properties added in different order
+        let s1 = Style::new().background(css::RED).color(css::BLUE);
+        let s2 = Style::new().color(css::BLUE).background(css::RED);
+        assert_eq!(
+            s1.content_hash(),
+            s2.content_hash(),
+            "Hash should be identical regardless of property insertion order"
+        );
+    }
+
+    #[test]
+    fn test_focus_within_affects_cache_key() {
+        let style = Style::new();
+        let classes: Vec<StyleClassRef> = vec![];
+        let class_context = Style::new();
+
+        let state_without = InteractionState {
+            is_focus_within: false,
+            ..Default::default()
+        };
+        let state_with = InteractionState {
+            is_focus_within: true,
+            ..Default::default()
+        };
+
+        let key1 = StyleCacheKey::new(
+            &style,
+            &state_without,
+            ScreenSizeBp::Xs,
+            &classes,
+            &class_context,
+        );
+        let key2 = StyleCacheKey::new(
+            &style,
+            &state_with,
+            ScreenSizeBp::Xs,
+            &classes,
+            &class_context,
+        );
+
+        assert_ne!(
+            key1, key2,
+            "is_focus_within should produce different cache keys"
+        );
+    }
+
+    #[test]
+    fn test_structural_selectors_uncacheable() {
+        let plain_style = Style::new().background(css::RED);
+        assert!(
+            StyleCache::is_cacheable(&plain_style),
+            "Plain style should be cacheable"
+        );
+
+        let structural_style = plain_style.clone().first_child(|s| s.background(css::BLUE));
+        assert!(
+            !StyleCache::is_cacheable(&structural_style),
+            "Style with structural selectors should not be cacheable"
+        );
+    }
+
+    #[test]
+    fn test_inherited_equal_with_actual_inherited_props() {
+        use crate::style::TextColor;
+
+        let style1 = Style::new().set(TextColor, Some(css::RED));
+        let style2 = Style::new().set(TextColor, Some(css::BLUE));
+        let style3 = Style::new().set(TextColor, Some(css::RED));
+
+        assert!(
+            !style1.inherited_equal(&style2),
+            "Different inherited values should not be equal"
+        );
+        assert!(
+            style1.inherited_equal(&style3),
+            "Same inherited values should be equal"
+        );
+    }
+
+    #[test]
+    fn test_cache_eviction_under_pressure() {
+        let mut cache = StyleCache::new();
+        let parent_style = Style::new();
+
+        // Insert more than MAX_CACHE_BUCKETS * MAX_ENTRIES_PER_BUCKET entries
+        let limit = MAX_CACHE_BUCKETS * MAX_ENTRIES_PER_BUCKET + 100;
+        for i in 0..limit {
+            let key = StyleCacheKey {
+                style_hash: i as u64,
+                interaction_bits: 0,
+                screen_size: ScreenSizeBp::Xs,
+                window_width_bits: 0,
+                classes_hash: 0,
+                class_context_ptr: 0,
+            };
+            let style = Style::new().width(i as f64);
+            cache_insert(&mut cache, key, &style, &parent_style);
+        }
+
+        // Total entries should be bounded (pruning should have occurred)
+        let stats = cache.stats();
+        assert!(
+            stats.evictions > 0,
+            "Evictions should have occurred under pressure"
         );
     }
 }

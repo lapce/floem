@@ -110,58 +110,151 @@ pub trait StylePropValue: Clone + PartialEq + Debug {
     ///
     /// This hash is used for style caching - identical values should produce
     /// identical hashes. The default implementation uses the Debug representation,
-    /// which works for most types. Types that implement Hash can override this
+    /// which works for most types but allocates. Types should override this
     /// for better performance.
     fn content_hash(&self) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = rustc_hash::FxHasher::default();
-        // Use Debug representation as a stable string for hashing
         let debug_str = format!("{:?}", self);
         debug_str.hash(&mut hasher);
         hasher.finish()
     }
 }
 
+/// Hash a type that implements `Hash` using FxHasher.
+#[inline]
+fn hash_value<T: std::hash::Hash>(val: &T) -> u64 {
+    use std::hash::Hasher;
+    let mut h = rustc_hash::FxHasher::default();
+    val.hash(&mut h);
+    h.finish()
+}
+
+/// Hash an f64 by its bit representation.
+#[inline]
+fn hash_f64(val: f64) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = rustc_hash::FxHasher::default();
+    val.to_bits().hash(&mut h);
+    h.finish()
+}
+
+/// Hash an f32 by its bit representation.
+#[inline]
+fn hash_f32(val: f32) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = rustc_hash::FxHasher::default();
+    val.to_bits().hash(&mut h);
+    h.finish()
+}
+
 impl StylePropValue for i32 {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         Some((*self as f64 + (*other as f64 - *self as f64) * value).round() as i32)
     }
+    fn content_hash(&self) -> u64 {
+        hash_value(self)
+    }
 }
-impl StylePropValue for bool {}
+impl StylePropValue for bool {
+    fn content_hash(&self) -> u64 {
+        hash_value(self)
+    }
+}
 impl StylePropValue for f32 {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         Some(*self * (1.0 - value as f32) + *other * value as f32)
+    }
+    fn content_hash(&self) -> u64 {
+        hash_f32(*self)
     }
 }
 impl StylePropValue for u16 {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         Some((*self as f64 + (*other as f64 - *self as f64) * value).round() as u16)
     }
+    fn content_hash(&self) -> u64 {
+        hash_value(self)
+    }
 }
 impl StylePropValue for usize {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         Some((*self as f64 + (*other as f64 - *self as f64) * value).round() as usize)
+    }
+    fn content_hash(&self) -> u64 {
+        hash_value(self)
     }
 }
 impl StylePropValue for f64 {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         Some(*self * (1.0 - value) + *other * value)
     }
+    fn content_hash(&self) -> u64 {
+        hash_f64(*self)
+    }
 }
-impl StylePropValue for Overflow {}
-impl StylePropValue for Display {}
-impl StylePropValue for Position {}
-impl StylePropValue for FlexDirection {}
-impl StylePropValue for FlexWrap {}
-impl StylePropValue for AlignItems {}
-impl StylePropValue for BoxSizing {}
-impl StylePropValue for AlignContent {}
+// Taffy enums — use discriminant-based hashing (no Hash derive available).
+// For simple enums with no data fields, discriminant alone is a perfect hash.
+// For enums with data, we combine discriminant with field hashes.
+
+impl StylePropValue for Overflow {
+    fn content_hash(&self) -> u64 {
+        hash_value(&std::mem::discriminant(self))
+    }
+}
+impl StylePropValue for Display {
+    fn content_hash(&self) -> u64 {
+        hash_value(&std::mem::discriminant(self))
+    }
+}
+impl StylePropValue for Position {
+    fn content_hash(&self) -> u64 {
+        hash_value(&std::mem::discriminant(self))
+    }
+}
+impl StylePropValue for FlexDirection {
+    fn content_hash(&self) -> u64 {
+        hash_value(&std::mem::discriminant(self))
+    }
+}
+impl StylePropValue for FlexWrap {
+    fn content_hash(&self) -> u64 {
+        hash_value(&std::mem::discriminant(self))
+    }
+}
+impl StylePropValue for AlignItems {
+    fn content_hash(&self) -> u64 {
+        hash_value(&std::mem::discriminant(self))
+    }
+}
+impl StylePropValue for BoxSizing {
+    fn content_hash(&self) -> u64 {
+        hash_value(&std::mem::discriminant(self))
+    }
+}
+impl StylePropValue for AlignContent {
+    fn content_hash(&self) -> u64 {
+        hash_value(&std::mem::discriminant(self))
+    }
+}
 impl StylePropValue for GridTemplateComponent<String> {}
 impl StylePropValue for MinTrackSizingFunction {}
 impl StylePropValue for MaxTrackSizingFunction {}
-impl<T: StylePropValue, M: StylePropValue> StylePropValue for MinMax<T, M> {}
-impl<T: StylePropValue> StylePropValue for Line<T> {}
-impl StylePropValue for taffy::GridAutoFlow {}
+impl<T: StylePropValue, M: StylePropValue> StylePropValue for MinMax<T, M> {
+    fn content_hash(&self) -> u64 {
+        hash_value(&(self.min.content_hash(), self.max.content_hash()))
+    }
+}
+impl<T: StylePropValue> StylePropValue for Line<T> {
+    fn content_hash(&self) -> u64 {
+        hash_value(&(self.start.content_hash(), self.end.content_hash()))
+    }
+}
+impl StylePropValue for taffy::GridAutoFlow {
+    fn content_hash(&self) -> u64 {
+        hash_value(&std::mem::discriminant(self))
+    }
+}
 impl StylePropValue for GridPlacement {}
 
 /// How the content of a replaced element, such as an img, should be resized to fit its container.
@@ -222,6 +315,9 @@ pub enum ObjectPosition {
 }
 
 impl StylePropValue for ObjectFit {
+    fn content_hash(&self) -> u64 {
+        hash_value(self)
+    }
     fn debug_view(&self) -> Option<Box<dyn View>> {
         use peniko::kurbo::RoundedRect;
 
@@ -367,6 +463,9 @@ impl StylePropValue for ObjectFit {
 }
 
 impl StylePropValue for ObjectPosition {
+    fn content_hash(&self) -> u64 {
+        hash_value(&std::mem::discriminant(self))
+    }
     fn debug_view(&self) -> Option<Box<dyn View>> {
         use peniko::kurbo::{Circle, RoundedRect};
 
@@ -584,9 +683,26 @@ where
             },
         )
     }
+
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        self.len().hash(&mut h);
+        for item in self.iter() {
+            item.content_hash().hash(&mut h);
+        }
+        h.finish()
+    }
 }
-impl StylePropValue for String {}
+impl StylePropValue for String {
+    fn content_hash(&self) -> u64 {
+        hash_value(self)
+    }
+}
 impl StylePropValue for FontWeight {
+    fn content_hash(&self) -> u64 {
+        hash_f32(self.value())
+    }
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let clone = *self;
         Some(
@@ -602,6 +718,9 @@ impl StylePropValue for FontWeight {
     }
 }
 impl StylePropValue for crate::text::FontStyle {
+    fn content_hash(&self) -> u64 {
+        hash_value(&std::mem::discriminant(self))
+    }
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let clone = *self;
         Some(
@@ -611,8 +730,22 @@ impl StylePropValue for crate::text::FontStyle {
         )
     }
 }
-impl StylePropValue for crate::text::Alignment {}
+impl StylePropValue for crate::text::Alignment {
+    fn content_hash(&self) -> u64 {
+        hash_value(&std::mem::discriminant(self))
+    }
+}
 impl StylePropValue for LineHeightValue {
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        std::mem::discriminant(self).hash(&mut h);
+        match self {
+            LineHeightValue::Normal(v) => v.to_bits().hash(&mut h),
+            LineHeightValue::Pt(v) => v.to_bits().hash(&mut h),
+        }
+        h.finish()
+    }
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         match (self, other) {
             (LineHeightValue::Normal(v1), LineHeightValue::Normal(v2)) => {
@@ -638,6 +771,19 @@ impl<T: StylePropValue> StylePropValue for Option<T> {
                 .as_ref()
                 .and_then(|other| this.interpolate(other, value).map(Some))
         })
+    }
+
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        match self {
+            Some(v) => {
+                1u8.hash(&mut h);
+                v.content_hash().hash(&mut h);
+            }
+            None => 0u8.hash(&mut h),
+        }
+        h.finish()
     }
 }
 impl<T: StylePropValue + 'static> StylePropValue for Vec<T> {
@@ -698,6 +844,16 @@ impl<T: StylePropValue + 'static> StylePropValue for Vec<T> {
             },
         )
     }
+
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        self.len().hash(&mut h);
+        for item in self {
+            item.content_hash().hash(&mut h);
+        }
+        h.finish()
+    }
 }
 impl StylePropValue for Pt {
     fn debug_view(&self) -> Option<Box<dyn View>> {
@@ -705,6 +861,9 @@ impl StylePropValue for Pt {
     }
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.0.interpolate(&other.0, value).map(Pt)
+    }
+    fn content_hash(&self) -> u64 {
+        hash_f64(self.0)
     }
 }
 #[allow(deprecated)]
@@ -716,6 +875,9 @@ impl StylePropValue for super::unit::Px {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.0.interpolate(&other.0, value).map(super::unit::Px)
     }
+    fn content_hash(&self) -> u64 {
+        hash_f64(self.0)
+    }
 }
 impl StylePropValue for Pct {
     fn debug_view(&self) -> Option<Box<dyn View>> {
@@ -723,6 +885,9 @@ impl StylePropValue for Pct {
     }
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.0.interpolate(&other.0, value).map(Pct)
+    }
+    fn content_hash(&self) -> u64 {
+        hash_f64(self.0)
     }
 }
 impl StylePropValue for LengthAuto {
@@ -747,6 +912,16 @@ impl StylePropValue for LengthAuto {
             _ => None,
         }
     }
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        std::mem::discriminant(self).hash(&mut h);
+        match self {
+            Self::Pt(v) | Self::Pct(v) | Self::Em(v) | Self::Lh(v) => v.to_bits().hash(&mut h),
+            Self::Auto => {}
+        }
+        h.finish()
+    }
 }
 #[allow(deprecated)]
 impl StylePropValue for super::unit::PxPctAuto {
@@ -761,6 +936,16 @@ impl StylePropValue for super::unit::PxPctAuto {
             (Self::Auto, Self::Auto) => Some(Self::Auto),
             _ => None,
         }
+    }
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        std::mem::discriminant(self).hash(&mut h);
+        match self {
+            Self::Px(v) | Self::Pct(v) => v.to_bits().hash(&mut h),
+            Self::Auto => {}
+        }
+        h.finish()
     }
 }
 impl StylePropValue for Length {
@@ -784,6 +969,15 @@ impl StylePropValue for Length {
             _ => None,
         }
     }
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        std::mem::discriminant(self).hash(&mut h);
+        match self {
+            Self::Pt(v) | Self::Pct(v) | Self::Em(v) | Self::Lh(v) => v.to_bits().hash(&mut h),
+        }
+        h.finish()
+    }
 }
 #[allow(deprecated)]
 impl StylePropValue for super::unit::PxPct {
@@ -798,6 +992,15 @@ impl StylePropValue for super::unit::PxPct {
             _ => None,
         }
     }
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        std::mem::discriminant(self).hash(&mut h);
+        match self {
+            Self::Px(v) | Self::Pct(v) => v.to_bits().hash(&mut h),
+        }
+        h.finish()
+    }
 }
 
 pub(crate) fn views(views: impl ViewTuple) -> Vec<AnyView> {
@@ -805,6 +1008,14 @@ pub(crate) fn views(views: impl ViewTuple) -> Vec<AnyView> {
 }
 
 impl StylePropValue for Color {
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        for c in self.components {
+            c.to_bits().hash(&mut h);
+        }
+        h.finish()
+    }
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let color = *self;
         let swatch = ()
@@ -959,6 +1170,19 @@ impl StylePropValue for Gradient {
     fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
         None
     }
+
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        std::mem::discriminant(&self.kind).hash(&mut h);
+        for stop in self.stops.iter() {
+            stop.offset.to_bits().hash(&mut h);
+            for c in stop.color.components {
+                c.to_bits().hash(&mut h);
+            }
+        }
+        h.finish()
+    }
 }
 
 // this is a convenience wrapper so border/outline setters can accept numeric widths.
@@ -992,6 +1216,9 @@ impl From<i32> for StrokeWrap {
 }
 
 impl StylePropValue for Stroke {
+    fn content_hash(&self) -> u64 {
+        hash_f64(self.width)
+    }
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let stroke = self.clone();
         let clone = stroke.clone();
@@ -1100,6 +1327,21 @@ impl StylePropValue for Stroke {
     }
 }
 impl StylePropValue for Brush {
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        std::mem::discriminant(self).hash(&mut h);
+        match self {
+            Brush::Solid(c) => {
+                for comp in c.components {
+                    comp.to_bits().hash(&mut h);
+                }
+            }
+            Brush::Gradient(g) => g.content_hash().hash(&mut h),
+            Brush::Image(_) => {}
+        }
+        h.finish()
+    }
     fn debug_view(&self) -> Option<Box<dyn View>> {
         match self {
             Brush::Solid(color) => color.debug_view(),
@@ -1177,11 +1419,24 @@ impl StylePropValue for Duration {
             .interpolate(&other.as_secs_f64(), value)
             .map(Duration::from_secs_f64)
     }
+
+    fn content_hash(&self) -> u64 {
+        hash_value(self)
+    }
 }
 
 impl StylePropValue for super::Angle {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         Some(self.lerp(other, value))
+    }
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        std::mem::discriminant(self).hash(&mut h);
+        match self {
+            super::Angle::Deg(v) | super::Angle::Rad(v) => v.to_bits().hash(&mut h),
+        }
+        h.finish()
     }
 }
 
@@ -1192,9 +1447,25 @@ impl StylePropValue for super::AnchorAbout {
             y: self.y + (other.y - self.y) * value,
         })
     }
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        self.x.to_bits().hash(&mut h);
+        self.y.to_bits().hash(&mut h);
+        h.finish()
+    }
 }
 
 impl StylePropValue for kurbo::Rect {
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        self.x0.to_bits().hash(&mut h);
+        self.y0.to_bits().hash(&mut h);
+        self.x1.to_bits().hash(&mut h);
+        self.y1.to_bits().hash(&mut h);
+        h.finish()
+    }
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let r = *self;
 

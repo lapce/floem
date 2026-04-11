@@ -1,10 +1,12 @@
 //! Benchmarks for style computation in Floem.
 //!
 //! These benchmarks measure the performance of:
-//! - Style computation for views with simple styles
-//! - Style computation for views with identical styles (caching opportunity)
+//! - Style computation for views with simple styles (first-pass, cold cache)
+//! - Restyling views with identical styles (warm cache, cache-hit path)
 //! - Style resolution with nested views (inheritance)
 //! - Style computation with many property types
+//! - Inherited property updates (graduated propagation)
+//! - Restyling with stable inherited context (cache validation path)
 
 use std::hint::black_box;
 
@@ -89,6 +91,7 @@ fn create_complex_styled_views(n: usize) -> impl IntoView {
     Stack::from_iter(children).style(|s| s.size(500.0, 500.0))
 }
 
+/// First-pass style computation with identical styles (cold cache).
 fn bench_identical_styles(c: &mut Criterion) {
     let mut group = c.benchmark_group("style_computation_identical");
 
@@ -105,6 +108,38 @@ fn bench_identical_styles(c: &mut Criterion) {
                 });
             },
         );
+    }
+
+    // Restyle with warm cache — the primary cache use case.
+    // Views have hover selectors so request_style(Hover) triggers needs_resolve_nested_maps.
+    for size in [10, 50, 100, 200].iter() {
+        group.bench_with_input(BenchmarkId::new("restyle", size), size, |b, &size| {
+            let root = TestRoot::new();
+            let views: Vec<_> = (0..size)
+                .map(|_| {
+                    Empty::new().style(|s| {
+                        s.size(20.0, 20.0)
+                            .background(palette::css::CORAL)
+                            .padding(2.0)
+                            .margin(1.0)
+                            .hover(|s| s.background(palette::css::LIGHT_CORAL))
+                    })
+                })
+                .collect();
+            let ids: Vec<_> = views.iter().map(|v| v.view_id()).collect();
+            let container = Stack::from_iter(views).style(|s| s.size(400.0, 400.0));
+            let mut harness = HeadlessHarness::new_with_size(root, container, 400.0, 400.0);
+
+            b.iter(|| {
+                for id in &ids {
+                    id.request_style(floem::style::recalc::StyleReason::with_selector(
+                        floem::style::StyleSelector::Hover,
+                    ));
+                }
+                harness.recompute_styles();
+                black_box(harness.root_id());
+            });
+        });
     }
 
     group.finish();
@@ -173,8 +208,9 @@ fn bench_complex_styles(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_get_computed_style(c: &mut Criterion) {
-    let mut group = c.benchmark_group("get_computed_style");
+/// Measures Style::clone() + property read — does NOT involve style computation or caching.
+fn bench_style_clone_and_read(c: &mut Criterion) {
+    let mut group = c.benchmark_group("style_clone_and_read");
 
     // Setup: create views once
     let views: Vec<_> = (0..100)
@@ -192,7 +228,7 @@ fn bench_get_computed_style(c: &mut Criterion) {
     let root = TestRoot::new();
     let harness = HeadlessHarness::new_with_size(root, container, 400.0, 400.0);
 
-    group.bench_function("get_style_100_views", |b| {
+    group.bench_function("clone_and_read_100_views", |b| {
         b.iter(|| {
             for id in &ids {
                 let style = harness.get_computed_style(*id);
@@ -212,8 +248,7 @@ fn bench_get_computed_style(c: &mut Criterion) {
 fn bench_restyle_views(c: &mut Criterion) {
     let mut group = c.benchmark_group("restyle_views");
 
-    // Test with 50 views
-    let size = 50;
+    let size = 200;
 
     // Setup: create views once with identical styles
     let views: Vec<_> = (0..size)
@@ -232,7 +267,7 @@ fn bench_restyle_views(c: &mut Criterion) {
     let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, container, 400.0, 400.0);
 
-    group.bench_function("request_and_recompute_50", |b| {
+    group.bench_function("request_and_recompute_200", |b| {
         b.iter(|| {
             // Request style recomputation for all views
             for id in &ids {
@@ -256,8 +291,7 @@ fn bench_restyle_views(c: &mut Criterion) {
 fn bench_restyle_with_selectors(c: &mut Criterion) {
     let mut group = c.benchmark_group("restyle_with_selectors");
 
-    // Test with 50 views
-    let size = 50;
+    let size = 200;
 
     // Setup: create views with hover styles
     let views: Vec<_> = (0..size)
@@ -276,7 +310,7 @@ fn bench_restyle_with_selectors(c: &mut Criterion) {
     let root = TestRoot::new();
     let mut harness = HeadlessHarness::new_with_size(root, container, 400.0, 400.0);
 
-    group.bench_function("with_hover_active_50", |b| {
+    group.bench_function("with_hover_active_200", |b| {
         b.iter(|| {
             // Request style recomputation for all views
             for id in &ids {
@@ -460,16 +494,60 @@ fn bench_inherited_with_selectors(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark restyling with stable inherited context (cache validation path).
+///
+/// Children have hover selectors that trigger full style resolution, but the
+/// inherited context from the parent is unchanged. This is the ideal case for
+/// cache hits — same base style, same interaction state, same inherited context.
+fn bench_inherited_stable_context(c: &mut Criterion) {
+    let mut group = c.benchmark_group("inherited_stable_context");
+
+    for width in [10, 50, 100].iter() {
+        group.bench_with_input(
+            BenchmarkId::new("hover_restyle", width),
+            width,
+            |b, &width| {
+                let children: Vec<_> = (0..width)
+                    .map(|_| {
+                        Empty::new().style(|s| {
+                            s.size(20.0, 20.0)
+                                .background(palette::css::CORAL)
+                                .hover(|s| s.background(palette::css::LIGHT_CORAL))
+                        })
+                    })
+                    .collect();
+                let ids: Vec<_> = children.iter().map(|v| v.view_id()).collect();
+                let view = Stack::from_iter(children).style(|s| s.size(400.0, 400.0));
+                let root = TestRoot::new();
+                let mut harness = HeadlessHarness::new_with_size(root, view, 400.0, 400.0);
+
+                b.iter(|| {
+                    for id in &ids {
+                        id.request_style(floem::style::recalc::StyleReason::with_selector(
+                            floem::style::StyleSelector::Hover,
+                        ));
+                    }
+                    harness.recompute_styles();
+                    black_box(harness.root_id());
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_identical_styles,
     bench_different_styles,
     bench_deep_nesting,
     bench_complex_styles,
-    bench_get_computed_style,
+    bench_style_clone_and_read,
     bench_restyle_views,
     bench_restyle_with_selectors,
     bench_inherited_prop_updates,
     bench_inherited_with_selectors,
+    bench_inherited_stable_context,
 );
 criterion_main!(benches);

@@ -70,7 +70,7 @@ impl KeyFrame {
         let style = style(Style::new());
         match &mut self.style {
             cs @ KeyFrameStyle::Computed => *cs = style.into(),
-            KeyFrameStyle::Style(s) => s.apply_mut(style),
+            KeyFrameStyle::Style(s) => s.apply_mut(&style),
         }
         self
     }
@@ -487,7 +487,7 @@ impl Animation {
                         *s = KeyFrameStyle::Computed;
                     }
                     (KeyFrameStyle::Style(s), KeyFrameStyle::Style(ns)) => {
-                        s.apply_mut(ns);
+                        s.apply_mut(&ns);
                     }
                 }
                 e_frame.easing = frame.easing;
@@ -1145,7 +1145,7 @@ impl Animation {
             }
         }
 
-        computed_style.apply_mut(self.folded_style.clone());
+        computed_style.apply_mut(&self.folded_style);
 
         // we remove all of the props in the computed style from the cache because the computed style could change inbetween every frame.
         for computed_idx in computed_idxs {
@@ -1234,6 +1234,6 @@ impl Animation {
     /// This is used when the animation is paused or completed but should still
     /// apply its last interpolated values.
     pub fn apply_folded(&self, computed_style: &mut Style) {
-        computed_style.apply_mut(self.folded_style.clone());
+        computed_style.apply_mut(&self.folded_style);
     }
 }

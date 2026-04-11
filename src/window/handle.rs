@@ -591,6 +591,11 @@ impl WindowHandle {
     }
 
     fn style(&mut self) {
+        // Capture a single timestamp for the entire style pass.
+        // All views in this frame see the same `now`, which is both cheaper
+        // (avoids per-view syscall) and more correct (no sub-frame jitter).
+        self.window_state.frame_start = std::time::Instant::now();
+
         // Loop until no more views need styling
         // This handles the case where styling a parent marks children dirty
         // (e.g., when inherited properties change)
