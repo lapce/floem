@@ -137,6 +137,11 @@ impl ApplicationHandle {
                     pos,
                 });
             }
+            UserEvent::RenderWorkerReady { window_id } => {
+                if let Some(handle) = self.window_handles.get(&window_id) {
+                    handle.window.request_redraw();
+                }
+            }
             #[cfg(all(feature = "subduction", target_os = "macos"))]
             UserEvent::SubductionFrameTick { window_id, tick } => {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {

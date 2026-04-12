@@ -47,21 +47,28 @@
 //! - Only one view can be active at a time.
 //! - Only one view can be focused at a time.
 //!
-use std::sync::Arc;
+use std::{
+    num::NonZeroU32,
+    sync::{Arc, mpsc},
+    thread,
+};
 
+use crate::Application;
 use crate::gpu_resources::GpuResources;
 use imaging::{
     BlurredRoundedRect, ClipRef, FillRef, GlyphRunRef, GroupRef, ImageBufferFormat,
     ImageBufferTarget, ImageRenderer, PaintSink, RenderSource, RgbaImage, StrokeRef,
+    record::Scene,
 };
 use imaging_wgpu::{TextureRenderer, TextureViewTarget};
 use peniko::ImageData;
 use peniko::kurbo::Size;
 use softbuffer::{Context, Surface};
-use std::num::NonZeroU32;
 use wgpu::util::TextureBlitter;
 use winit::window::Window;
 
+use crate::app::UserEvent;
+use crate::paint::display_list::RecordingRenderer;
 use crate::platform::{Duration, Instant};
 
 pub(crate) type WindowBackend = Box<dyn WindowRenderer>;
@@ -96,11 +103,24 @@ impl NewRendererCx {
 
     fn into_cpu_renderer(self, backend: CpuRenderer) -> Result<WindowBackend, String> {
         let size = self.normalized_size();
-        Ok(Box::new(ImageWindowRenderer {
-            backend,
-            target: CpuWindowTarget::new(self.window, size.width as u32, size.height as u32)?,
-            scratch: RgbaImage::new(size.width.max(1.0) as u32, size.height.max(1.0) as u32),
-        }))
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            return Ok(Box::new(ThreadedImageWindowRenderer::new(
+                self.window,
+                size,
+                backend,
+            )?));
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            Ok(Box::new(ImageWindowRenderer {
+                backend,
+                target: CpuWindowTarget::new(self.window, size.width as u32, size.height as u32)?,
+                scratch: RgbaImage::new(size.width.max(1.0) as u32, size.height.max(1.0) as u32),
+                ready_to_present: false,
+            }))
+        }
     }
 
     fn into_gpu_renderer(
@@ -125,6 +145,7 @@ impl NewRendererCx {
                 self.transparent,
                 Some(surface_format),
             )?,
+            ready_frame: None,
         }))
     }
 }
@@ -240,16 +261,21 @@ struct GpuWindowTarget {
     reason = "CPU window backend factories may be unused when no CPU renderer is enabled in the current build."
 )]
 #[derive(Clone, Copy, Debug, Default)]
-pub struct PaintTiming {
-    pub presented: bool,
+pub struct RenderTiming {
     pub total: Duration,
-    pub resize: Duration,
-    pub pre_present_notify: Duration,
     pub prepare: Duration,
     pub scene: Duration,
     pub finalize: Duration,
     pub read_output: Duration,
-    pub present: PresentTiming,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PaintTiming {
+    pub total: Duration,
+    pub resize: Duration,
+    pub pre_present_notify: Duration,
+    pub render: Option<RenderTiming>,
+    pub present: Option<PresentTiming>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -282,9 +308,15 @@ pub struct CaptureOutput {
 
 pub trait WindowRenderer {
     fn resize(&mut self, width: u32, height: u32);
-    fn render(&mut self, size: Size, source: &mut dyn RenderSource) -> PaintTiming;
+    fn render(&mut self, size: Size, source: &mut dyn RenderSource) -> Option<RenderTiming>;
+    fn present_ready_frame(&mut self) -> Option<PresentTiming> {
+        None
+    }
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput;
     fn debug_info(&mut self) -> String;
+    fn has_ready_frame(&mut self) -> bool {
+        false
+    }
     fn gpu_surface(&self) -> Option<&wgpu::Surface<'static>> {
         None
     }
@@ -297,9 +329,9 @@ struct NullWindowBackend {
 impl WindowRenderer for NullWindowBackend {
     fn resize(&mut self, _width: u32, _height: u32) {}
 
-    fn render(&mut self, _size: Size, source: &mut dyn RenderSource) -> PaintTiming {
+    fn render(&mut self, _size: Size, source: &mut dyn RenderSource) -> Option<RenderTiming> {
         source.paint_into(&mut self.renderer);
-        PaintTiming::default()
+        None
     }
 
     fn capture(&mut self, _size: Size, source: &mut dyn RenderSource) -> CaptureOutput {
@@ -320,6 +352,50 @@ struct ImageWindowRenderer {
     backend: CpuRenderer,
     target: CpuWindowTarget<Arc<dyn Window>>,
     scratch: RgbaImage,
+    ready_to_present: bool,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct ThreadedImageWindowRenderer {
+    name: &'static str,
+    target: CpuWindowTarget<Arc<dyn Window>>,
+    worker: OffscreenRenderWorker,
+    queued_job: Option<OffscreenRenderJob>,
+    ready_frame: Option<RenderedImageFrame>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct OffscreenRenderWorker {
+    sender: mpsc::Sender<RenderWorkerCommand>,
+    receiver: mpsc::Receiver<RenderedImageFrame>,
+    join_handle: Option<thread::JoinHandle<()>>,
+    in_flight: bool,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct OffscreenRenderJob {
+    scene: Scene,
+    size: Size,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct RenderedImageFrame {
+    image: RgbaImage,
+    scene_time: Duration,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+enum RenderWorkerCommand {
+    Render {
+        scene: Scene,
+        size: Size,
+    },
+    Capture {
+        scene: Scene,
+        size: Size,
+        response: mpsc::Sender<CaptureOutput>,
+    },
+    Shutdown,
 }
 
 enum DirectOrCopy<T> {
@@ -344,33 +420,188 @@ struct CpuRenderer {
 
 enum CpuRendererBackend {
     Image {
-        backend: Box<dyn ImageRenderer>,
-        direct_format: Option<ImageBufferFormat>,
+        backend: Box<dyn ImageRenderer + Send>,
     },
 }
 
 impl CpuRenderer {
-    fn direct_image(
-        backend: impl ImageRenderer + 'static,
-        direct_format: ImageBufferFormat,
-        name: &'static str,
-    ) -> Self {
+    fn direct_image(backend: impl ImageRenderer + Send + 'static, name: &'static str) -> Self {
         Self {
             backend: DirectOrCopy::direct(CpuRendererBackend::Image {
                 backend: Box::new(backend),
-                direct_format: Some(direct_format),
             }),
             name,
         }
     }
 
-    fn copy_image(backend: impl ImageRenderer + 'static, name: &'static str) -> Self {
+    fn copy_image(backend: impl ImageRenderer + Send + 'static, name: &'static str) -> Self {
         Self {
             backend: DirectOrCopy::copy(CpuRendererBackend::Image {
                 backend: Box::new(backend),
-                direct_format: None,
             }),
             name,
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl ThreadedImageWindowRenderer {
+    fn new(window: Arc<dyn Window>, size: Size, backend: CpuRenderer) -> Result<Self, String> {
+        let width = size.width.max(1.0) as u32;
+        let height = size.height.max(1.0) as u32;
+        let name = backend.name;
+        Ok(Self {
+            name,
+            target: CpuWindowTarget::new(window.clone(), width, height)?,
+            worker: OffscreenRenderWorker::spawn(window.id(), backend),
+            queued_job: None,
+            ready_frame: None,
+        })
+    }
+
+    fn take_ready_frame_for_present(&mut self) -> Option<PresentTiming> {
+        self.poll_worker();
+        let frame = self.ready_frame.take()?;
+        if frame.image.width != self.target.width || frame.image.height != self.target.height {
+            return None;
+        }
+
+        let _ = frame.scene_time;
+        Some(self.target.present_rgba(&frame.image))
+    }
+
+    fn record_scene(source: &mut dyn RenderSource) -> Scene {
+        let mut scene = Scene::new();
+        let mut recorder = RecordingRenderer::new(&mut scene);
+        source.paint_into(&mut recorder);
+        scene
+    }
+
+    fn submit_job(&mut self, job: OffscreenRenderJob) {
+        self.worker.submit(job);
+    }
+
+    fn poll_worker(&mut self) {
+        self.ready_frame = self.ready_frame.take().or_else(|| self.worker.try_take_ready_frame());
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl OffscreenRenderWorker {
+    fn spawn(window_id: winit::window::WindowId, mut backend: CpuRenderer) -> Self {
+        let (command_tx, command_rx) = mpsc::channel();
+        let (result_tx, result_rx) = mpsc::channel();
+        let join_handle = thread::Builder::new()
+            .name(format!("floem-render-{window_id:?}"))
+            .spawn(move || {
+                while let Ok(command) = command_rx.recv() {
+                    match command {
+                        RenderWorkerCommand::Render { mut scene, size } => {
+                            let total_start = Instant::now();
+                            let width = size.width.max(1.0) as u32;
+                            let height = size.height.max(1.0) as u32;
+                            let mut image = RgbaImage::new(width, height);
+            let rendered = match &mut backend.backend {
+                                DirectOrCopy::Direct(CpuRendererBackend::Image { backend })
+                                | DirectOrCopy::Copy(CpuRendererBackend::Image { backend }) => {
+                                    backend.render_source_into(
+                                        &mut scene,
+                                        ImageBufferTarget::from_rgba_image(&mut image),
+                                    )
+                                }
+                            };
+                            if rendered.is_ok() {
+                                let _ = result_tx.send(RenderedImageFrame {
+                                    image,
+                                    scene_time: total_start.elapsed(),
+                                });
+                                Application::send_proxy_event(UserEvent::RenderWorkerReady {
+                                    window_id,
+                                });
+                            }
+                        }
+                        RenderWorkerCommand::Capture {
+                            mut scene,
+                            size,
+                            response,
+                        } => {
+                            let total_start = Instant::now();
+                            let width = size.width.max(1.0) as u32;
+                            let height = size.height.max(1.0) as u32;
+                            let mut image = RgbaImage::new(width, height);
+                            let result = match &mut backend.backend {
+                                DirectOrCopy::Direct(CpuRendererBackend::Image { backend })
+                                | DirectOrCopy::Copy(CpuRendererBackend::Image { backend }) => {
+                                    backend.render_source_into(
+                                        &mut scene,
+                                        ImageBufferTarget::from_rgba_image(&mut image),
+                                    )
+                                }
+                            };
+                            let error = result.err().map(|err| err.to_string());
+                            let _ = response.send(CaptureOutput {
+                                image: error.is_none().then(|| rgba_image_into_image_data(image)),
+                                error,
+                                timing: CaptureTiming {
+                                    total: total_start.elapsed(),
+                                    scene: total_start.elapsed(),
+                                    ..Default::default()
+                                },
+                            });
+                        }
+                        RenderWorkerCommand::Shutdown => break,
+                    }
+                }
+            })
+            .expect("failed to spawn render worker");
+        Self {
+            sender: command_tx,
+            receiver: result_rx,
+            join_handle: Some(join_handle),
+            in_flight: false,
+        }
+    }
+
+    fn submit(&mut self, job: OffscreenRenderJob) {
+        self.sender
+            .send(RenderWorkerCommand::Render {
+                scene: job.scene,
+                size: job.size,
+            })
+            .expect("render worker thread stopped unexpectedly");
+        self.in_flight = true;
+    }
+
+    fn capture(&mut self, job: OffscreenRenderJob) -> CaptureOutput {
+        let (response_tx, response_rx) = mpsc::channel();
+        self.sender
+            .send(RenderWorkerCommand::Capture {
+                scene: job.scene,
+                size: job.size,
+                response: response_tx,
+            })
+            .expect("render worker thread stopped unexpectedly");
+        response_rx
+            .recv()
+            .expect("render worker thread stopped during capture")
+    }
+
+    fn try_take_ready_frame(&mut self) -> Option<RenderedImageFrame> {
+        let mut latest = self.receiver.try_recv().ok()?;
+        while let Ok(next) = self.receiver.try_recv() {
+            latest = next;
+        }
+        self.in_flight = false;
+        Some(latest)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for OffscreenRenderWorker {
+    fn drop(&mut self) {
+        let _ = self.sender.send(RenderWorkerCommand::Shutdown);
+        if let Some(join_handle) = self.join_handle.take() {
+            let _ = join_handle.join();
         }
     }
 }
@@ -378,6 +609,7 @@ impl CpuRenderer {
 struct TargetGpuWindowRenderer {
     backend: GpuRenderer,
     target: GpuWindowTarget,
+    ready_frame: Option<wgpu::Texture>,
 }
 
 struct GpuRenderer {
@@ -506,6 +738,24 @@ impl GpuWindowTarget {
 
     fn gpu_surface(&self) -> &wgpu::Surface<'static> {
         &self.surface
+    }
+
+    fn create_render_texture(&self, width: u32, height: u32) -> wgpu::Texture {
+        self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("floem prepared frame"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        })
     }
 
     fn copy_texture_to_surface(&self, source: &wgpu::Texture, target: &wgpu::Texture) {
@@ -652,37 +902,82 @@ where
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+impl WindowRenderer for ThreadedImageWindowRenderer {
+    fn resize(&mut self, width: u32, height: u32) {
+        self.target.resize(width, height);
+    }
+
+    fn render(&mut self, size: Size, source: &mut dyn RenderSource) -> Option<RenderTiming> {
+        let total_start = Instant::now();
+        let scene_start = total_start;
+        let job = OffscreenRenderJob {
+            scene: Self::record_scene(source),
+            size,
+        };
+        let scene = scene_start.elapsed();
+
+        if self.worker.in_flight {
+            self.queued_job = Some(job);
+        } else {
+            self.submit_job(job);
+        }
+
+        Some(RenderTiming {
+            total: total_start.elapsed(),
+            scene,
+            ..Default::default()
+        })
+    }
+
+    fn present_ready_frame(&mut self) -> Option<PresentTiming> {
+        let present = self.take_ready_frame_for_present()?;
+        if let Some(job) = self.queued_job.take() {
+            self.submit_job(job);
+        }
+        Some(present)
+    }
+
+    fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {
+        self.worker.capture(OffscreenRenderJob {
+            scene: Self::record_scene(source),
+            size,
+        })
+    }
+
+    fn debug_info(&mut self) -> String {
+        format!("Renderer: {} (threaded)", self.name)
+    }
+
+    fn has_ready_frame(&mut self) -> bool {
+        self.poll_worker();
+        self.ready_frame.is_some()
+    }
+}
+
 impl WindowRenderer for TargetGpuWindowRenderer {
     fn resize(&mut self, width: u32, height: u32) {
         self.target.resize(width, height);
     }
 
-    fn render(&mut self, size: Size, source: &mut dyn RenderSource) -> PaintTiming {
+    fn render(&mut self, size: Size, source: &mut dyn RenderSource) -> Option<RenderTiming> {
         let start = Instant::now();
-        let acquire_start = start;
-        let surface_texture = self
-            .target
-            .surface
-            .get_current_texture()
-            .expect("failed to acquire surface texture");
-        let acquire_surface = acquire_start.elapsed();
         let prepare_start = Instant::now();
         let width = size.width.max(1.0) as u32;
         let height = size.height.max(1.0) as u32;
+        let texture = self.target.create_render_texture(width, height);
         match &mut self.backend {
             GpuRenderer {
                 backend: DirectOrCopy::Direct(GpuRendererBackend::Texture(backend)),
                 ..
             } => backend
-                .render_source_into_texture(source, surface_texture.texture.clone())
+                .render_source_into_texture(source, texture.clone())
                 .expect("failed to render gpu target"),
             GpuRenderer {
                 backend: DirectOrCopy::Direct(GpuRendererBackend::TextureView(backend)),
                 ..
             } => {
-                let texture_view = surface_texture
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
+                let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
                 backend
                     .render_source_into_texture(
                         source,
@@ -697,8 +992,17 @@ impl WindowRenderer for TargetGpuWindowRenderer {
                 let texture = backend
                     .render_source_texture(source, width, height)
                     .expect("failed to render gpu target");
-                self.target
-                    .copy_texture_to_surface(&texture, &surface_texture.texture);
+                self.ready_frame = Some(texture);
+                let prepare = Duration::ZERO;
+                let scene = prepare_start.elapsed();
+                let finalize = Duration::ZERO;
+                return Some(RenderTiming {
+                    total: start.elapsed(),
+                    prepare,
+                    scene,
+                    finalize,
+                    ..Default::default()
+                });
             }
             GpuRenderer {
                 backend: DirectOrCopy::Copy(GpuRendererBackend::TextureView(backend)),
@@ -707,31 +1011,56 @@ impl WindowRenderer for TargetGpuWindowRenderer {
                 let texture = backend
                     .render_source_texture(source, width, height)
                     .expect("failed to render gpu target");
-                self.target
-                    .copy_texture_to_surface(&texture, &surface_texture.texture);
+                self.ready_frame = Some(texture);
+                let prepare = Duration::ZERO;
+                let scene = prepare_start.elapsed();
+                let finalize = Duration::ZERO;
+                return Some(RenderTiming {
+                    total: start.elapsed(),
+                    prepare,
+                    scene,
+                    finalize,
+                    ..Default::default()
+                });
             }
         }
+        self.ready_frame = Some(texture);
         let prepare = Duration::ZERO;
         let scene = prepare_start.elapsed();
         let finalize = Duration::ZERO;
-        let present_call_start = Instant::now();
-        surface_texture.present();
-        let present_call = present_call_start.elapsed();
-        PaintTiming {
-            presented: true,
+        Some(RenderTiming {
             total: start.elapsed(),
             prepare,
             scene,
             finalize,
-            present: PresentTiming {
-                total: start.elapsed(),
-                acquire_surface,
-                compose: scene + finalize,
-                submit: Duration::ZERO,
-                present_call,
-            },
             ..Default::default()
-        }
+        })
+    }
+
+    fn present_ready_frame(&mut self) -> Option<PresentTiming> {
+        let texture = self.ready_frame.take()?;
+        let start = Instant::now();
+        let acquire_start = start;
+        let surface_texture = self
+            .target
+            .surface
+            .get_current_texture()
+            .expect("failed to acquire surface texture");
+        let acquire_surface = acquire_start.elapsed();
+        let compose_start = Instant::now();
+        self.target
+            .copy_texture_to_surface(&texture, &surface_texture.texture);
+        let compose = compose_start.elapsed();
+        let present_call_start = Instant::now();
+        surface_texture.present();
+        let present_call = present_call_start.elapsed();
+        Some(PresentTiming {
+            total: start.elapsed(),
+            acquire_surface,
+            compose,
+            submit: Duration::ZERO,
+            present_call,
+        })
     }
 
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {
@@ -794,51 +1123,41 @@ impl WindowRenderer for ImageWindowRenderer {
         self.target.resize(width, height);
     }
 
-    fn render(&mut self, size: Size, source: &mut dyn RenderSource) -> PaintTiming {
+    fn render(&mut self, size: Size, source: &mut dyn RenderSource) -> Option<RenderTiming> {
         let total_start = Instant::now();
         let scene_start = total_start;
         let width = size.width.max(1.0) as u32;
         let height = size.height.max(1.0) as u32;
-        let (rendered, scene, present) = match &mut self.backend {
+        self.scratch.resize(width, height);
+        let rendered = match &mut self.backend {
             CpuRenderer {
-                backend:
-                    DirectOrCopy::Direct(CpuRendererBackend::Image {
-                        backend,
-                        direct_format,
-                    }),
+                backend: DirectOrCopy::Direct(CpuRendererBackend::Image { backend }),
                 ..
-            } => self.target.present_direct(
-                size,
-                direct_format.expect("direct cpu renderer missing direct image format"),
-                |target| backend.render_source_into(source, target).is_ok(),
-            ),
-            CpuRenderer {
-                backend: DirectOrCopy::Copy(CpuRendererBackend::Image { backend, .. }),
-                ..
-            } => {
-                self.scratch.resize(width, height);
-                let rendered = backend
-                    .render_source_into(
-                        source,
-                        ImageBufferTarget::from_rgba_image(&mut self.scratch),
-                    )
-                    .is_ok();
-                let scene = scene_start.elapsed();
-                let present = if rendered {
-                    self.target.present_rgba(&self.scratch)
-                } else {
-                    PresentTiming::default()
-                };
-                (rendered, scene, present)
             }
+            | CpuRenderer {
+                backend: DirectOrCopy::Copy(CpuRendererBackend::Image { backend }),
+                ..
+            } => backend
+                .render_source_into(
+                    source,
+                    ImageBufferTarget::from_rgba_image(&mut self.scratch),
+                )
+                .is_ok(),
         };
-        PaintTiming {
-            presented: rendered,
+        self.ready_to_present = rendered;
+        Some(RenderTiming {
             total: total_start.elapsed(),
-            scene,
-            present,
+            scene: scene_start.elapsed(),
             ..Default::default()
-        }
+        })
+    }
+
+    fn present_ready_frame(&mut self) -> Option<PresentTiming> {
+        self.ready_to_present
+            .then(|| {
+                self.ready_to_present = false;
+                self.target.present_rgba(&self.scratch)
+            })
     }
 
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {
@@ -849,11 +1168,11 @@ impl WindowRenderer for ImageWindowRenderer {
         let mut image = RgbaImage::new(width, height);
         let result = match &mut self.backend {
             CpuRenderer {
-                backend: DirectOrCopy::Direct(CpuRendererBackend::Image { backend, .. }),
+                backend: DirectOrCopy::Direct(CpuRendererBackend::Image { backend }),
                 ..
             }
             | CpuRenderer {
-                backend: DirectOrCopy::Copy(CpuRendererBackend::Image { backend, .. }),
+                backend: DirectOrCopy::Copy(CpuRendererBackend::Image { backend }),
                 ..
             } => backend.render_source_into(source, ImageBufferTarget::from_rgba_image(&mut image)),
         };
@@ -1049,11 +1368,8 @@ fn choose_default_renderer(cx: NewRendererCx) -> Result<WindowBackend, String> {
                 &backend.supported_image_formats(),
                 CpuWindowTarget::<Arc<dyn Window>>::direct_image_format(),
             ) {
-                return cx.into_cpu_renderer(CpuRenderer::direct_image(
-                    backend,
-                    format,
-                    "Vello CPU",
-                ));
+                let _ = format;
+                return cx.into_cpu_renderer(CpuRenderer::direct_image(backend, "Vello CPU"));
             }
             return cx.into_cpu_renderer(CpuRenderer::copy_image(backend, "Vello CPU"));
         }
@@ -1065,8 +1381,8 @@ fn choose_default_renderer(cx: NewRendererCx) -> Result<WindowBackend, String> {
                 &backend.supported_image_formats(),
                 CpuWindowTarget::<Arc<dyn Window>>::direct_image_format(),
             ) {
-                return cx
-                    .into_cpu_renderer(CpuRenderer::direct_image(backend, format, "Skia CPU"));
+                let _ = format;
+                return cx.into_cpu_renderer(CpuRenderer::direct_image(backend, "Skia CPU"));
             }
             return cx.into_cpu_renderer(CpuRenderer::copy_image(backend, "Skia CPU"));
         }
@@ -1081,11 +1397,8 @@ fn choose_default_renderer(cx: NewRendererCx) -> Result<WindowBackend, String> {
                 &backend.supported_image_formats(),
                 CpuWindowTarget::<Arc<dyn Window>>::direct_image_format(),
             ) {
-                return cx.into_cpu_renderer(CpuRenderer::direct_image(
-                    backend,
-                    format,
-                    "Tiny Skia CPU",
-                ));
+                let _ = format;
+                return cx.into_cpu_renderer(CpuRenderer::direct_image(backend, "Tiny Skia CPU"));
             }
             return cx.into_cpu_renderer(CpuRenderer::copy_image(backend, "Tiny Skia CPU"));
         }
@@ -1101,11 +1414,8 @@ fn choose_default_renderer(cx: NewRendererCx) -> Result<WindowBackend, String> {
                 &backend.supported_image_formats(),
                 CpuWindowTarget::<Arc<dyn Window>>::direct_image_format(),
             ) {
-                return cx.into_cpu_renderer(CpuRenderer::direct_image(
-                    backend,
-                    format,
-                    "Vello CPU",
-                ));
+                let _ = format;
+                return cx.into_cpu_renderer(CpuRenderer::direct_image(backend, "Vello CPU"));
             }
             return cx.into_cpu_renderer(CpuRenderer::copy_image(backend, "Vello CPU"));
         }

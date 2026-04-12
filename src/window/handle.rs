@@ -106,6 +106,7 @@ pub(crate) struct WindowHandle {
     #[cfg(target_os = "macos")]
     next_presents_with_transaction: bool,
     pending_timing: FrameTimingAccumulator,
+    pending_render_timing: Option<crate::paint::renderer::RenderTiming>,
     last_timing_report: Option<TimingReport>,
     frame_clock: Box<dyn FrameClock>,
 }
@@ -267,6 +268,7 @@ impl WindowHandle {
             #[cfg(target_os = "macos")]
             next_presents_with_transaction: false,
             pending_timing: FrameTimingAccumulator::default(),
+            pending_render_timing: None,
             last_timing_report: None,
             frame_clock: new_window_frame_clock(window_id, output_id),
         };
@@ -439,6 +441,7 @@ impl WindowHandle {
             #[cfg(target_os = "macos")]
             next_presents_with_transaction: false,
             pending_timing: FrameTimingAccumulator::default(),
+            pending_render_timing: None,
             last_timing_report: None,
             frame_clock: new_window_frame_clock(window_id, 0),
         };
@@ -856,7 +859,8 @@ impl WindowHandle {
 
     fn render_paint_frame(&mut self) -> bool {
         let renderer_ready = matches!(self.paint_state, PaintState::Initialized { .. });
-        if self.window_state.has_pending_render() && renderer_ready {
+        let has_ready_frame = renderer_ready && self.paint_state.backend_mut().has_ready_frame();
+        if (self.window_state.has_pending_render() || has_ready_frame) && renderer_ready {
             #[cfg(target_os = "macos")]
             let presents_with_transaction = self.next_presents_with_transaction;
             #[cfg(target_os = "macos")]
@@ -864,7 +868,11 @@ impl WindowHandle {
                 self.set_presents_with_transaction_now(true);
             }
 
-            let paint = self.paint();
+            let paint = if self.window_state.has_pending_render() {
+                self.paint()
+            } else {
+                self.present_ready_frame()
+            };
 
             #[cfg(target_os = "macos")]
             if presents_with_transaction {
@@ -873,10 +881,14 @@ impl WindowHandle {
             }
 
             self.window_state.clear_pending_damage();
-            let presented = paint.presented;
+            let presented = paint.present.is_some();
             if presented {
                 let update = mem::take(&mut self.pending_timing);
-                let useful_draw_cpu = paint.total.saturating_sub(paint.present.acquire_surface);
+                let useful_draw_cpu = paint.total.saturating_sub(
+                    paint.present
+                        .map(|present| present.acquire_surface)
+                        .unwrap_or(Duration::ZERO),
+                );
                 let frame_end = Instant::now();
                 self.frame_clock
                     .observe_presented(update.total(), useful_draw_cpu, frame_end);
@@ -983,8 +995,8 @@ impl WindowHandle {
             timings.push_stat("Layout", update.layout, TimingKind::Layout);
         }
         timings.push_stat("Paint", paint.total, TimingKind::Paint);
-        if paint.present.total > Duration::ZERO {
-            timings.push_stat("Present", paint.present.total, TimingKind::Present);
+        if let Some(present) = paint.present.filter(|present| present.total > Duration::ZERO) {
+            timings.push_stat("Present", present.total, TimingKind::Present);
         }
 
         let mut cursor = Duration::ZERO;
@@ -1053,83 +1065,82 @@ impl WindowHandle {
             );
         }
         let mut paint_cursor = cursor + paint.resize + paint.pre_present_notify;
-        if paint.prepare > Duration::ZERO {
-            timings.push_span(
-                "Prepare",
-                paint_cursor,
-                paint.prepare,
-                2,
-                TimingKind::Renderer,
-            );
-            paint_cursor += paint.prepare;
+        if let Some(render) = paint.render {
+            if render.prepare > Duration::ZERO {
+                timings.push_span(
+                    "Prepare",
+                    paint_cursor,
+                    render.prepare,
+                    2,
+                    TimingKind::Renderer,
+                );
+                paint_cursor += render.prepare;
+            }
+            if render.scene > Duration::ZERO {
+                timings.push_span("Scene", paint_cursor, render.scene, 2, TimingKind::Paint);
+                paint_cursor += render.scene;
+            }
+            if render.finalize > Duration::ZERO {
+                timings.push_span(
+                    "Finish",
+                    paint_cursor,
+                    render.finalize,
+                    2,
+                    TimingKind::Renderer,
+                );
+                paint_cursor += render.finalize;
+            }
+            if render.read_output > Duration::ZERO {
+                timings.push_span(
+                    "ReadTarget",
+                    paint_cursor,
+                    render.read_output,
+                    2,
+                    TimingKind::Renderer,
+                );
+                paint_cursor += render.read_output;
+            }
         }
-        if paint.scene > Duration::ZERO {
-            timings.push_span("Scene", paint_cursor, paint.scene, 2, TimingKind::Paint);
-            paint_cursor += paint.scene;
-        }
-        if paint.finalize > Duration::ZERO {
-            timings.push_span(
-                "Finish",
-                paint_cursor,
-                paint.finalize,
-                2,
-                TimingKind::Renderer,
-            );
-            paint_cursor += paint.finalize;
-        }
-        if paint.read_output > Duration::ZERO {
-            timings.push_span(
-                "ReadTarget",
-                paint_cursor,
-                paint.read_output,
-                2,
-                TimingKind::Renderer,
-            );
-            paint_cursor += paint.read_output;
-        }
-        if paint.present.total > Duration::ZERO {
+        if let Some(present) = paint.present.filter(|present| present.total > Duration::ZERO) {
             timings.push_span(
                 "Present",
                 paint_cursor,
-                paint.present.total,
+                present.total,
                 2,
                 TimingKind::Present,
             );
-            if paint.present.acquire_surface > Duration::ZERO {
+            if present.acquire_surface > Duration::ZERO {
                 timings.push_span(
                     "AcquireSurface",
                     paint_cursor,
-                    paint.present.acquire_surface,
+                    present.acquire_surface,
                     3,
                     TimingKind::Present,
                 );
             }
-            if paint.present.compose > Duration::ZERO {
+            if present.compose > Duration::ZERO {
                 timings.push_span(
                     "Compose",
-                    paint_cursor + paint.present.acquire_surface,
-                    paint.present.compose,
+                    paint_cursor + present.acquire_surface,
+                    present.compose,
                     3,
                     TimingKind::Present,
                 );
             }
-            if paint.present.submit > Duration::ZERO {
+            if present.submit > Duration::ZERO {
                 timings.push_span(
                     "Submit",
-                    paint_cursor + paint.present.acquire_surface + paint.present.compose,
-                    paint.present.submit,
+                    paint_cursor + present.acquire_surface + present.compose,
+                    present.submit,
                     3,
                     TimingKind::Present,
                 );
             }
-            if paint.present.present_call > Duration::ZERO {
+            if present.present_call > Duration::ZERO {
                 timings.push_span(
                     "PresentCall",
-                    paint_cursor
-                        + paint.present.acquire_surface
-                        + paint.present.compose
-                        + paint.present.submit,
-                    paint.present.present_call,
+                    paint_cursor + present.acquire_surface + present.compose + present.submit,
+                    present.present_call,
                     3,
                     TimingKind::Present,
                 );
@@ -1187,18 +1198,60 @@ impl WindowHandle {
             }
             cx.paint_with_traversal_into(self.id, sink);
         };
-        let mut timing = self
+        let render = self
             .paint_state
             .backend_mut()
             .render(frame_size, &mut source);
+        if let Some(render) = render {
+            self.pending_render_timing = Some(render);
+        }
+        let present = self.paint_state.backend_mut().present_ready_frame();
+        let render = if present.is_some() {
+            self.pending_render_timing.take()
+        } else {
+            render
+        };
 
         let root_element_id = cx.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
         GlobalEventCx::new(cx.window_state, root_element_id, event).route_window_event();
-        timing.resize = resize;
-        timing.pre_present_notify = pre_present_notify;
-        timing.total = total_start.elapsed();
-        timing
+        crate::paint::renderer::PaintTiming {
+            total: total_start.elapsed(),
+            resize,
+            pre_present_notify,
+            render,
+            present,
+        }
+    }
+
+    fn present_ready_frame(&mut self) -> crate::paint::renderer::PaintTiming {
+        if !matches!(self.paint_state, PaintState::Initialized { .. }) {
+            return crate::paint::renderer::PaintTiming::default();
+        }
+
+        let total_start = Instant::now();
+        let frame_size = self.window_state.root_size * self.window_state.os_scale;
+        let frame_size = Size::new(frame_size.width.max(1.0), frame_size.height.max(1.0));
+        let resize_start = Instant::now();
+        self.paint_state
+            .backend_mut()
+            .resize(frame_size.width as u32, frame_size.height as u32);
+        let resize = resize_start.elapsed();
+
+        let notify_start = Instant::now();
+        self.window.pre_present_notify();
+        let pre_present_notify = notify_start.elapsed();
+
+        let present = self.paint_state.backend_mut().present_ready_frame();
+        let render = present.and_then(|_| self.pending_render_timing.take());
+
+        crate::paint::renderer::PaintTiming {
+            total: total_start.elapsed(),
+            resize,
+            pre_present_notify,
+            render,
+            present,
+        }
     }
 
     fn capture_image(&mut self) -> crate::paint::renderer::CaptureOutput {

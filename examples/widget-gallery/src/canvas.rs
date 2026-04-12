@@ -1,5 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Duration, time::Instant};
 
+use floem::imaging::Painter;
+use floem::imaging::record::Scene;
 use floem::{
     ViewId,
     context::{EventCx, LayoutChanged, LayoutChangedListener, PaintCx},
@@ -22,8 +24,6 @@ use floem::{
     style::{DirectTransition, Transition},
     ui_events::pointer::{PointerButtonEvent, PointerEvent},
 };
-use floem::imaging::Painter;
-use floem::imaging::record::Scene;
 use palette::css;
 
 use crate::form::{form, form_item};
