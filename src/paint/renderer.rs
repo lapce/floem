@@ -62,6 +62,8 @@ use imaging::{
 use imaging_wgpu::{TextureRenderer, TextureViewTarget};
 use peniko::ImageData;
 use peniko::kurbo::Size;
+#[cfg(not(target_arch = "wasm32"))]
+use pixels::{Pixels, SurfaceTexture};
 use softbuffer::{Context, Surface};
 use wgpu::util::TextureBlitter;
 use winit::window::Window;
@@ -308,8 +310,25 @@ impl PaintSink for NullRenderer {
     dead_code,
     reason = "CPU window targets may be unused when no CPU renderer is enabled in the current build."
 )]
-struct CpuWindowTarget<W> {
+struct SoftbufferWindowTarget<W> {
     surface: softbuffer::Surface<W, W>,
+    width: u32,
+    height: u32,
+}
+
+#[allow(
+    dead_code,
+    reason = "CPU window targets may be unused when no CPU renderer is enabled in the current build."
+)]
+enum CpuWindowTarget<W> {
+    #[cfg(not(target_arch = "wasm32"))]
+    Pixels(Box<PixelsWindowTarget>),
+    Softbuffer(SoftbufferWindowTarget<W>),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct PixelsWindowTarget {
+    pixels: Pixels<'static>,
     width: u32,
     height: u32,
 }
@@ -633,7 +652,7 @@ impl ThreadedWindowRenderer {
     fn present_frame(&mut self, frame: RenderedFrame) -> Option<PresentTiming> {
         match (&mut self.presenter, frame) {
             (ThreadedRendererPresenter::Cpu(target), RenderedFrame::Cpu(frame)) => {
-                if frame.image.width != target.width || frame.image.height != target.height {
+                if !target.matches_size(frame.image.width, frame.image.height) {
                     return None;
                 }
                 Some(target.present_rgba(&frame.image))
@@ -1069,7 +1088,7 @@ impl GpuWindowTarget {
     dead_code,
     reason = "CPU window targets may be unused when no CPU renderer is enabled in the current build."
 )]
-impl<W> CpuWindowTarget<W>
+impl<W> SoftbufferWindowTarget<W>
 where
     W: Clone + raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle,
 {
@@ -1134,6 +1153,118 @@ where
     }
 }
 
+impl<W> CpuWindowTarget<W>
+where
+    W: Clone
+        + raw_window_handle::HasWindowHandle
+        + raw_window_handle::HasDisplayHandle
+        + Send
+        + Sync
+        + 'static,
+{
+    fn new(window: W, width: u32, height: u32) -> Result<Self, String> {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Ok(target) = PixelsWindowTarget::new(window.clone(), width, height) {
+            return Ok(Self::Pixels(Box::new(target)));
+        }
+
+        Ok(Self::Softbuffer(SoftbufferWindowTarget::new(
+            window, width, height,
+        )?))
+    }
+
+    fn resize(&mut self, width: u32, height: u32) {
+        match self {
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Pixels(target) => target.resize(width, height),
+            Self::Softbuffer(target) => target.resize(width, height),
+        }
+    }
+
+    fn present_rgba(&mut self, image: &RgbaImage) -> PresentTiming {
+        match self {
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Pixels(target) => target.present_rgba(image),
+            Self::Softbuffer(target) => target.present_rgba(image),
+        }
+    }
+
+    fn matches_size(&self, width: u32, height: u32) -> bool {
+        match self {
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Pixels(target) => target.width == width && target.height == height,
+            Self::Softbuffer(target) => target.width == width && target.height == height,
+        }
+    }
+
+    fn presenter_name(&self) -> &'static str {
+        match self {
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Pixels(_) => "Pixels",
+            Self::Softbuffer(_) => "Softbuffer",
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl PixelsWindowTarget {
+    fn new<W>(window: W, width: u32, height: u32) -> Result<Self, String>
+    where
+        W: pixels::wgpu::WindowHandle + Send + Sync + 'static,
+    {
+        let pixels = Pixels::new(
+            width.max(1),
+            height.max(1),
+            SurfaceTexture::new(width.max(1), height.max(1), window),
+        )
+        .map_err(|err| err.to_string())?;
+        if matches!(
+            pixels.adapter().get_info().device_type,
+            pixels::wgpu::DeviceType::Cpu
+        ) {
+            return Err("pixels selected a software adapter".to_string());
+        }
+        Ok(Self {
+            pixels,
+            width,
+            height,
+        })
+    }
+
+    fn resize(&mut self, width: u32, height: u32) {
+        let width = width.max(1);
+        let height = height.max(1);
+        if self.width != width || self.height != height {
+            self.width = width;
+            self.height = height;
+            self.pixels
+                .resize_surface(width, height)
+                .expect("failed to resize pixels surface");
+            self.pixels
+                .resize_buffer(width, height)
+                .expect("failed to resize pixels buffer");
+        }
+    }
+
+    fn present_rgba(&mut self, image: &RgbaImage) -> PresentTiming {
+        let start = Instant::now();
+        let compose_start = start;
+        self.pixels.frame_mut().copy_from_slice(&image.data);
+        let compose = compose_start.elapsed();
+        let submit_start = Instant::now();
+        self.pixels
+            .render()
+            .expect("failed to present pixels frame");
+        let submit = submit_start.elapsed();
+        PresentTiming {
+            total: start.elapsed(),
+            compose,
+            submit,
+            ..Default::default()
+        }
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 impl WindowRenderer for ThreadedWindowRenderer {
     fn resize(&mut self, width: u32, height: u32) {
@@ -1183,7 +1314,11 @@ impl WindowRenderer for ThreadedWindowRenderer {
     }
 
     fn debug_info(&mut self) -> String {
-        format!("Renderer: {} (threaded)", self.name)
+        let presenter = match &self.presenter {
+            ThreadedRendererPresenter::Cpu(target) => target.presenter_name(),
+            ThreadedRendererPresenter::Gpu(_) => "WGPU Surface",
+        };
+        format!("Renderer: {} (threaded, {presenter})", self.name)
     }
 
     fn has_ready_frame(&mut self) -> bool {
@@ -1328,7 +1463,11 @@ impl WindowRenderer for TargetGpuWindowRenderer {
     }
 
     fn debug_info(&mut self) -> String {
-        format!("Renderer: {}", self.backend.name)
+        format!(
+            "Renderer: {} ({})",
+            self.backend.name,
+            self.target.presenter_name()
+        )
     }
 
     fn gpu_surface(&self) -> Option<&wgpu::Surface<'static>> {
@@ -1496,18 +1635,22 @@ fn choose_default_renderer(cx: NewRendererCx) -> Result<RendererSpec, String> {
 
         #[cfg(feature = "skia")]
         if let Some(gpu) = cx.gpu() {
-            let fallback_surface_format = gpu.surface_formats().first().copied();
+            let fallback_surface_format = gpu
+                .surface_formats()
+                .iter()
+                .copied()
+                .find(|format| !(is_srgb_texture_format(*format)));
             let adapter = gpu.gpu_resources.adapter.clone();
             let device = gpu.gpu_resources.device.clone();
             let queue = gpu.gpu_resources.queue.clone();
             let backend = imaging_skia::SkiaRenderer::new(adapter, device, queue)
                 .map_err(|err| err.to_string())?;
-            if let Some(surface_format) = pick_supported_texture_format(
-                gpu.surface_formats(),
-                &backend.supported_texture_formats(),
-            ) {
-                return Ok(cx.provided_texture_renderer(backend, surface_format, "Skia GPU"));
-            }
+            // if let Some(surface_format) = pick_supported_texture_format(
+            //     gpu.surface_formats(),
+            //     &backend.supported_texture_formats(),
+            // ) {
+            //     return Ok(cx.provided_texture_renderer(backend, surface_format, "Skia GPU"));
+            // }
             if let Some(surface_format) = fallback_surface_format {
                 return Ok(cx.owned_texture_renderer(backend, surface_format, "Skia GPU"));
             }

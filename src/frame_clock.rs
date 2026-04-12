@@ -155,15 +155,15 @@ impl FrameClock for HeuristicFrameClock {
 
     fn frame_prepare_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
         let earliest_present = self.last_presented_at + frame_interval;
-        let max_total_lead = frame_interval
+        let max_prepare_lead = frame_interval
             .checked_sub(Duration::from_millis(1))
             .unwrap_or(frame_interval);
         let lead_time = min_duration(
             max_duration(
-                self.estimated_frame_prepare_lead_time + self.estimated_draw_lead_time,
+                self.estimated_frame_prepare_lead_time,
                 Duration::from_millis(1),
             ),
-            max_total_lead,
+            max_prepare_lead,
         );
 
         earliest_present.checked_sub(lead_time).unwrap_or(now)
@@ -328,16 +328,15 @@ impl SubductionPlanState {
 
     fn frame_prepare_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
         if let Some(commit_deadline) = self.latest_commit_deadline() {
-            let max_total_lead = frame_interval
+            let max_prepare_lead = frame_interval
                 .checked_sub(Duration::from_millis(1))
                 .unwrap_or(frame_interval);
             let lead_time = min_duration(
                 max_duration(
-                    self.heuristic.estimated_frame_prepare_lead_time()
-                        + self.heuristic.estimated_draw_lead_time(),
+                    self.heuristic.estimated_frame_prepare_lead_time(),
                     Duration::from_millis(1),
                 ),
-                max_total_lead,
+                max_prepare_lead,
             );
             return commit_deadline.checked_sub(lead_time).unwrap_or(now);
         }

@@ -518,7 +518,7 @@ pub(crate) struct RouteCx<'r, 'w> {
     /// Guard against double-finish (e.g. explicit call + drop).
     finished: bool,
     prevent_default: bool,
-    profile_event: Option<(Instant, String, usize)>,
+    profile_event: Option<(Instant, String)>,
 }
 
 // ============================================================================

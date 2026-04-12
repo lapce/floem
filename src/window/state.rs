@@ -140,7 +140,9 @@ pub struct WindowState {
     pub(crate) style_dirty: FxHashMap<ViewId, StyleReason>,
     pub(crate) next_frame_style_dirty: FxHashMap<ElementId, StyleReason>,
     pub(crate) next_frame_needs_layout: bool,
+    pub(crate) next_frame_needs_box_tree_from_layout: bool,
     pub(crate) next_frame_needs_box_tree_commit: bool,
+    pub(crate) next_frame_views_needing_box_tree_update: FxHashSet<ViewId>,
     pub(crate) next_frame_dirty_paint_elements: FxHashSet<ElementId>,
     pub(crate) responsive_selector_views: FxHashMap<ViewId, ()>,
     pub(crate) disabled_selector_views: FxHashMap<ViewId, ()>,
@@ -196,9 +198,9 @@ pub struct WindowState {
     pub(crate) views_needing_box_tree_update: FxHashSet<ViewId>,
     pub(crate) focus_nav_cache: FocusNavCache,
     pub(crate) profile_events_enabled: bool,
-    pub(crate) profile_event_depth: usize,
     pub(crate) profile_events: Vec<QueuedProfileEvent>,
     pub(crate) begin_frame_callbacks: Vec<Box<dyn FnOnce(FrameTime)>>,
+    pub(crate) defer_visual_updates_until_present: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -206,7 +208,6 @@ pub(crate) struct QueuedProfileEvent {
     pub start: Instant,
     pub end: Instant,
     pub name: String,
-    pub depth: usize,
 }
 
 impl WindowState {
@@ -236,7 +237,9 @@ impl WindowState {
             dirty_paint_elements: FxHashSet::from_iter([root_element_id]),
             next_frame_style_dirty: FxHashMap::default(),
             next_frame_needs_layout: false,
+            next_frame_needs_box_tree_from_layout: false,
             next_frame_needs_box_tree_commit: false,
+            next_frame_views_needing_box_tree_update: FxHashSet::default(),
             next_frame_dirty_paint_elements: FxHashSet::default(),
             pending_damage_rects: Vec::new(),
             style_dirty: Default::default(),
@@ -276,9 +279,9 @@ impl WindowState {
             views_needing_box_tree_update: FxHashSet::default(),
             focus_nav_cache: FocusNavCache::default(),
             profile_events_enabled: false,
-            profile_event_depth: 0,
             profile_events: Vec::new(),
             begin_frame_callbacks: Vec::new(),
+            defer_visual_updates_until_present: false,
         }
     }
 
@@ -293,7 +296,9 @@ impl WindowState {
     pub(crate) fn has_next_frame_work(&self) -> bool {
         !self.next_frame_style_dirty.is_empty()
             || self.next_frame_needs_layout
+            || self.next_frame_needs_box_tree_from_layout
             || self.next_frame_needs_box_tree_commit
+            || !self.next_frame_views_needing_box_tree_update.is_empty()
             || !self.next_frame_dirty_paint_elements.is_empty()
             || self.has_pending_begin_frame_callbacks()
     }
@@ -310,33 +315,36 @@ impl WindowState {
             self.needs_layout = true;
             self.next_frame_needs_layout = false;
         }
+        if self.next_frame_needs_box_tree_from_layout {
+            self.needs_box_tree_from_layout = true;
+            self.next_frame_needs_box_tree_from_layout = false;
+        }
         if self.next_frame_needs_box_tree_commit {
             self.needs_box_tree_commit = true;
             self.next_frame_needs_box_tree_commit = false;
         }
+        self.views_needing_box_tree_update.extend(std::mem::take(
+            &mut self.next_frame_views_needing_box_tree_update,
+        ));
         self.dirty_paint_elements
             .extend(std::mem::take(&mut self.next_frame_dirty_paint_elements));
     }
 
-    pub(crate) fn begin_profile_event(&mut self, name: String) -> Option<(Instant, String, usize)> {
+    pub(crate) fn begin_profile_event(&mut self, name: String) -> Option<(Instant, String)> {
         if !self.profile_events_enabled {
             return None;
         }
-        let depth = self.profile_event_depth;
-        self.profile_event_depth += 1;
-        Some((Instant::now(), name, depth))
+        Some((Instant::now(), name))
     }
 
-    pub(crate) fn finish_profile_event(&mut self, event: Option<(Instant, String, usize)>) {
-        let Some((start, name, depth)) = event else {
+    pub(crate) fn finish_profile_event(&mut self, event: Option<(Instant, String)>) {
+        let Some((start, name)) = event else {
             return;
         };
-        self.profile_event_depth = self.profile_event_depth.saturating_sub(1);
         self.profile_events.push(QueuedProfileEvent {
             start,
             end: Instant::now(),
             name,
-            depth,
         });
     }
 
@@ -1288,6 +1296,14 @@ impl WindowState {
         self.next_frame_needs_layout = true;
     }
 
+    pub fn schedule_box_tree_update(&mut self) {
+        self.next_frame_needs_box_tree_from_layout = true;
+    }
+
+    pub fn schedule_box_tree_update_for_view(&mut self, id: ViewId) {
+        self.next_frame_views_needing_box_tree_update.insert(id);
+    }
+
     /// Requests that the box tree be commited pass will run for `id` on the next frame, and ensures new frame is
     /// scheduled to happen.
     pub fn schedule_box_tree_commit(&mut self) {
@@ -1302,8 +1318,53 @@ impl WindowState {
     }
 
     pub fn request_paint(&mut self, id: impl Into<ElementId>) {
+        if self.defer_visual_updates_until_present {
+            self.schedule_paint(id.into());
+            return;
+        }
+
         self.dirty_paint_elements
             .extend(self.paint_invalidation_ids(id.into()));
+    }
+
+    pub fn request_style_with(&mut self, element_id: ElementId, reason: StyleReason) {
+        if self.defer_visual_updates_until_present {
+            self.schedule_style_with_target(element_id, reason);
+        } else {
+            self.mark_style_dirty_with(element_id, reason);
+        }
+    }
+
+    pub fn request_layout(&mut self) {
+        if self.defer_visual_updates_until_present {
+            self.schedule_layout();
+        } else {
+            self.needs_layout = true;
+        }
+    }
+
+    pub fn request_box_tree_update(&mut self) {
+        if self.defer_visual_updates_until_present {
+            self.schedule_box_tree_update();
+        } else {
+            self.needs_box_tree_from_layout = true;
+        }
+    }
+
+    pub fn request_box_tree_update_for_view(&mut self, id: ViewId) {
+        if self.defer_visual_updates_until_present {
+            self.schedule_box_tree_update_for_view(id);
+        } else {
+            self.views_needing_box_tree_update.insert(id);
+        }
+    }
+
+    pub fn request_box_tree_commit(&mut self) {
+        if self.defer_visual_updates_until_present {
+            self.schedule_box_tree_commit();
+        } else {
+            self.needs_box_tree_commit = true;
+        }
     }
 
     pub fn take_dirty_paint_elements(&mut self) -> FxHashSet<ElementId> {

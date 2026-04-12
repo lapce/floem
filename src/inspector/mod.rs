@@ -19,8 +19,8 @@ use crate::{
     platform::{Duration, Instant},
     prelude::*,
     style::{
-        BorderRadius, FontSizeCx, Length, LengthAuto, OverflowX, OverflowY, StrokeWrap, Style,
-        StyleThemeExt, TextColor, scene_debug_view_with_size,
+        BorderRadius, DesignSystem, FontSizeCx, Length, LengthAuto, OverflowX, OverflowY,
+        StrokeWrap, Style, StyleThemeExt, TextColor, scene_debug_view_with_size,
     },
 };
 
@@ -636,22 +636,25 @@ pub struct TimingSpan {
     pub label: &'static str,
     pub start: Duration,
     pub duration: Duration,
-    pub depth: usize,
     pub kind: TimingKind,
+    pub children: Vec<TimingSpan>,
 }
 
-#[derive(Clone, Debug)]
-pub struct TimingStat {
-    pub label: &'static str,
-    pub duration: Duration,
-    pub kind: TimingKind,
+impl TimingSpan {
+    fn end(&self) -> Duration {
+        self.start.saturating_add(self.duration)
+    }
+
+    fn contains_range(&self, start: Duration, duration: Duration) -> bool {
+        let end = start.saturating_add(duration);
+        start >= self.start && end <= self.end()
+    }
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct TimingReport {
     pub anchor: Option<Instant>,
     pub total: Duration,
-    pub stats: Vec<TimingStat>,
     pub spans: Vec<TimingSpan>,
 }
 
@@ -660,17 +663,8 @@ impl TimingReport {
         Self {
             anchor,
             total,
-            stats: Vec::new(),
             spans: Vec::new(),
         }
-    }
-
-    pub fn push_stat(&mut self, label: &'static str, duration: Duration, kind: TimingKind) {
-        self.stats.push(TimingStat {
-            label,
-            duration,
-            kind,
-        });
     }
 
     pub fn push_span(
@@ -678,16 +672,73 @@ impl TimingReport {
         label: &'static str,
         start: Duration,
         duration: Duration,
-        depth: usize,
         kind: TimingKind,
     ) {
-        self.spans.push(TimingSpan {
+        let span = TimingSpan {
             label,
             start,
             duration,
-            depth,
             kind,
+            children: Vec::new(),
+        };
+        insert_timing_span(&mut self.spans, span);
+    }
+
+    pub fn flattened_spans(&self) -> Vec<FlattenedTimingSpan> {
+        let mut spans = Vec::new();
+        flatten_timing_spans(&self.spans, 0, &mut spans);
+        spans
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FlattenedTimingSpan {
+    pub label: &'static str,
+    pub start: Duration,
+    pub duration: Duration,
+    pub depth: usize,
+    pub kind: TimingKind,
+}
+
+fn insert_timing_span(spans: &mut Vec<TimingSpan>, mut new_span: TimingSpan) {
+    if let Some(child) = spans
+        .iter_mut()
+        .find(|span| span.contains_range(new_span.start, new_span.duration))
+    {
+        insert_timing_span(&mut child.children, new_span);
+        return;
+    }
+
+    let mut idx = 0;
+    while idx < spans.len() {
+        if new_span.contains_range(spans[idx].start, spans[idx].duration) {
+            let child = spans.remove(idx);
+            insert_timing_span(&mut new_span.children, child);
+        } else {
+            idx += 1;
+        }
+    }
+
+    let insert_at = spans
+        .iter()
+        .position(|span| {
+            (span.start, std::cmp::Reverse(span.duration))
+                > (new_span.start, std::cmp::Reverse(new_span.duration))
+        })
+        .unwrap_or(spans.len());
+    spans.insert(insert_at, new_span);
+}
+
+fn flatten_timing_spans(spans: &[TimingSpan], depth: usize, out: &mut Vec<FlattenedTimingSpan>) {
+    for span in spans {
+        out.push(FlattenedTimingSpan {
+            label: span.label,
+            start: span.start,
+            duration: span.duration,
+            depth,
+            kind: span.kind,
         });
+        flatten_timing_spans(&span.children, depth + 1, out);
     }
 }
 
@@ -840,247 +891,277 @@ fn format_duration_ms(duration: Duration) -> String {
     format!("{:.4} ms", duration.as_secs_f64() * 1000.0)
 }
 
-fn timing_color(kind: TimingKind) -> Color {
+fn timing_color(kind: TimingKind, theme: &DesignSystem) -> Color {
     match kind {
-        TimingKind::Total => css::SLATE_BLUE,
-        TimingKind::Update => css::STEEL_BLUE,
-        TimingKind::Style => css::SEA_GREEN,
-        TimingKind::Layout => css::GOLDENROD,
-        TimingKind::BoxTree => css::SANDY_BROWN,
-        TimingKind::Paint => css::CORAL,
-        TimingKind::Present => css::MEDIUM_ORCHID,
-        TimingKind::Renderer => css::DEEP_SKY_BLUE,
+        TimingKind::Total => theme.primary_muted(),
+        TimingKind::Update => theme.primary(),
+        TimingKind::Style => theme.success(),
+        TimingKind::Layout => theme.warning(),
+        TimingKind::BoxTree => theme
+            .warning()
+            .map_lightness(|l| l + if theme.is_dark { -0.06 } else { -0.08 }),
+        TimingKind::Paint => theme.danger(),
+        TimingKind::Present => theme
+            .primary()
+            .map_lightness(|l| l + if theme.is_dark { 0.10 } else { 0.04 }),
+        TimingKind::Renderer => theme
+            .primary()
+            .map_lightness(|l| l + if theme.is_dark { -0.06 } else { -0.10 }),
     }
 }
 
-fn timing_summary(report: &TimingReport) -> impl View + use<> {
-    Stack::vertical_from_iter(report.stats.iter().enumerate().map(|(idx, stat)| {
-        let color = timing_color(stat.kind);
+const TIMING_SECTION_GAP: f64 = 8.0;
+const TIMING_ROW_GAP: f64 = 4.0;
+const TIMING_ROW_PAD_H: f64 = 10.0;
+const TIMING_ROW_PAD_V: f64 = 6.0;
+const TIMING_COLUMN_GAP: f64 = 10.0;
+
+fn timing_section_button(
+    title: &'static str,
+    subtitle: &'static str,
+    expanded: RwSignal<bool>,
+) -> impl View {
+    let chevron = move || {
+        if expanded.get() {
+            svg(
+                r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z"/></svg>"#,
+            )
+        } else {
+            svg(
+                r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6.427 4.427l3.396 3.396a.25.25 0 010 .354l-3.396 3.396A.25.25 0 016 11.396V4.604a.25.25 0 01.427-.177z"/></svg>"#,
+            )
+        }
+        .style(|s| s.size_full().with_theme(|s, t| s.color(t.text_muted())))
+    };
+
+    Button::new(
         Stack::horizontal((
-            Stack::horizontal((
-                Stack::horizontal((
-                    ().style(move |s| s.size(10.0, 10.0).border_radius(999.0).background(color)),
-                    Label::new(stat.label),
-                ))
-                .style(|s| s.items_center().gap(8.0).min_width(0.0).flex_grow(1.0)),
-                Label::new(format_duration_ms(stat.duration))
-                    .style(|s| s.font_bold().min_width(96.0).justify_end()),
+            dyn_view(chevron).style(|s| s.size(16.0, 16.0)),
+            Stack::vertical((
+                Label::new(title).style(|s| s.font_bold().font_size(14.0)),
+                Label::new(subtitle)
+                    .style(|s| s.font_size(11.0).with_theme(|s, t| s.color(t.text_muted()))),
             ))
-            .style(|s| {
-                s.padding_horiz(12.0)
-                    .padding_vert(8.0)
-                    .items_center()
-                    .gap(12.0)
-                    .max_width(520.0)
-                    .width_full()
-            }),
-            ().style(|s| s.flex_grow(1.0)),
+            .style(|s| s.gap(1.0).items_start().min_width(0.0).flex_grow(1.0)),
         ))
-        .style(move |s| {
-            s.width_full().with_theme(move |s, t| {
-                s.apply_if(idx.is_multiple_of(2), |s| s.background(t.bg_base()))
-                    .apply_if(!idx.is_multiple_of(2), |s| s.background(t.bg_elevated()))
-            })
-        })
-        .debug_name(format!("Timing Summary Row: {}", stat.label))
-    }))
-    .style(|s| s.width_full().gap(4.0))
-    .debug_name("Timing Summary")
+        .style(|s| s.items_center().gap(TIMING_COLUMN_GAP)),
+    )
+    .style(|s| {
+        s.width_full()
+            .justify_start()
+            .padding_horiz(2.0)
+            .padding_vert(1.0)
+    })
+    .action(move || expanded.update(|value| *value = !*value))
 }
 
 fn timing_preview(report: &TimingReport) -> impl View + use<> {
+    let spans = report.flattened_spans();
     let total_secs = report.total.as_secs_f64().max(f64::EPSILON);
-    Stack::vertical_from_iter(report.spans.iter().map(|span| {
+    Stack::vertical_from_iter(spans.into_iter().map(|span| {
         let left = span.start.as_secs_f64() / total_secs * 100.0;
         let width = (span.duration.as_secs_f64() / total_secs * 100.0).max(0.125);
-        let color = timing_color(span.kind);
-        let indent = 12.0 + span.depth as f64 * 16.0;
+        let kind = span.kind;
+        let indent = TIMING_ROW_PAD_H + span.depth as f64 * 14.0;
         let row_height = 14.0;
         Stack::horizontal((
-            Stack::horizontal((
-                ().style(move |s| s.size(8.0, 8.0).border_radius(999.0).background(color)),
-                Label::new(span.label).style(|s| s.text_ellipsis().min_width(0.0)),
+            Stack::vertical((
+                Stack::horizontal((
+                    ().style(move |s| {
+                        s.size(8.0, 8.0)
+                            .border_radius(999.0)
+                            .outline(2.0)
+                            .with_theme(move |s, t| {
+                                s.background(t.def(move |t| timing_color(kind, &t)))
+                                    .outline_color(
+                                        t.def(move |t| timing_color(kind, &t).with_alpha(0.15)),
+                                    )
+                            })
+                    }),
+                    Label::new(span.label)
+                        .style(|s| s.text_ellipsis().min_width(0.0).font_bold().font_size(12.0)),
+                ))
+                .style(|s| s.items_center().gap(7.0)),
+                Label::new(format_duration_ms(span.start))
+                    .style(|s| s.font_size(10.5).with_theme(|s, t| s.color(t.text_muted()))),
             ))
             .style(move |s| {
-                s.items_center()
-                    .gap(8.0)
+                s.items_start()
+                    .gap(1.0)
                     .padding_left(indent)
-                    .min_width(220.0)
-                    .max_width(220.0)
+                    .min_width(176.0)
+                    .max_width(176.0)
             }),
             Stack::new((
                 ().style(|s| {
                     s.absolute()
                         .size_full()
-                        .border_radius(6.0)
-                        .with_theme(|s, t| s.background(t.bg_elevated()))
+                        .border_radius(999.0)
+                        .with_theme(|s, t| {
+                            s.background(t.def(|t| t.border_muted().with_alpha(0.18)))
+                        })
                 }),
                 ().style(move |s| {
                     s.absolute()
                         .inset_left_pct(left)
                         .width_pct(width)
                         .height(row_height)
-                        .border_radius(6.0)
-                        .background(color.with_alpha(0.75))
+                        .border_radius(999.0)
+                        .with_theme(move |s, t| {
+                            s.background(t.def(move |t| timing_color(kind, &t).with_alpha(0.78)))
+                        })
+                }),
+                ().style(move |s| {
+                    s.absolute()
+                        .inset_left_pct(left)
+                        .width(2.0)
+                        .height(row_height)
+                        .border_radius(999.0)
+                        .with_theme(|s, t| s.background(t.def(|t| t.text().with_alpha(0.72))))
                 }),
             ))
-            .style(move |s| s.height(row_height).flex_grow(1.0).min_width(280.0)),
-            Label::new(format_duration_ms(span.duration))
-                .style(|s| s.min_width(112.0).justify_end().font_bold()),
+            .style(move |s| s.height(row_height).flex_grow(1.0).min_width(240.0)),
+            Label::new(format_duration_ms(span.duration)).style(move |s| {
+                s.min_width(96.0)
+                    .justify_end()
+                    .font_bold()
+                    .font_size(12.0)
+                    .with_theme(move |s, t| s.color(t.def(move |t| timing_color(kind, &t))))
+            }),
         ))
-        .style(|s| s.items_center().gap(12.0))
+        .style(|s| {
+            s.items_center()
+                .gap(TIMING_COLUMN_GAP)
+                .padding_horiz(TIMING_ROW_PAD_H)
+                .padding_vert(TIMING_ROW_PAD_V)
+                .border_radius(14.0)
+                .with_theme(|s, t| s.background(t.def(|t| t.bg_base().with_alpha(0.72))))
+        })
         .debug_name(format!("Timing Timeline Row: {}", span.label))
     }))
-    .style(|s| s.gap(6.0))
+    .style(|s| s.gap(TIMING_ROW_GAP))
     .debug_name("Timing Timeline")
 }
 
 fn timing_details(report: &TimingReport) -> impl View + use<> {
+    let spans = report.flattened_spans();
     Stack::vertical((
         Stack::horizontal((
             (Stack::horizontal((
                 Label::new("Span").style(|s| s.min_width(0.0).flex_grow(1.0).font_bold()),
-                Label::new("Start").style(|s| s.min_width(96.0).font_bold().justify_end()),
-                Label::new("Duration").style(|s| s.min_width(96.0).font_bold().justify_end()),
+                Label::new("Start").style(|s| s.min_width(88.0).font_bold().justify_end()),
+                Label::new("Duration").style(|s| s.min_width(88.0).font_bold().justify_end()),
             ))
             .style(|s| {
-                s.padding_horiz(12.0)
-                    .padding_vert(4.0)
+                s.padding_horiz(TIMING_ROW_PAD_H)
+                    .padding_vert(TIMING_ROW_PAD_V)
                     .items_center()
-                    .gap(12.0)
-                    .max_width(624.0)
+                    .gap(TIMING_COLUMN_GAP)
                     .width_full()
             })),
             ().style(|s| s.flex_grow(1.0)),
         ))
-        .style(|s| {
-            s.width_full()
-                .with_theme(|s, t| s.background(t.bg_elevated()).color(t.text_muted()))
-        })
+        .style(|s| s.width_full().with_theme(|s, t| s.color(t.text_muted())))
         .debug_name("Timing Details Header"),
-        Stack::vertical_from_iter(report.spans.iter().enumerate().map(|(idx, span)| {
-            let dot = timing_color(span.kind);
-            let indent = 12.0 + span.depth as f64 * 16.0;
+        Stack::vertical_from_iter(spans.into_iter().enumerate().map(|(idx, span)| {
+            let kind = span.kind;
+            let indent = TIMING_ROW_PAD_H + span.depth as f64 * 14.0;
             Stack::horizontal((
                 (Stack::horizontal((
                     Stack::horizontal((
-                        ().style(move |s| s.size(8.0, 8.0).border_radius(999.0).background(dot)),
+                        ().style(move |s| {
+                            s.size(8.0, 8.0)
+                                .border_radius(999.0)
+                                .outline(2.0)
+                                .with_theme(move |s, t| {
+                                    s.background(t.def(move |t| timing_color(kind, &t)))
+                                        .outline_color(
+                                            t.def(move |t| timing_color(kind, &t).with_alpha(0.15)),
+                                        )
+                                })
+                        }),
                         Label::new(span.label).style(|s| s.text_ellipsis().min_width(0.0)),
                     ))
                     .style(move |s| {
                         s.items_center()
-                            .gap(8.0)
+                            .gap(7.0)
                             .padding_left(indent)
                             .min_width(0.0)
                             .flex_grow(1.0)
                     }),
                     Label::new(format_duration_ms(span.start)).style(|s| {
-                        s.min_width(96.0)
+                        s.min_width(88.0)
                             .justify_end()
                             .with_theme(|s, t| s.color(t.text_muted()))
                     }),
                     Label::new(format_duration_ms(span.duration))
-                        .style(|s| s.min_width(96.0).justify_end().font_bold()),
+                        .style(|s| s.min_width(88.0).justify_end().font_bold()),
                 ))
                 .style(move |s| {
-                    s.padding_horiz(12.0)
-                        .padding_vert(4.0)
+                    s.padding_horiz(TIMING_ROW_PAD_H)
+                        .padding_vert(TIMING_ROW_PAD_V)
                         .items_center()
-                        .gap(12.0)
-                        .max_width(624.0)
+                        .gap(TIMING_COLUMN_GAP)
                         .width_full()
                 })),
                 ().style(|s| s.flex_grow(1.0)),
             ))
             .style(move |s| {
-                s.width_full().with_theme(move |s, t| {
-                    s.apply_if(idx.is_multiple_of(2), |s| s.background(t.bg_base()))
-                        .apply_if(!idx.is_multiple_of(2), |s| s.background(t.bg_elevated()))
+                s.width_full().border_radius(12.0).with_theme(move |s, t| {
+                    s.background(if idx.is_multiple_of(2) {
+                        t.def(|t| t.bg_base().with_alpha(0.68))
+                    } else {
+                        t.def(|t| t.bg_overlay().with_alpha(0.82))
+                    })
                 })
             })
             .debug_name(format!("Timing Details Row: {}", span.label))
         }))
-        .style(|s| s.width_full().gap(4.0))
+        .style(|s| s.width_full().gap(TIMING_ROW_GAP))
         .debug_name("Timing Details Rows"),
     ))
-    .style(|s| s.width_full().gap(4.0))
+    .style(|s| s.width_full().gap(TIMING_ROW_GAP))
     .debug_name("Timing Details")
 }
 
 fn timing_report_view(report: TimingReport) -> AnyView {
-    let overview_open = RwSignal::new(false);
     let details_open = RwSignal::new(false);
     let details_mode = RwSignal::new(0);
-    let overview_report = report.clone();
     let details_report = report.clone();
 
     Stack::vertical((
-        Stack::vertical((
-            {
-                let expanded = overview_open;
-                let chevron = move || {
-                    if expanded.get() {
-                        svg(
-                            r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z"/></svg>"#,
+        Stack::horizontal((
+            Stack::vertical((
+                Label::new("Frame timing").style(|s| {
+                    s.font_size(18.0)
+                        .font_bold()
+                        .with_theme(|s, t| s.color(t.text()))
+                }),
+                Label::new("Nested intervals, cleaner totals, and clearer handoff phases.")
+                    .style(|s| s.font_size(12.0).with_theme(|s, t| s.color(t.text_muted()))),
+            ))
+            .style(|s| s.gap(2.0).min_width(0.0).flex_grow(1.0)),
+            Label::new(format_duration_ms(report.total)).style(|s| {
+                s.font_bold()
+                    .font_size(16.0)
+                    .padding_horiz(12.0)
+                    .padding_vert(6.0)
+                    .border_radius(999.0)
+                    .with_theme(|s, t| {
+                        s.background(
+                            t.def(|t| timing_color(TimingKind::Total, &t).with_alpha(0.12)),
                         )
-                    } else {
-                        svg(
-                            r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6.427 4.427l3.396 3.396a.25.25 0 010 .354l-3.396 3.396A.25.25 0 016 11.396V4.604a.25.25 0 01.427-.177z"/></svg>"#,
-                        )
-                    }
-                    .style(|s| s.size_full().with_theme(|s, t| s.color(t.text())))
-                };
-                Button::new(
-                    Stack::horizontal((
-                        dyn_view(chevron).style(|s| s.size(16.0, 16.0)),
-                        Label::new("Overview").style(|s| s.font_bold()),
-                    ))
-                    .style(|s| s.items_center().gap(8.0)),
-                )
-                .style(|s| s.width_full().justify_start())
-                .action(move || overview_open.update(|value| *value = !*value))
-                .debug_name("Timing Overview Toggle")
-            },
-            dyn_container(
-                move || overview_open.get(),
-                move |is_open| {
-                    if is_open {
-                        timing_summary(&overview_report).into_any()
-                    } else {
-                        ().into_any()
-                    }
-                },
-            )
-            .debug_name("Timing Overview Content"),
+                        .color(t.def(|t| timing_color(TimingKind::Total, &t)))
+                    })
+            }),
         ))
-        .style(|s| s.width_full().gap(8.0))
-        .debug_name("Timing Overview Section"),
+        .style(|s| s.items_center().gap(16.0)),
         Stack::vertical((
-            {
-                let expanded = details_open;
-                let chevron = move || {
-                    if expanded.get() {
-                        svg(
-                            r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z"/></svg>"#,
-                        )
-                    } else {
-                        svg(
-                            r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6.427 4.427l3.396 3.396a.25.25 0 010 .354l-3.396 3.396A.25.25 0 016 11.396V4.604a.25.25 0 01.427-.177z"/></svg>"#,
-                        )
-                    }
-                    .style(|s| s.size_full().with_theme(|s, t| s.color(t.text())))
-                };
-                Button::new(
-                    Stack::horizontal((
-                        dyn_view(chevron).style(|s| s.size(16.0, 16.0)),
-                        Label::new("Details").style(|s| s.font_bold()),
-                    ))
-                    .style(|s| s.items_center().gap(8.0)),
-                )
-                .style(|s| s.width_full().justify_start())
-                .action(move || details_open.update(|value| *value = !*value))
-                .debug_name("Timing Details Toggle")
-            },
+            timing_section_button(
+                "Breakdown",
+                "Timeline or table view of every nested span",
+                details_open,
+            ),
             dyn_container(
                 move || details_open.get(),
                 move |is_open| {
@@ -1098,7 +1179,7 @@ fn timing_report_view(report: TimingReport) -> AnyView {
                                     .action(move || details_mode.set(1))
                                     .debug_name("Timing Details Table Tab"),
                             ))
-                            .style(|s| s.gap(8.0))
+                            .style(|s| s.gap(TIMING_ROW_GAP))
                             .debug_name("Timing Details Mode Switch"),
                             tab(
                                 move || Some(details_mode.get()),
@@ -1116,20 +1197,23 @@ fn timing_report_view(report: TimingReport) -> AnyView {
                             .style(|s| s.width_full())
                             .debug_name("Timing Details Mode Content"),
                         ))
-                        .style(|s| s.width_full().gap(8.0))
+                        .style(|s| s.width_full().gap(TIMING_SECTION_GAP))
                         .debug_name("Timing Details Content")
                         .into_any()
                     } else {
                         ().into_any()
                     }
                 },
-            )
-            .debug_name("Timing Details Expandable Content"),
+            ),
         ))
-        .style(|s| s.width_full().gap(8.0))
-        .debug_name("Timing Details Section"),
+        .style(|s| s.width_full().gap(TIMING_SECTION_GAP)),
     ))
-    .style(|s| s.width_full().gap(12.0))
+    .style(|s| {
+        s.width_full()
+            .gap(TIMING_SECTION_GAP)
+            .padding(14.0)
+            .with_theme(|s, t| s.background(t.bg_base()))
+    })
     .debug_name("Timing Report")
     .into_any()
 }
@@ -1175,7 +1259,6 @@ fn stats(capture: &Capture) -> impl IntoView + use<> {
         .unwrap_or_else(|| format!("{:.0}", capture.window_size.height.round()));
 
     Stack::vertical((
-        capture.timings.clone(),
         header("Capture"),
         Stack::vertical((
             info("Renderer", capture.renderer.clone()),
@@ -1193,6 +1276,8 @@ fn stats(capture: &Capture) -> impl IntoView + use<> {
             ),
         ))
         .style(|s| s.gap(4.0)),
+        header("Stats"),
+        capture.timings.clone(),
     ))
     .style(|s| s.width_full().gap(8.0))
 }

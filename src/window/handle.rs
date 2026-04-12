@@ -124,6 +124,10 @@ struct FrameTimingAccumulator {
 }
 
 impl FrameTimingAccumulator {
+    fn layout_phase_total(&self) -> Duration {
+        self.layout + self.box_tree_pending_updates + self.box_tree_commit
+    }
+
     fn total(&self) -> Duration {
         self.style + self.layout + self.box_tree_pending_updates + self.box_tree_commit
     }
@@ -146,7 +150,7 @@ impl WindowHandle {
                 start: event.start,
                 end: event.end,
                 name: event.name,
-                depth: event.depth,
+                depth: 0,
             })
             .collect()
     }
@@ -463,7 +467,7 @@ impl WindowHandle {
         self.window.set_visible(true);
         self.window_state
             .request_paint(self.window_state.root_view_id);
-        self.window.request_redraw();
+        Application::request_update();
         self.sync_frame_clock_activity();
     }
 
@@ -985,90 +989,63 @@ impl WindowHandle {
         paint: crate::paint::renderer::PaintTiming,
     ) -> TimingReport {
         let update_total = update.total();
+        let layout_total = update.layout_phase_total();
+        let box_tree_total = layout_total.saturating_sub(update.taffy);
         let total = update_total + paint.total;
         let mut timings = TimingReport::new(Some(anchor), total);
-        timings.push_stat(root_label, total, TimingKind::Total);
-        if update_total > Duration::ZERO {
-            timings.push_stat("Update", update_total, TimingKind::Update);
-        }
-        if update.style > Duration::ZERO {
-            timings.push_stat("Style", update.style, TimingKind::Style);
-        }
-        if update.layout > Duration::ZERO {
-            timings.push_stat("Layout", update.layout, TimingKind::Layout);
-        }
-        timings.push_stat("Paint", paint.total, TimingKind::Paint);
-        if let Some(present) = paint
-            .present
-            .filter(|present| present.total > Duration::ZERO)
-        {
-            timings.push_stat("Present", present.total, TimingKind::Present);
-        }
 
         let mut cursor = Duration::ZERO;
-        timings.push_span(root_label, Duration::ZERO, total, 0, TimingKind::Total);
+        timings.push_span(root_label, Duration::ZERO, total, TimingKind::Total);
         if update_total > Duration::ZERO {
-            timings.push_span(
-                "Update Pipeline",
-                cursor,
-                update_total,
-                1,
-                TimingKind::Update,
-            );
+            timings.push_span("Update Pipeline", cursor, update_total, TimingKind::Update);
             if update.style > Duration::ZERO {
-                timings.push_span("Style", cursor, update.style, 2, TimingKind::Style);
+                timings.push_span("Style", cursor, update.style, TimingKind::Style);
                 cursor += update.style;
             }
-            if update.layout > Duration::ZERO {
-                timings.push_span("Layout", cursor, update.layout, 2, TimingKind::Layout);
+            if layout_total > Duration::ZERO {
+                timings.push_span("Layout", cursor, layout_total, TimingKind::Layout);
                 if update.taffy > Duration::ZERO {
-                    timings.push_span("Taffy", cursor, update.taffy, 3, TimingKind::Layout);
+                    timings.push_span("Taffy", cursor, update.taffy, TimingKind::Layout);
+                }
+                if box_tree_total > Duration::ZERO {
+                    timings.push_span(
+                        "BoxTree",
+                        cursor + update.taffy,
+                        box_tree_total,
+                        TimingKind::BoxTree,
+                    );
                 }
                 if update.box_tree_update > Duration::ZERO {
                     timings.push_span(
                         "BoxTreeUpdate",
                         cursor + update.taffy,
                         update.box_tree_update,
-                        3,
                         TimingKind::BoxTree,
                     );
                 }
-                cursor += update.layout;
-            }
-            if update.box_tree_pending_updates > Duration::ZERO {
-                timings.push_span(
-                    "BoxTreePendingUpdates",
-                    cursor,
-                    update.box_tree_pending_updates,
-                    2,
-                    TimingKind::BoxTree,
-                );
-                cursor += update.box_tree_pending_updates;
-            }
-            if update.box_tree_commit > Duration::ZERO {
-                timings.push_span(
-                    "BoxTreeCommit",
-                    cursor,
-                    update.box_tree_commit,
-                    2,
-                    TimingKind::BoxTree,
-                );
-                cursor += update.box_tree_commit;
+                if update.box_tree_pending_updates > Duration::ZERO {
+                    timings.push_span(
+                        "BoxTreePendingUpdates",
+                        cursor + update.layout,
+                        update.box_tree_pending_updates,
+                        TimingKind::BoxTree,
+                    );
+                }
+                if update.box_tree_commit > Duration::ZERO {
+                    timings.push_span(
+                        "BoxTreeCommit",
+                        cursor + update.layout + update.box_tree_pending_updates,
+                        update.box_tree_commit,
+                        TimingKind::BoxTree,
+                    );
+                }
+                cursor += layout_total;
             }
         }
 
-        timings.push_span("Paint", cursor, paint.total, 1, TimingKind::Paint);
+        timings.push_span("Paint", cursor, paint.total, TimingKind::Paint);
         if paint.resize > Duration::ZERO {
-            timings.push_span("Resize", cursor, paint.resize, 2, TimingKind::Renderer);
-        }
-        if paint.render_cpu > Duration::ZERO {
-            timings.push_stat("RenderCpu", paint.render_cpu, TimingKind::Renderer);
-        }
-        if paint.ready_wait > Duration::ZERO {
-            timings.push_stat("ReadyWait", paint.ready_wait, TimingKind::Present);
-        }
-        if paint.present_cpu > Duration::ZERO {
-            timings.push_stat("PresentCpu", paint.present_cpu, TimingKind::Present);
+            timings.push_span("Resize", cursor, paint.resize, TimingKind::Renderer);
         }
         let pre_present_cursor = cursor + paint.resize + paint.render_cpu;
         if paint.pre_present_notify > Duration::ZERO {
@@ -1076,7 +1053,6 @@ impl WindowHandle {
                 "PrePresentNotify",
                 pre_present_cursor,
                 paint.pre_present_notify,
-                2,
                 TimingKind::Renderer,
             );
         }
@@ -1087,13 +1063,12 @@ impl WindowHandle {
                     "Prepare",
                     paint_cursor,
                     render.prepare,
-                    2,
                     TimingKind::Renderer,
                 );
                 paint_cursor += render.prepare;
             }
             if render.scene > Duration::ZERO {
-                timings.push_span("Scene", paint_cursor, render.scene, 2, TimingKind::Paint);
+                timings.push_span("Scene", paint_cursor, render.scene, TimingKind::Paint);
                 paint_cursor += render.scene;
             }
             if render.finalize > Duration::ZERO {
@@ -1101,7 +1076,6 @@ impl WindowHandle {
                     "Finish",
                     paint_cursor,
                     render.finalize,
-                    2,
                     TimingKind::Renderer,
                 );
                 paint_cursor += render.finalize;
@@ -1111,7 +1085,6 @@ impl WindowHandle {
                     "ReadTarget",
                     paint_cursor,
                     render.read_output,
-                    2,
                     TimingKind::Renderer,
                 );
                 paint_cursor += render.read_output;
@@ -1122,19 +1095,12 @@ impl WindowHandle {
             .present
             .filter(|present| present.total > Duration::ZERO)
         {
-            timings.push_span(
-                "Present",
-                paint_cursor,
-                present.total,
-                2,
-                TimingKind::Present,
-            );
+            timings.push_span("Present", paint_cursor, present.total, TimingKind::Present);
             if present.acquire_surface > Duration::ZERO {
                 timings.push_span(
                     "AcquireSurface",
                     paint_cursor,
                     present.acquire_surface,
-                    3,
                     TimingKind::Present,
                 );
             }
@@ -1143,7 +1109,6 @@ impl WindowHandle {
                     "Compose",
                     paint_cursor + present.acquire_surface,
                     present.compose,
-                    3,
                     TimingKind::Present,
                 );
             }
@@ -1152,7 +1117,6 @@ impl WindowHandle {
                     "Submit",
                     paint_cursor + present.acquire_surface + present.compose,
                     present.submit,
-                    3,
                     TimingKind::Present,
                 );
             }
@@ -1161,7 +1125,6 @@ impl WindowHandle {
                     "PresentCall",
                     paint_cursor + present.acquire_surface + present.compose + present.submit,
                     present.present_call,
-                    3,
                     TimingKind::Present,
                 );
             }
@@ -1237,7 +1200,6 @@ impl WindowHandle {
         } else {
             render
         };
-        drop(source);
         drop(cx);
         let ready_wait = if present.is_some() {
             self.take_ready_wait_duration()
@@ -1253,7 +1215,9 @@ impl WindowHandle {
             render_cpu,
             ready_wait,
             pre_present_notify: present.map_or(Duration::ZERO, |_| pre_present_notify),
-            present_cpu: present.map_or(Duration::ZERO, |_| pre_present_notify + present.unwrap().total),
+            present_cpu: present.map_or(Duration::ZERO, |_| {
+                pre_present_notify + present.unwrap().total
+            }),
             render,
             present,
         }
@@ -1294,7 +1258,9 @@ impl WindowHandle {
             render_cpu: Duration::ZERO,
             ready_wait,
             pre_present_notify: present.map_or(Duration::ZERO, |_| pre_present_notify),
-            present_cpu: present.map_or(Duration::ZERO, |_| pre_present_notify + present.unwrap().total),
+            present_cpu: present.map_or(Duration::ZERO, |_| {
+                pre_present_notify + present.unwrap().total
+            }),
             render,
             present,
         }
@@ -1616,24 +1582,22 @@ impl WindowHandle {
                 };
                 match msg {
                     UpdateMessage::RequestStyle(id, reason) => {
-                        self.window_state.mark_style_dirty_with(id, reason);
+                        self.window_state.request_style_with(id, reason);
                     }
                     UpdateMessage::RequestLayout => {
-                        self.window_state.needs_layout = true;
+                        self.window_state.request_layout();
                     }
                     UpdateMessage::MarkViewLayoutDirty(id) => {
                         let _ = id.mark_view_layout_dirty();
                     }
                     UpdateMessage::RequestBoxTreeUpdate => {
-                        self.window_state.needs_box_tree_from_layout = true;
+                        self.window_state.request_box_tree_update();
                     }
                     UpdateMessage::RequestBoxTreeUpdateForView(view_id) => {
-                        self.window_state
-                            .views_needing_box_tree_update
-                            .insert(view_id);
+                        self.window_state.request_box_tree_update_for_view(view_id);
                     }
                     UpdateMessage::RequestBoxTreeCommit => {
-                        self.window_state.needs_box_tree_commit = true;
+                        self.window_state.request_box_tree_commit();
                     }
                     UpdateMessage::RequestPaint(id) => {
                         cx.window_state.request_paint(id);
@@ -1974,7 +1938,7 @@ impl WindowHandle {
     }
 
     fn schedule_repaint(&self) {
-        self.window.request_redraw();
+        Application::request_update();
     }
 
     pub(crate) fn destroy(&mut self) {

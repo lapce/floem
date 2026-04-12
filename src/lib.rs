@@ -29,7 +29,8 @@
 //! ## Renderer Selection
 //!
 //! Floem normally uses the active renderer selected by crate features and falls back to the
-//! configured CPU renderer only if needed.
+//! configured CPU renderer only if needed. On native CPU window paths, Floem will prefer a
+//! `pixels` presenter when a GPU adapter is available and fall back to `softbuffer` otherwise.
 //!
 //! To force Floem to use the CPU renderer path at runtime, set:
 //!
