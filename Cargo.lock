@@ -2784,7 +2784,6 @@ dependencies = [
  "imaging_wgpu",
  "kurbo",
  "oaty",
- "parking_lot",
  "peniko",
  "skia-safe",
  "wgpu",

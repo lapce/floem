@@ -138,8 +138,11 @@ impl ApplicationHandle {
                 });
             }
             UserEvent::RenderWorkerReady { window_id } => {
-                if let Some(handle) = self.window_handles.get(&window_id) {
-                    handle.window.request_redraw();
+                if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                    handle.sync_frame_clock_activity();
+                    if handle.can_render_now() && handle.needs_redraw() {
+                        self.request_update();
+                    }
                 }
             }
             #[cfg(all(feature = "subduction", target_os = "macos"))]
@@ -150,7 +153,7 @@ impl ApplicationHandle {
                     if handle.can_render_now()
                         && (handle.has_preparable_frame_work()
                             || handle.window_state.has_pending_begin_frame_callbacks()
-                            || handle.window_state.has_pending_render())
+                            || handle.needs_redraw())
                     {
                         self.request_update();
                     }
@@ -432,7 +435,7 @@ impl ApplicationHandle {
                         || window_handle
                             .window_state
                             .has_pending_begin_frame_callbacks()
-                        || window_handle.window_state.has_pending_render())
+                        || window_handle.needs_redraw())
                 {
                     self.request_update();
                 }
@@ -536,7 +539,7 @@ impl ApplicationHandle {
             let now = Instant::now();
             let can_render_now = handle.can_render_now();
             let has_preparable_frame_work = handle.has_preparable_frame_work();
-            let has_pending_render = handle.window_state.has_pending_render();
+            let has_pending_render = handle.needs_redraw();
             let prepare_deadline = handle.frame_prepare_deadline(frame_interval, now);
             let redraw_deadline = handle.redraw_deadline(frame_interval, now);
             let request_redraw_now = has_pending_render && can_render_now && now >= redraw_deadline;
@@ -863,7 +866,7 @@ impl ApplicationHandle {
 
             let now = Instant::now();
             let prepare_deadline = handle.frame_prepare_deadline(frame_interval, now);
-            let should_request_redraw = handle.window_state.has_pending_render()
+            let should_request_redraw = handle.needs_redraw()
                 && handle.can_render_now()
                 && now >= handle.redraw_deadline(frame_interval, now);
 
@@ -874,7 +877,7 @@ impl ApplicationHandle {
             ));
             paced_redraw_timer_changes.push((
                 *window_id,
-                handle.window_state.has_pending_render() && !should_request_redraw,
+                handle.needs_redraw() && !should_request_redraw,
                 handle.redraw_deadline(frame_interval, now),
             ));
 
@@ -934,6 +937,7 @@ impl ApplicationHandle {
                 .unwrap_or(Duration::from_millis(8));
             handle.refresh_frame_clock(frame_interval, Instant::now());
         }
+        let frame_interval = self.frame_duration_for_window(&window_id);
         let Some((
             can_render_now,
             needs_prepare,
@@ -941,16 +945,15 @@ impl ApplicationHandle {
             prepare_deadline,
             redraw_deadline,
             window,
-        )) = self.window_handles.get(&window_id).map(|handle| {
+        )) = self.window_handles.get_mut(&window_id).map(|handle| {
             let can_render_now = handle.can_render_now();
-            let frame_interval = self.frame_duration_for_window(&window_id);
             let now = Instant::now();
             let prepare_deadline = handle.frame_prepare_deadline(frame_interval, now);
             let redraw_deadline = handle.redraw_deadline(frame_interval, now);
             (
                 can_render_now,
                 handle.has_preparable_frame_work(),
-                handle.window_state.has_pending_render(),
+                handle.needs_redraw(),
                 prepare_deadline,
                 redraw_deadline,
                 handle.window.clone(),

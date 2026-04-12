@@ -52,13 +52,7 @@ pub struct AppConfig {
     pub(crate) wgpu_features: wgpu::Features,
     pub(crate) wgpu_backends: Option<wgpu::Backends>,
     pub(crate) global_theme_override: Option<Theme>,
-    pub(crate) renderer_chooser: Arc<
-        dyn Fn(
-                crate::paint::renderer::NewRendererCx,
-            ) -> Box<dyn crate::paint::renderer::WindowRenderer>
-            + Send
-            + Sync,
-    >,
+    pub(crate) renderer_chooser: crate::paint::renderer::RendererChooser,
 }
 
 impl std::fmt::Debug for AppConfig {
@@ -116,7 +110,7 @@ impl AppConfig {
         mut self,
         renderer_chooser: impl Fn(
             crate::paint::renderer::NewRendererCx,
-        ) -> Box<dyn crate::paint::renderer::WindowRenderer>
+        ) -> crate::paint::renderer::RendererSpec
         + Send
         + Sync
         + 'static,

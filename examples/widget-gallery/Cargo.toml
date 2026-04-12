@@ -15,7 +15,7 @@ files = { path = "../files/", optional = true, default-features = false }
 
 
 [features]
-default = ["full", "skia-cpu" ]
+default = ["full", "vello-hybrid" ]
 vello = ["floem/vello", "files?/vello"]
 vger = ["floem/vger"]
 skia = ["floem/skia"]

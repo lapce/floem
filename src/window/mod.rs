@@ -4,7 +4,6 @@ pub mod mock;
 pub(crate) mod state;
 pub(crate) mod tracking;
 
-use crate::paint::renderer::WindowRenderer;
 pub use crate::paint::renderer::{GpuRendererChooserCx, NewRendererCx};
 pub use id::{Urgency, WindowIdExt};
 pub use mock::MockWindow;
@@ -53,8 +52,7 @@ pub struct WindowConfig {
     pub(crate) mac_os_config: Option<MacOSWindowConfig>,
     pub(crate) win_os_config: Option<WinOSWindowConfig>,
     pub(crate) web_config: Option<WebWindowConfig>,
-    pub(crate) renderer_chooser:
-        Option<Arc<dyn Fn(NewRendererCx) -> Box<dyn WindowRenderer> + Send + Sync>>,
+    pub(crate) renderer_chooser: Option<crate::paint::renderer::RendererChooser>,
 }
 
 impl Default for WindowConfig {
@@ -235,7 +233,10 @@ impl WindowConfig {
     #[inline]
     pub fn renderer_chooser(
         mut self,
-        renderer_chooser: impl Fn(NewRendererCx) -> Box<dyn WindowRenderer> + Send + Sync + 'static,
+        renderer_chooser: impl Fn(NewRendererCx) -> crate::paint::renderer::RendererSpec
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         self.renderer_chooser = Some(Arc::new(renderer_chooser));
         self

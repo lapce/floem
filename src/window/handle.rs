@@ -95,18 +95,13 @@ pub(crate) struct WindowHandle {
     pub(crate) window_menu: Option<MudaMenu>,
     pub(crate) event_reducer: WindowEventReducer,
     pub(crate) gpu_resources: Option<GpuResources>,
-    pub(crate) renderer_chooser: Arc<
-        dyn Fn(
-                crate::paint::renderer::NewRendererCx,
-            ) -> Box<dyn crate::paint::renderer::WindowRenderer>
-            + Send
-            + Sync,
-    >,
+    pub(crate) renderer_chooser: crate::paint::renderer::RendererChooser,
     is_occluded: bool,
     #[cfg(target_os = "macos")]
     next_presents_with_transaction: bool,
     pending_timing: FrameTimingAccumulator,
     pending_render_timing: Option<crate::paint::renderer::RenderTiming>,
+    ready_frame_available_at: Option<Instant>,
     last_timing_report: Option<TimingReport>,
     frame_clock: Box<dyn FrameClock>,
 }
@@ -161,13 +156,7 @@ impl WindowHandle {
         window: Box<dyn winit::window::Window>,
         output_id: u32,
         gpu_resources: Option<GpuResources>,
-        renderer_chooser: Arc<
-            dyn Fn(
-                    crate::paint::renderer::NewRendererCx,
-                ) -> Box<dyn crate::paint::renderer::WindowRenderer>
-                + Send
-                + Sync,
-        >,
+        renderer_chooser: crate::paint::renderer::RendererChooser,
         required_features: wgpu::Features,
         backends: Option<wgpu::Backends>,
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
@@ -269,6 +258,7 @@ impl WindowHandle {
             next_presents_with_transaction: false,
             pending_timing: FrameTimingAccumulator::default(),
             pending_render_timing: None,
+            ready_frame_available_at: None,
             last_timing_report: None,
             frame_clock: new_window_frame_clock(window_id, output_id),
         };
@@ -297,13 +287,7 @@ impl WindowHandle {
     }
 
     fn new_gpu_backed_paint_state(
-        renderer_chooser: &Arc<
-            dyn Fn(
-                    crate::paint::renderer::NewRendererCx,
-                ) -> Box<dyn crate::paint::renderer::WindowRenderer>
-                + Send
-                + Sync,
-        >,
+        renderer_chooser: &crate::paint::renderer::RendererChooser,
         window: Arc<dyn Window>,
         gpu_resources: GpuResources,
         transparent: bool,
@@ -327,13 +311,7 @@ impl WindowHandle {
     }
 
     fn new_cpu_backed_paint_state(
-        renderer_chooser: &Arc<
-            dyn Fn(
-                    crate::paint::renderer::NewRendererCx,
-                ) -> Box<dyn crate::paint::renderer::WindowRenderer>
-                + Send
-                + Sync,
-        >,
+        renderer_chooser: &crate::paint::renderer::RendererChooser,
         window: Arc<dyn Window>,
         os_scale: f64,
         size: Size,
@@ -442,6 +420,7 @@ impl WindowHandle {
             next_presents_with_transaction: false,
             pending_timing: FrameTimingAccumulator::default(),
             pending_render_timing: None,
+            ready_frame_available_at: None,
             last_timing_report: None,
             frame_clock: new_window_frame_clock(window_id, 0),
         };
@@ -934,6 +913,26 @@ impl WindowHandle {
             .has_preparable_frame_work(self.window_state.has_next_frame_work())
     }
 
+    pub(crate) fn has_ready_frame(&mut self) -> bool {
+        let ready = matches!(self.paint_state, PaintState::Initialized { .. })
+            && self.paint_state.backend_mut().has_ready_frame();
+        if ready && self.ready_frame_available_at.is_none() {
+            self.ready_frame_available_at = Some(Instant::now());
+        }
+        ready
+    }
+
+    pub(crate) fn needs_redraw(&mut self) -> bool {
+        self.window_state.has_pending_render() || self.has_ready_frame()
+    }
+
+    fn take_ready_wait_duration(&mut self) -> Duration {
+        self.ready_frame_available_at
+            .take()
+            .map(|ready_at| ready_at.elapsed())
+            .unwrap_or(Duration::ZERO)
+    }
+
     fn current_frame_time(&self) -> FrameTime {
         let now = Instant::now();
         let frame_interval = self.frame_interval();
@@ -975,7 +974,7 @@ impl WindowHandle {
         let active = self.can_render_now()
             && (self.window_state.has_next_frame_work()
                 || self.window_state.has_pending_begin_frame_callbacks()
-                || self.window_state.has_pending_render());
+                || self.needs_redraw());
         self.frame_clock.set_active(active);
     }
 
@@ -1062,16 +1061,26 @@ impl WindowHandle {
         if paint.resize > Duration::ZERO {
             timings.push_span("Resize", cursor, paint.resize, 2, TimingKind::Renderer);
         }
+        if paint.render_cpu > Duration::ZERO {
+            timings.push_stat("RenderCpu", paint.render_cpu, TimingKind::Renderer);
+        }
+        if paint.ready_wait > Duration::ZERO {
+            timings.push_stat("ReadyWait", paint.ready_wait, TimingKind::Present);
+        }
+        if paint.present_cpu > Duration::ZERO {
+            timings.push_stat("PresentCpu", paint.present_cpu, TimingKind::Present);
+        }
+        let pre_present_cursor = cursor + paint.resize + paint.render_cpu;
         if paint.pre_present_notify > Duration::ZERO {
             timings.push_span(
                 "PrePresentNotify",
-                cursor + paint.resize,
+                pre_present_cursor,
                 paint.pre_present_notify,
                 2,
                 TimingKind::Renderer,
             );
         }
-        let mut paint_cursor = cursor + paint.resize + paint.pre_present_notify;
+        let mut paint_cursor = cursor + paint.resize;
         if let Some(render) = paint.render {
             if render.prepare > Duration::ZERO {
                 timings.push_span(
@@ -1108,6 +1117,7 @@ impl WindowHandle {
                 paint_cursor += render.read_output;
             }
         }
+        paint_cursor = cursor + paint.resize + paint.render_cpu + paint.pre_present_notify;
         if let Some(present) = paint
             .present
             .filter(|present| present.total > Duration::ZERO)
@@ -1164,6 +1174,12 @@ impl WindowHandle {
         self.last_timing_report.take()
     }
 
+    fn route_paint_present_event(&mut self) {
+        let root_element_id = self.window_state.root_view_id.get_element_id();
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
+        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+    }
+
     pub fn paint(&mut self) -> crate::paint::renderer::PaintTiming {
         if !matches!(self.paint_state, PaintState::Initialized { .. }) {
             return crate::paint::renderer::PaintTiming::default();
@@ -1177,10 +1193,6 @@ impl WindowHandle {
             .backend_mut()
             .resize(frame_size.width as u32, frame_size.height as u32);
         let resize = resize_start.elapsed();
-
-        let notify_start = Instant::now();
-        self.window.pre_present_notify();
-        let pre_present_notify = notify_start.elapsed();
 
         let background = if self.transparent {
             None
@@ -1212,23 +1224,36 @@ impl WindowHandle {
             .paint_state
             .backend_mut()
             .render(frame_size, &mut source);
+        let render_cpu = render.map_or(Duration::ZERO, |render| render.total);
         if let Some(render) = render {
             self.pending_render_timing = Some(render);
         }
+        let notify_start = Instant::now();
+        self.window.pre_present_notify();
+        let pre_present_notify = notify_start.elapsed();
         let present = self.paint_state.backend_mut().present_ready_frame();
         let render = if present.is_some() {
             self.pending_render_timing.take()
         } else {
             render
         };
-
-        let root_element_id = cx.window_state.root_view_id.get_element_id();
-        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
-        GlobalEventCx::new(cx.window_state, root_element_id, event).route_window_event();
+        drop(source);
+        drop(cx);
+        let ready_wait = if present.is_some() {
+            self.take_ready_wait_duration()
+        } else {
+            Duration::ZERO
+        };
+        if present.is_some() {
+            self.route_paint_present_event();
+        }
         crate::paint::renderer::PaintTiming {
             total: total_start.elapsed(),
             resize,
-            pre_present_notify,
+            render_cpu,
+            ready_wait,
+            pre_present_notify: present.map_or(Duration::ZERO, |_| pre_present_notify),
+            present_cpu: present.map_or(Duration::ZERO, |_| pre_present_notify + present.unwrap().total),
             render,
             present,
         }
@@ -1253,12 +1278,23 @@ impl WindowHandle {
         let pre_present_notify = notify_start.elapsed();
 
         let present = self.paint_state.backend_mut().present_ready_frame();
+        let ready_wait = if present.is_some() {
+            self.take_ready_wait_duration()
+        } else {
+            Duration::ZERO
+        };
         let render = present.and_then(|_| self.pending_render_timing.take());
+        if present.is_some() {
+            self.route_paint_present_event();
+        }
 
         crate::paint::renderer::PaintTiming {
             total: total_start.elapsed(),
             resize,
-            pre_present_notify,
+            render_cpu: Duration::ZERO,
+            ready_wait,
+            pre_present_notify: present.map_or(Duration::ZERO, |_| pre_present_notify),
+            present_cpu: present.map_or(Duration::ZERO, |_| pre_present_notify + present.unwrap().total),
             render,
             present,
         }
@@ -1277,10 +1313,6 @@ impl WindowHandle {
             .backend_mut()
             .resize(frame_size.width as u32, frame_size.height as u32);
         let resize = resize_start.elapsed();
-
-        let notify_start = Instant::now();
-        self.window.pre_present_notify();
-        let pre_present_notify = notify_start.elapsed();
 
         let background = if self.transparent {
             None
@@ -1310,12 +1342,8 @@ impl WindowHandle {
             .paint_state
             .backend_mut()
             .capture(frame_size, &mut source);
-
-        let root_element_id = cx.window_state.root_view_id.get_element_id();
-        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
-        GlobalEventCx::new(cx.window_state, root_element_id, event).route_window_event();
         output.timing.resize = resize;
-        output.timing.pre_present_notify = pre_present_notify;
+        output.timing.pre_present_notify = Duration::ZERO;
         output.timing.total = total_start.elapsed();
         output
     }
