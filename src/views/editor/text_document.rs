@@ -148,6 +148,46 @@ impl TextDocument {
         });
     }
 
+    fn apply_programmatic_edit(
+        &self,
+        editor: Option<&Editor>,
+        iter: &mut dyn Iterator<Item = (Selection, &str)>,
+        edit_type: EditType,
+    ) {
+        let mut cursor = editor.map(|editor| editor.cursor.get_untracked());
+        let cursor_before = cursor.as_ref().map(|cursor| cursor.mode.clone());
+
+        let deltas = self
+            .buffer
+            .try_update(|buffer| buffer.edit(iter, edit_type));
+        let deltas = deltas.map(|x| [x]);
+        let deltas = deltas.as_ref().map(|x| x as &[_]).unwrap_or(&[]);
+
+        if deltas.is_empty() {
+            return;
+        }
+
+        if let Some(cursor) = cursor.as_mut() {
+            for delta in deltas.iter().map(|(_, delta, _)| delta) {
+                cursor.apply_delta(delta);
+            }
+        }
+
+        if let (Some(cursor_before), Some(cursor)) = (cursor_before, cursor.as_ref()) {
+            self.buffer.update(|buffer| {
+                buffer.set_cursor_before(cursor_before);
+                buffer.set_cursor_after(cursor.mode.clone());
+            });
+        }
+
+        self.update_cache_rev();
+        self.on_update(editor, deltas);
+
+        if let (Some(editor), Some(cursor)) = (editor, cursor) {
+            editor.cursor.set(cursor);
+        }
+    }
+
     fn placeholder(&self, editor_id: EditorId) -> Option<String> {
         self.placeholders
             .with_untracked(|placeholders| placeholders.get(&editor_id).cloned())
@@ -231,14 +271,16 @@ impl Document for TextDocument {
     }
 
     fn edit(&self, iter: &mut dyn Iterator<Item = (Selection, &str)>, edit_type: EditType) {
-        let deltas = self
-            .buffer
-            .try_update(|buffer| buffer.edit(iter, edit_type));
-        let deltas = deltas.map(|x| [x]);
-        let deltas = deltas.as_ref().map(|x| x as &[_]).unwrap_or(&[]);
+        self.apply_programmatic_edit(None, iter, edit_type);
+    }
 
-        self.update_cache_rev();
-        self.on_update(None, deltas);
+    fn edit_from(
+        &self,
+        editor: &Editor,
+        iter: &mut dyn Iterator<Item = (Selection, &str)>,
+        edit_type: EditType,
+    ) {
+        self.apply_programmatic_edit(Some(editor), iter, edit_type);
     }
 }
 impl DocumentPhantom for TextDocument {
