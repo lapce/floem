@@ -10,6 +10,7 @@ pub mod renderer;
 
 use crate::gpu_resources::{GpuResourceError, GpuResources};
 pub use border_path_iter::{BorderPath, BorderPathEvent};
+use imaging::record::Scene;
 use imaging::{PaintSink, Painter};
 use peniko::kurbo::{Affine, Point, RoundedRect, Size};
 use rustc_hash::FxHashSet;
@@ -26,7 +27,7 @@ use crate::style::FontSizeCx;
 use crate::view::ViewId;
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
-use display_list::{ElementSnapshot, RecordingRenderer, replay_scene};
+use display_list::{ElementSnapshot, replay_scene};
 
 std::thread_local! {
     /// Holds the ID of a View being painted very briefly if it is being rendered as
@@ -130,7 +131,7 @@ pub struct GlobalPaintCx<'a> {
 pub struct PaintCx<'a> {
     /// Reference to global paint state
     pub window_state: &'a mut WindowState,
-    pub painter: Painter<'a, RecordingRenderer<'a>>,
+    pub painter: Painter<'a, Scene>,
     is_vger: bool,
     /// The target visual node being painted (CRITICAL for views with multiple visuals)
     pub target_id: ElementId,
@@ -453,7 +454,6 @@ impl GlobalPaintCx<'_> {
         let view_id = element_id.owning_id();
         let view = view_id.view();
         let view_state = view_id.state();
-        let mut recorder = RecordingRenderer::new(&mut scene);
         let is_vger = false;
         let world_transform = self.element_base_transform(element_id);
         let font_size_cx = view_state.borrow().layout_props.font_size_cx();
@@ -462,7 +462,7 @@ impl GlobalPaintCx<'_> {
             // Create per-target PaintCx
             let mut cx = PaintCx {
                 window_state: self.window_state,
-                painter: Painter::new(&mut recorder),
+                painter: Painter::new(&mut scene),
                 is_vger,
                 target_id: element_id,
                 world_transform,

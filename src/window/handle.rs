@@ -482,6 +482,9 @@ impl WindowHandle {
         // Now that the renderer is initialized, draw the first frame
         self.render_frame();
         self.window.set_visible(true);
+        self.window_state
+            .request_paint(self.window_state.root_view_id);
+        self.window.request_redraw();
         self.sync_frame_clock_activity();
     }
 
@@ -885,7 +888,8 @@ impl WindowHandle {
             if presented {
                 let update = mem::take(&mut self.pending_timing);
                 let useful_draw_cpu = paint.total.saturating_sub(
-                    paint.present
+                    paint
+                        .present
                         .map(|present| present.acquire_surface)
                         .unwrap_or(Duration::ZERO),
                 );
@@ -995,7 +999,10 @@ impl WindowHandle {
             timings.push_stat("Layout", update.layout, TimingKind::Layout);
         }
         timings.push_stat("Paint", paint.total, TimingKind::Paint);
-        if let Some(present) = paint.present.filter(|present| present.total > Duration::ZERO) {
+        if let Some(present) = paint
+            .present
+            .filter(|present| present.total > Duration::ZERO)
+        {
             timings.push_stat("Present", present.total, TimingKind::Present);
         }
 
@@ -1101,7 +1108,10 @@ impl WindowHandle {
                 paint_cursor += render.read_output;
             }
         }
-        if let Some(present) = paint.present.filter(|present| present.total > Duration::ZERO) {
+        if let Some(present) = paint
+            .present
+            .filter(|present| present.total > Duration::ZERO)
+        {
             timings.push_span(
                 "Present",
                 paint_cursor,

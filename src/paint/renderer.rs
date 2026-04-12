@@ -57,8 +57,7 @@ use crate::Application;
 use crate::gpu_resources::GpuResources;
 use imaging::{
     BlurredRoundedRect, ClipRef, FillRef, GlyphRunRef, GroupRef, ImageBufferFormat,
-    ImageBufferTarget, ImageRenderer, PaintSink, RenderSource, RgbaImage, StrokeRef,
-    record::Scene,
+    ImageBufferTarget, ImageRenderer, PaintSink, RenderSource, RgbaImage, StrokeRef, record::Scene,
 };
 use imaging_wgpu::{TextureRenderer, TextureViewTarget};
 use peniko::ImageData;
@@ -68,7 +67,6 @@ use wgpu::util::TextureBlitter;
 use winit::window::Window;
 
 use crate::app::UserEvent;
-use crate::paint::display_list::RecordingRenderer;
 use crate::platform::{Duration, Instant};
 
 pub(crate) type WindowBackend = Box<dyn WindowRenderer>;
@@ -472,8 +470,7 @@ impl ThreadedImageWindowRenderer {
 
     fn record_scene(source: &mut dyn RenderSource) -> Scene {
         let mut scene = Scene::new();
-        let mut recorder = RecordingRenderer::new(&mut scene);
-        source.paint_into(&mut recorder);
+        source.paint_into(&mut scene);
         scene
     }
 
@@ -482,7 +479,10 @@ impl ThreadedImageWindowRenderer {
     }
 
     fn poll_worker(&mut self) {
-        self.ready_frame = self.ready_frame.take().or_else(|| self.worker.try_take_ready_frame());
+        self.ready_frame = self
+            .ready_frame
+            .take()
+            .or_else(|| self.worker.try_take_ready_frame());
     }
 }
 
@@ -501,7 +501,7 @@ impl OffscreenRenderWorker {
                             let width = size.width.max(1.0) as u32;
                             let height = size.height.max(1.0) as u32;
                             let mut image = RgbaImage::new(width, height);
-            let rendered = match &mut backend.backend {
+                            let rendered = match &mut backend.backend {
                                 DirectOrCopy::Direct(CpuRendererBackend::Image { backend })
                                 | DirectOrCopy::Copy(CpuRendererBackend::Image { backend }) => {
                                     backend.render_source_into(
@@ -708,7 +708,7 @@ impl GpuWindowTarget {
             format: texture_format,
             width,
             height,
-            present_mode: wgpu::PresentMode::AutoVsync,
+            present_mode: wgpu::PresentMode::AutoNoVsync,
             alpha_mode: if transparent {
                 wgpu::CompositeAlphaMode::Auto
             } else {
@@ -752,8 +752,7 @@ impl GpuWindowTarget {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: self.config.format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         })
     }
@@ -1153,11 +1152,10 @@ impl WindowRenderer for ImageWindowRenderer {
     }
 
     fn present_ready_frame(&mut self) -> Option<PresentTiming> {
-        self.ready_to_present
-            .then(|| {
-                self.ready_to_present = false;
-                self.target.present_rgba(&self.scratch)
-            })
+        self.ready_to_present.then(|| {
+            self.ready_to_present = false;
+            self.target.present_rgba(&self.scratch)
+        })
     }
 
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {

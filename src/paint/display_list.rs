@@ -759,50 +759,6 @@ pub mod bench_support {
     }
 }
 
-pub struct RecordingRenderer<'a> {
-    scene: &'a mut Scene,
-}
-
-impl<'a> RecordingRenderer<'a> {
-    pub(crate) fn new(scene: &'a mut Scene) -> Self {
-        Self { scene }
-    }
-}
-
-impl PaintSink for RecordingRenderer<'_> {
-    fn push_clip(&mut self, clip: ClipRef<'_>) {
-        let _ = self.scene.push_clip(clip.to_owned());
-    }
-
-    fn pop_clip(&mut self) {
-        self.scene.pop_clip();
-    }
-
-    fn push_group(&mut self, group: GroupRef<'_>) {
-        PaintSink::push_group(self.scene, group);
-    }
-
-    fn pop_group(&mut self) {
-        self.scene.pop_group();
-    }
-
-    fn fill(&mut self, draw: FillRef<'_>) {
-        let _ = self.scene.draw(draw.to_owned());
-    }
-
-    fn stroke(&mut self, draw: StrokeRef<'_>) {
-        let _ = self.scene.draw(draw.to_owned());
-    }
-
-    fn glyph_run(&mut self, draw: GlyphRunRef<'_>, glyphs: &mut dyn Iterator<Item = ImagingGlyph>) {
-        let _ = self.scene.draw(Draw::GlyphRun(draw.to_owned(glyphs)));
-    }
-
-    fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
-        let _ = self.scene.draw(Draw::BlurredRoundedRect(draw));
-    }
-}
-
 pub(crate) fn replay_scene(
     scene: &Scene,
     sink: &mut dyn PaintSink,
