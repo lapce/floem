@@ -27,9 +27,18 @@ use super::{
     id::EditorId,
     phantom_text::{PhantomText, PhantomTextKind, PhantomTextLine},
     text::{Document, DocumentPhantom, PreeditData, SystemClipboard},
+    view::ScreenLines,
+    visual_line::RVLine,
 };
+use crate::view::ViewId;
 
 type PreCommandFn = Box<dyn Fn(PreCommand) -> CommandExecuted>;
+#[derive(Clone, Copy)]
+struct AttachedEditor {
+    view_id: floem_reactive::RwSignal<Option<ViewId>>,
+    screen_lines: floem_reactive::RwSignal<ScreenLines>,
+}
+
 #[derive(Debug, Clone)]
 pub struct PreCommand<'a> {
     pub editor: &'a Editor,
@@ -73,6 +82,7 @@ pub struct TextDocument {
     pre_command: Rc<RefCell<HashMap<EditorId, SmallVec<[PreCommandFn; 1]>>>>,
 
     on_updates: Rc<RefCell<SmallVec<[OnUpdateFn; 1]>>>,
+    attached_editors: Rc<RefCell<HashMap<EditorId, AttachedEditor>>>,
 }
 impl TextDocument {
     pub fn new(cx: Scope, text: impl Into<Rope>) -> TextDocument {
@@ -102,6 +112,7 @@ impl TextDocument {
             placeholders,
             pre_command: Rc::new(RefCell::new(HashMap::new())),
             on_updates: Rc::new(RefCell::new(SmallVec::new())),
+            attached_editors: Rc::new(RefCell::new(HashMap::new())),
         }
     }
 
@@ -112,10 +123,80 @@ impl TextDocument {
     }
 
     fn on_update(&self, ed: Option<&Editor>, deltas: &[(Rope, RopeDelta, InvalLines)]) {
+        self.request_shared_editor_paint(ed, deltas);
+
         let on_updates = self.on_updates.borrow();
         let data = OnUpdate { editor: ed, deltas };
         for on_update in on_updates.iter() {
             on_update(data.clone());
+        }
+    }
+
+    pub fn register_editor(
+        &self,
+        editor_id: EditorId,
+        view_id: floem_reactive::RwSignal<Option<ViewId>>,
+        screen_lines: floem_reactive::RwSignal<ScreenLines>,
+    ) {
+        self.attached_editors.borrow_mut().insert(
+            editor_id,
+            AttachedEditor {
+                view_id,
+                screen_lines,
+            },
+        );
+    }
+
+    pub fn unregister_editor(&self, editor_id: EditorId) {
+        self.attached_editors.borrow_mut().remove(&editor_id);
+    }
+
+    fn request_shared_editor_paint(
+        &self,
+        source: Option<&Editor>,
+        deltas: &[(Rope, RopeDelta, InvalLines)],
+    ) {
+        let attached_editors = self.attached_editors.borrow();
+
+        if let Some(source) = source {
+            let Some(source_range) = source
+                .screen_lines
+                .with_untracked(|screen_lines| screen_lines.rvline_range())
+            else {
+                return;
+            };
+
+            for (editor_id, attached) in attached_editors.iter() {
+                if *editor_id == source.id() {
+                    continue;
+                }
+
+                let overlaps = attached
+                    .screen_lines
+                    .with_untracked(|screen_lines| screen_lines.rvline_range())
+                    .is_some_and(|peer_range| rvline_ranges_overlap(source_range, peer_range));
+
+                if overlaps && let Some(view_id) = attached.view_id.get_untracked() {
+                    view_id.request_paint();
+                }
+            }
+
+            return;
+        }
+
+        for attached in attached_editors.values() {
+            let overlaps_change = attached
+                .screen_lines
+                .with_untracked(|screen_lines| screen_lines.rvline_range())
+                .is_some_and(|visible_range| {
+                    deltas
+                        .iter()
+                        .any(|(_, _, inval)| inval_overlaps_visible_lines(inval, visible_range))
+                });
+
+            if overlaps_change && let Some(view_id) = attached.view_id.get_untracked() {
+                view_id.request_paint();
+            }
         }
     }
 
@@ -152,6 +233,22 @@ impl TextDocument {
         self.placeholders
             .with_untracked(|placeholders| placeholders.get(&editor_id).cloned())
     }
+}
+
+fn rvline_ranges_overlap(
+    (a_start, a_end): (RVLine, RVLine),
+    (b_start, b_end): (RVLine, RVLine),
+) -> bool {
+    a_start <= b_end && b_start <= a_end
+}
+
+fn inval_overlaps_visible_lines(inval: &InvalLines, visible_range: (RVLine, RVLine)) -> bool {
+    let start_line = inval.start_line;
+    let end_line = inval.start_line + usize::max(inval.inval_count, inval.new_count);
+    let visible_start = visible_range.0.line;
+    let visible_end = visible_range.1.line;
+
+    start_line <= visible_end && visible_start <= end_line
 }
 impl Document for TextDocument {
     fn text(&self) -> Rope {

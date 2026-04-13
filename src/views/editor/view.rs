@@ -1348,6 +1348,11 @@ pub fn editor_container_view(
     .on_cleanup(move || {
         // TODO: should we have some way for doc to tell us if we're allowed to cleanup the editor?
         let editor = editor.get_untracked();
+        if let Ok(doc) =
+            (editor.doc() as Rc<dyn std::any::Any>).downcast::<super::text_document::TextDocument>()
+        {
+            doc.unregister_editor(editor.id());
+        }
         editor.cx.get().dispose();
     })
 }
@@ -1395,6 +1400,7 @@ fn editor_content(
 
         let id = editor_content_view.id();
         ed.editor_view_id.set(Some(id));
+        ed.sync_text_document_registration();
 
         editor_content_view
             .on_event_cont(listener::FocusGained, move |_, _| {

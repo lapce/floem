@@ -249,9 +249,11 @@ impl ImageRenderer for VgerRenderer {
         source: &mut dyn RenderSource,
         target: ImageBufferTarget<'_>,
     ) -> Result<(), ImageRendererError> {
+        dbg!("here");
         texture_format_for_image(target.format).ok_or(ImageRendererError::Target(
             ImageTargetError::UnsupportedTargetFormat,
         ))?;
+        dbg!("here2");
         let texture = <Self as TextureRenderer>::render_source_texture(
             self,
             source,
@@ -259,6 +261,7 @@ impl ImageRenderer for VgerRenderer {
             target.height,
         )
         .map_err(map_texture_to_image_error)?;
+        dbg!("here3");
         read_texture_into(
             self.device.as_ref(),
             self.queue.as_ref(),
@@ -340,6 +343,7 @@ fn read_texture_into(
     {
         out_row[..width_bytes].copy_from_slice(&row[..width_bytes]);
     }
+    dbg!(slice.size());
     drop(mapped);
     readback.unmap();
     Ok(())

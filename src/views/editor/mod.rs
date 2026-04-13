@@ -361,9 +361,25 @@ impl Editor {
         });
     }
 
+    fn text_document(&self) -> Option<Rc<text_document::TextDocument>> {
+        (self.doc() as Rc<dyn ::std::any::Any>).downcast().ok()
+    }
+
+    pub(crate) fn sync_text_document_registration(&self) {
+        let Some(text_doc) = self.text_document() else {
+            return;
+        };
+
+        text_doc.register_editor(self.id(), self.editor_view_id, self.screen_lines);
+    }
+
     /// Swap the underlying document out
     pub fn update_doc(&self, doc: Rc<dyn Document>, styling: Option<Rc<dyn Styling>>) {
         Effect::batch(|| {
+            if let Some(text_doc) = self.text_document() {
+                text_doc.unregister_editor(self.id());
+            }
+
             // Get rid of all the effects
             self.effects_cx.get().dispose();
 
@@ -384,6 +400,8 @@ impl Editor {
             // Recreate the effects
             self.effects_cx.set(self.cx.get().create_child());
             create_view_effects(self.effects_cx.get(), self);
+
+            self.sync_text_document_registration();
         });
     }
 

@@ -1062,7 +1062,12 @@ impl WindowHandle {
         };
 
         push_relative(&mut spans, "Paint", paint.total_span, TimingKind::Paint);
-        push_relative(&mut spans, "Resize", paint.resize_span, TimingKind::Renderer);
+        push_relative(
+            &mut spans,
+            "Resize",
+            paint.resize_span,
+            TimingKind::Renderer,
+        );
         push_relative(
             &mut spans,
             "PrePresentNotify",
@@ -1071,9 +1076,19 @@ impl WindowHandle {
         );
 
         if let Some(render) = paint.render {
-            push_relative(&mut spans, "Prepare", render.prepare_span, TimingKind::Renderer);
+            push_relative(
+                &mut spans,
+                "Prepare",
+                render.prepare_span,
+                TimingKind::Renderer,
+            );
             push_relative(&mut spans, "Scene", render.scene_span, TimingKind::Paint);
-            push_relative(&mut spans, "Finish", render.finalize_span, TimingKind::Renderer);
+            push_relative(
+                &mut spans,
+                "Finish",
+                render.finalize_span,
+                TimingKind::Renderer,
+            );
             push_relative(
                 &mut spans,
                 "ReadTarget",
@@ -1083,15 +1098,30 @@ impl WindowHandle {
         }
 
         if let Some(present) = paint.present {
-            push_relative(&mut spans, "Present", present.total_span, TimingKind::Present);
+            push_relative(
+                &mut spans,
+                "Present",
+                present.total_span,
+                TimingKind::Present,
+            );
             push_relative(
                 &mut spans,
                 "AcquireSurface",
                 present.acquire_surface_span,
                 TimingKind::Present,
             );
-            push_relative(&mut spans, "Compose", present.compose_span, TimingKind::Present);
-            push_relative(&mut spans, "Submit", present.submit_span, TimingKind::Present);
+            push_relative(
+                &mut spans,
+                "Compose",
+                present.compose_span,
+                TimingKind::Present,
+            );
+            push_relative(
+                &mut spans,
+                "Submit",
+                present.submit_span,
+                TimingKind::Present,
+            );
             push_relative(
                 &mut spans,
                 "PresentCall",
@@ -1216,7 +1246,12 @@ impl WindowHandle {
             resize_span: crate::paint::renderer::TimingSpan::new(total_start, render_start),
             ready_wait_span,
             pre_present_notify_span: present
-                .map(|_| crate::paint::renderer::TimingSpan::new(notify_start, notify_start + pre_present_notify))
+                .map(|_| {
+                    crate::paint::renderer::TimingSpan::new(
+                        notify_start,
+                        notify_start + pre_present_notify,
+                    )
+                })
                 .unwrap_or_default(),
         }
     }
@@ -1267,7 +1302,12 @@ impl WindowHandle {
             resize_span: crate::paint::renderer::TimingSpan::new(total_start, notify_start),
             ready_wait_span,
             pre_present_notify_span: present
-                .map(|_| crate::paint::renderer::TimingSpan::new(notify_start, notify_start + pre_present_notify))
+                .map(|_| {
+                    crate::paint::renderer::TimingSpan::new(
+                        notify_start,
+                        notify_start + pre_present_notify,
+                    )
+                })
                 .unwrap_or_default(),
         }
     }
