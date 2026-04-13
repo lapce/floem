@@ -71,6 +71,28 @@ use winit::window::Window;
 use crate::app::UserEvent;
 use crate::platform::{Duration, Instant};
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TimingSpan {
+    pub start: Option<Instant>,
+    pub end: Option<Instant>,
+}
+
+impl TimingSpan {
+    pub fn new(start: Instant, end: Instant) -> Self {
+        Self {
+            start: Some(start),
+            end: Some(end),
+        }
+    }
+
+    pub fn duration(&self) -> Duration {
+        match (self.start, self.end) {
+            (Some(start), Some(end)) => end.saturating_duration_since(start),
+            _ => Duration::ZERO,
+        }
+    }
+}
+
 pub(crate) type WindowBackend = Box<dyn WindowRenderer>;
 pub(crate) type RendererChooser = Arc<dyn Fn(NewRendererCx) -> RendererSpec + Send + Sync>;
 
@@ -352,6 +374,11 @@ pub struct RenderTiming {
     pub scene: Duration,
     pub finalize: Duration,
     pub read_output: Duration,
+    pub total_span: TimingSpan,
+    pub prepare_span: TimingSpan,
+    pub scene_span: TimingSpan,
+    pub finalize_span: TimingSpan,
+    pub read_output_span: TimingSpan,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -364,6 +391,10 @@ pub struct PaintTiming {
     pub present_cpu: Duration,
     pub render: Option<RenderTiming>,
     pub present: Option<PresentTiming>,
+    pub total_span: TimingSpan,
+    pub resize_span: TimingSpan,
+    pub ready_wait_span: TimingSpan,
+    pub pre_present_notify_span: TimingSpan,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -373,6 +404,11 @@ pub struct PresentTiming {
     pub compose: Duration,
     pub submit: Duration,
     pub present_call: Duration,
+    pub total_span: TimingSpan,
+    pub acquire_surface_span: TimingSpan,
+    pub compose_span: TimingSpan,
+    pub submit_span: TimingSpan,
+    pub present_call_span: TimingSpan,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -671,12 +707,18 @@ impl ThreadedWindowRenderer {
                 let present_call_start = Instant::now();
                 surface_texture.present();
                 let present_call = present_call_start.elapsed();
+                let end = Instant::now();
                 Some(PresentTiming {
                     total: start.elapsed(),
                     acquire_surface,
                     compose,
                     submit: Duration::ZERO,
                     present_call,
+                    total_span: TimingSpan::new(start, end),
+                    acquire_surface_span: TimingSpan::new(acquire_start, compose_start),
+                    compose_span: TimingSpan::new(compose_start, present_call_start),
+                    submit_span: TimingSpan::default(),
+                    present_call_span: TimingSpan::new(present_call_start, end),
                 })
             }
             _ => None,
@@ -1143,12 +1185,18 @@ where
             .present()
             .expect("failed to present the surface buffer");
         let present_call = present_call_start.elapsed();
+        let end = Instant::now();
         PresentTiming {
             total: start.elapsed(),
             acquire_surface,
             compose,
             submit: Duration::ZERO,
             present_call,
+            total_span: TimingSpan::new(start, end),
+            acquire_surface_span: TimingSpan::new(acquire_start, compose_start),
+            compose_span: TimingSpan::new(compose_start, present_call_start),
+            submit_span: TimingSpan::default(),
+            present_call_span: TimingSpan::new(present_call_start, end),
         }
     }
 }
@@ -1256,10 +1304,14 @@ impl PixelsWindowTarget {
             .render()
             .expect("failed to present pixels frame");
         let submit = submit_start.elapsed();
+        let end = Instant::now();
         PresentTiming {
             total: start.elapsed(),
             compose,
             submit,
+            total_span: TimingSpan::new(start, end),
+            compose_span: TimingSpan::new(compose_start, submit_start),
+            submit_span: TimingSpan::new(submit_start, end),
             ..Default::default()
         }
     }
@@ -1292,6 +1344,8 @@ impl WindowRenderer for ThreadedWindowRenderer {
         Some(RenderTiming {
             total: total_start.elapsed(),
             scene,
+            total_span: TimingSpan::new(total_start, Instant::now()),
+            scene_span: TimingSpan::new(scene_start, Instant::now()),
             ..Default::default()
         })
     }
@@ -1367,11 +1421,14 @@ impl WindowRenderer for TargetGpuWindowRenderer {
                 let prepare = Duration::ZERO;
                 let scene = prepare_start.elapsed();
                 let finalize = Duration::ZERO;
+                let end = Instant::now();
                 return Some(RenderTiming {
                     total: start.elapsed(),
                     prepare,
                     scene,
                     finalize,
+                    total_span: TimingSpan::new(start, end),
+                    scene_span: TimingSpan::new(prepare_start, end),
                     ..Default::default()
                 });
             }
@@ -1383,11 +1440,14 @@ impl WindowRenderer for TargetGpuWindowRenderer {
                 let prepare = Duration::ZERO;
                 let scene = prepare_start.elapsed();
                 let finalize = Duration::ZERO;
+                let end = Instant::now();
                 return Some(RenderTiming {
                     total: start.elapsed(),
                     prepare,
                     scene,
                     finalize,
+                    total_span: TimingSpan::new(start, end),
+                    scene_span: TimingSpan::new(prepare_start, end),
                     ..Default::default()
                 });
             }
@@ -1396,11 +1456,14 @@ impl WindowRenderer for TargetGpuWindowRenderer {
         let prepare = Duration::ZERO;
         let scene = prepare_start.elapsed();
         let finalize = Duration::ZERO;
+        let end = Instant::now();
         Some(RenderTiming {
             total: start.elapsed(),
             prepare,
             scene,
             finalize,
+            total_span: TimingSpan::new(start, end),
+            scene_span: TimingSpan::new(prepare_start, end),
             ..Default::default()
         })
     }
@@ -1422,12 +1485,17 @@ impl WindowRenderer for TargetGpuWindowRenderer {
         let present_call_start = Instant::now();
         surface_texture.present();
         let present_call = present_call_start.elapsed();
+        let end = Instant::now();
         Some(PresentTiming {
             total: start.elapsed(),
             acquire_surface,
             compose,
             submit: Duration::ZERO,
             present_call,
+            total_span: TimingSpan::new(start, end),
+            acquire_surface_span: TimingSpan::new(acquire_start, compose_start),
+            compose_span: TimingSpan::new(compose_start, present_call_start),
+            present_call_span: TimingSpan::new(present_call_start, end),
         })
     }
 
@@ -1502,6 +1570,8 @@ impl WindowRenderer for ImageWindowRenderer {
         Some(RenderTiming {
             total: total_start.elapsed(),
             scene: scene_start.elapsed(),
+            total_span: TimingSpan::new(total_start, Instant::now()),
+            scene_span: TimingSpan::new(scene_start, Instant::now()),
             ..Default::default()
         })
     }

@@ -111,9 +111,26 @@ struct LayoutTiming {
     total: Duration,
     taffy: Duration,
     box_tree_update: Duration,
+    total_span: Option<AbsoluteTimingSpan>,
+    taffy_span: Option<AbsoluteTimingSpan>,
+    box_tree_update_span: Option<AbsoluteTimingSpan>,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
+struct AbsoluteTimingSpan {
+    label: &'static str,
+    start: Instant,
+    end: Instant,
+    kind: TimingKind,
+}
+
+impl AbsoluteTimingSpan {
+    fn duration(&self) -> Duration {
+        self.end.saturating_duration_since(self.start)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
 struct FrameTimingAccumulator {
     style: Duration,
     layout: Duration,
@@ -121,15 +138,23 @@ struct FrameTimingAccumulator {
     box_tree_update: Duration,
     box_tree_pending_updates: Duration,
     box_tree_commit: Duration,
+    update_start: Option<Instant>,
+    update_end: Option<Instant>,
+    spans: Vec<AbsoluteTimingSpan>,
 }
 
 impl FrameTimingAccumulator {
-    fn layout_phase_total(&self) -> Duration {
-        self.layout + self.box_tree_pending_updates + self.box_tree_commit
-    }
-
     fn total(&self) -> Duration {
         self.style + self.layout + self.box_tree_pending_updates + self.box_tree_commit
+    }
+
+    fn push_span(&mut self, span: AbsoluteTimingSpan) {
+        self.update_start = Some(
+            self.update_start
+                .map_or(span.start, |start| start.min(span.start)),
+        );
+        self.update_end = Some(self.update_end.map_or(span.end, |end| end.max(span.end)));
+        self.spans.push(span);
     }
 }
 
@@ -661,7 +686,7 @@ impl WindowHandle {
         }
     }
 
-    fn style(&mut self) -> Duration {
+    fn style(&mut self) -> AbsoluteTimingSpan {
         let start = Instant::now();
         // Loop until no more views need styling
         // This handles the case where styling a parent marks children dirty
@@ -684,40 +709,70 @@ impl WindowHandle {
         let root_element_id = self.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Style));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
-        start.elapsed()
+        AbsoluteTimingSpan {
+            label: "Style",
+            start,
+            end: Instant::now(),
+            kind: TimingKind::Style,
+        }
     }
 
     fn layout(&mut self) -> LayoutTiming {
         let start = Instant::now();
         self.window_state.compute_layout();
-        let taffy_duration = start.elapsed();
+        let taffy_end = Instant::now();
+        let taffy_duration = taffy_end.saturating_duration_since(start);
 
         // Update box tree from layout after layout completes
-        let box_tree_start = Instant::now();
+        let box_tree_start = taffy_end;
         self.window_state.update_box_tree_from_layout();
-        let box_tree_update = box_tree_start.elapsed();
+        let box_tree_end = Instant::now();
+        let box_tree_update = box_tree_end.saturating_duration_since(box_tree_start);
 
         let root_element_id = self.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Layout));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
 
         LayoutTiming {
-            total: start.elapsed(),
+            total: box_tree_end.saturating_duration_since(start),
             taffy: taffy_duration,
             box_tree_update,
+            total_span: Some(AbsoluteTimingSpan {
+                label: "Layout",
+                start,
+                end: box_tree_end,
+                kind: TimingKind::Layout,
+            }),
+            taffy_span: Some(AbsoluteTimingSpan {
+                label: "Taffy",
+                start,
+                end: taffy_end,
+                kind: TimingKind::Layout,
+            }),
+            box_tree_update_span: Some(AbsoluteTimingSpan {
+                label: "BoxTreeUpdate",
+                start: box_tree_start,
+                end: box_tree_end,
+                kind: TimingKind::BoxTree,
+            }),
         }
     }
 
-    fn update_box_tree_from_layout(&mut self) -> Duration {
+    fn update_box_tree_from_layout(&mut self) -> AbsoluteTimingSpan {
         let start = Instant::now();
         self.window_state.update_box_tree_from_layout();
         let root_element_id = self.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreeUpdate));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
-        start.elapsed()
+        AbsoluteTimingSpan {
+            label: "BoxTreeUpdate",
+            start,
+            end: Instant::now(),
+            kind: TimingKind::BoxTree,
+        }
     }
 
-    fn process_pending_box_tree_updates(&mut self) -> Duration {
+    fn process_pending_box_tree_updates(&mut self) -> AbsoluteTimingSpan {
         let start = Instant::now();
         self.window_state.process_pending_box_tree_updates();
         let root_element_id = self.window_state.root_view_id.get_element_id();
@@ -725,10 +780,15 @@ impl WindowHandle {
             UpdatePhaseEvent::BoxTreePendingUpdates,
         ));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
-        start.elapsed()
+        AbsoluteTimingSpan {
+            label: "BoxTreePendingUpdates",
+            start,
+            end: Instant::now(),
+            kind: TimingKind::BoxTree,
+        }
     }
 
-    fn commit_box_tree(&mut self) -> Duration {
+    fn commit_box_tree(&mut self) -> AbsoluteTimingSpan {
         let start = Instant::now();
         self.window_state.commit_box_tree();
         self.window_state.needs_box_tree_commit = false;
@@ -835,7 +895,12 @@ impl WindowHandle {
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreeCommit));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
 
-        start.elapsed()
+        AbsoluteTimingSpan {
+            label: "BoxTreeCommit",
+            start,
+            end: Instant::now(),
+            kind: TimingKind::BoxTree,
+        }
     }
 
     pub(crate) fn render_frame(&mut self) -> bool {
@@ -879,15 +944,7 @@ impl WindowHandle {
                 let frame_end = Instant::now();
                 self.frame_clock
                     .observe_presented(update.total(), useful_draw_cpu, frame_end);
-                let frame_start = frame_end
-                    .checked_sub(update.total() + paint.total)
-                    .unwrap_or(frame_end);
-                self.last_timing_report = Some(Self::build_timing_report(
-                    "Frame Cycle",
-                    frame_start,
-                    update,
-                    paint,
-                ));
+                self.last_timing_report = Some(Self::build_timing_report(update, paint));
             }
             self.frame_clock.clear_prepared_frame();
             return presented;
@@ -930,11 +987,11 @@ impl WindowHandle {
         self.window_state.has_pending_render() || self.has_ready_frame()
     }
 
-    fn take_ready_wait_duration(&mut self) -> Duration {
+    fn take_ready_wait_span(&mut self) -> crate::paint::renderer::TimingSpan {
         self.ready_frame_available_at
             .take()
-            .map(|ready_at| ready_at.elapsed())
-            .unwrap_or(Duration::ZERO)
+            .map(|ready_at| crate::paint::renderer::TimingSpan::new(ready_at, Instant::now()))
+            .unwrap_or_default()
     }
 
     fn current_frame_time(&self) -> FrameTime {
@@ -983,153 +1040,85 @@ impl WindowHandle {
     }
 
     fn build_timing_report(
-        root_label: &'static str,
-        anchor: Instant,
         update: FrameTimingAccumulator,
         paint: crate::paint::renderer::PaintTiming,
     ) -> TimingReport {
-        let update_total = update.total();
-        let layout_total = update.layout_phase_total();
-        let box_tree_total = layout_total.saturating_sub(update.taffy);
-        let total = update_total + paint.total;
-        let mut timings = TimingReport::new(Some(anchor), total);
+        let mut spans = update.spans;
 
-        let mut cursor = Duration::ZERO;
-        timings.push_span(root_label, Duration::ZERO, total, TimingKind::Total);
-        if update_total > Duration::ZERO {
-            timings.push_span("Update Pipeline", cursor, update_total, TimingKind::Update);
-            if update.style > Duration::ZERO {
-                timings.push_span("Style", cursor, update.style, TimingKind::Style);
-                cursor += update.style;
+        let push_relative = |out: &mut Vec<AbsoluteTimingSpan>,
+                             label: &'static str,
+                             span: crate::paint::renderer::TimingSpan,
+                             kind: TimingKind| {
+            if let (Some(start), Some(end)) = (span.start, span.end) {
+                if end > start {
+                    out.push(AbsoluteTimingSpan {
+                        label,
+                        start,
+                        end,
+                        kind,
+                    });
+                }
             }
-            if layout_total > Duration::ZERO {
-                timings.push_span("Layout", cursor, layout_total, TimingKind::Layout);
-                if update.taffy > Duration::ZERO {
-                    timings.push_span("Taffy", cursor, update.taffy, TimingKind::Layout);
-                }
-                if box_tree_total > Duration::ZERO {
-                    timings.push_span(
-                        "BoxTree",
-                        cursor + update.taffy,
-                        box_tree_total,
-                        TimingKind::BoxTree,
-                    );
-                }
-                if update.box_tree_update > Duration::ZERO {
-                    timings.push_span(
-                        "BoxTreeUpdate",
-                        cursor + update.taffy,
-                        update.box_tree_update,
-                        TimingKind::BoxTree,
-                    );
-                }
-                if update.box_tree_pending_updates > Duration::ZERO {
-                    timings.push_span(
-                        "BoxTreePendingUpdates",
-                        cursor + update.layout,
-                        update.box_tree_pending_updates,
-                        TimingKind::BoxTree,
-                    );
-                }
-                if update.box_tree_commit > Duration::ZERO {
-                    timings.push_span(
-                        "BoxTreeCommit",
-                        cursor + update.layout + update.box_tree_pending_updates,
-                        update.box_tree_commit,
-                        TimingKind::BoxTree,
-                    );
-                }
-                cursor += layout_total;
-            }
-        }
+        };
 
-        timings.push_span("Paint", cursor, paint.total, TimingKind::Paint);
-        if paint.resize > Duration::ZERO {
-            timings.push_span("Resize", cursor, paint.resize, TimingKind::Renderer);
-        }
-        let pre_present_cursor = cursor + paint.resize + paint.render_cpu;
-        if paint.pre_present_notify > Duration::ZERO {
-            timings.push_span(
-                "PrePresentNotify",
-                pre_present_cursor,
-                paint.pre_present_notify,
+        push_relative(&mut spans, "Paint", paint.total_span, TimingKind::Paint);
+        push_relative(&mut spans, "Resize", paint.resize_span, TimingKind::Renderer);
+        push_relative(
+            &mut spans,
+            "PrePresentNotify",
+            paint.pre_present_notify_span,
+            TimingKind::Renderer,
+        );
+
+        if let Some(render) = paint.render {
+            push_relative(&mut spans, "Prepare", render.prepare_span, TimingKind::Renderer);
+            push_relative(&mut spans, "Scene", render.scene_span, TimingKind::Paint);
+            push_relative(&mut spans, "Finish", render.finalize_span, TimingKind::Renderer);
+            push_relative(
+                &mut spans,
+                "ReadTarget",
+                render.read_output_span,
                 TimingKind::Renderer,
             );
         }
-        let mut paint_cursor = cursor + paint.resize;
-        if let Some(render) = paint.render {
-            if render.prepare > Duration::ZERO {
-                timings.push_span(
-                    "Prepare",
-                    paint_cursor,
-                    render.prepare,
-                    TimingKind::Renderer,
-                );
-                paint_cursor += render.prepare;
-            }
-            if render.scene > Duration::ZERO {
-                timings.push_span("Scene", paint_cursor, render.scene, TimingKind::Paint);
-                paint_cursor += render.scene;
-            }
-            if render.finalize > Duration::ZERO {
-                timings.push_span(
-                    "Finish",
-                    paint_cursor,
-                    render.finalize,
-                    TimingKind::Renderer,
-                );
-                paint_cursor += render.finalize;
-            }
-            if render.read_output > Duration::ZERO {
-                timings.push_span(
-                    "ReadTarget",
-                    paint_cursor,
-                    render.read_output,
-                    TimingKind::Renderer,
-                );
-                paint_cursor += render.read_output;
-            }
-        }
-        paint_cursor = cursor + paint.resize + paint.render_cpu + paint.pre_present_notify;
-        if let Some(present) = paint
-            .present
-            .filter(|present| present.total > Duration::ZERO)
-        {
-            timings.push_span("Present", paint_cursor, present.total, TimingKind::Present);
-            if present.acquire_surface > Duration::ZERO {
-                timings.push_span(
-                    "AcquireSurface",
-                    paint_cursor,
-                    present.acquire_surface,
-                    TimingKind::Present,
-                );
-            }
-            if present.compose > Duration::ZERO {
-                timings.push_span(
-                    "Compose",
-                    paint_cursor + present.acquire_surface,
-                    present.compose,
-                    TimingKind::Present,
-                );
-            }
-            if present.submit > Duration::ZERO {
-                timings.push_span(
-                    "Submit",
-                    paint_cursor + present.acquire_surface + present.compose,
-                    present.submit,
-                    TimingKind::Present,
-                );
-            }
-            if present.present_call > Duration::ZERO {
-                timings.push_span(
-                    "PresentCall",
-                    paint_cursor + present.acquire_surface + present.compose + present.submit,
-                    present.present_call,
-                    TimingKind::Present,
-                );
-            }
+
+        if let Some(present) = paint.present {
+            push_relative(&mut spans, "Present", present.total_span, TimingKind::Present);
+            push_relative(
+                &mut spans,
+                "AcquireSurface",
+                present.acquire_surface_span,
+                TimingKind::Present,
+            );
+            push_relative(&mut spans, "Compose", present.compose_span, TimingKind::Present);
+            push_relative(&mut spans, "Submit", present.submit_span, TimingKind::Present);
+            push_relative(
+                &mut spans,
+                "PresentCall",
+                present.present_call_span,
+                TimingKind::Present,
+            );
         }
 
+        let anchor = spans.iter().map(|span| span.start).min();
+        let end = spans.iter().map(|span| span.end).max();
+        let (Some(anchor), Some(end)) = (anchor, end) else {
+            return TimingReport::default();
+        };
+
+        let total = end.saturating_duration_since(anchor);
+        let mut timings = TimingReport::new(Some(anchor), total);
+        for span in spans {
+            let duration = span.duration();
+            if duration > Duration::ZERO {
+                timings.push_span(
+                    span.label,
+                    span.start.saturating_duration_since(anchor),
+                    duration,
+                    span.kind,
+                );
+            }
+        }
         timings
     }
 
@@ -1183,6 +1172,7 @@ impl WindowHandle {
             }
             cx.paint_with_traversal_into(self.id, sink);
         };
+        let render_start = Instant::now();
         let render = self
             .paint_state
             .backend_mut()
@@ -1201,16 +1191,18 @@ impl WindowHandle {
             render
         };
         drop(cx);
-        let ready_wait = if present.is_some() {
-            self.take_ready_wait_duration()
+        let ready_wait_span = if present.is_some() {
+            self.take_ready_wait_span()
         } else {
-            Duration::ZERO
+            crate::paint::renderer::TimingSpan::default()
         };
+        let ready_wait = ready_wait_span.duration();
         if present.is_some() {
             self.route_paint_present_event();
         }
+        let total_end = Instant::now();
         crate::paint::renderer::PaintTiming {
-            total: total_start.elapsed(),
+            total: total_end.saturating_duration_since(total_start),
             resize,
             render_cpu,
             ready_wait,
@@ -1220,6 +1212,12 @@ impl WindowHandle {
             }),
             render,
             present,
+            total_span: crate::paint::renderer::TimingSpan::new(total_start, total_end),
+            resize_span: crate::paint::renderer::TimingSpan::new(total_start, render_start),
+            ready_wait_span,
+            pre_present_notify_span: present
+                .map(|_| crate::paint::renderer::TimingSpan::new(notify_start, notify_start + pre_present_notify))
+                .unwrap_or_default(),
         }
     }
 
@@ -1242,18 +1240,20 @@ impl WindowHandle {
         let pre_present_notify = notify_start.elapsed();
 
         let present = self.paint_state.backend_mut().present_ready_frame();
-        let ready_wait = if present.is_some() {
-            self.take_ready_wait_duration()
+        let ready_wait_span = if present.is_some() {
+            self.take_ready_wait_span()
         } else {
-            Duration::ZERO
+            crate::paint::renderer::TimingSpan::default()
         };
+        let ready_wait = ready_wait_span.duration();
         let render = present.and_then(|_| self.pending_render_timing.take());
         if present.is_some() {
             self.route_paint_present_event();
         }
+        let total_end = Instant::now();
 
         crate::paint::renderer::PaintTiming {
-            total: total_start.elapsed(),
+            total: total_end.saturating_duration_since(total_start),
             resize,
             render_cpu: Duration::ZERO,
             ready_wait,
@@ -1263,6 +1263,12 @@ impl WindowHandle {
             }),
             render,
             present,
+            total_span: crate::paint::renderer::TimingSpan::new(total_start, total_end),
+            resize_span: crate::paint::renderer::TimingSpan::new(total_start, notify_start),
+            ready_wait_span,
+            pre_present_notify_span: present
+                .map(|_| crate::paint::renderer::TimingSpan::new(notify_start, notify_start + pre_present_notify))
+                .unwrap_or_default(),
         }
     }
 
@@ -1340,19 +1346,27 @@ impl WindowHandle {
         let box_tree_duration = self.commit_box_tree();
         let paint = self.paint();
         let capture_output = self.capture_image();
-        let update = FrameTimingAccumulator {
-            style: style_duration,
+        let mut update = FrameTimingAccumulator {
+            style: style_duration.duration(),
             layout: layout_timing.total,
             taffy: layout_timing.taffy,
             box_tree_update: layout_timing.box_tree_update,
             box_tree_pending_updates: Duration::ZERO,
-            box_tree_commit: box_tree_duration,
+            box_tree_commit: box_tree_duration.duration(),
+            ..Default::default()
         };
-        let capture_end = Instant::now();
-        let capture_start = capture_end
-            .checked_sub(update.total() + paint.total)
-            .unwrap_or(capture_end);
-        let timings = Self::build_timing_report("Capture Cycle", capture_start, update, paint);
+        update.push_span(style_duration);
+        if let Some(span) = layout_timing.total_span {
+            update.push_span(span);
+        }
+        if let Some(span) = layout_timing.taffy_span {
+            update.push_span(span);
+        }
+        if let Some(span) = layout_timing.box_tree_update_span {
+            update.push_span(span);
+        }
+        update.push_span(box_tree_duration);
+        let timings = Self::build_timing_report(update, paint);
         let window_size = self.window_state.root_size;
         let state = CaptureState::collect_from(self.id, &self.window_state);
 
@@ -1418,7 +1432,8 @@ impl WindowHandle {
 
                 if needs_style {
                     let style = self.style();
-                    self.pending_timing.style += style;
+                    self.pending_timing.style += style.duration();
+                    self.pending_timing.push_span(style);
                 }
 
                 if self.needs_layout() {
@@ -1426,21 +1441,33 @@ impl WindowHandle {
                     self.pending_timing.layout += layout.total;
                     self.pending_timing.taffy += layout.taffy;
                     self.pending_timing.box_tree_update += layout.box_tree_update;
+                    if let Some(span) = layout.total_span {
+                        self.pending_timing.push_span(span);
+                    }
+                    if let Some(span) = layout.taffy_span {
+                        self.pending_timing.push_span(span);
+                    }
+                    if let Some(span) = layout.box_tree_update_span {
+                        self.pending_timing.push_span(span);
+                    }
                 }
 
                 if self.needs_box_tree_update() {
                     let box_tree_update = self.update_box_tree_from_layout();
-                    self.pending_timing.box_tree_update += box_tree_update;
+                    self.pending_timing.box_tree_update += box_tree_update.duration();
+                    self.pending_timing.push_span(box_tree_update);
                 }
 
                 if !self.window_state.views_needing_box_tree_update.is_empty() {
                     let pending_updates = self.process_pending_box_tree_updates();
-                    self.pending_timing.box_tree_pending_updates += pending_updates;
+                    self.pending_timing.box_tree_pending_updates += pending_updates.duration();
+                    self.pending_timing.push_span(pending_updates);
                 }
 
                 if self.needs_box_tree_commit() {
                     let commit = self.commit_box_tree();
-                    self.pending_timing.box_tree_commit += commit;
+                    self.pending_timing.box_tree_commit += commit.duration();
+                    self.pending_timing.push_span(commit);
                 }
 
                 iterations += 1;
@@ -1491,7 +1518,8 @@ impl WindowHandle {
 
                 if needs_style {
                     let style = self.style();
-                    self.pending_timing.style += style;
+                    self.pending_timing.style += style.duration();
+                    self.pending_timing.push_span(style);
                 }
 
                 if self.needs_layout() {
@@ -1499,22 +1527,34 @@ impl WindowHandle {
                     self.pending_timing.layout += layout.total;
                     self.pending_timing.taffy += layout.taffy;
                     self.pending_timing.box_tree_update += layout.box_tree_update;
+                    if let Some(span) = layout.total_span {
+                        self.pending_timing.push_span(span);
+                    }
+                    if let Some(span) = layout.taffy_span {
+                        self.pending_timing.push_span(span);
+                    }
+                    if let Some(span) = layout.box_tree_update_span {
+                        self.pending_timing.push_span(span);
+                    }
                 }
 
                 if self.needs_box_tree_update() {
                     let box_tree_update = self.update_box_tree_from_layout();
-                    self.pending_timing.box_tree_update += box_tree_update;
+                    self.pending_timing.box_tree_update += box_tree_update.duration();
+                    self.pending_timing.push_span(box_tree_update);
                 }
 
                 // Process any pending individual box tree updates after layout
                 if !self.window_state.views_needing_box_tree_update.is_empty() {
                     let pending_updates = self.process_pending_box_tree_updates();
-                    self.pending_timing.box_tree_pending_updates += pending_updates;
+                    self.pending_timing.box_tree_pending_updates += pending_updates.duration();
+                    self.pending_timing.push_span(pending_updates);
                 }
 
                 if self.needs_box_tree_commit() {
                     let commit = self.commit_box_tree();
-                    self.pending_timing.box_tree_commit += commit;
+                    self.pending_timing.box_tree_commit += commit.duration();
+                    self.pending_timing.push_span(commit);
                 }
             }
             if !self.has_deferred_update_messages() {

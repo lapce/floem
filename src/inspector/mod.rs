@@ -622,7 +622,6 @@ pub struct Capture {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TimingKind {
     Total,
-    Update,
     Style,
     Layout,
     BoxTree,
@@ -894,7 +893,6 @@ fn format_duration_ms(duration: Duration) -> String {
 fn timing_color(kind: TimingKind, theme: &DesignSystem) -> Color {
     match kind {
         TimingKind::Total => theme.primary_muted(),
-        TimingKind::Update => theme.primary(),
         TimingKind::Style => theme.success(),
         TimingKind::Layout => theme.warning(),
         TimingKind::BoxTree => theme

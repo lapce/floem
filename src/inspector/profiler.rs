@@ -145,7 +145,6 @@ fn timeline_item_color(kind: &TimelineItemKind) -> Color {
     match kind {
         TimelineItemKind::Event => Color::from_rgb8(54, 111, 196),
         TimelineItemKind::Timing(TimingKind::Total) => Color::from_rgb8(41, 78, 163),
-        TimelineItemKind::Timing(TimingKind::Update) => Color::from_rgb8(56, 105, 173),
         TimelineItemKind::Timing(TimingKind::Style) => Color::from_rgb8(29, 142, 120),
         TimelineItemKind::Timing(TimingKind::Layout) => Color::from_rgb8(201, 138, 33),
         TimelineItemKind::Timing(TimingKind::BoxTree) => Color::from_rgb8(188, 130, 36),
@@ -347,8 +346,7 @@ fn frame_for_visible_range(
             let end = start + frame.duration.as_secs_f64();
             center >= start && center <= end
         })
-        .cloned()
-        ;
+        .cloned();
     containing.or_else(|| {
         frames
             .iter()
@@ -607,7 +605,8 @@ impl ProfilerTimelineView {
         if start < 0.0 {
             start = 0.0;
         }
-        self.viewport.fit_range(start..end.max(start + f64::MIN_POSITIVE));
+        self.viewport
+            .fit_range(start..end.max(start + f64::MIN_POSITIVE));
     }
 
     fn pan_viewport_by_world(&mut self, delta: f64) {
@@ -649,7 +648,8 @@ impl ProfilerTimelineView {
         if start < 0.0 {
             start = 0.0;
         }
-        self.viewport.fit_range(start..end.max(start + f64::MIN_POSITIVE));
+        self.viewport
+            .fit_range(start..end.max(start + f64::MIN_POSITIVE));
     }
 
     fn sync_selected_frame(&mut self, selected_frame: Option<Rc<ProfileFrameData>>) -> bool {
@@ -955,14 +955,6 @@ impl View for ProfilerTimelineView {
                     &Brush::Solid(color.with_alpha(if hovered { 0.9 } else { 0.7 })),
                 )
                 .draw();
-            let stroke_scale = transform_max_scale(cx.world_transform).max(f64::MIN_POSITIVE);
-            cx.painter
-                .stroke(
-                    rect,
-                    &Stroke::new(0.5 / stroke_scale),
-                    &Brush::Solid(self.palette.border),
-                )
-                .draw();
         }
     }
 
@@ -1032,7 +1024,11 @@ struct OverviewAccum {
 }
 
 fn mix_overview_color(base: Color, accent: Color, amount: f64) -> Color {
-    base.lerp(accent, amount.clamp(0.0, 1.0) as f32, HueDirection::default())
+    base.lerp(
+        accent,
+        amount.clamp(0.0, 1.0) as f32,
+        HueDirection::default(),
+    )
 }
 
 fn smooth_overview_bins(bins: &mut [OverviewBin]) {
@@ -1080,9 +1076,9 @@ fn build_overview_bins(
 
             let start_idx =
                 ((start / total_duration_secs) * OVERVIEW_BIN_COUNT as f64).floor() as usize;
-            let end_idx =
-                (((end / total_duration_secs) * OVERVIEW_BIN_COUNT as f64).ceil() as usize)
-                    .min(OVERVIEW_BIN_COUNT.saturating_sub(1));
+            let end_idx = (((end / total_duration_secs) * OVERVIEW_BIN_COUNT as f64).ceil()
+                as usize)
+                .min(OVERVIEW_BIN_COUNT.saturating_sub(1));
 
             for (idx, acc) in accum
                 .iter_mut()
@@ -1222,9 +1218,10 @@ impl ProfilerOverviewView {
 
     fn visible_width_secs(&self) -> f64 {
         let (start, end) = self.visible_range.get_untracked();
-        (end - start)
-            .abs()
-            .clamp(f64::MIN_POSITIVE, self.total_duration_secs.max(f64::MIN_POSITIVE))
+        (end - start).abs().clamp(
+            f64::MIN_POSITIVE,
+            self.total_duration_secs.max(f64::MIN_POSITIVE),
+        )
     }
 
     fn request_center_at(&mut self, point: Point, window_state: &mut crate::WindowState) {
@@ -1246,12 +1243,18 @@ impl ProfilerOverviewView {
         window_state.request_paint(self.id);
     }
 
-    fn request_zoom_at(&mut self, point: Point, factor: f64, window_state: &mut crate::WindowState) {
+    fn request_zoom_at(
+        &mut self,
+        point: Point,
+        factor: f64,
+        window_state: &mut crate::WindowState,
+    ) {
         if let Some(anchor_time) = self.time_at_local_point(point) {
-            self.viewport_request.set(Some(ProfilerViewportRequest::ZoomAround {
-                anchor_time,
-                factor,
-            }));
+            self.viewport_request
+                .set(Some(ProfilerViewportRequest::ZoomAround {
+                    anchor_time,
+                    factor,
+                }));
         }
         window_state.request_paint(self.id);
     }
@@ -1350,11 +1353,7 @@ impl View for ProfilerOverviewView {
             .fill(outer, &Brush::Solid(self.palette.background))
             .draw();
         cx.painter
-            .stroke(
-                outer,
-                &Stroke::new(1.0),
-                &Brush::Solid(self.palette.border),
-            )
+            .stroke(outer, &Stroke::new(1.0), &Brush::Solid(self.palette.border))
             .draw();
 
         let inner = self.inner_rect();
@@ -1632,21 +1631,21 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
     let frames_list = list(frame_views);
     let frame_list_selection = frames_list.selection();
     let frames_list = frames_list.on_select(move |idx| {
-            if suppress_frame_list_select.get_untracked() {
-                return;
-            }
-            let frame = idx.and_then(|idx| frames_clone.get(idx)).cloned();
-            let new_index = frame.as_ref().map(|frame| frame.index);
-            let current_index = selected_frame
-                .get_untracked()
-                .as_ref()
-                .map(|frame| frame.index);
-            if current_index == new_index {
-                return;
-            }
-            active_frame_index.set(new_index);
-            selected_frame.set(frame);
-        });
+        if suppress_frame_list_select.get_untracked() {
+            return;
+        }
+        let frame = idx.and_then(|idx| frames_clone.get(idx)).cloned();
+        let new_index = frame.as_ref().map(|frame| frame.index);
+        let current_index = selected_frame
+            .get_untracked()
+            .as_ref()
+            .map(|frame| frame.index);
+        if current_index == new_index {
+            return;
+        }
+        active_frame_index.set(new_index);
+        selected_frame.set(frame);
+    });
 
     let frames_for_visible = frames.clone();
     let visible_frame_index = Memo::new(move |_| {
@@ -1669,11 +1668,11 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
     }
 
     let frames_list = frames_list.style(|s| {
-            s.width_full().gap(8.0).class(ListItemClass, |s| {
-                s.selected(|s| s.unset_background().hover(|s| s.unset_background()))
-                    .hover(|s| s.unset_background())
-            })
-        });
+        s.width_full().gap(8.0).class(ListItemClass, |s| {
+            s.selected(|s| s.unset_background().hover(|s| s.unset_background()))
+                .hover(|s| s.unset_background())
+        })
+    });
 
     let frames_panel = profiler_panel(
         Stack::vertical((
