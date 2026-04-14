@@ -96,22 +96,14 @@ impl ApplicationHandle {
         self.redraw_requested_windows.remove(&window_id);
     }
 
-    fn should_request_redraw_now(
-        has_pending_render: bool,
-        can_render_now: bool,
-        redraw_deadline: Instant,
-        now: Instant,
-    ) -> bool {
-        has_pending_render && can_render_now && now >= redraw_deadline
-    }
-
-    fn present_window_if_ready(&mut self, window_id: WindowId) -> bool {
+    /// Presents a window's prepared frame if one exists.
+    ///
+    /// The app handle does not choose frame contents or paint; it only asks the
+    /// window to perform the present stage and then finalizes profiling state.
+    fn present_window_frame(&mut self, window_id: WindowId) -> bool {
         let Some(handle) = self.window_handles.get_mut(&window_id) else {
             return false;
         };
-        if !handle.has_ready_frame() {
-            return false;
-        }
         let start = Instant::now();
         let presented = handle.present_frame();
         let end = Instant::now();
@@ -143,6 +135,44 @@ impl ApplicationHandle {
         if timing.is_some() {
             profile.current.timing = timing;
             profile.next_frame();
+        }
+    }
+
+    /// Applies one window's scheduling output to the event loop.
+    ///
+    /// This consumes the deadlines produced by `WindowHandle::advance_frame`
+    /// and turns them into timers or immediate wakeups. It does not decide
+    /// frame policy itself.
+    fn apply_window_frame_schedule(
+        &mut self,
+        window_id: WindowId,
+        schedule: crate::window::handle::FrameSchedule,
+        event_loop: &dyn ActiveEventLoop,
+    ) {
+        match schedule.prepare {
+            Some(deadline) => {
+                if Instant::now() >= deadline {
+                    self.cancel_paced_prepare_timer(window_id, event_loop);
+                    self.request_update();
+                } else {
+                    self.ensure_paced_prepare_timer(window_id, deadline, event_loop);
+                }
+            }
+            _ => self.cancel_paced_prepare_timer(window_id, event_loop),
+        }
+
+        match schedule.redraw {
+            Some(deadline) => {
+                if Instant::now() >= deadline {
+                    self.cancel_paced_redraw_timer(window_id, event_loop);
+                    if !self.present_window_frame(window_id) {
+                        self.request_window_redraw(window_id);
+                    }
+                } else {
+                    self.ensure_paced_redraw_timer(window_id, deadline, event_loop);
+                }
+            }
+            None => self.cancel_paced_redraw_timer(window_id, event_loop),
         }
     }
 
@@ -203,9 +233,20 @@ impl ApplicationHandle {
                     pos,
                 });
             }
-            UserEvent::RenderWorkerReady { window_id } => {
+            UserEvent::FrameReady {
+                window_id,
+                frame_id,
+            } => {
+                let mut ready_frame_accepted = false;
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    handle.sync_frame_clock_activity();
+                    let accepted = handle.accept_frame_ready(frame_id);
+                    handle.refresh_frame_activity();
+                    ready_frame_accepted = accepted;
+                }
+                if ready_frame_accepted && !self.present_window_frame(window_id) {
+                    if let Some(handle) = self.window_handles.get(&window_id) {
+                        handle.window.request_redraw();
+                    }
                 }
                 self.process_window_frame_from_event(window_id, event_loop);
             }
@@ -214,13 +255,8 @@ impl ApplicationHandle {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
                     handle.record_profile_instant("VSync", Instant::now());
                     handle.receive_frame_tick(tick);
-                    handle.sync_frame_clock_activity();
-                    if handle.can_render_now()
-                        && (handle.needs_frame_prepare()
-                            || handle.window_state.has_pending_begin_frame_callbacks()
-                            || handle.window_state.has_pending_render()
-                            || handle.has_ready_frame())
-                    {
+                    handle.refresh_frame_activity();
+                    if handle.can_render_now() && handle.has_frame_work() {
                         self.request_update();
                     }
                 }
@@ -498,15 +534,11 @@ impl ApplicationHandle {
             }
             WindowEvent::Occluded(occluded) => {
                 window_handle.set_occluded(occluded);
-                if !occluded
-                    && (window_handle.window_state.has_next_frame_work()
-                        || window_handle
-                            .window_state
-                            .has_pending_begin_frame_callbacks()
-                        || window_handle.window_state.has_pending_render()
-                        || window_handle.has_ready_frame())
-                {
-                    self.request_update();
+                if !occluded {
+                    window_handle.refresh_frame_activity();
+                    if window_handle.has_frame_work() {
+                        self.request_update();
+                    }
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -554,10 +586,10 @@ impl ApplicationHandle {
             }
         }
         if is_redraw {
-            self.schedule_window_frame_if_needed(window_id, event_loop);
+            self.refresh_window_frame_schedule(window_id, event_loop);
         }
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
-            handle.sync_frame_clock_activity();
+            handle.refresh_frame_activity();
         }
         if !is_redraw {
             self.process_window_frame_from_event(window_id, event_loop);
@@ -573,41 +605,15 @@ impl ApplicationHandle {
         let start = Instant::now();
         let budget = Self::UPDATE_BUDGET;
 
-        let Some((done, frame, deadlines)) =
-            self.window_handles.get_mut(&window_id).map(|handle| {
-                let done = handle.process_update_budgeted(start, budget);
-                handle.sync_frame_clock_activity();
-                (done, handle.advance_frame(), handle.frame_deadlines())
-            })
-        else {
+        let Some((done, schedule)) = self.window_handles.get_mut(&window_id).map(|handle| {
+            let done = handle.process_update_budgeted(start, budget);
+            handle.refresh_frame_activity();
+            (done, handle.advance_frame())
+        }) else {
             return;
         };
 
-        let request_redraw_now = Self::should_request_redraw_now(
-            frame.has_frame_to_present,
-            frame.can_render_now,
-            deadlines.redraw,
-            Instant::now(),
-        );
-
-        if frame.can_render_now && frame.needs_prepare {
-            self.ensure_paced_prepare_timer(window_id, deadlines.prepare, event_loop);
-        } else {
-            self.cancel_paced_prepare_timer(window_id, event_loop);
-        }
-
-        if request_redraw_now {
-            self.cancel_paced_redraw_timer(window_id, event_loop);
-            if !frame.has_frame_to_present || !self.present_window_if_ready(window_id) {
-                self.request_window_redraw(window_id);
-            } else {
-                self.schedule_window_frame_if_needed(window_id, event_loop);
-            }
-        } else if frame.has_frame_to_present {
-            self.ensure_paced_redraw_timer(window_id, deadlines.redraw, event_loop);
-        } else {
-            self.cancel_paced_redraw_timer(window_id, event_loop);
-        }
+        self.apply_window_frame_schedule(window_id, schedule, event_loop);
 
         if !done {
             self.request_update();
@@ -871,44 +877,15 @@ impl ApplicationHandle {
         event_loop: &dyn ActiveEventLoop,
     ) -> bool {
         let mut any_work_remaining = false;
-        let mut paced_prepare_timer_changes = Vec::new();
-        let mut paced_redraw_timer_changes = Vec::new();
-        let mut redraw_requests = Vec::new();
-        let mut direct_present_requests = Vec::new();
+        let mut schedules = Vec::new();
 
         for (window_id, handle) in self.window_handles.iter_mut() {
             let done = handle.process_update_budgeted(start, budget);
-            handle.sync_frame_clock_activity();
+            handle.refresh_frame_activity();
             if !done {
                 any_work_remaining = true;
             }
-            let frame = handle.advance_frame();
-            let deadlines = handle.frame_deadlines();
-            let should_request_redraw = Self::should_request_redraw_now(
-                frame.has_frame_to_present,
-                frame.can_render_now,
-                deadlines.redraw,
-                Instant::now(),
-            );
-
-            paced_prepare_timer_changes.push((
-                *window_id,
-                frame.can_render_now && frame.needs_prepare,
-                deadlines.prepare,
-            ));
-            paced_redraw_timer_changes.push((
-                *window_id,
-                frame.has_frame_to_present && !should_request_redraw,
-                deadlines.redraw,
-            ));
-
-            if should_request_redraw {
-                if frame.has_frame_to_present {
-                    direct_present_requests.push(*window_id);
-                } else {
-                    redraw_requests.push(*window_id);
-                }
-            }
+            schedules.push((*window_id, handle.advance_frame()));
 
             if !done || start.elapsed() >= budget {
                 any_work_remaining = true;
@@ -928,82 +905,33 @@ impl ApplicationHandle {
             }
         }
 
-        for (window_id, should_run, deadline) in paced_prepare_timer_changes {
-            if should_run {
-                self.ensure_paced_prepare_timer(window_id, deadline, event_loop);
-            } else {
-                self.cancel_paced_prepare_timer(window_id, event_loop);
-            }
-        }
-
-        for (window_id, should_run, deadline) in paced_redraw_timer_changes {
-            if should_run {
-                self.ensure_paced_redraw_timer(window_id, deadline, event_loop);
-            } else {
-                self.cancel_paced_redraw_timer(window_id, event_loop);
-            }
-        }
-
-        for window_id in redraw_requests {
-            self.request_window_redraw(window_id);
-        }
-
-        for window_id in direct_present_requests {
-            if !self.present_window_if_ready(window_id) {
-                self.request_window_redraw(window_id);
-            } else {
-                self.schedule_window_frame_if_needed(window_id, event_loop);
-            }
+        for (window_id, schedule) in schedules {
+            self.apply_window_frame_schedule(window_id, schedule, event_loop);
         }
 
         any_work_remaining
     }
 
-    fn schedule_window_frame_if_needed(
+    /// Re-runs one window's frame advancement and applies the resulting
+    /// schedule to the event loop.
+    ///
+    /// This is used after platform events that may have changed readiness so
+    /// the app loop can refresh timers from window-owned frame state.
+    fn refresh_window_frame_schedule(
         &mut self,
         window_id: WindowId,
         event_loop: &dyn ActiveEventLoop,
     ) {
-        let Some((frame, deadlines)) = self
+        let Some(schedule) = self
             .window_handles
             .get_mut(&window_id)
-            .map(|handle| (handle.advance_frame(), handle.frame_deadlines()))
+            .map(|handle| handle.advance_frame())
         else {
             self.cancel_paced_redraw_timer(window_id, event_loop);
             return;
         };
 
-        if !frame.can_render_now {
-            self.cancel_paced_prepare_timer(window_id, event_loop);
-            self.cancel_paced_redraw_timer(window_id, event_loop);
-            return;
-        }
-
-        if frame.needs_prepare {
-            let should_prepare_now = Instant::now() >= deadlines.prepare;
-            if should_prepare_now {
-                self.cancel_paced_prepare_timer(window_id, event_loop);
-                self.request_update();
-            } else {
-                self.ensure_paced_prepare_timer(window_id, deadlines.prepare, event_loop);
-            }
-        } else {
-            self.cancel_paced_prepare_timer(window_id, event_loop);
-        }
-
-        if Self::should_request_redraw_now(
-            frame.has_frame_to_present,
-            frame.can_render_now,
-            deadlines.redraw,
-            Instant::now(),
-        ) {
-            self.cancel_paced_redraw_timer(window_id, event_loop);
-            self.request_window_redraw(window_id);
-        } else if frame.has_frame_to_present {
-            self.ensure_paced_redraw_timer(window_id, deadlines.redraw, event_loop);
-        } else {
-            self.cancel_paced_redraw_timer(window_id, event_loop);
-        }
+        self.apply_window_frame_schedule(window_id, schedule, event_loop);
     }
 
     fn frame_duration_for_window(&self, window_id: &winit::window::WindowId) -> Duration {
@@ -1240,37 +1168,6 @@ impl ApplicationHandle {
                 handle.show_context_menu(item.menu.0, item.pos);
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ApplicationHandle;
-    use std::time::{Duration, Instant};
-
-    #[test]
-    fn redraw_now_requires_deadline_to_have_arrived() {
-        let now = Instant::now();
-        assert!(!ApplicationHandle::should_request_redraw_now(
-            true,
-            true,
-            now + Duration::from_millis(1),
-            now,
-        ));
-    }
-
-    #[test]
-    fn redraw_now_requires_pending_render_and_renderability() {
-        let now = Instant::now();
-        assert!(!ApplicationHandle::should_request_redraw_now(
-            false, true, now, now
-        ));
-        assert!(!ApplicationHandle::should_request_redraw_now(
-            true, false, now, now
-        ));
-        assert!(ApplicationHandle::should_request_redraw_now(
-            true, true, now, now
-        ));
     }
 }
 

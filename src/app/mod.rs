@@ -167,8 +167,9 @@ pub(crate) enum UserEvent {
         menu: MenuWrapper,
         pos: Option<Point>,
     },
-    RenderWorkerReady {
+    FrameReady {
         window_id: WindowId,
+        frame_id: u64,
     },
     #[cfg(all(feature = "subduction", target_os = "macos"))]
     SubductionFrameTick {

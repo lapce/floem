@@ -66,7 +66,7 @@ use peniko::kurbo::Size;
 use pixels::{Pixels, SurfaceTexture};
 use softbuffer::{Context, Surface};
 use wgpu::util::TextureBlitter;
-use winit::window::Window;
+use winit::window::{Window, WindowId};
 
 use crate::app::UserEvent;
 use crate::platform::{Duration, Instant};
@@ -382,17 +382,23 @@ pub struct RenderTiming {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct PaintTiming {
+pub struct RenderPassTiming {
     pub total: Duration,
     pub resize: Duration,
     pub render_cpu: Duration,
+    pub render: Option<RenderTiming>,
+    pub total_span: TimingSpan,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PresentPassTiming {
+    pub total: Duration,
+    pub resize: Duration,
     pub ready_wait: Duration,
     pub pre_present_notify: Duration,
     pub present_cpu: Duration,
-    pub render: Option<RenderTiming>,
     pub present: Option<PresentTiming>,
     pub total_span: TimingSpan,
-    pub resize_span: TimingSpan,
     pub ready_wait_span: TimingSpan,
     pub pre_present_notify_span: TimingSpan,
 }
@@ -430,25 +436,53 @@ pub struct CaptureOutput {
     pub timing: CaptureTiming,
 }
 
-pub(crate) enum PreparedFrame {
-    #[cfg(not(target_arch = "wasm32"))]
-    Threaded(RenderedFrame),
-    #[cfg(target_arch = "wasm32")]
-    GpuTexture(wgpu::Texture),
-    CpuImage(RgbaImage),
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PresentFrameError {
+    MissingFrame,
 }
 
 pub(crate) trait WindowRenderer {
+    /// Updates backend-owned presentation resources to the requested window
+    /// size.
+    ///
+    /// This is presentation/backend setup only. It does not paint, prepare a
+    /// frame, or present one.
     fn resize(&mut self, width: u32, height: u32);
-    fn render(&mut self, size: Size, source: &mut dyn RenderSource) -> Option<RenderTiming>;
-    fn poll_prepared_frame(&mut self) -> Option<PreparedFrame> {
-        None
+
+    /// Runs one backend render operation from the supplied scene source.
+    ///
+    /// This is the renderer-internal notion of "render": consume a scene and
+    /// begin or complete backend preparation of a frame. The window layer calls
+    /// this from its paint stage.
+    ///
+    /// Returning `Some(RenderTiming)` means the backend accepted paint work for
+    /// the supplied frame id. A non-zero frame id participates in the live
+    /// window frame pipeline and becomes ready later through an explicit
+    /// `FrameReady` app event.
+    fn render(
+        &mut self,
+        size: Size,
+        source: &mut dyn RenderSource,
+        frame_id: u64,
+    ) -> Option<RenderTiming>;
+
+    /// Presents the explicit prepared frame selected by the caller.
+    ///
+    /// This must not paint or poll for work. It only consumes the prepared
+    /// frame identified by `frame_id` and attempts the backend/platform present
+    /// step.
+    fn present_frame(&mut self, _frame_id: u64) -> Result<PresentTiming, PresentFrameError> {
+        Err(PresentFrameError::MissingFrame)
     }
-    fn present_frame(&mut self, _frame: PreparedFrame) -> Option<PresentTiming> {
-        None
-    }
+
+    /// Captures output from the supplied scene source without going through the
+    /// live window frame pipeline.
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput;
+
+    /// Returns a human-readable backend description for diagnostics.
     fn debug_info(&mut self) -> String;
+
+    /// Returns the platform surface when the backend presents directly to one.
     fn gpu_surface(&self) -> Option<&wgpu::Surface<'static>> {
         None
     }
@@ -461,7 +495,12 @@ struct NullWindowBackend {
 impl WindowRenderer for NullWindowBackend {
     fn resize(&mut self, _width: u32, _height: u32) {}
 
-    fn render(&mut self, _size: Size, source: &mut dyn RenderSource) -> Option<RenderTiming> {
+    fn render(
+        &mut self,
+        _size: Size,
+        source: &mut dyn RenderSource,
+        _frame_id: u64,
+    ) -> Option<RenderTiming> {
         source.paint_into(&mut self.renderer);
         None
     }
@@ -482,8 +521,9 @@ impl WindowRenderer for NullWindowBackend {
 )]
 struct ImageWindowRenderer {
     backend: CpuRenderer,
+    window_id: WindowId,
     target: CpuWindowTarget<Arc<dyn Window>>,
-    prepared_frame: Option<RgbaImage>,
+    prepared_frame: Option<(u64, RgbaImage)>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -491,22 +531,27 @@ struct ThreadedWindowRenderer {
     name: &'static str,
     presenter: ThreadedRendererPresenter,
     worker: OffscreenRenderWorker,
-    queued_job: Option<OffscreenRenderJob>,
-    ready_frame: Option<RenderedFrame>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 struct OffscreenRenderWorker {
     sender: mpsc::Sender<RenderWorkerCommand>,
-    receiver: mpsc::Receiver<RenderedFrame>,
+    receiver: mpsc::Receiver<ReadyFrame>,
     join_handle: Option<thread::JoinHandle<()>>,
     in_flight: bool,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 struct OffscreenRenderJob {
+    frame_id: u64,
     scene: Scene,
     size: Size,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct ReadyFrame {
+    frame_id: u64,
+    frame: RenderedFrame,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -572,6 +617,7 @@ impl RendererInit {
 #[cfg(not(target_arch = "wasm32"))]
 enum RenderWorkerCommand {
     Render {
+        frame_id: u64,
         scene: Scene,
         size: Size,
     },
@@ -607,6 +653,7 @@ fn build_window_renderer(
     match spec.0 {
         RendererSpecInner::Cpu(backend) => Ok(Box::new(ImageWindowRenderer {
             backend,
+            window_id: cx.window.id(),
             target: CpuWindowTarget::new(cx.window, size.width as u32, size.height as u32)?,
             prepared_frame: None,
         })),
@@ -620,6 +667,7 @@ fn build_window_renderer(
             let surface = surface.ok_or_else(|| "renderer requires GPU surface".to_string())?;
             Ok(Box::new(TargetGpuWindowRenderer {
                 backend,
+                window_id: cx.window.id(),
                 target: GpuWindowTarget::new(
                     &gpu_resources,
                     surface,
@@ -669,8 +717,6 @@ impl ThreadedWindowRenderer {
             name: init.name(),
             presenter,
             worker,
-            queued_job: None,
-            ready_frame: None,
         })
     }
 
@@ -682,13 +728,6 @@ impl ThreadedWindowRenderer {
 
     fn submit_job(&mut self, job: OffscreenRenderJob) {
         self.worker.submit(job);
-    }
-
-    fn poll_worker(&mut self) {
-        self.ready_frame = self
-            .worker
-            .try_take_ready_frame()
-            .or_else(|| self.ready_frame.take());
     }
 
     fn present_frame(&mut self, frame: RenderedFrame) -> Option<PresentTiming> {
@@ -752,11 +791,19 @@ impl OffscreenRenderWorker {
                 }
                 while let Ok(command) = command_rx.recv() {
                     match command {
-                        RenderWorkerCommand::Render { mut scene, size } => {
+                        RenderWorkerCommand::Render {
+                            frame_id,
+                            mut scene,
+                            size,
+                        } => {
                             if let Some(frame) = render_offscreen(&mut backend, &mut scene, size) {
-                                let _ = result_tx.send(frame);
-                                Application::send_proxy_event(UserEvent::RenderWorkerReady {
+                                if frame_id == 0 {
+                                    continue;
+                                }
+                                let _ = result_tx.send(ReadyFrame { frame_id, frame });
+                                Application::send_proxy_event(UserEvent::FrameReady {
                                     window_id,
+                                    frame_id,
                                 });
                             }
                         }
@@ -790,6 +837,7 @@ impl OffscreenRenderWorker {
     fn submit(&mut self, job: OffscreenRenderJob) {
         self.sender
             .send(RenderWorkerCommand::Render {
+                frame_id: job.frame_id,
                 scene: job.scene,
                 size: job.size,
             })
@@ -811,13 +859,13 @@ impl OffscreenRenderWorker {
             .expect("render worker thread stopped during capture")
     }
 
-    fn try_take_ready_frame(&mut self) -> Option<RenderedFrame> {
+    fn take_ready_frame(&mut self, frame_id: u64) -> Option<RenderedFrame> {
         let mut latest = self.receiver.try_recv().ok()?;
         while let Ok(next) = self.receiver.try_recv() {
             latest = next;
         }
         self.in_flight = false;
-        Some(latest)
+        (latest.frame_id == frame_id).then_some(latest.frame)
     }
 }
 
@@ -834,8 +882,9 @@ impl Drop for OffscreenRenderWorker {
 #[cfg(target_arch = "wasm32")]
 struct TargetGpuWindowRenderer {
     backend: GpuRenderer,
+    window_id: WindowId,
     target: GpuWindowTarget,
-    ready_frame: Option<wgpu::Texture>,
+    ready_frame: Option<(u64, wgpu::Texture)>,
 }
 
 struct GpuRenderer {
@@ -1332,20 +1381,26 @@ impl WindowRenderer for ThreadedWindowRenderer {
         }
     }
 
-    fn render(&mut self, size: Size, source: &mut dyn RenderSource) -> Option<RenderTiming> {
+    fn render(
+        &mut self,
+        size: Size,
+        source: &mut dyn RenderSource,
+        frame_id: u64,
+    ) -> Option<RenderTiming> {
         let total_start = Instant::now();
         let scene_start = total_start;
         let job = OffscreenRenderJob {
+            frame_id,
             scene: Self::record_scene(source),
             size,
         };
         let scene = scene_start.elapsed();
 
         if self.worker.in_flight {
-            self.queued_job = Some(job);
-        } else {
-            self.submit_job(job);
+            return None;
         }
+
+        self.submit_job(job);
 
         Some(RenderTiming {
             total: total_start.elapsed(),
@@ -1356,24 +1411,21 @@ impl WindowRenderer for ThreadedWindowRenderer {
         })
     }
 
-    fn poll_prepared_frame(&mut self) -> Option<PreparedFrame> {
-        self.poll_worker();
-        self.ready_frame.take().map(PreparedFrame::Threaded)
-    }
+    fn present_frame(&mut self, frame_id: u64) -> Result<PresentTiming, PresentFrameError> {
+        let frame = self
+            .worker
+            .take_ready_frame(frame_id)
+            .ok_or(PresentFrameError::MissingFrame)?;
 
-    fn present_frame(&mut self, frame: PreparedFrame) -> Option<PresentTiming> {
-        let PreparedFrame::Threaded(frame) = frame else {
-            return None;
-        };
-        let present = self.present_frame(frame)?;
-        if let Some(job) = self.queued_job.take() {
-            self.submit_job(job);
-        }
-        Some(present)
+        let present = self
+            .present_frame(frame)
+            .ok_or(PresentFrameError::MissingFrame)?;
+        Ok(present)
     }
 
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {
         self.worker.capture(OffscreenRenderJob {
+            frame_id: 0,
             scene: Self::record_scene(source),
             size,
         })
@@ -1401,7 +1453,12 @@ impl WindowRenderer for TargetGpuWindowRenderer {
         self.target.resize(width, height);
     }
 
-    fn render(&mut self, size: Size, source: &mut dyn RenderSource) -> Option<RenderTiming> {
+    fn render(
+        &mut self,
+        size: Size,
+        source: &mut dyn RenderSource,
+        frame_id: u64,
+    ) -> Option<RenderTiming> {
         let start = Instant::now();
         let prepare_start = Instant::now();
         let width = size.width.max(1.0) as u32;
@@ -1424,7 +1481,13 @@ impl WindowRenderer for TargetGpuWindowRenderer {
                 let texture = backend
                     .render_source_texture(source, width, height)
                     .expect("failed to render gpu target");
-                self.ready_frame = Some(texture);
+                if frame_id != 0 {
+                    self.ready_frame = Some((frame_id, texture));
+                    Application::send_proxy_event(UserEvent::FrameReady {
+                        window_id: self.window_id,
+                        frame_id,
+                    });
+                }
                 let prepare = Duration::ZERO;
                 let scene = prepare_start.elapsed();
                 let finalize = Duration::ZERO;
@@ -1443,7 +1506,13 @@ impl WindowRenderer for TargetGpuWindowRenderer {
                 let texture = backend
                     .render_source_texture(source, width, height)
                     .expect("failed to render gpu target");
-                self.ready_frame = Some(texture);
+                if frame_id != 0 {
+                    self.ready_frame = Some((frame_id, texture));
+                    Application::send_proxy_event(UserEvent::FrameReady {
+                        window_id: self.window_id,
+                        frame_id,
+                    });
+                }
                 let prepare = Duration::ZERO;
                 let scene = prepare_start.elapsed();
                 let finalize = Duration::ZERO;
@@ -1459,7 +1528,13 @@ impl WindowRenderer for TargetGpuWindowRenderer {
                 });
             }
         }
-        self.ready_frame = Some(texture);
+        if frame_id != 0 {
+            self.ready_frame = Some((frame_id, texture));
+            Application::send_proxy_event(UserEvent::FrameReady {
+                window_id: self.window_id,
+                frame_id,
+            });
+        }
         let prepare = Duration::ZERO;
         let scene = prepare_start.elapsed();
         let finalize = Duration::ZERO;
@@ -1475,14 +1550,15 @@ impl WindowRenderer for TargetGpuWindowRenderer {
         })
     }
 
-    fn poll_prepared_frame(&mut self) -> Option<PreparedFrame> {
-        self.ready_frame.take().map(PreparedFrame::GpuTexture)
-    }
-
-    fn present_frame(&mut self, frame: PreparedFrame) -> Option<PresentTiming> {
-        let PreparedFrame::GpuTexture(texture) = frame else {
-            return None;
-        };
+    fn present_frame(&mut self, frame_id: u64) -> Result<PresentTiming, PresentFrameError> {
+        let (ready_frame_id, texture) = self
+            .ready_frame
+            .take()
+            .ok_or(PresentFrameError::MissingFrame)?;
+        if ready_frame_id != frame_id {
+            self.ready_frame = Some((ready_frame_id, texture));
+            return Err(PresentFrameError::MissingFrame);
+        }
         let start = Instant::now();
         let acquire_start = start;
         let surface_texture = self
@@ -1499,7 +1575,7 @@ impl WindowRenderer for TargetGpuWindowRenderer {
         surface_texture.present();
         let present_call = present_call_start.elapsed();
         let end = Instant::now();
-        Some(PresentTiming {
+        Ok(PresentTiming {
             total: start.elapsed(),
             acquire_surface,
             compose,
@@ -1565,7 +1641,12 @@ impl WindowRenderer for ImageWindowRenderer {
         self.target.resize(width, height);
     }
 
-    fn render(&mut self, size: Size, source: &mut dyn RenderSource) -> Option<RenderTiming> {
+    fn render(
+        &mut self,
+        size: Size,
+        source: &mut dyn RenderSource,
+        frame_id: u64,
+    ) -> Option<RenderTiming> {
         let total_start = Instant::now();
         let scene_start = total_start;
         let width = size.width.max(1.0) as u32;
@@ -1576,7 +1657,13 @@ impl WindowRenderer for ImageWindowRenderer {
             .backend
             .render_source_into(source, ImageBufferTarget::from_rgba_image(&mut image))
             .is_ok();
-        self.prepared_frame = rendered.then_some(image);
+        self.prepared_frame = (rendered && frame_id != 0).then_some((frame_id, image));
+        if rendered && frame_id != 0 {
+            Application::send_proxy_event(UserEvent::FrameReady {
+                window_id: self.window_id,
+                frame_id,
+            });
+        }
         Some(RenderTiming {
             total: total_start.elapsed(),
             scene: scene_start.elapsed(),
@@ -1586,15 +1673,16 @@ impl WindowRenderer for ImageWindowRenderer {
         })
     }
 
-    fn poll_prepared_frame(&mut self) -> Option<PreparedFrame> {
-        self.prepared_frame.take().map(PreparedFrame::CpuImage)
-    }
-
-    fn present_frame(&mut self, frame: PreparedFrame) -> Option<PresentTiming> {
-        let PreparedFrame::CpuImage(image) = frame else {
-            return None;
-        };
-        Some(self.target.present_rgba(&image))
+    fn present_frame(&mut self, frame_id: u64) -> Result<PresentTiming, PresentFrameError> {
+        let (ready_frame_id, image) = self
+            .prepared_frame
+            .take()
+            .ok_or(PresentFrameError::MissingFrame)?;
+        if ready_frame_id != frame_id {
+            self.prepared_frame = Some((ready_frame_id, image));
+            return Err(PresentFrameError::MissingFrame);
+        }
+        Ok(self.target.present_rgba(&image))
     }
 
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {

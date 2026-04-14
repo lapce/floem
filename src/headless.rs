@@ -501,7 +501,7 @@ impl HeadlessHarness {
     /// ```
     pub fn paint_and_get_order(&mut self) -> Vec<ViewId> {
         enable_paint_order_tracking();
-        self.window_handle.paint();
+        self.window_handle.paint(0);
         let order = get_paint_order();
         disable_paint_order_tracking();
         order
@@ -539,7 +539,7 @@ impl HeadlessHarness {
     /// Use with `enable_paint_tracking()` and `get_paint_order()` to
     /// verify paint order.
     pub fn paint(&mut self) {
-        self.window_handle.paint();
+        self.window_handle.paint(0);
     }
 
     pub fn last_paint_stats(&self) -> PaintStats {
