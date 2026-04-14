@@ -430,17 +430,25 @@ pub struct CaptureOutput {
     pub timing: CaptureTiming,
 }
 
-pub trait WindowRenderer {
+pub(crate) enum PreparedFrame {
+    #[cfg(not(target_arch = "wasm32"))]
+    Threaded(RenderedFrame),
+    #[cfg(target_arch = "wasm32")]
+    GpuTexture(wgpu::Texture),
+    CpuImage(RgbaImage),
+}
+
+pub(crate) trait WindowRenderer {
     fn resize(&mut self, width: u32, height: u32);
     fn render(&mut self, size: Size, source: &mut dyn RenderSource) -> Option<RenderTiming>;
-    fn present_frame(&mut self) -> Option<PresentTiming> {
+    fn poll_prepared_frame(&mut self) -> Option<PreparedFrame> {
+        None
+    }
+    fn present_frame(&mut self, _frame: PreparedFrame) -> Option<PresentTiming> {
         None
     }
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput;
     fn debug_info(&mut self) -> String;
-    fn has_ready_frame(&mut self) -> bool {
-        false
-    }
     fn gpu_surface(&self) -> Option<&wgpu::Surface<'static>> {
         None
     }
@@ -475,8 +483,7 @@ impl WindowRenderer for NullWindowBackend {
 struct ImageWindowRenderer {
     backend: CpuRenderer,
     target: CpuWindowTarget<Arc<dyn Window>>,
-    scratch: RgbaImage,
-    ready_to_present: bool,
+    prepared_frame: Option<RgbaImage>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -503,13 +510,13 @@ struct OffscreenRenderJob {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-enum RenderedFrame {
+pub(crate) enum RenderedFrame {
     Cpu(RenderedImageFrame),
     Gpu(wgpu::Texture),
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-struct RenderedImageFrame {
+pub(crate) struct RenderedImageFrame {
     image: RgbaImage,
 }
 
@@ -601,8 +608,7 @@ fn build_window_renderer(
         RendererSpecInner::Cpu(backend) => Ok(Box::new(ImageWindowRenderer {
             backend,
             target: CpuWindowTarget::new(cx.window, size.width as u32, size.height as u32)?,
-            scratch: RgbaImage::new(size.width as u32, size.height as u32),
-            ready_to_present: false,
+            prepared_frame: None,
         })),
         RendererSpecInner::Gpu {
             backend,
@@ -1350,9 +1356,15 @@ impl WindowRenderer for ThreadedWindowRenderer {
         })
     }
 
-    fn present_frame(&mut self) -> Option<PresentTiming> {
+    fn poll_prepared_frame(&mut self) -> Option<PreparedFrame> {
         self.poll_worker();
-        let frame = self.ready_frame.take()?;
+        self.ready_frame.take().map(PreparedFrame::Threaded)
+    }
+
+    fn present_frame(&mut self, frame: PreparedFrame) -> Option<PresentTiming> {
+        let PreparedFrame::Threaded(frame) = frame else {
+            return None;
+        };
         let present = self.present_frame(frame)?;
         if let Some(job) = self.queued_job.take() {
             self.submit_job(job);
@@ -1373,11 +1385,6 @@ impl WindowRenderer for ThreadedWindowRenderer {
             ThreadedRendererPresenter::Gpu(_) => "WGPU Surface",
         };
         format!("Renderer: {} (threaded, {presenter})", self.name)
-    }
-
-    fn has_ready_frame(&mut self) -> bool {
-        self.poll_worker();
-        self.ready_frame.is_some()
     }
 
     fn gpu_surface(&self) -> Option<&wgpu::Surface<'static>> {
@@ -1468,8 +1475,14 @@ impl WindowRenderer for TargetGpuWindowRenderer {
         })
     }
 
-    fn present_frame(&mut self) -> Option<PresentTiming> {
-        let texture = self.ready_frame.take()?;
+    fn poll_prepared_frame(&mut self) -> Option<PreparedFrame> {
+        self.ready_frame.take().map(PreparedFrame::GpuTexture)
+    }
+
+    fn present_frame(&mut self, frame: PreparedFrame) -> Option<PresentTiming> {
+        let PreparedFrame::GpuTexture(texture) = frame else {
+            return None;
+        };
         let start = Instant::now();
         let acquire_start = start;
         let surface_texture = self
@@ -1557,16 +1570,13 @@ impl WindowRenderer for ImageWindowRenderer {
         let scene_start = total_start;
         let width = size.width.max(1.0) as u32;
         let height = size.height.max(1.0) as u32;
-        self.scratch.resize(width, height);
+        let mut image = RgbaImage::new(width, height);
         let rendered = self
             .backend
             .backend
-            .render_source_into(
-                source,
-                ImageBufferTarget::from_rgba_image(&mut self.scratch),
-            )
+            .render_source_into(source, ImageBufferTarget::from_rgba_image(&mut image))
             .is_ok();
-        self.ready_to_present = rendered;
+        self.prepared_frame = rendered.then_some(image);
         Some(RenderTiming {
             total: total_start.elapsed(),
             scene: scene_start.elapsed(),
@@ -1576,11 +1586,15 @@ impl WindowRenderer for ImageWindowRenderer {
         })
     }
 
-    fn present_frame(&mut self) -> Option<PresentTiming> {
-        self.ready_to_present.then(|| {
-            self.ready_to_present = false;
-            self.target.present_rgba(&self.scratch)
-        })
+    fn poll_prepared_frame(&mut self) -> Option<PreparedFrame> {
+        self.prepared_frame.take().map(PreparedFrame::CpuImage)
+    }
+
+    fn present_frame(&mut self, frame: PreparedFrame) -> Option<PresentTiming> {
+        let PreparedFrame::CpuImage(image) = frame else {
+            return None;
+        };
+        Some(self.target.present_rgba(&image))
     }
 
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {

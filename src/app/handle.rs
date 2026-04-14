@@ -510,7 +510,7 @@ impl ApplicationHandle {
                 }
             }
             WindowEvent::RedrawRequested => {
-                frame_presented = window_handle.redraw();
+                frame_presented = window_handle.present_frame();
             }
             WindowEvent::PanGesture { .. } => {}
             WindowEvent::DoubleTapGesture { .. } => {}
@@ -573,83 +573,38 @@ impl ApplicationHandle {
         let start = Instant::now();
         let budget = Self::UPDATE_BUDGET;
 
-        let Some((
-            done,
-            can_render_now,
-            needs_frame_prepare,
-            has_pending_render,
-            has_ready_frame_to_present,
-            prepare_deadline,
-            redraw_deadline,
-            request_redraw_now,
-        )) = self.window_handles.get_mut(&window_id).map(|handle| {
-            let done = handle.process_update_budgeted(start, budget);
-            handle.sync_frame_clock_activity();
-
-            let frame_interval = handle
-                .window
-                .current_monitor()
-                .and_then(|m| m.current_video_mode())
-                .and_then(|v| v.refresh_rate_millihertz())
-                .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
-                .unwrap_or(Duration::from_millis(8));
-            let now = Instant::now();
-            handle.refresh_frame_clock(frame_interval, now);
-
-            let should_prepare_frame = handle.should_prepare_frame_now(frame_interval, now);
-
-            if should_prepare_frame {
-                handle.prepare_frame();
-            }
-
-            if handle.can_render_now() {
-                handle.render_frame();
-            }
-
-            let now = Instant::now();
-            let can_render_now = handle.can_render_now();
-            let needs_frame_prepare = handle.needs_frame_prepare();
-            let has_pending_render = handle.has_ready_frame();
-            let has_ready_frame_to_present = handle.has_ready_frame();
-            let prepare_deadline = handle.next_prepare_deadline(frame_interval, now);
-            let redraw_deadline = handle.redraw_deadline(frame_interval, now);
-            let request_redraw_now = Self::should_request_redraw_now(
-                has_pending_render,
-                can_render_now,
-                redraw_deadline,
-                now,
-            );
-
-            (
-                done,
-                can_render_now,
-                needs_frame_prepare,
-                has_pending_render,
-                has_ready_frame_to_present,
-                prepare_deadline,
-                redraw_deadline,
-                request_redraw_now,
-            )
-        })
+        let Some((done, frame, deadlines)) =
+            self.window_handles.get_mut(&window_id).map(|handle| {
+                let done = handle.process_update_budgeted(start, budget);
+                handle.sync_frame_clock_activity();
+                (done, handle.advance_frame(), handle.frame_deadlines())
+            })
         else {
             return;
         };
 
-        if can_render_now && needs_frame_prepare {
-            self.ensure_paced_prepare_timer(window_id, prepare_deadline, event_loop);
+        let request_redraw_now = Self::should_request_redraw_now(
+            frame.has_frame_to_present,
+            frame.can_render_now,
+            deadlines.redraw,
+            Instant::now(),
+        );
+
+        if frame.can_render_now && frame.needs_prepare {
+            self.ensure_paced_prepare_timer(window_id, deadlines.prepare, event_loop);
         } else {
             self.cancel_paced_prepare_timer(window_id, event_loop);
         }
 
         if request_redraw_now {
             self.cancel_paced_redraw_timer(window_id, event_loop);
-            if !has_ready_frame_to_present || !self.present_window_if_ready(window_id) {
+            if !frame.has_frame_to_present || !self.present_window_if_ready(window_id) {
                 self.request_window_redraw(window_id);
             } else {
                 self.schedule_window_frame_if_needed(window_id, event_loop);
             }
-        } else if has_pending_render {
-            self.ensure_paced_redraw_timer(window_id, redraw_deadline, event_loop);
+        } else if frame.has_frame_to_present {
+            self.ensure_paced_redraw_timer(window_id, deadlines.redraw, event_loop);
         } else {
             self.cancel_paced_redraw_timer(window_id, event_loop);
         }
@@ -927,50 +882,28 @@ impl ApplicationHandle {
             if !done {
                 any_work_remaining = true;
             }
-
-            let frame_interval = handle
-                .window
-                .current_monitor()
-                .and_then(|m| m.current_video_mode())
-                .and_then(|v| v.refresh_rate_millihertz())
-                .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
-                .unwrap_or(Duration::from_millis(8));
-            let now = Instant::now();
-            handle.refresh_frame_clock(frame_interval, now);
-            let should_prepare_frame = handle.should_prepare_frame_now(frame_interval, now);
-
-            if should_prepare_frame {
-                handle.prepare_frame();
-            }
-
-            if handle.can_render_now() {
-                handle.render_frame();
-            }
-
-            let now = Instant::now();
-            let prepare_deadline = handle.next_prepare_deadline(frame_interval, now);
-            let redraw_deadline = handle.redraw_deadline(frame_interval, now);
-            let has_ready_frame_to_present = handle.has_ready_frame();
+            let frame = handle.advance_frame();
+            let deadlines = handle.frame_deadlines();
             let should_request_redraw = Self::should_request_redraw_now(
-                has_ready_frame_to_present,
-                handle.can_render_now(),
-                redraw_deadline,
-                now,
+                frame.has_frame_to_present,
+                frame.can_render_now,
+                deadlines.redraw,
+                Instant::now(),
             );
 
             paced_prepare_timer_changes.push((
                 *window_id,
-                handle.can_render_now() && handle.needs_frame_prepare(),
-                prepare_deadline,
+                frame.can_render_now && frame.needs_prepare,
+                deadlines.prepare,
             ));
             paced_redraw_timer_changes.push((
                 *window_id,
-                has_ready_frame_to_present && !should_request_redraw,
-                redraw_deadline,
+                frame.has_frame_to_present && !should_request_redraw,
+                deadlines.redraw,
             ));
 
             if should_request_redraw {
-                if has_ready_frame_to_present {
+                if frame.has_frame_to_present {
                     direct_present_requests.push(*window_id);
                 } else {
                     redraw_requests.push(*window_id);
@@ -1031,66 +964,43 @@ impl ApplicationHandle {
         window_id: WindowId,
         event_loop: &dyn ActiveEventLoop,
     ) {
-        if let Some(handle) = self.window_handles.get_mut(&window_id) {
-            let frame_interval = handle
-                .window
-                .current_monitor()
-                .and_then(|m| m.current_video_mode())
-                .and_then(|v| v.refresh_rate_millihertz())
-                .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
-                .unwrap_or(Duration::from_millis(8));
-            handle.refresh_frame_clock(frame_interval, Instant::now());
-        }
-        let frame_interval = self.frame_duration_for_window(&window_id);
-        let Some((
-            can_render_now,
-            needs_prepare,
-            should_prepare_now,
-            needs_redraw,
-            prepare_deadline,
-            redraw_deadline,
-        )) = self.window_handles.get_mut(&window_id).map(|handle| {
-            let can_render_now = handle.can_render_now();
-            let now = Instant::now();
-            let prepare_deadline = handle.next_prepare_deadline(frame_interval, now);
-            let redraw_deadline = handle.redraw_deadline(frame_interval, now);
-            (
-                can_render_now,
-                handle.needs_frame_prepare(),
-                handle.should_prepare_frame_now(frame_interval, now),
-                handle.has_ready_frame(),
-                prepare_deadline,
-                redraw_deadline,
-            )
-        })
+        let Some((frame, deadlines)) = self
+            .window_handles
+            .get_mut(&window_id)
+            .map(|handle| (handle.advance_frame(), handle.frame_deadlines()))
         else {
             self.cancel_paced_redraw_timer(window_id, event_loop);
             return;
         };
 
-        if !can_render_now {
+        if !frame.can_render_now {
             self.cancel_paced_prepare_timer(window_id, event_loop);
             self.cancel_paced_redraw_timer(window_id, event_loop);
             return;
         }
 
-        let now = Instant::now();
-        if needs_prepare {
+        if frame.needs_prepare {
+            let should_prepare_now = Instant::now() >= deadlines.prepare;
             if should_prepare_now {
                 self.cancel_paced_prepare_timer(window_id, event_loop);
                 self.request_update();
             } else {
-                self.ensure_paced_prepare_timer(window_id, prepare_deadline, event_loop);
+                self.ensure_paced_prepare_timer(window_id, deadlines.prepare, event_loop);
             }
         } else {
             self.cancel_paced_prepare_timer(window_id, event_loop);
         }
 
-        if Self::should_request_redraw_now(needs_redraw, can_render_now, redraw_deadline, now) {
+        if Self::should_request_redraw_now(
+            frame.has_frame_to_present,
+            frame.can_render_now,
+            deadlines.redraw,
+            Instant::now(),
+        ) {
             self.cancel_paced_redraw_timer(window_id, event_loop);
             self.request_window_redraw(window_id);
-        } else if needs_redraw {
-            self.ensure_paced_redraw_timer(window_id, redraw_deadline, event_loop);
+        } else if frame.has_frame_to_present {
+            self.ensure_paced_redraw_timer(window_id, deadlines.redraw, event_loop);
         } else {
             self.cancel_paced_redraw_timer(window_id, event_loop);
         }

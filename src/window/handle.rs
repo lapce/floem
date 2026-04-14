@@ -100,10 +100,34 @@ pub(crate) struct WindowHandle {
     #[cfg(target_os = "macos")]
     next_presents_with_transaction: bool,
     pending_timing: FrameTimingAccumulator,
-    pending_render_timing: Option<crate::paint::renderer::RenderTiming>,
-    ready_frame_available_at: Option<Instant>,
+    frame_pipeline: FramePipeline,
     last_timing_report: Option<TimingReport>,
     frame_clock: Box<dyn FrameClock>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct FrameState {
+    pub(crate) can_render_now: bool,
+    pub(crate) needs_prepare: bool,
+    pub(crate) has_frame_to_present: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct FrameDeadlines {
+    pub(crate) prepare: Instant,
+    pub(crate) redraw: Instant,
+}
+
+enum FramePipeline {
+    Idle,
+    Rendering(crate::paint::renderer::RenderTiming),
+    Prepared(PreparedWindowFrame),
+}
+
+struct PreparedWindowFrame {
+    frame: crate::paint::renderer::PreparedFrame,
+    timing: crate::paint::renderer::RenderTiming,
+    available_at: Instant,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -290,8 +314,7 @@ impl WindowHandle {
             #[cfg(target_os = "macos")]
             next_presents_with_transaction: false,
             pending_timing: FrameTimingAccumulator::default(),
-            pending_render_timing: None,
-            ready_frame_available_at: None,
+            frame_pipeline: FramePipeline::Idle,
             last_timing_report: None,
             frame_clock: new_window_frame_clock(window_id, output_id),
         };
@@ -452,8 +475,7 @@ impl WindowHandle {
             #[cfg(target_os = "macos")]
             next_presents_with_transaction: false,
             pending_timing: FrameTimingAccumulator::default(),
-            pending_render_timing: None,
-            ready_frame_available_at: None,
+            frame_pipeline: FramePipeline::Idle,
             last_timing_report: None,
             frame_clock: new_window_frame_clock(window_id, 0),
         };
@@ -491,8 +513,9 @@ impl WindowHandle {
             let size = LogicalSize::new(rect.width(), rect.height());
             self.size(Size::new(size.width, size.height));
         }
-        // Now that the renderer is initialized, draw the first frame
-        self.redraw();
+        // Now that the renderer is initialized, render and present the first frame.
+        self.render_frame();
+        self.present_frame();
         self.window.set_visible(true);
         self.window_state
             .request_paint(self.window_state.root_view_id);
@@ -908,67 +931,29 @@ impl WindowHandle {
     }
 
     pub(crate) fn present_frame(&mut self) -> bool {
-        matches!(self.paint_state, PaintState::Initialized { .. })
-            && self.paint_state.backend_mut().has_ready_frame()
-            && self.service_frame()
-    }
+        self.poll_prepared_frame();
+        let FramePipeline::Prepared(prepared) =
+            std::mem::replace(&mut self.frame_pipeline, FramePipeline::Idle)
+        else {
+            return false;
+        };
 
-    pub(crate) fn redraw(&mut self) -> bool {
-        if self.has_ready_frame() {
-            self.service_frame()
-        } else {
-            self.prepare_frame();
-            self.service_frame()
+        #[cfg(target_os = "macos")]
+        let presents_with_transaction = self.next_presents_with_transaction;
+        #[cfg(target_os = "macos")]
+        if presents_with_transaction {
+            self.set_presents_with_transaction_now(true);
         }
-    }
 
-    fn service_frame(&mut self) -> bool {
-        let renderer_ready = matches!(self.paint_state, PaintState::Initialized { .. });
-        let has_ready_frame = renderer_ready && self.paint_state.backend_mut().has_ready_frame();
-        let needs_render_submission =
-            renderer_ready && self.needs_render_submission(has_ready_frame);
-        if (needs_render_submission || self.pending_render_timing.is_some() || has_ready_frame)
-            && renderer_ready
-        {
-            #[cfg(target_os = "macos")]
-            let presents_with_transaction = self.next_presents_with_transaction;
-            #[cfg(target_os = "macos")]
-            if presents_with_transaction {
-                self.set_presents_with_transaction_now(true);
-            }
+        let paint = self.present_frame_timing(prepared);
 
-            let paint = self.paint_frame(!has_ready_frame);
-
-            #[cfg(target_os = "macos")]
-            if presents_with_transaction {
-                self.set_presents_with_transaction_now(false);
-                self.next_presents_with_transaction = false;
-            }
-
-            self.window_state.clear_pending_damage();
-            let presented = paint.present.is_some();
-            if presented {
-                let update = mem::take(&mut self.pending_timing);
-                let useful_draw_cpu = paint.total.saturating_sub(
-                    paint
-                        .present
-                        .map(|present| present.acquire_surface)
-                        .unwrap_or(Duration::ZERO),
-                );
-                let frame_end = Instant::now();
-                self.record_profile_instant("FramePresented", frame_end);
-                self.frame_clock
-                    .observe_presented(update.total(), useful_draw_cpu, frame_end);
-                self.last_timing_report = Some(Self::build_timing_report(update, paint));
-            }
-            let frame_still_underway = self.pending_render_timing.is_some()
-                || self.paint_state.backend_mut().has_ready_frame();
-            if presented || !frame_still_underway {
-                self.frame_clock.set_frame_prepared(false);
-            }
-            return presented;
+        #[cfg(target_os = "macos")]
+        if presents_with_transaction {
+            self.set_presents_with_transaction_now(false);
+            self.next_presents_with_transaction = false;
         }
-        false
+
+        self.finish_presented_frame(paint)
     }
 
     fn needs_render_submission(&self, has_ready_frame: bool) -> bool {
@@ -977,7 +962,7 @@ impl WindowHandle {
         }
 
         self.window_state.has_pending_render()
-            && self.pending_render_timing.is_none()
+            && matches!(self.frame_pipeline, FramePipeline::Idle)
             && !has_ready_frame
     }
 
@@ -1003,12 +988,8 @@ impl WindowHandle {
     }
 
     pub(crate) fn has_ready_frame(&mut self) -> bool {
-        let ready = matches!(self.paint_state, PaintState::Initialized { .. })
-            && self.paint_state.backend_mut().has_ready_frame();
-        if ready && self.ready_frame_available_at.is_none() {
-            self.ready_frame_available_at = Some(Instant::now());
-        }
-        ready
+        self.poll_prepared_frame();
+        matches!(self.frame_pipeline, FramePipeline::Prepared(_))
     }
 
     pub(crate) fn redraw_deadline(&mut self, frame_interval: Duration, now: Instant) -> Instant {
@@ -1026,7 +1007,7 @@ impl WindowHandle {
             return false;
         }
 
-        if self.pending_render_timing.is_none() && !self.has_ready_frame() {
+        if matches!(self.frame_pipeline, FramePipeline::Idle) && !self.has_ready_frame() {
             return true;
         }
 
@@ -1039,7 +1020,7 @@ impl WindowHandle {
         now: Instant,
     ) -> Instant {
         let prepare_deadline = self.frame_clock.frame_prepare_deadline(frame_interval, now);
-        if self.pending_render_timing.is_some() || self.has_ready_frame() {
+        if !matches!(self.frame_pipeline, FramePipeline::Idle) || self.has_ready_frame() {
             prepare_deadline.max(self.redraw_deadline(frame_interval, now))
         } else {
             prepare_deadline
@@ -1051,11 +1032,9 @@ impl WindowHandle {
             return false;
         }
 
-        let has_ready_frame = self.paint_state.backend_mut().has_ready_frame();
+        self.poll_prepared_frame();
+        let has_ready_frame = matches!(self.frame_pipeline, FramePipeline::Prepared(_));
         if !self.needs_render_submission(has_ready_frame) {
-            if has_ready_frame && self.ready_frame_available_at.is_none() {
-                self.ready_frame_available_at = Some(Instant::now());
-            }
             return false;
         }
 
@@ -1097,24 +1076,31 @@ impl WindowHandle {
             .backend_mut()
             .render(frame_size, &mut source)
         {
-            self.pending_render_timing = Some(render);
+            self.frame_pipeline = FramePipeline::Rendering(render);
         }
         drop(cx);
-
-        if self.paint_state.backend_mut().has_ready_frame()
-            && self.ready_frame_available_at.is_none()
-        {
-            self.ready_frame_available_at = Some(Instant::now());
-        }
+        self.poll_prepared_frame();
 
         true
     }
 
-    fn take_ready_wait_span(&mut self) -> crate::paint::renderer::TimingSpan {
-        self.ready_frame_available_at
-            .take()
-            .map(|ready_at| crate::paint::renderer::TimingSpan::new(ready_at, Instant::now()))
-            .unwrap_or_default()
+    fn poll_prepared_frame(&mut self) {
+        if !matches!(self.paint_state, PaintState::Initialized { .. }) {
+            return;
+        }
+        let Some(frame) = self.paint_state.backend_mut().poll_prepared_frame() else {
+            return;
+        };
+        let FramePipeline::Rendering(timing) =
+            std::mem::replace(&mut self.frame_pipeline, FramePipeline::Idle)
+        else {
+            return;
+        };
+        self.frame_pipeline = FramePipeline::Prepared(PreparedWindowFrame {
+            frame,
+            timing,
+            available_at: Instant::now(),
+        });
     }
 
     fn current_frame_time(&self) -> FrameTime {
@@ -1161,6 +1147,61 @@ impl WindowHandle {
                 || self.window_state.has_pending_render()
                 || self.has_ready_frame());
         self.frame_clock.set_active(active);
+    }
+
+    pub(crate) fn advance_frame(&mut self) -> FrameState {
+        let frame_interval = self.frame_interval();
+        let now = Instant::now();
+        self.refresh_frame_clock(frame_interval, now);
+
+        if self.should_prepare_frame_now(frame_interval, now) {
+            self.prepare_frame();
+        }
+
+        let can_render_now = self.can_render_now();
+        if can_render_now {
+            self.render_frame();
+        }
+
+        FrameState {
+            can_render_now,
+            needs_prepare: self.needs_frame_prepare(),
+            has_frame_to_present: self.has_ready_frame(),
+        }
+    }
+
+    fn finish_presented_frame(&mut self, paint: crate::paint::renderer::PaintTiming) -> bool {
+        self.window_state.clear_pending_damage();
+        let presented = paint.present.is_some();
+        if presented {
+            let update = mem::take(&mut self.pending_timing);
+            let useful_draw_cpu = paint.total.saturating_sub(
+                paint
+                    .present
+                    .map(|present| present.acquire_surface)
+                    .unwrap_or(Duration::ZERO),
+            );
+            let frame_end = Instant::now();
+            self.record_profile_instant("FramePresented", frame_end);
+            self.frame_clock
+                .observe_presented(update.total(), useful_draw_cpu, frame_end);
+            self.last_timing_report = Some(Self::build_timing_report(update, paint));
+        }
+        self.poll_prepared_frame();
+        let frame_still_underway = !matches!(self.frame_pipeline, FramePipeline::Idle);
+        if presented || !frame_still_underway {
+            self.frame_clock.set_frame_prepared(false);
+        }
+        presented
+    }
+
+    pub(crate) fn frame_deadlines(&mut self) -> FrameDeadlines {
+        let frame_interval = self.frame_interval();
+        let now = Instant::now();
+        FrameDeadlines {
+            prepare: self.next_prepare_deadline(frame_interval, now),
+            redraw: self.redraw_deadline(frame_interval, now),
+        }
     }
 
     fn build_timing_report(
@@ -1287,10 +1328,6 @@ impl WindowHandle {
     }
 
     pub fn paint(&mut self) -> crate::paint::renderer::PaintTiming {
-        self.paint_frame(true)
-    }
-
-    fn paint_frame(&mut self, should_render: bool) -> crate::paint::renderer::PaintTiming {
         if !matches!(self.paint_state, PaintState::Initialized { .. }) {
             return crate::paint::renderer::PaintTiming::default();
         }
@@ -1304,64 +1341,83 @@ impl WindowHandle {
             .resize(frame_size.width as u32, frame_size.height as u32);
         let resize = resize_start.elapsed();
 
-        let (render_span, render_cpu, render) = if should_render {
-            let background = if self.transparent {
-                None
-            } else {
-                Some(
-                    self.default_theme
-                        .as_ref()
-                        .and_then(|theme| theme.get(crate::style::Background))
-                        .unwrap_or(peniko::Brush::Solid(palette::css::WHITE)),
-                )
-            };
-
-            let mut cx = crate::paint::GlobalPaintCx {
-                window_state: &mut self.window_state,
-                gpu_resources: self.gpu_resources.clone(),
-                window: self.window.clone(),
-                record_paint_order: crate::paint::is_paint_order_tracking_enabled(),
-            };
-
-            let mut source = |sink: &mut dyn imaging::PaintSink| {
-                if let Some(color) = background.as_ref() {
-                    Painter::new(sink)
-                        .fill(frame_size.to_rect().expand(), color)
-                        .draw();
-                }
-                cx.paint_with_traversal_into(self.id, sink);
-            };
-            let render_start = Instant::now();
-            let render = self
-                .paint_state
-                .backend_mut()
-                .render(frame_size, &mut source);
-            if let Some(render) = render {
-                self.pending_render_timing = Some(render);
-            }
-            drop(cx);
-            (
-                crate::paint::renderer::TimingSpan::new(total_start, render_start),
-                render.map(|render| render.total).unwrap_or(Duration::ZERO),
-                render,
-            )
+        let background = if self.transparent {
+            None
         } else {
-            (
-                crate::paint::renderer::TimingSpan::new(total_start, Instant::now()),
-                Duration::ZERO,
-                None,
+            Some(
+                self.default_theme
+                    .as_ref()
+                    .and_then(|theme| theme.get(crate::style::Background))
+                    .unwrap_or(peniko::Brush::Solid(palette::css::WHITE)),
             )
         };
+
+        let mut cx = crate::paint::GlobalPaintCx {
+            window_state: &mut self.window_state,
+            gpu_resources: self.gpu_resources.clone(),
+            window: self.window.clone(),
+            record_paint_order: crate::paint::is_paint_order_tracking_enabled(),
+        };
+
+        let mut source = |sink: &mut dyn imaging::PaintSink| {
+            if let Some(color) = background.as_ref() {
+                Painter::new(sink)
+                    .fill(frame_size.to_rect().expand(), color)
+                    .draw();
+            }
+            cx.paint_with_traversal_into(self.id, sink);
+        };
+        let render_start = Instant::now();
+        let render = self
+            .paint_state
+            .backend_mut()
+            .render(frame_size, &mut source);
+        if let Some(render) = render {
+            self.frame_pipeline = FramePipeline::Rendering(render);
+        }
+        drop(cx);
+        self.poll_prepared_frame();
+        let total_end = Instant::now();
+
+        crate::paint::renderer::PaintTiming {
+            total: total_end.saturating_duration_since(total_start),
+            resize,
+            render_cpu: render.map(|render| render.total).unwrap_or(Duration::ZERO),
+            ready_wait: Duration::ZERO,
+            pre_present_notify: Duration::ZERO,
+            present_cpu: Duration::ZERO,
+            render,
+            present: None,
+            total_span: crate::paint::renderer::TimingSpan::new(total_start, total_end),
+            resize_span: crate::paint::renderer::TimingSpan::new(total_start, render_start),
+            ready_wait_span: crate::paint::renderer::TimingSpan::default(),
+            pre_present_notify_span: crate::paint::renderer::TimingSpan::default(),
+        }
+    }
+
+    fn present_frame_timing(
+        &mut self,
+        prepared: PreparedWindowFrame,
+    ) -> crate::paint::renderer::PaintTiming {
+        if !matches!(self.paint_state, PaintState::Initialized { .. }) {
+            return crate::paint::renderer::PaintTiming::default();
+        }
+
+        let total_start = Instant::now();
+        let frame_size = self.window_state.root_size * self.window_state.os_scale;
+        let frame_size = Size::new(frame_size.width.max(1.0), frame_size.height.max(1.0));
+        let resize_start = Instant::now();
+        self.paint_state
+            .backend_mut()
+            .resize(frame_size.width as u32, frame_size.height as u32);
+        let resize = resize_start.elapsed();
         let notify_start = Instant::now();
         self.window.pre_present_notify();
         let pre_present_notify = notify_start.elapsed();
-        let present = self.paint_state.backend_mut().present_frame();
-        let render = present
-            .and_then(|_| self.pending_render_timing.take())
-            .or(render);
-        let ready_wait_span = present
-            .map(|_| self.take_ready_wait_span())
-            .unwrap_or_default();
+        let render = Some(prepared.timing);
+        let ready_wait_span =
+            crate::paint::renderer::TimingSpan::new(prepared.available_at, Instant::now());
+        let present = self.paint_state.backend_mut().present_frame(prepared.frame);
         if present.is_some() {
             self.route_paint_present_event();
         }
@@ -1370,16 +1426,16 @@ impl WindowHandle {
         crate::paint::renderer::PaintTiming {
             total: total_end.saturating_duration_since(total_start),
             resize,
-            render_cpu,
-            ready_wait: ready_wait_span.duration(),
+            render_cpu: Duration::ZERO,
+            ready_wait: present.map_or(Duration::ZERO, |_| ready_wait_span.duration()),
             pre_present_notify: present.map_or(Duration::ZERO, |_| pre_present_notify),
             present_cpu: present
                 .map_or(Duration::ZERO, |present| pre_present_notify + present.total),
             render,
             present,
             total_span: crate::paint::renderer::TimingSpan::new(total_start, total_end),
-            resize_span: render_span,
-            ready_wait_span,
+            resize_span: crate::paint::renderer::TimingSpan::new(total_start, notify_start),
+            ready_wait_span: present.map(|_| ready_wait_span).unwrap_or_default(),
             pre_present_notify_span: present
                 .map(|_| {
                     crate::paint::renderer::TimingSpan::new(
