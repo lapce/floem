@@ -5910,10 +5910,12 @@ dependencies = [
 name = "subduction_backend_apple"
 version = "0.0.1"
 dependencies = [
+ "dispatch2",
  "hashbrown 0.16.1",
  "kurbo",
  "objc2 0.6.4",
  "objc2-core-foundation",
+ "objc2-core-video",
  "objc2-foundation 0.3.2",
  "objc2-quartz-core 0.3.2",
  "subduction_core",

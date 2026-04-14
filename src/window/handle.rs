@@ -1199,15 +1199,15 @@ impl WindowHandle {
                              label: &'static str,
                              span: crate::paint::renderer::TimingSpan,
                              kind: TimingKind| {
-            if let (Some(start), Some(end)) = (span.start, span.end) {
-                if end > start {
-                    out.push(AbsoluteTimingSpan {
-                        label,
-                        start,
-                        end,
-                        kind,
-                    });
-                }
+            if let (Some(start), Some(end)) = (span.start, span.end)
+                && end > start
+            {
+                out.push(AbsoluteTimingSpan {
+                    label,
+                    start,
+                    end,
+                    kind,
+                });
             }
         };
 

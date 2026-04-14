@@ -7,10 +7,8 @@ use winit::window::WindowId;
 #[cfg(all(feature = "subduction", target_os = "macos"))]
 use crate::{Application, app::UserEvent};
 #[cfg(all(feature = "subduction", target_os = "macos"))]
-use objc2::MainThreadMarker;
-#[cfg(all(feature = "subduction", target_os = "macos"))]
 use subduction_backend_apple::{
-    DisplayLink, compute_present_hints, now as subduction_now, timebase,
+    DisplayLink, TickForwarder, compute_present_hints, now as subduction_now, timebase,
 };
 #[cfg(all(feature = "subduction", target_os = "windows"))]
 use subduction_backend_windows::{
@@ -62,13 +60,7 @@ pub(crate) trait FrameClock {
 pub(crate) fn new_window_frame_clock(window_id: WindowId, output_id: u32) -> Box<dyn FrameClock> {
     #[cfg(all(feature = "subduction", target_os = "macos"))]
     {
-        if let Some(mtm) = MainThreadMarker::new() {
-            return Box::new(SubductionFrameClock::new(
-                window_id,
-                OutputId(output_id),
-                mtm,
-            ));
-        }
+        return Box::new(SubductionFrameClock::new(window_id, OutputId(output_id)));
     }
 
     #[cfg(all(feature = "subduction", target_os = "windows"))]
@@ -375,17 +367,14 @@ impl SubductionPlanState {
     }
 
     fn ready_frame_redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
-        if let Some(present_deadline) = self
-            .latest_plan
-            .and_then(|plan| plan.present_time)
-            .map(|present| self.host_to_instant(present))
-            .or_else(|| self.latest_commit_deadline())
-        {
+        if let Some(commit_deadline) = self.latest_commit_deadline() {
             let _ = frame_interval;
-            return present_deadline
-                .checked_sub(SURFACE_ACQUIRE_GUARD_BAND)
-                .unwrap_or(now)
-                .max(self.heuristic.earliest_surface_acquire_at());
+            let earliest_acquire = self.heuristic.earliest_surface_acquire_at();
+            return if earliest_acquire <= commit_deadline {
+                earliest_acquire
+            } else {
+                commit_deadline
+            };
         }
 
         self.heuristic
@@ -434,21 +423,16 @@ impl SubductionPlanState {
 #[derive(Debug)]
 struct SubductionFrameClock {
     plan_state: SubductionPlanState,
-    display_link: DisplayLink,
+    display_link: Option<DisplayLink>,
+    tick_forwarder: TickForwarder,
 }
 
 #[cfg(all(feature = "subduction", target_os = "macos"))]
 impl SubductionFrameClock {
-    fn new(window_id: WindowId, output: OutputId, mtm: MainThreadMarker) -> Self {
-        let display_link = DisplayLink::new(
-            move |tick| {
-                Application::send_proxy_event(UserEvent::SubductionFrameTick { window_id, tick });
-            },
-            output,
-            mtm,
-        );
-        display_link.start();
-        display_link.set_paused(true);
+    fn new(window_id: WindowId, output: OutputId) -> Self {
+        let tick_forwarder = TickForwarder::new(move |tick| {
+            Application::send_proxy_event(UserEvent::SubductionFrameTick { window_id, tick });
+        });
 
         Self {
             plan_state: SubductionPlanState::new(
@@ -457,7 +441,22 @@ impl SubductionFrameClock {
                 subduction_now(),
                 timebase(),
             ),
-            display_link,
+            display_link: None,
+            tick_forwarder,
+        }
+    }
+
+    fn ensure_display_link(&mut self) {
+        if self.display_link.is_some() {
+            return;
+        }
+
+        let output = self.plan_state.output;
+        let Ok(display_link) = DisplayLink::new(self.tick_forwarder.sender(), output) else {
+            return;
+        };
+        if display_link.start().is_ok() {
+            self.display_link = Some(display_link);
         }
     }
 }
@@ -529,7 +528,11 @@ impl FrameClock for SubductionFrameClock {
             return;
         }
         self.plan_state.active = active;
-        self.display_link.set_paused(!active);
+        if active {
+            self.ensure_display_link();
+        } else if let Some(display_link) = self.display_link.take() {
+            let _ = display_link.stop();
+        }
     }
 
     fn receive_frame_tick(&mut self, tick: FrameTick) {
