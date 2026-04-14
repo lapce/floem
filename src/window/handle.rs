@@ -937,11 +937,7 @@ impl WindowHandle {
                 self.set_presents_with_transaction_now(true);
             }
 
-            let paint = if has_ready_frame {
-                self.present_prepared_frame()
-            } else {
-                self.paint()
-            };
+            let paint = self.paint_frame(!has_ready_frame);
 
             #[cfg(target_os = "macos")]
             if presents_with_transaction {
@@ -1015,14 +1011,6 @@ impl WindowHandle {
         ready
     }
 
-    pub(crate) fn needs_redraw(&mut self) -> bool {
-        self.window_state.has_pending_render() || self.has_ready_frame()
-    }
-
-    pub(crate) fn has_frame_underway(&mut self) -> bool {
-        self.pending_render_timing.is_some() || self.has_ready_frame()
-    }
-
     pub(crate) fn redraw_deadline(&mut self, frame_interval: Duration, now: Instant) -> Instant {
         let has_ready_frame = self.has_ready_frame();
         self.frame_clock
@@ -1038,7 +1026,7 @@ impl WindowHandle {
             return false;
         }
 
-        if !self.has_frame_underway() {
+        if self.pending_render_timing.is_none() && !self.has_ready_frame() {
             return true;
         }
 
@@ -1051,7 +1039,7 @@ impl WindowHandle {
         now: Instant,
     ) -> Instant {
         let prepare_deadline = self.frame_clock.frame_prepare_deadline(frame_interval, now);
-        if self.has_frame_underway() {
+        if self.pending_render_timing.is_some() || self.has_ready_frame() {
             prepare_deadline.max(self.redraw_deadline(frame_interval, now))
         } else {
             prepare_deadline
@@ -1170,7 +1158,8 @@ impl WindowHandle {
         let active = self.can_render_now()
             && (self.window_state.has_next_frame_work()
                 || self.window_state.has_pending_begin_frame_callbacks()
-                || self.needs_redraw());
+                || self.window_state.has_pending_render()
+                || self.has_ready_frame());
         self.frame_clock.set_active(active);
     }
 
@@ -1298,6 +1287,10 @@ impl WindowHandle {
     }
 
     pub fn paint(&mut self) -> crate::paint::renderer::PaintTiming {
+        self.paint_frame(true)
+    }
+
+    fn paint_frame(&mut self, should_render: bool) -> crate::paint::renderer::PaintTiming {
         if !matches!(self.paint_state, PaintState::Initialized { .. }) {
             return crate::paint::renderer::PaintTiming::default();
         }
@@ -1311,92 +1304,61 @@ impl WindowHandle {
             .resize(frame_size.width as u32, frame_size.height as u32);
         let resize = resize_start.elapsed();
 
-        let background = if self.transparent {
-            None
+        let (render_span, render_cpu, render) = if should_render {
+            let background = if self.transparent {
+                None
+            } else {
+                Some(
+                    self.default_theme
+                        .as_ref()
+                        .and_then(|theme| theme.get(crate::style::Background))
+                        .unwrap_or(peniko::Brush::Solid(palette::css::WHITE)),
+                )
+            };
+
+            let mut cx = crate::paint::GlobalPaintCx {
+                window_state: &mut self.window_state,
+                gpu_resources: self.gpu_resources.clone(),
+                window: self.window.clone(),
+                record_paint_order: crate::paint::is_paint_order_tracking_enabled(),
+            };
+
+            let mut source = |sink: &mut dyn imaging::PaintSink| {
+                if let Some(color) = background.as_ref() {
+                    Painter::new(sink)
+                        .fill(frame_size.to_rect().expand(), color)
+                        .draw();
+                }
+                cx.paint_with_traversal_into(self.id, sink);
+            };
+            let render_start = Instant::now();
+            let render = self
+                .paint_state
+                .backend_mut()
+                .render(frame_size, &mut source);
+            if let Some(render) = render {
+                self.pending_render_timing = Some(render);
+            }
+            drop(cx);
+            (
+                crate::paint::renderer::TimingSpan::new(total_start, render_start),
+                render.map(|render| render.total).unwrap_or(Duration::ZERO),
+                render,
+            )
         } else {
-            Some(
-                self.default_theme
-                    .as_ref()
-                    .and_then(|theme| theme.get(crate::style::Background))
-                    .unwrap_or(peniko::Brush::Solid(palette::css::WHITE)),
+            (
+                crate::paint::renderer::TimingSpan::new(total_start, Instant::now()),
+                Duration::ZERO,
+                None,
             )
         };
-
-        let mut cx = crate::paint::GlobalPaintCx {
-            window_state: &mut self.window_state,
-            gpu_resources: self.gpu_resources.clone(),
-            window: self.window.clone(),
-            record_paint_order: crate::paint::is_paint_order_tracking_enabled(),
-        };
-
-        let mut source = |sink: &mut dyn imaging::PaintSink| {
-            if let Some(color) = background.as_ref() {
-                Painter::new(sink)
-                    .fill(frame_size.to_rect().expand(), color)
-                    .draw();
-            }
-            cx.paint_with_traversal_into(self.id, sink);
-        };
-        let render_start = Instant::now();
-        let render = self
-            .paint_state
-            .backend_mut()
-            .render(frame_size, &mut source);
-        let render_cpu = render.map_or(Duration::ZERO, |render| render.total);
-        if let Some(render) = render {
-            self.pending_render_timing = Some(render);
-        }
-        let present = self.paint_state.backend_mut().present_frame();
-        let render = present.and_then(|_| self.pending_render_timing.take()).or(render);
-        drop(cx);
-        self.finish_paint_timing(
-            total_start,
-            resize,
-            crate::paint::renderer::TimingSpan::new(total_start, render_start),
-            render_cpu,
-            render,
-            present,
-        )
-    }
-
-    fn present_prepared_frame(&mut self) -> crate::paint::renderer::PaintTiming {
-        if !matches!(self.paint_state, PaintState::Initialized { .. }) {
-            return crate::paint::renderer::PaintTiming::default();
-        }
-
-        let total_start = Instant::now();
-        let frame_size = self.window_state.root_size * self.window_state.os_scale;
-        let frame_size = Size::new(frame_size.width.max(1.0), frame_size.height.max(1.0));
-        let resize_start = Instant::now();
-        self.paint_state
-            .backend_mut()
-            .resize(frame_size.width as u32, frame_size.height as u32);
-        let resize = resize_start.elapsed();
-
-        let present = self.paint_state.backend_mut().present_frame();
-        let render = present.and_then(|_| self.pending_render_timing.take());
-        self.finish_paint_timing(
-            total_start,
-            resize,
-            crate::paint::renderer::TimingSpan::new(total_start, Instant::now()),
-            Duration::ZERO,
-            render,
-            present,
-        )
-    }
-
-    fn finish_paint_timing(
-        &mut self,
-        total_start: Instant,
-        resize: Duration,
-        resize_span: crate::paint::renderer::TimingSpan,
-        render_cpu: Duration,
-        render: Option<crate::paint::renderer::RenderTiming>,
-        present: Option<crate::paint::renderer::PresentTiming>,
-    ) -> crate::paint::renderer::PaintTiming {
         let notify_start = Instant::now();
         self.window.pre_present_notify();
         let pre_present_notify = notify_start.elapsed();
+        let present = self.paint_state.backend_mut().present_frame();
+        let render = present
+            .and_then(|_| self.pending_render_timing.take())
+            .or(render);
         let ready_wait_span = present
             .map(|_| self.take_ready_wait_span())
             .unwrap_or_default();
@@ -1411,16 +1373,21 @@ impl WindowHandle {
             render_cpu,
             ready_wait: ready_wait_span.duration(),
             pre_present_notify: present.map_or(Duration::ZERO, |_| pre_present_notify),
-            present_cpu: present.map_or(Duration::ZERO, |present| pre_present_notify + present.total),
+            present_cpu: present
+                .map_or(Duration::ZERO, |present| pre_present_notify + present.total),
             render,
             present,
             total_span: crate::paint::renderer::TimingSpan::new(total_start, total_end),
-            resize_span,
+            resize_span: render_span,
             ready_wait_span,
-            pre_present_notify_span: crate::paint::renderer::TimingSpan::new(
-                notify_start,
-                notify_start + pre_present_notify,
-            ),
+            pre_present_notify_span: present
+                .map(|_| {
+                    crate::paint::renderer::TimingSpan::new(
+                        notify_start,
+                        notify_start + pre_present_notify,
+                    )
+                })
+                .unwrap_or_default(),
         }
     }
 

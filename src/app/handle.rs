@@ -109,7 +109,7 @@ impl ApplicationHandle {
         let Some(handle) = self.window_handles.get_mut(&window_id) else {
             return false;
         };
-        if !handle.has_ready_frame_to_present() {
+        if !handle.has_ready_frame() {
             return false;
         }
         let start = Instant::now();
@@ -218,7 +218,8 @@ impl ApplicationHandle {
                     if handle.can_render_now()
                         && (handle.needs_frame_prepare()
                             || handle.window_state.has_pending_begin_frame_callbacks()
-                            || handle.needs_redraw())
+                            || handle.window_state.has_pending_render()
+                            || handle.has_ready_frame())
                     {
                         self.request_update();
                     }
@@ -502,7 +503,8 @@ impl ApplicationHandle {
                         || window_handle
                             .window_state
                             .has_pending_begin_frame_callbacks()
-                        || window_handle.needs_redraw())
+                        || window_handle.window_state.has_pending_render()
+                        || window_handle.has_ready_frame())
                 {
                     self.request_update();
                 }
@@ -607,8 +609,8 @@ impl ApplicationHandle {
             let now = Instant::now();
             let can_render_now = handle.can_render_now();
             let needs_frame_prepare = handle.needs_frame_prepare();
-            let has_pending_render = handle.has_ready_frame_to_present();
-            let has_ready_frame_to_present = handle.has_ready_frame_to_present();
+            let has_pending_render = handle.has_ready_frame();
+            let has_ready_frame_to_present = handle.has_ready_frame();
             let prepare_deadline = handle.next_prepare_deadline(frame_interval, now);
             let redraw_deadline = handle.redraw_deadline(frame_interval, now);
             let request_redraw_now = Self::should_request_redraw_now(
@@ -948,7 +950,7 @@ impl ApplicationHandle {
             let now = Instant::now();
             let prepare_deadline = handle.next_prepare_deadline(frame_interval, now);
             let redraw_deadline = handle.redraw_deadline(frame_interval, now);
-            let has_ready_frame_to_present = handle.has_ready_frame_to_present();
+            let has_ready_frame_to_present = handle.has_ready_frame();
             let should_request_redraw = Self::should_request_redraw_now(
                 has_ready_frame_to_present,
                 handle.can_render_now(),
@@ -1056,7 +1058,7 @@ impl ApplicationHandle {
                 can_render_now,
                 handle.needs_frame_prepare(),
                 handle.should_prepare_frame_now(frame_interval, now),
-                handle.has_ready_frame_to_present(),
+                handle.has_ready_frame(),
                 prepare_deadline,
                 redraw_deadline,
             )
