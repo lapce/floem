@@ -377,6 +377,69 @@ Each window frame should follow this sequence:
 7. `CompositeAndPresent`
 8. `ObserveFeedback`
 
+### Operational scheduling rules
+
+The frame lifecycle above also needs explicit policy for when work starts and when a ready frame is actually presented.
+
+#### Start visual work early
+
+Once a window has frame work and can render:
+
+- process input and state updates immediately
+- promote next-frame work immediately
+- run style, layout, box-tree, and scene building immediately
+- submit the frame to the renderer thread immediately
+
+Do not intentionally hold style/layout/scene work until late in the interval. The late part of the frame is for presentation, not for starting the expensive main-thread work.
+
+#### Present late
+
+Once a frame is ready:
+
+- present it as soon as practical
+- but do not block the main thread on early surface acquisition
+- if the output target is not expected to be acquirable yet, wait and wake near the present opportunity
+
+In effect:
+
+- build early
+- acquire late
+- present as soon as the target should be available
+
+#### Prefer the newest frame before the deadline
+
+If frame `N` finishes after its preferred presentation deadline and newer work for frame `N+1` already exists:
+
+1. keep frame `N` as a fallback
+2. immediately start preparing and rendering frame `N+1`
+3. arm a wakeup for the next present opportunity
+4. if frame `N+1` becomes ready before that present opportunity, present `N+1`
+5. otherwise present the older ready frame `N`
+
+This avoids wasting the main thread on an already-late frame when a fresher frame can still win, while still preserving a fallback if the newer frame also misses.
+
+#### Example scenarios
+
+Scenario: previous frame was presented, window is idle, then input arrives.
+
+- handle the input event
+- immediately run style/layout/paint preparation
+- immediately submit offscreen rendering
+- when the renderer signals readiness, present as soon as the target should be available
+
+Scenario: a frame becomes ready early, before the surface should be acquired.
+
+- keep the frame ready
+- do not block the main thread in `get_current_texture()` or equivalent
+- wake near the expected present point and present then
+
+Scenario: a frame becomes ready late, after its preferred deadline, and new input already dirtied the next frame.
+
+- do not rush to present the stale frame immediately
+- start the newer frame first
+- keep the stale frame as fallback
+- present whichever ready frame is newest at the present decision point
+
 ### 1. BeginFrame
 
 Input:

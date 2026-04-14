@@ -680,9 +680,9 @@ impl ThreadedWindowRenderer {
 
     fn poll_worker(&mut self) {
         self.ready_frame = self
-            .ready_frame
-            .take()
-            .or_else(|| self.worker.try_take_ready_frame());
+            .worker
+            .try_take_ready_frame()
+            .or_else(|| self.ready_frame.take());
     }
 
     fn present_frame(&mut self, frame: RenderedFrame) -> Option<PresentTiming> {
