@@ -52,7 +52,6 @@ pub(crate) trait FrameClock {
         &mut self,
         update_cpu_time: Duration,
         draw_cpu_time_excluding_acquire: Duration,
-        present_cpu_excluding_acquire: Duration,
         presented_at: Instant,
     );
     fn set_active(&mut self, _active: bool) {}
@@ -89,7 +88,7 @@ fn min_duration(a: Duration, b: Duration) -> Duration {
     if a <= b { a } else { b }
 }
 
-const SURFACE_ACQUIRE_GUARD_BAND: Duration = Duration::from_micros(300);
+const SURFACE_ACQUIRE_GUARD_BAND: Duration = Duration::from_millis(1);
 
 #[derive(Debug)]
 pub(crate) struct HeuristicFrameClock {
@@ -97,7 +96,6 @@ pub(crate) struct HeuristicFrameClock {
     last_frame_opportunity_at: Instant,
     estimated_frame_prepare_lead_time: Duration,
     estimated_draw_lead_time: Duration,
-    estimated_present_lead_time: Duration,
     frame_counter: u64,
     frame_prepared: bool,
 }
@@ -109,7 +107,6 @@ impl Default for HeuristicFrameClock {
             last_frame_opportunity_at: Instant::now(),
             estimated_frame_prepare_lead_time: Duration::from_millis(1),
             estimated_draw_lead_time: Duration::from_millis(1),
-            estimated_present_lead_time: Duration::from_millis(1),
             frame_counter: 0,
             frame_prepared: false,
         }
@@ -190,17 +187,9 @@ impl FrameClock for HeuristicFrameClock {
     }
 
     fn ready_frame_redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
-        let earliest_present = self.last_presented_at + frame_interval;
-        let max_lead = frame_interval
-            .checked_div(4)
-            .unwrap_or(Duration::from_millis(1));
-        let lead_time = min_duration(
-            max_duration(self.estimated_present_lead_time, Duration::from_millis(1)),
-            max_lead,
-        );
-
-        earliest_present
-            .checked_sub(lead_time)
+        let next_present = self.last_presented_at + frame_interval;
+        next_present
+            .checked_sub(SURFACE_ACQUIRE_GUARD_BAND)
             .unwrap_or(now)
             .max(self.earliest_surface_acquire_at())
     }
@@ -209,12 +198,10 @@ impl FrameClock for HeuristicFrameClock {
         &mut self,
         update_cpu_time: Duration,
         draw_cpu_time_excluding_acquire: Duration,
-        present_cpu_excluding_acquire: Duration,
         presented_at: Instant,
     ) {
         self.update_frame_prepare_lead_estimate(update_cpu_time);
         self.update_draw_lead_estimate(draw_cpu_time_excluding_acquire);
-        self.update_present_lead_estimate(present_cpu_excluding_acquire);
         self.last_presented_at = presented_at;
         self.last_frame_opportunity_at = presented_at;
     }
@@ -247,12 +234,6 @@ impl HeuristicFrameClock {
         let target = observed_cpu_time + Duration::from_micros(500);
         self.estimated_draw_lead_time = max_duration(self.estimated_draw_lead_time, target);
         self.estimated_draw_lead_time = (self.estimated_draw_lead_time * 7 + target) / 8;
-    }
-
-    fn update_present_lead_estimate(&mut self, observed_cpu_time: Duration) {
-        let target = observed_cpu_time + Duration::from_micros(250);
-        self.estimated_present_lead_time = max_duration(self.estimated_present_lead_time, target);
-        self.estimated_present_lead_time = (self.estimated_present_lead_time * 7 + target) / 8;
     }
 }
 
@@ -400,18 +381,9 @@ impl SubductionPlanState {
             .map(|present| self.host_to_instant(present))
             .or_else(|| self.latest_commit_deadline())
         {
-            let max_lead = frame_interval
-                .checked_div(4)
-                .unwrap_or(Duration::from_millis(1));
-            let lead_time = min_duration(
-                max_duration(
-                    self.heuristic.estimated_present_lead_time,
-                    Duration::from_millis(1),
-                ),
-                max_lead,
-            );
+            let _ = frame_interval;
             return present_deadline
-                .checked_sub(lead_time)
+                .checked_sub(SURFACE_ACQUIRE_GUARD_BAND)
                 .unwrap_or(now)
                 .max(self.heuristic.earliest_surface_acquire_at());
         }
@@ -424,13 +396,11 @@ impl SubductionPlanState {
         &mut self,
         update_cpu_time: Duration,
         draw_cpu_time_excluding_acquire: Duration,
-        present_cpu_excluding_acquire: Duration,
         presented_at: Instant,
     ) {
         self.heuristic.observe_presented(
             update_cpu_time,
             draw_cpu_time_excluding_acquire,
-            present_cpu_excluding_acquire,
             presented_at,
         );
 
@@ -545,13 +515,11 @@ impl FrameClock for SubductionFrameClock {
         &mut self,
         update_cpu_time: Duration,
         draw_cpu_time_excluding_acquire: Duration,
-        present_cpu_excluding_acquire: Duration,
         presented_at: Instant,
     ) {
         self.plan_state.observe_presented(
             update_cpu_time,
             draw_cpu_time_excluding_acquire,
-            present_cpu_excluding_acquire,
             presented_at,
         );
     }
@@ -700,14 +668,12 @@ impl FrameClock for WindowsSubductionFrameClock {
         &mut self,
         update_cpu_time: Duration,
         draw_cpu_time_excluding_acquire: Duration,
-        present_cpu_excluding_acquire: Duration,
         presented_at: Instant,
     ) {
         self.prev_present_time = Some(self.plan_state.instant_to_host(presented_at));
         self.plan_state.observe_presented(
             update_cpu_time,
             draw_cpu_time_excluding_acquire,
-            present_cpu_excluding_acquire,
             presented_at,
         );
     }

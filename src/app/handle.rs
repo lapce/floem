@@ -212,6 +212,7 @@ impl ApplicationHandle {
             #[cfg(all(feature = "subduction", target_os = "macos"))]
             UserEvent::SubductionFrameTick { window_id, tick } => {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                    handle.record_profile_instant("VSync", Instant::now());
                     handle.receive_frame_tick(tick);
                     handle.sync_frame_clock_activity();
                     if handle.can_render_now()
@@ -642,6 +643,8 @@ impl ApplicationHandle {
             self.cancel_paced_redraw_timer(window_id, event_loop);
             if !has_presentable_frame || !self.present_window_if_ready(window_id) {
                 self.request_window_redraw(window_id);
+            } else {
+                self.schedule_window_frame_if_needed(window_id, event_loop);
             }
         } else if has_pending_render {
             self.ensure_paced_redraw_timer(window_id, redraw_deadline, event_loop);
@@ -1013,6 +1016,8 @@ impl ApplicationHandle {
         for window_id in direct_present_requests {
             if !self.present_window_if_ready(window_id) {
                 self.request_window_redraw(window_id);
+            } else {
+                self.schedule_window_frame_if_needed(window_id, event_loop);
             }
         }
 

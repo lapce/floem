@@ -180,6 +180,10 @@ impl WindowHandle {
             .collect()
     }
 
+    pub(crate) fn record_profile_instant(&mut self, name: &'static str, at: Instant) {
+        self.window_state.record_profile_instant(name, at);
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         window: Box<dyn winit::window::Window>,
@@ -959,17 +963,10 @@ impl WindowHandle {
                         .map(|present| present.acquire_surface)
                         .unwrap_or(Duration::ZERO),
                 );
-                let useful_present_cpu = paint.present.map_or(Duration::ZERO, |present| {
-                    (paint.pre_present_notify + present.total)
-                        .saturating_sub(present.acquire_surface)
-                });
                 let frame_end = Instant::now();
-                self.frame_clock.observe_presented(
-                    update.total(),
-                    useful_draw_cpu,
-                    useful_present_cpu,
-                    frame_end,
-                );
+                self.record_profile_instant("FramePresented", frame_end);
+                self.frame_clock
+                    .observe_presented(update.total(), useful_draw_cpu, frame_end);
                 self.last_timing_report = Some(Self::build_timing_report(update, paint));
             }
             let frame_still_underway = self.pending_render_timing.is_some()

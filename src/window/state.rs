@@ -348,6 +348,17 @@ impl WindowState {
         });
     }
 
+    pub(crate) fn record_profile_instant(&mut self, name: impl Into<String>, at: Instant) {
+        if !self.profile_events_enabled {
+            return;
+        }
+        self.profile_events.push(QueuedProfileEvent {
+            start: at,
+            end: at,
+            name: name.into(),
+        });
+    }
+
     #[inline]
     pub(crate) fn invalidate_focus_nav_cache(&mut self) {
         self.focus_nav_cache.built = false;

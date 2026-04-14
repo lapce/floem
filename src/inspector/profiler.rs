@@ -126,6 +126,12 @@ struct TimelineFrameMarker {
 }
 
 #[derive(Clone)]
+struct TimelineInstantMarker {
+    start: Duration,
+    color: Color,
+}
+
+#[derive(Clone)]
 enum TimelineItemKind {
     Event,
     Timing(TimingKind),
@@ -141,8 +147,10 @@ struct TimelineItem {
     kind: TimelineItemKind,
 }
 
-fn timeline_item_color(kind: &TimelineItemKind) -> Color {
-    match kind {
+fn timeline_item_color(item: &TimelineItem) -> Color {
+    match &item.kind {
+        TimelineItemKind::Event if item.label == "VSync" => Color::from_rgb8(153, 97, 191),
+        TimelineItemKind::Event if item.label == "FramePresented" => Color::from_rgb8(48, 166, 127),
         TimelineItemKind::Event => Color::from_rgb8(54, 111, 196),
         TimelineItemKind::Timing(TimingKind::Total) => Color::from_rgb8(41, 78, 163),
         TimelineItemKind::Timing(TimingKind::Style) => Color::from_rgb8(29, 142, 120),
@@ -151,6 +159,14 @@ fn timeline_item_color(kind: &TimelineItemKind) -> Color {
         TimelineItemKind::Timing(TimingKind::Paint) => Color::from_rgb8(203, 92, 73),
         TimelineItemKind::Timing(TimingKind::Present) => Color::from_rgb8(64, 157, 163),
         TimelineItemKind::Timing(TimingKind::Renderer) => Color::from_rgb8(62, 126, 214),
+    }
+}
+
+fn instant_marker_color(label: &str) -> Color {
+    match label {
+        "VSync" => Color::from_rgb8(153, 97, 191),
+        "FramePresented" => Color::from_rgb8(48, 166, 127),
+        _ => Color::from_rgb8(54, 111, 196),
     }
 }
 
@@ -210,13 +226,16 @@ fn build_timeline_lanes(profile: &Profile) -> Vec<Vec<TimelineItem>> {
         return Vec::new();
     };
 
-    items.extend(profile.events.iter().map(|event| TimelineItem {
-        label: event.name.to_string(),
-        source: "Profiler Event",
-        start: event.start.saturating_duration_since(origin),
-        duration: event.end.saturating_duration_since(event.start),
-        depth: event.depth,
-        kind: TimelineItemKind::Event,
+    items.extend(profile.events.iter().filter_map(|event| {
+        let duration = event.end.saturating_duration_since(event.start);
+        (!duration.is_zero()).then(|| TimelineItem {
+            label: event.name.to_string(),
+            source: "Profiler Event",
+            start: event.start.saturating_duration_since(origin),
+            duration,
+            depth: event.depth,
+            kind: TimelineItemKind::Event,
+        })
     }));
 
     for frame in &profile.frames {
@@ -397,6 +416,7 @@ struct ProfilerTimelineView {
     hovered_element: Option<ElementId>,
     lane_count: usize,
     frame_markers: Rc<[TimelineFrameMarker]>,
+    instant_markers: Rc<[TimelineInstantMarker]>,
     last_selected_frame: Option<usize>,
     palette: TimelinePalette,
 }
@@ -405,6 +425,7 @@ impl ProfilerTimelineView {
     fn new(
         lanes: Rc<[Vec<TimelineItem>]>,
         frame_markers: Rc<[TimelineFrameMarker]>,
+        instant_markers: Rc<[TimelineInstantMarker]>,
         total_duration: Duration,
         hovered_event: RwSignal<Option<TimelineItem>>,
         selected_frame: RwSignal<Option<Rc<ProfileFrameData>>>,
@@ -487,6 +508,7 @@ impl ProfilerTimelineView {
             hovered_element: None,
             lane_count: lanes.len(),
             frame_markers,
+            instant_markers,
             last_selected_frame: None,
             palette: TimelinePalette {
                 lane_bg: css::LIGHT_GRAY.with_alpha(0.3),
@@ -941,17 +963,41 @@ impl View for ProfilerTimelineView {
                     )
                     .draw();
             }
+            for marker in self.instant_markers.iter() {
+                let x = self.viewport.world_to_view_x(marker.start.as_secs_f64());
+                if x < 0.0 || x > self.size.width {
+                    continue;
+                }
+                let color = marker.color.with_alpha(0.7);
+                cx.painter
+                    .stroke(
+                        Line::new(
+                            (x, TIMELINE_PADDING - 2.0),
+                            (x, total_height - TIMELINE_PADDING + 2.0),
+                        ),
+                        &Stroke::new(1.0),
+                        &Brush::Solid(color),
+                    )
+                    .draw();
+                cx.painter
+                    .fill(
+                        Rect::new(x - 2.5, 2.0, x + 2.5, 8.0).to_rounded_rect(2.0),
+                        &Brush::Solid(color),
+                    )
+                    .draw();
+            }
             return;
         }
 
         if let Some(&element_idx) = self.element_indices.get(&cx.target_id) {
             let element = &self.elements[element_idx];
-            let rect = cx.layout_rect_local.to_rounded_rect(2.0);
+            let rect = cx.layout_rect_local;
+            let rounded_rect = rect.to_rounded_rect(2.0);
             let hovered = self.hovered_element == Some(element.element_id);
-            let color = timeline_item_color(&element.item.kind);
+            let color = timeline_item_color(&element.item);
             cx.painter
                 .fill(
-                    rect,
+                    rounded_rect,
                     &Brush::Solid(color.with_alpha(if hovered { 0.9 } else { 0.7 })),
                 )
                 .draw();
@@ -1066,7 +1112,7 @@ fn build_overview_bins(
 
     for lane in lanes {
         for item in lane {
-            let color = timeline_item_color(&item.kind).to_rgba8();
+            let color = timeline_item_color(item).to_rgba8();
             let start = item.start.as_secs_f64().clamp(0.0, total_duration_secs);
             let end =
                 (start + item.duration.as_secs_f64().max(1e-6)).clamp(0.0, total_duration_secs);
@@ -1133,6 +1179,7 @@ struct ProfilerOverviewView {
     id: ViewId,
     bins: Rc<[OverviewBin]>,
     frame_markers: Rc<[TimelineFrameMarker]>,
+    instant_markers: Rc<[TimelineInstantMarker]>,
     total_duration_secs: f64,
     visible_range: RwSignal<(f64, f64)>,
     viewport_request: RwSignal<Option<ProfilerViewportRequest>>,
@@ -1146,6 +1193,7 @@ impl ProfilerOverviewView {
     fn new(
         bins: Rc<[OverviewBin]>,
         frame_markers: Rc<[TimelineFrameMarker]>,
+        instant_markers: Rc<[TimelineInstantMarker]>,
         total_duration: Duration,
         visible_range: RwSignal<(f64, f64)>,
         viewport_request: RwSignal<Option<ProfilerViewportRequest>>,
@@ -1167,6 +1215,7 @@ impl ProfilerOverviewView {
             id,
             bins,
             frame_markers,
+            instant_markers,
             total_duration_secs: total_duration.as_secs_f64().max(f64::MIN_POSITIVE),
             visible_range,
             viewport_request,
@@ -1415,6 +1464,17 @@ impl View for ProfilerOverviewView {
                 )
                 .draw();
         }
+        for marker in self.instant_markers.iter() {
+            let x =
+                inner.x0 + inner.width() * (marker.start.as_secs_f64() / self.total_duration_secs);
+            cx.painter
+                .stroke(
+                    Line::new((x, inner.y0 + 2.0), (x, inner.y1 - 2.0)),
+                    &Stroke::new(1.0),
+                    &Brush::Solid(marker.color.with_alpha(0.8)),
+                )
+                .draw();
+        }
 
         let (visible_start, visible_end) = self.visible_range.get();
         let x0 = inner.x0 + inner.width() * (visible_start / self.total_duration_secs);
@@ -1506,6 +1566,18 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
         })
         .collect::<Vec<_>>()
         .into();
+    let instant_markers: Rc<[TimelineInstantMarker]> = profile
+        .events
+        .iter()
+        .filter(|event| event.start == event.end)
+        .filter_map(|event| {
+            origin.map(|origin| TimelineInstantMarker {
+                start: event.start.saturating_duration_since(origin),
+                color: instant_marker_color(&event.name),
+            })
+        })
+        .collect::<Vec<_>>()
+        .into();
     let selected_frame = RwSignal::new(None::<Rc<ProfileFrameData>>);
     let active_frame_index = RwSignal::new(None::<usize>);
     let visible_range = RwSignal::new((0.0, total_duration.as_secs_f64()));
@@ -1518,7 +1590,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
         move || hovered_event.get(),
         move |hovered_event| {
             if let Some(event) = hovered_event {
-                let accent = timeline_item_color(&event.kind);
+                let accent = timeline_item_color(&event);
                 Stack::vertical((
                     Stack::vertical((
                         Label::new(event.label)
@@ -1732,6 +1804,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
             ProfilerTimelineView::new(
                 lanes,
                 frame_markers.clone(),
+                instant_markers.clone(),
                 total_duration,
                 hovered_event,
                 selected_frame,
@@ -1754,6 +1827,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                 ProfilerOverviewView::new(
                     overview_bins,
                     frame_markers.clone(),
+                    instant_markers.clone(),
                     total_duration,
                     visible_range,
                     viewport_request,
