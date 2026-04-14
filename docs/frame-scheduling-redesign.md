@@ -684,6 +684,49 @@ pub trait WindowPresenter {
 
 In practice, a combined type may implement both traits, but the phase split matters.
 
+The important semantic rule is that these are separate operations, even if one concrete type owns
+both:
+
+- `prepare_frame` records scene state or renders into an offscreen frame
+- `present_frame` takes an already-prepared frame and submits it to the window
+
+There should not be a `present_ready_frame`-style API that hides internal renderer state in the
+method name. "Ready" is a state in the caller's model, not a separate concept in the presenter API.
+
+Similarly, the window/app orchestration API should read as:
+
+```rust
+window.prepare_frame();
+window.render_frame();
+window.present_frame();
+```
+
+with ordinary `if` statements at the call sites deciding which step is needed on a given turn.
+
+### Frame clock boundary
+
+The frame clock should also avoid paired methods that encode the same concept twice.
+
+Bad shape:
+
+```rust
+mark_frame_prepared();
+clear_prepared_frame();
+redraw_deadline();
+ready_frame_redraw_deadline();
+```
+
+Preferred shape:
+
+```rust
+set_frame_prepared(bool);
+needs_frame_prepare(has_next_frame_work: bool);
+redraw_deadline(has_ready_frame: bool);
+```
+
+That keeps "prepared" and "ready-to-present" as explicit state passed into a single method instead
+of being split across near-duplicate APIs.
+
 ### GPU path
 
 Preferred design:

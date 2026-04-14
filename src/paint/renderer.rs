@@ -433,7 +433,7 @@ pub struct CaptureOutput {
 pub trait WindowRenderer {
     fn resize(&mut self, width: u32, height: u32);
     fn render(&mut self, size: Size, source: &mut dyn RenderSource) -> Option<RenderTiming>;
-    fn present_ready_frame(&mut self) -> Option<PresentTiming> {
+    fn present_frame(&mut self) -> Option<PresentTiming> {
         None
     }
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput;
@@ -1350,7 +1350,7 @@ impl WindowRenderer for ThreadedWindowRenderer {
         })
     }
 
-    fn present_ready_frame(&mut self) -> Option<PresentTiming> {
+    fn present_frame(&mut self) -> Option<PresentTiming> {
         self.poll_worker();
         let frame = self.ready_frame.take()?;
         let present = self.present_frame(frame)?;
@@ -1468,7 +1468,7 @@ impl WindowRenderer for TargetGpuWindowRenderer {
         })
     }
 
-    fn present_ready_frame(&mut self) -> Option<PresentTiming> {
+    fn present_frame(&mut self) -> Option<PresentTiming> {
         let texture = self.ready_frame.take()?;
         let start = Instant::now();
         let acquire_start = start;
@@ -1576,7 +1576,7 @@ impl WindowRenderer for ImageWindowRenderer {
         })
     }
 
-    fn present_ready_frame(&mut self) -> Option<PresentTiming> {
+    fn present_frame(&mut self) -> Option<PresentTiming> {
         self.ready_to_present.then(|| {
             self.ready_to_present = false;
             self.target.present_rgba(&self.scratch)

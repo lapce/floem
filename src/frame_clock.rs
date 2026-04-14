@@ -40,12 +40,15 @@ pub(crate) trait FrameClock {
     fn note_begin_frame_callbacks_ran(&mut self);
     fn refresh_schedule(&mut self, _frame_interval: Duration, _now: Instant) {}
     fn note_frame_prepare_started(&mut self, now: Instant);
-    fn mark_frame_prepared(&mut self);
-    fn clear_prepared_frame(&mut self);
-    fn has_preparable_frame_work(&self, has_next_frame_work: bool) -> bool;
+    fn set_frame_prepared(&mut self, prepared: bool);
+    fn needs_frame_prepare(&self, has_next_frame_work: bool) -> bool;
     fn frame_prepare_deadline(&self, frame_interval: Duration, now: Instant) -> Instant;
-    fn redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant;
-    fn ready_frame_redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant;
+    fn redraw_deadline(
+        &self,
+        frame_interval: Duration,
+        now: Instant,
+        has_ready_frame: bool,
+    ) -> Instant;
     fn observe_presented(
         &mut self,
         update_cpu_time: Duration,
@@ -134,15 +137,11 @@ impl FrameClock for HeuristicFrameClock {
 
     fn note_frame_prepare_started(&mut self, _now: Instant) {}
 
-    fn mark_frame_prepared(&mut self) {
-        self.frame_prepared = true;
+    fn set_frame_prepared(&mut self, prepared: bool) {
+        self.frame_prepared = prepared;
     }
 
-    fn clear_prepared_frame(&mut self) {
-        self.frame_prepared = false;
-    }
-
-    fn has_preparable_frame_work(&self, has_next_frame_work: bool) -> bool {
+    fn needs_frame_prepare(&self, has_next_frame_work: bool) -> bool {
         !self.frame_prepared && has_next_frame_work
     }
 
@@ -162,7 +161,20 @@ impl FrameClock for HeuristicFrameClock {
         earliest_present.checked_sub(lead_time).unwrap_or(now)
     }
 
-    fn redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
+    fn redraw_deadline(
+        &self,
+        frame_interval: Duration,
+        now: Instant,
+        has_ready_frame: bool,
+    ) -> Instant {
+        if has_ready_frame {
+            let next_present = self.last_presented_at + frame_interval;
+            return next_present
+                .checked_sub(SURFACE_ACQUIRE_GUARD_BAND)
+                .unwrap_or(now)
+                .max(self.earliest_surface_acquire_at());
+        }
+
         let earliest_present = self.last_presented_at + frame_interval;
         let max_lead = frame_interval
             .checked_div(2)
@@ -174,14 +186,6 @@ impl FrameClock for HeuristicFrameClock {
 
         earliest_present
             .checked_sub(lead_time)
-            .unwrap_or(now)
-            .max(self.earliest_surface_acquire_at())
-    }
-
-    fn ready_frame_redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
-        let next_present = self.last_presented_at + frame_interval;
-        next_present
-            .checked_sub(SURFACE_ACQUIRE_GUARD_BAND)
             .unwrap_or(now)
             .max(self.earliest_surface_acquire_at())
     }
@@ -345,8 +349,22 @@ impl SubductionPlanState {
         self.heuristic.frame_prepare_deadline(frame_interval, now)
     }
 
-    fn redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
+    fn redraw_deadline(
+        &self,
+        frame_interval: Duration,
+        now: Instant,
+        has_ready_frame: bool,
+    ) -> Instant {
         if let Some(commit_deadline) = self.latest_commit_deadline() {
+            if has_ready_frame {
+                let earliest_acquire = self.heuristic.earliest_surface_acquire_at();
+                return if earliest_acquire <= commit_deadline {
+                    earliest_acquire
+                } else {
+                    commit_deadline
+                };
+            }
+
             let max_lead = frame_interval
                 .checked_div(2)
                 .unwrap_or(Duration::from_millis(1));
@@ -363,22 +381,8 @@ impl SubductionPlanState {
                 .max(self.heuristic.earliest_surface_acquire_at());
         }
 
-        self.heuristic.redraw_deadline(frame_interval, now)
-    }
-
-    fn ready_frame_redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
-        if let Some(commit_deadline) = self.latest_commit_deadline() {
-            let _ = frame_interval;
-            let earliest_acquire = self.heuristic.earliest_surface_acquire_at();
-            return if earliest_acquire <= commit_deadline {
-                earliest_acquire
-            } else {
-                commit_deadline
-            };
-        }
-
         self.heuristic
-            .ready_frame_redraw_deadline(frame_interval, now)
+            .redraw_deadline(frame_interval, now, has_ready_frame)
     }
 
     fn observe_presented(
@@ -409,7 +413,7 @@ impl SubductionPlanState {
         {
             // A newer platform frame opportunity arrived before draw.
             // Drop the "prepared" latch so Floem can re-prepare against the freshest plan.
-            self.heuristic.clear_prepared_frame();
+            self.heuristic.set_frame_prepared(false);
             self.latest_prepare_start = None;
         }
 
@@ -483,31 +487,28 @@ impl FrameClock for SubductionFrameClock {
         self.plan_state.latest_prepare_start = Some(self.plan_state.instant_to_host(now));
     }
 
-    fn mark_frame_prepared(&mut self) {
-        self.plan_state.heuristic.mark_frame_prepared();
+    fn set_frame_prepared(&mut self, prepared: bool) {
+        self.plan_state.heuristic.set_frame_prepared(prepared);
     }
 
-    fn clear_prepared_frame(&mut self) {
-        self.plan_state.heuristic.clear_prepared_frame();
-    }
-
-    fn has_preparable_frame_work(&self, has_next_frame_work: bool) -> bool {
+    fn needs_frame_prepare(&self, has_next_frame_work: bool) -> bool {
         self.plan_state
             .heuristic
-            .has_preparable_frame_work(has_next_frame_work)
+            .needs_frame_prepare(has_next_frame_work)
     }
 
     fn frame_prepare_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
         self.plan_state.frame_prepare_deadline(frame_interval, now)
     }
 
-    fn redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
-        self.plan_state.redraw_deadline(frame_interval, now)
-    }
-
-    fn ready_frame_redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
+    fn redraw_deadline(
+        &self,
+        frame_interval: Duration,
+        now: Instant,
+        has_ready_frame: bool,
+    ) -> Instant {
         self.plan_state
-            .ready_frame_redraw_deadline(frame_interval, now)
+            .redraw_deadline(frame_interval, now, has_ready_frame)
     }
 
     fn observe_presented(
@@ -640,31 +641,28 @@ impl FrameClock for WindowsSubductionFrameClock {
         self.plan_state.latest_prepare_start = Some(self.plan_state.instant_to_host(now));
     }
 
-    fn mark_frame_prepared(&mut self) {
-        self.plan_state.heuristic.mark_frame_prepared();
+    fn set_frame_prepared(&mut self, prepared: bool) {
+        self.plan_state.heuristic.set_frame_prepared(prepared);
     }
 
-    fn clear_prepared_frame(&mut self) {
-        self.plan_state.heuristic.clear_prepared_frame();
-    }
-
-    fn has_preparable_frame_work(&self, has_next_frame_work: bool) -> bool {
+    fn needs_frame_prepare(&self, has_next_frame_work: bool) -> bool {
         self.plan_state
             .heuristic
-            .has_preparable_frame_work(has_next_frame_work)
+            .needs_frame_prepare(has_next_frame_work)
     }
 
     fn frame_prepare_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
         self.plan_state.frame_prepare_deadline(frame_interval, now)
     }
 
-    fn redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
-        self.plan_state.redraw_deadline(frame_interval, now)
-    }
-
-    fn ready_frame_redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
+    fn redraw_deadline(
+        &self,
+        frame_interval: Duration,
+        now: Instant,
+        has_ready_frame: bool,
+    ) -> Instant {
         self.plan_state
-            .ready_frame_redraw_deadline(frame_interval, now)
+            .redraw_deadline(frame_interval, now, has_ready_frame)
     }
 
     fn observe_presented(

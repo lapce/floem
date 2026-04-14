@@ -492,7 +492,7 @@ impl WindowHandle {
             self.size(Size::new(size.width, size.height));
         }
         // Now that the renderer is initialized, draw the first frame
-        self.draw_or_present_frame();
+        self.redraw();
         self.window.set_visible(true);
         self.window_state
             .request_paint(self.window_state.root_view_id);
@@ -907,26 +907,22 @@ impl WindowHandle {
         }
     }
 
-    pub(crate) fn present_ready_frame_if_available(&mut self) -> bool {
-        if matches!(self.paint_state, PaintState::Initialized { .. })
+    pub(crate) fn present_frame(&mut self) -> bool {
+        matches!(self.paint_state, PaintState::Initialized { .. })
             && self.paint_state.backend_mut().has_ready_frame()
-        {
-            return self.render_paint_frame();
-        }
-        false
+            && self.service_frame()
     }
 
-    pub(crate) fn draw_or_present_frame(&mut self) -> bool {
-        if matches!(self.paint_state, PaintState::Initialized { .. })
-            && self.paint_state.backend_mut().has_ready_frame()
-        {
-            return self.render_paint_frame();
+    pub(crate) fn redraw(&mut self) -> bool {
+        if self.has_ready_frame() {
+            self.service_frame()
+        } else {
+            self.prepare_frame();
+            self.service_frame()
         }
-        self.prepare_frame_if_needed();
-        self.render_paint_frame()
     }
 
-    fn render_paint_frame(&mut self) -> bool {
+    fn service_frame(&mut self) -> bool {
         let renderer_ready = matches!(self.paint_state, PaintState::Initialized { .. });
         let has_ready_frame = renderer_ready && self.paint_state.backend_mut().has_ready_frame();
         let needs_render_submission =
@@ -942,7 +938,7 @@ impl WindowHandle {
             }
 
             let paint = if has_ready_frame {
-                self.present_ready_frame()
+                self.present_prepared_frame()
             } else {
                 self.paint()
             };
@@ -972,7 +968,7 @@ impl WindowHandle {
             let frame_still_underway = self.pending_render_timing.is_some()
                 || self.paint_state.backend_mut().has_ready_frame();
             if presented || !frame_still_underway {
-                self.frame_clock.clear_prepared_frame();
+                self.frame_clock.set_frame_prepared(false);
             }
             return presented;
         }
@@ -989,10 +985,10 @@ impl WindowHandle {
             && !has_ready_frame
     }
 
-    pub(crate) fn prepare_frame_if_needed(&mut self) -> bool {
+    pub(crate) fn prepare_frame(&mut self) -> bool {
         if !self
             .frame_clock
-            .has_preparable_frame_work(self.window_state.has_next_frame_work())
+            .needs_frame_prepare(self.window_state.has_next_frame_work())
         {
             return false;
         }
@@ -1001,13 +997,13 @@ impl WindowHandle {
         self.window_state.promote_next_frame_work();
         self.run_begin_frame_callbacks();
         self.process_update_no_paint();
-        self.frame_clock.mark_frame_prepared();
+        self.frame_clock.set_frame_prepared(true);
         true
     }
 
-    pub(crate) fn has_preparable_frame_work(&self) -> bool {
+    pub(crate) fn needs_frame_prepare(&self) -> bool {
         self.frame_clock
-            .has_preparable_frame_work(self.window_state.has_next_frame_work())
+            .needs_frame_prepare(self.window_state.has_next_frame_work())
     }
 
     pub(crate) fn has_ready_frame(&mut self) -> bool {
@@ -1023,25 +1019,14 @@ impl WindowHandle {
         self.window_state.has_pending_render() || self.has_ready_frame()
     }
 
-    pub(crate) fn has_presentable_frame(&mut self) -> bool {
-        self.has_ready_frame()
-    }
-
     pub(crate) fn has_frame_underway(&mut self) -> bool {
         self.pending_render_timing.is_some() || self.has_ready_frame()
     }
 
-    pub(crate) fn active_redraw_deadline(
-        &mut self,
-        frame_interval: Duration,
-        now: Instant,
-    ) -> Instant {
-        if self.has_ready_frame() {
-            self.frame_clock
-                .ready_frame_redraw_deadline(frame_interval, now)
-        } else {
-            self.frame_clock.redraw_deadline(frame_interval, now)
-        }
+    pub(crate) fn redraw_deadline(&mut self, frame_interval: Duration, now: Instant) -> Instant {
+        let has_ready_frame = self.has_ready_frame();
+        self.frame_clock
+            .redraw_deadline(frame_interval, now, has_ready_frame)
     }
 
     pub(crate) fn should_prepare_frame_now(
@@ -1049,7 +1034,7 @@ impl WindowHandle {
         frame_interval: Duration,
         now: Instant,
     ) -> bool {
-        if !self.can_render_now() || !self.has_preparable_frame_work() {
+        if !self.can_render_now() || !self.needs_frame_prepare() {
             return false;
         }
 
@@ -1057,7 +1042,7 @@ impl WindowHandle {
             return true;
         }
 
-        now >= self.active_redraw_deadline(frame_interval, now)
+        now >= self.redraw_deadline(frame_interval, now)
     }
 
     pub(crate) fn next_prepare_deadline(
@@ -1067,13 +1052,13 @@ impl WindowHandle {
     ) -> Instant {
         let prepare_deadline = self.frame_clock.frame_prepare_deadline(frame_interval, now);
         if self.has_frame_underway() {
-            prepare_deadline.max(self.active_redraw_deadline(frame_interval, now))
+            prepare_deadline.max(self.redraw_deadline(frame_interval, now))
         } else {
             prepare_deadline
         }
     }
 
-    pub(crate) fn submit_render_if_needed(&mut self) -> bool {
+    pub(crate) fn render_frame(&mut self) -> bool {
         if !matches!(self.paint_state, PaintState::Initialized { .. }) {
             return false;
         }
@@ -1361,52 +1346,20 @@ impl WindowHandle {
         if let Some(render) = render {
             self.pending_render_timing = Some(render);
         }
-        let notify_start = Instant::now();
-        self.window.pre_present_notify();
-        let pre_present_notify = notify_start.elapsed();
-        let present = self.paint_state.backend_mut().present_ready_frame();
-        let render = if present.is_some() {
-            self.pending_render_timing.take()
-        } else {
-            render
-        };
+        let present = self.paint_state.backend_mut().present_frame();
+        let render = present.and_then(|_| self.pending_render_timing.take()).or(render);
         drop(cx);
-        let ready_wait_span = if present.is_some() {
-            self.take_ready_wait_span()
-        } else {
-            crate::paint::renderer::TimingSpan::default()
-        };
-        let ready_wait = ready_wait_span.duration();
-        if present.is_some() {
-            self.route_paint_present_event();
-        }
-        let total_end = Instant::now();
-        crate::paint::renderer::PaintTiming {
-            total: total_end.saturating_duration_since(total_start),
+        self.finish_paint_timing(
+            total_start,
             resize,
+            crate::paint::renderer::TimingSpan::new(total_start, render_start),
             render_cpu,
-            ready_wait,
-            pre_present_notify: present.map_or(Duration::ZERO, |_| pre_present_notify),
-            present_cpu: present.map_or(Duration::ZERO, |_| {
-                pre_present_notify + present.unwrap().total
-            }),
             render,
             present,
-            total_span: crate::paint::renderer::TimingSpan::new(total_start, total_end),
-            resize_span: crate::paint::renderer::TimingSpan::new(total_start, render_start),
-            ready_wait_span,
-            pre_present_notify_span: present
-                .map(|_| {
-                    crate::paint::renderer::TimingSpan::new(
-                        notify_start,
-                        notify_start + pre_present_notify,
-                    )
-                })
-                .unwrap_or_default(),
-        }
+        )
     }
 
-    fn present_ready_frame(&mut self) -> crate::paint::renderer::PaintTiming {
+    fn present_prepared_frame(&mut self) -> crate::paint::renderer::PaintTiming {
         if !matches!(self.paint_state, PaintState::Initialized { .. }) {
             return crate::paint::renderer::PaintTiming::default();
         }
@@ -1420,18 +1373,33 @@ impl WindowHandle {
             .resize(frame_size.width as u32, frame_size.height as u32);
         let resize = resize_start.elapsed();
 
+        let present = self.paint_state.backend_mut().present_frame();
+        let render = present.and_then(|_| self.pending_render_timing.take());
+        self.finish_paint_timing(
+            total_start,
+            resize,
+            crate::paint::renderer::TimingSpan::new(total_start, Instant::now()),
+            Duration::ZERO,
+            render,
+            present,
+        )
+    }
+
+    fn finish_paint_timing(
+        &mut self,
+        total_start: Instant,
+        resize: Duration,
+        resize_span: crate::paint::renderer::TimingSpan,
+        render_cpu: Duration,
+        render: Option<crate::paint::renderer::RenderTiming>,
+        present: Option<crate::paint::renderer::PresentTiming>,
+    ) -> crate::paint::renderer::PaintTiming {
         let notify_start = Instant::now();
         self.window.pre_present_notify();
         let pre_present_notify = notify_start.elapsed();
-
-        let present = self.paint_state.backend_mut().present_ready_frame();
-        let ready_wait_span = if present.is_some() {
-            self.take_ready_wait_span()
-        } else {
-            crate::paint::renderer::TimingSpan::default()
-        };
-        let ready_wait = ready_wait_span.duration();
-        let render = present.and_then(|_| self.pending_render_timing.take());
+        let ready_wait_span = present
+            .map(|_| self.take_ready_wait_span())
+            .unwrap_or_default();
         if present.is_some() {
             self.route_paint_present_event();
         }
@@ -1440,25 +1408,19 @@ impl WindowHandle {
         crate::paint::renderer::PaintTiming {
             total: total_end.saturating_duration_since(total_start),
             resize,
-            render_cpu: Duration::ZERO,
-            ready_wait,
+            render_cpu,
+            ready_wait: ready_wait_span.duration(),
             pre_present_notify: present.map_or(Duration::ZERO, |_| pre_present_notify),
-            present_cpu: present.map_or(Duration::ZERO, |_| {
-                pre_present_notify + present.unwrap().total
-            }),
+            present_cpu: present.map_or(Duration::ZERO, |present| pre_present_notify + present.total),
             render,
             present,
             total_span: crate::paint::renderer::TimingSpan::new(total_start, total_end),
-            resize_span: crate::paint::renderer::TimingSpan::new(total_start, notify_start),
+            resize_span,
             ready_wait_span,
-            pre_present_notify_span: present
-                .map(|_| {
-                    crate::paint::renderer::TimingSpan::new(
-                        notify_start,
-                        notify_start + pre_present_notify,
-                    )
-                })
-                .unwrap_or_default(),
+            pre_present_notify_span: crate::paint::renderer::TimingSpan::new(
+                notify_start,
+                notify_start + pre_present_notify,
+            ),
         }
     }
 
