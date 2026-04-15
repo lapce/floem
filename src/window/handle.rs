@@ -229,10 +229,6 @@ struct FrameTimingAccumulator {
 }
 
 impl FrameTimingAccumulator {
-    fn total(&self) -> Duration {
-        self.style + self.layout + self.box_tree_pending_updates + self.box_tree_commit
-    }
-
     fn absorb(&mut self, other: Self) {
         self.present_total = self.present_total.max(other.present_total);
         self.acquire_surface = self.acquire_surface.max(other.acquire_surface);
@@ -1421,15 +1417,10 @@ impl WindowHandle {
         if presented {
             let update = mem::take(&mut self.pending_timing);
             let useful_draw_cpu = update.present_total.saturating_sub(update.acquire_surface);
-            let present_cpu = update.present_total;
             let frame_end = Instant::now();
             self.record_profile_instant("FramePresented", frame_end);
-            self.frame_clock.observe_presented(
-                update.total(),
-                useful_draw_cpu,
-                present_cpu,
-                frame_end,
-            );
+            self.frame_clock
+                .observe_presented(useful_draw_cpu, frame_end);
             self.last_timing_report = Some(update.build_timing_report());
         }
         let frame_still_underway = !matches!(self.frame_pipeline, FramePipeline::Idle);

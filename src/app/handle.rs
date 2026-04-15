@@ -73,10 +73,29 @@ impl ApplicationHandle {
         }
     }
 
-    fn request_window_redraw(&mut self, window_id: WindowId) {
-        if let Some(handle) = self.window_handles.get(&window_id) {
-            handle.window.request_redraw();
+    /// Presents a window's prepared frame if one exists.
+    ///
+    /// The app handle does not choose frame contents or paint; it only asks the
+    /// window to perform the present stage and then finalizes profiling state.
+    fn present_window_frame(&mut self, window_id: WindowId) -> bool {
+        let Some(handle) = self.window_handles.get_mut(&window_id) else {
+            return false;
+        };
+        let start = Instant::now();
+        let presented = handle.present_frame();
+        let end = Instant::now();
+        if presented {
+            Self::finalize_presented_profile_frame(
+                handle,
+                Some(ProfileEvent {
+                    start,
+                    end,
+                    name: "DirectPresent".to_string(),
+                    depth: 0,
+                }),
+            );
         }
+        presented
     }
 
     fn finalize_presented_profile_frame(handle: &mut WindowHandle, event: Option<ProfileEvent>) {
@@ -111,7 +130,9 @@ impl ApplicationHandle {
             Some(deadline) => {
                 if Instant::now() >= deadline {
                     self.cancel_paced_redraw_timer(window_id, event_loop);
-                    self.request_window_redraw(window_id);
+                    if !self.present_window_frame(window_id) {
+                        self.request_update();
+                    }
                 } else {
                     self.ensure_paced_redraw_timer(window_id, deadline, event_loop);
                 }
@@ -181,13 +202,22 @@ impl ApplicationHandle {
                 window_id,
                 frame_id,
             } => {
-                let mut ready_frame_accepted = false;
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    ready_frame_accepted = handle.accept_frame_ready(frame_id);
-                    handle.refresh_frame_activity();
-                }
-                if ready_frame_accepted {
-                    self.request_window_redraw(window_id);
+                    #[cfg(all(feature = "subduction", target_os = "macos"))]
+                    {
+                        handle.accept_frame_ready(frame_id);
+                        handle.refresh_frame_activity();
+                        self.request_update();
+                    }
+
+                    #[cfg(not(all(feature = "subduction", target_os = "macos")))]
+                    {
+                        let ready_frame_accepted = handle.accept_frame_ready(frame_id);
+                        handle.refresh_frame_activity();
+                        if ready_frame_accepted {
+                            self.request_update();
+                        }
+                    }
                 }
                 self.refresh_window_frame_schedule(window_id, event_loop);
             }
@@ -333,8 +363,6 @@ impl ApplicationHandle {
         event: WindowEvent,
         event_loop: &dyn ActiveEventLoop,
     ) {
-        let is_redraw = matches!(event, WindowEvent::RedrawRequested);
-        let mut request_redraw_after = false;
         let window_handle = match self.window_handles.get_mut(&window_id) {
             Some(window_handle) => window_handle,
             None => return,
@@ -370,11 +398,7 @@ impl ApplicationHandle {
                 WindowEvent::DragLeft { .. } => "DragLeft",
                 WindowEvent::DragMoved { .. } => "DragMoved",
             };
-            (
-                name,
-                Instant::now(),
-                matches!(event, WindowEvent::RedrawRequested),
-            )
+            (name, Instant::now(), false)
         });
 
         let event_scale = window_handle.window_state.effective_scale();
@@ -393,7 +417,7 @@ impl ApplicationHandle {
             None => {}
         }
 
-        let mut frame_presented = false;
+        let frame_presented = false;
 
         match event {
             WindowEvent::ActivationTokenDone { .. } => {}
@@ -403,7 +427,7 @@ impl ApplicationHandle {
                 window_handle.size(size);
                 #[cfg(target_os = "macos")]
                 window_handle.request_presents_with_transaction_on_next_frame();
-                request_redraw_after = true;
+                self.request_update();
             }
             WindowEvent::Moved(position) => {
                 let position: LogicalPosition<f64> =
@@ -479,9 +503,7 @@ impl ApplicationHandle {
                     }
                 }
             }
-            WindowEvent::RedrawRequested => {
-                frame_presented = window_handle.present_frame();
-            }
+            WindowEvent::RedrawRequested => {}
             WindowEvent::PanGesture { .. } => {}
             WindowEvent::DoubleTapGesture { .. } => {}
             WindowEvent::RotationGesture { .. } => {}
@@ -498,10 +520,6 @@ impl ApplicationHandle {
                 //already handled by the ui-events reducer
             }
         }
-        if request_redraw_after {
-            self.request_window_redraw(window_id);
-        }
-
         if let Some((name, start, _new_frame)) = start {
             let end = Instant::now();
 
@@ -523,15 +541,10 @@ impl ApplicationHandle {
                 }
             }
         }
-        if is_redraw {
-            self.refresh_window_frame_schedule(window_id, event_loop);
-        }
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
             handle.refresh_frame_activity();
         }
-        if !is_redraw {
-            self.process_window_frame_from_event(window_id, event_loop);
-        }
+        self.process_window_frame_from_event(window_id, event_loop);
         self.update_control_flow(event_loop);
     }
 
@@ -1016,6 +1029,13 @@ impl ApplicationHandle {
                         && state.token == Some(token)
                     {
                         state.token = None;
+                        let presented = self.present_window_frame(window_id);
+                        self.refresh_window_frame_schedule(window_id, event_loop);
+                        if !presented {
+                            self.request_update();
+                        }
+                        any_timer_fired = true;
+                        continue;
                     }
 
                     (timer.action)(token);

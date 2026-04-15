@@ -7,8 +7,10 @@ use winit::window::WindowId;
 #[cfg(all(feature = "subduction", target_os = "macos"))]
 use crate::{Application, app::UserEvent};
 #[cfg(all(feature = "subduction", target_os = "macos"))]
+use objc2::MainThreadMarker;
+#[cfg(all(feature = "subduction", target_os = "macos"))]
 use subduction_backend_apple::{
-    DisplayLink, TickForwarder, compute_present_hints, now as subduction_now, timebase,
+    DisplayLink, compute_present_hints, now as subduction_now, timebase,
 };
 #[cfg(all(feature = "subduction", target_os = "windows"))]
 use subduction_backend_windows::{
@@ -50,9 +52,7 @@ pub(crate) trait FrameClock {
     ) -> Instant;
     fn observe_presented(
         &mut self,
-        update_cpu_time: Duration,
         draw_cpu_time_excluding_acquire: Duration,
-        present_cpu_time_including_acquire: Duration,
         presented_at: Instant,
     );
     fn set_active(&mut self, _active: bool) {}
@@ -71,8 +71,14 @@ pub(crate) fn new_window_frame_clock(window_id: WindowId, output_id: u32) -> Box
         return Box::new(WindowsSubductionFrameClock::new(OutputId(output_id)));
     }
 
-    let _ = (window_id, output_id);
-    Box::new(HeuristicFrameClock::default())
+    #[cfg(not(any(
+        all(feature = "subduction", target_os = "macos"),
+        all(feature = "subduction", target_os = "windows")
+    )))]
+    {
+        let _ = (window_id, output_id);
+        Box::new(HeuristicFrameClock::default())
+    }
 }
 
 fn max_duration(a: Duration, b: Duration) -> Duration {
@@ -84,12 +90,14 @@ fn min_duration(a: Duration, b: Duration) -> Duration {
 }
 
 const MIN_SURFACE_ACQUIRE_GUARD_BAND: Duration = Duration::from_millis(1);
+#[cfg(all(feature = "subduction", target_os = "windows"))]
+const SUBDUCTION_PRESENT_WAKE_SLACK: Duration = Duration::from_micros(20);
+#[cfg(all(feature = "subduction", target_os = "macos"))]
+const MACOS_SUBDUCTION_PRESENT_DELAY: Duration = Duration::from_micros(500);
 
 #[derive(Debug)]
 pub(crate) struct HeuristicFrameClock {
     last_presented_at: Instant,
-    last_frame_opportunity_at: Instant,
-    estimated_frame_prepare_lead_time: Duration,
     estimated_draw_lead_time: Duration,
     estimated_present_lead_time: Duration,
     frame_counter: u64,
@@ -100,8 +108,6 @@ impl Default for HeuristicFrameClock {
     fn default() -> Self {
         Self {
             last_presented_at: Instant::now(),
-            last_frame_opportunity_at: Instant::now(),
-            estimated_frame_prepare_lead_time: Duration::from_millis(1),
             estimated_draw_lead_time: Duration::from_millis(1),
             estimated_present_lead_time: Duration::from_millis(1),
             frame_counter: 0,
@@ -185,40 +191,22 @@ impl FrameClock for HeuristicFrameClock {
 
     fn observe_presented(
         &mut self,
-        update_cpu_time: Duration,
         draw_cpu_time_excluding_acquire: Duration,
-        present_cpu_time_including_acquire: Duration,
         presented_at: Instant,
     ) {
-        self.update_frame_prepare_lead_estimate(update_cpu_time);
         self.update_draw_lead_estimate(draw_cpu_time_excluding_acquire);
-        self.update_present_lead_estimate(present_cpu_time_including_acquire);
+        // Surface acquisition may block until the swapchain actually becomes
+        // available. If we learn that blocked time into the "ready to present"
+        // lead estimate, we wake earlier next frame and recreate the same
+        // stall. Learn only the non-blocking present CPU cost here.
+        self.update_present_lead_estimate(draw_cpu_time_excluding_acquire);
         self.last_presented_at = presented_at;
-        self.last_frame_opportunity_at = presented_at;
     }
 }
 
 impl HeuristicFrameClock {
     fn earliest_surface_acquire_at(&self) -> Instant {
         self.last_presented_at + MIN_SURFACE_ACQUIRE_GUARD_BAND
-    }
-
-    #[cfg(all(feature = "subduction", target_os = "macos"))]
-    fn estimated_frame_prepare_lead_time(&self) -> Duration {
-        self.estimated_frame_prepare_lead_time
-    }
-
-    #[cfg(all(feature = "subduction", target_os = "macos"))]
-    fn estimated_draw_lead_time(&self) -> Duration {
-        self.estimated_draw_lead_time
-    }
-
-    fn update_frame_prepare_lead_estimate(&mut self, observed_cpu_time: Duration) {
-        let target = observed_cpu_time + Duration::from_micros(500);
-        self.estimated_frame_prepare_lead_time =
-            max_duration(self.estimated_frame_prepare_lead_time, target);
-        self.estimated_frame_prepare_lead_time =
-            (self.estimated_frame_prepare_lead_time * 7 + target) / 8;
     }
 
     fn update_draw_lead_estimate(&mut self, observed_cpu_time: Duration) {
@@ -334,61 +322,51 @@ impl SubductionPlanState {
 
     fn redraw_deadline(
         &self,
-        frame_interval: Duration,
+        _frame_interval: Duration,
         now: Instant,
         has_ready_frame: bool,
     ) -> Instant {
+        let latest_surface_available_at = self
+            .latest_hints
+            .and_then(|hints| hints.desired_present)
+            .map(|present| self.host_to_instant(present));
+
         if let Some(commit_deadline) = self.latest_commit_deadline() {
             if has_ready_frame {
-                let max_lead = frame_interval
-                    .checked_div(2)
-                    .unwrap_or(Duration::from_millis(1));
-                let lead_time = min_duration(
-                    max_duration(
-                        self.heuristic.estimated_present_lead_time,
-                        Duration::from_millis(1),
-                    ),
-                    max_lead,
-                );
-                return commit_deadline
-                    .checked_sub(lead_time)
-                    .unwrap_or(now)
-                    .max(self.heuristic.earliest_surface_acquire_at());
+                if let Some(surface_available_at) = latest_surface_available_at {
+                    #[cfg(all(feature = "subduction", target_os = "macos"))]
+                    {
+                        return surface_available_at
+                            .checked_add(MACOS_SUBDUCTION_PRESENT_DELAY)
+                            .unwrap_or(surface_available_at)
+                            .max(now);
+                    }
+
+                    #[cfg(all(feature = "subduction", target_os = "windows"))]
+                    {
+                        return surface_available_at
+                            .checked_sub(SUBDUCTION_PRESENT_WAKE_SLACK)
+                            .unwrap_or(now);
+                    }
+                }
+
+                return commit_deadline.max(now);
             }
 
-            let max_lead = frame_interval
-                .checked_div(2)
-                .unwrap_or(Duration::from_millis(1));
-            let lead_time = min_duration(
-                max_duration(
-                    self.heuristic.estimated_draw_lead_time(),
-                    Duration::from_millis(1),
-                ),
-                max_lead,
-            );
-            return commit_deadline
-                .checked_sub(lead_time)
-                .unwrap_or(now)
-                .max(self.heuristic.earliest_surface_acquire_at());
+            return commit_deadline.max(now);
         }
 
         self.heuristic
-            .redraw_deadline(frame_interval, now, has_ready_frame)
+            .redraw_deadline(_frame_interval, now, has_ready_frame)
     }
 
     fn observe_presented(
         &mut self,
-        update_cpu_time: Duration,
         draw_cpu_time_excluding_acquire: Duration,
-        present_cpu_time_including_acquire: Duration,
         presented_at: Instant,
     ) {
-        self.heuristic.observe_presented(
-            update_cpu_time,
-            draw_cpu_time_excluding_acquire,
-            present_cpu_time_including_acquire,
-            presented_at,
-        );
+        self.heuristic
+            .observe_presented(draw_cpu_time_excluding_acquire, presented_at);
 
         if let (Some(hints), Some(build_start)) = (self.latest_hints, self.latest_prepare_start) {
             self.pending_feedback = Some(PendingFeedback {
@@ -420,17 +398,13 @@ impl SubductionPlanState {
 #[derive(Debug)]
 struct SubductionFrameClock {
     plan_state: SubductionPlanState,
+    window_id: WindowId,
     display_link: Option<DisplayLink>,
-    tick_forwarder: TickForwarder,
 }
 
 #[cfg(all(feature = "subduction", target_os = "macos"))]
 impl SubductionFrameClock {
     fn new(window_id: WindowId, output: OutputId) -> Self {
-        let tick_forwarder = TickForwarder::new(move |tick| {
-            Application::send_proxy_event(UserEvent::SubductionFrameTick { window_id, tick });
-        });
-
         Self {
             plan_state: SubductionPlanState::new(
                 output,
@@ -438,8 +412,8 @@ impl SubductionFrameClock {
                 subduction_now(),
                 timebase(),
             ),
+            window_id,
             display_link: None,
-            tick_forwarder,
         }
     }
 
@@ -449,12 +423,19 @@ impl SubductionFrameClock {
         }
 
         let output = self.plan_state.output;
-        let Ok(display_link) = DisplayLink::new(self.tick_forwarder.sender(), output) else {
+        let Some(mtm) = MainThreadMarker::new() else {
             return;
         };
-        if display_link.start().is_ok() {
-            self.display_link = Some(display_link);
-        }
+        let window_id = self.window_id;
+        let display_link = DisplayLink::new(
+            move |tick| {
+                Application::send_proxy_event(UserEvent::SubductionFrameTick { window_id, tick });
+            },
+            output,
+            mtm,
+        );
+        display_link.start();
+        self.display_link = Some(display_link);
     }
 }
 
@@ -502,17 +483,11 @@ impl FrameClock for SubductionFrameClock {
 
     fn observe_presented(
         &mut self,
-        update_cpu_time: Duration,
         draw_cpu_time_excluding_acquire: Duration,
-        present_cpu_time_including_acquire: Duration,
         presented_at: Instant,
     ) {
-        self.plan_state.observe_presented(
-            update_cpu_time,
-            draw_cpu_time_excluding_acquire,
-            present_cpu_time_including_acquire,
-            presented_at,
-        );
+        self.plan_state
+            .observe_presented(draw_cpu_time_excluding_acquire, presented_at);
     }
 
     fn set_active(&mut self, active: bool) {
@@ -523,7 +498,7 @@ impl FrameClock for SubductionFrameClock {
         if active {
             self.ensure_display_link();
         } else if let Some(display_link) = self.display_link.take() {
-            let _ = display_link.stop();
+            display_link.stop();
         }
     }
 
@@ -654,18 +629,12 @@ impl FrameClock for WindowsSubductionFrameClock {
 
     fn observe_presented(
         &mut self,
-        update_cpu_time: Duration,
         draw_cpu_time_excluding_acquire: Duration,
-        present_cpu_time_including_acquire: Duration,
         presented_at: Instant,
     ) {
         self.prev_present_time = Some(self.plan_state.instant_to_host(presented_at));
-        self.plan_state.observe_presented(
-            update_cpu_time,
-            draw_cpu_time_excluding_acquire,
-            present_cpu_time_including_acquire,
-            presented_at,
-        );
+        self.plan_state
+            .observe_presented(draw_cpu_time_excluding_acquire, presented_at);
     }
 
     fn set_active(&mut self, active: bool) {
