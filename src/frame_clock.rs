@@ -53,6 +53,7 @@ pub(crate) trait FrameClock {
         &mut self,
         update_cpu_time: Duration,
         draw_cpu_time_excluding_acquire: Duration,
+        present_cpu_time_including_acquire: Duration,
         presented_at: Instant,
     );
     fn set_active(&mut self, _active: bool) {}
@@ -83,7 +84,7 @@ fn min_duration(a: Duration, b: Duration) -> Duration {
     if a <= b { a } else { b }
 }
 
-const SURFACE_ACQUIRE_GUARD_BAND: Duration = Duration::from_millis(1);
+const MIN_SURFACE_ACQUIRE_GUARD_BAND: Duration = Duration::from_millis(1);
 
 #[derive(Debug)]
 pub(crate) struct HeuristicFrameClock {
@@ -91,6 +92,7 @@ pub(crate) struct HeuristicFrameClock {
     last_frame_opportunity_at: Instant,
     estimated_frame_prepare_lead_time: Duration,
     estimated_draw_lead_time: Duration,
+    estimated_present_lead_time: Duration,
     frame_counter: u64,
     frame_prepared: bool,
 }
@@ -102,6 +104,7 @@ impl Default for HeuristicFrameClock {
             last_frame_opportunity_at: Instant::now(),
             estimated_frame_prepare_lead_time: Duration::from_millis(1),
             estimated_draw_lead_time: Duration::from_millis(1),
+            estimated_present_lead_time: Duration::from_millis(1),
             frame_counter: 0,
             frame_prepared: false,
         }
@@ -169,8 +172,15 @@ impl FrameClock for HeuristicFrameClock {
     ) -> Instant {
         if has_ready_frame {
             let next_present = self.last_presented_at + frame_interval;
+            let max_lead = frame_interval
+                .checked_div(2)
+                .unwrap_or(Duration::from_millis(1));
+            let lead_time = min_duration(
+                max_duration(self.estimated_present_lead_time, Duration::from_millis(1)),
+                max_lead,
+            );
             return next_present
-                .checked_sub(SURFACE_ACQUIRE_GUARD_BAND)
+                .checked_sub(lead_time)
                 .unwrap_or(now)
                 .max(self.earliest_surface_acquire_at());
         }
@@ -194,10 +204,12 @@ impl FrameClock for HeuristicFrameClock {
         &mut self,
         update_cpu_time: Duration,
         draw_cpu_time_excluding_acquire: Duration,
+        present_cpu_time_including_acquire: Duration,
         presented_at: Instant,
     ) {
         self.update_frame_prepare_lead_estimate(update_cpu_time);
         self.update_draw_lead_estimate(draw_cpu_time_excluding_acquire);
+        self.update_present_lead_estimate(present_cpu_time_including_acquire);
         self.last_presented_at = presented_at;
         self.last_frame_opportunity_at = presented_at;
     }
@@ -205,7 +217,7 @@ impl FrameClock for HeuristicFrameClock {
 
 impl HeuristicFrameClock {
     fn earliest_surface_acquire_at(&self) -> Instant {
-        self.last_presented_at + SURFACE_ACQUIRE_GUARD_BAND
+        self.last_presented_at + MIN_SURFACE_ACQUIRE_GUARD_BAND
     }
 
     #[cfg(all(feature = "subduction", target_os = "macos"))]
@@ -230,6 +242,12 @@ impl HeuristicFrameClock {
         let target = observed_cpu_time + Duration::from_micros(500);
         self.estimated_draw_lead_time = max_duration(self.estimated_draw_lead_time, target);
         self.estimated_draw_lead_time = (self.estimated_draw_lead_time * 7 + target) / 8;
+    }
+
+    fn update_present_lead_estimate(&mut self, observed_cpu_time: Duration) {
+        let target = observed_cpu_time + Duration::from_micros(500);
+        self.estimated_present_lead_time = max_duration(self.estimated_present_lead_time, target);
+        self.estimated_present_lead_time = (self.estimated_present_lead_time * 7 + target) / 8;
     }
 }
 
@@ -357,12 +375,20 @@ impl SubductionPlanState {
     ) -> Instant {
         if let Some(commit_deadline) = self.latest_commit_deadline() {
             if has_ready_frame {
-                let earliest_acquire = self.heuristic.earliest_surface_acquire_at();
-                return if earliest_acquire <= commit_deadline {
-                    earliest_acquire
-                } else {
-                    commit_deadline
-                };
+                let max_lead = frame_interval
+                    .checked_div(2)
+                    .unwrap_or(Duration::from_millis(1));
+                let lead_time = min_duration(
+                    max_duration(
+                        self.heuristic.estimated_present_lead_time,
+                        Duration::from_millis(1),
+                    ),
+                    max_lead,
+                );
+                return commit_deadline
+                    .checked_sub(lead_time)
+                    .unwrap_or(now)
+                    .max(self.heuristic.earliest_surface_acquire_at());
             }
 
             let max_lead = frame_interval
@@ -389,11 +415,13 @@ impl SubductionPlanState {
         &mut self,
         update_cpu_time: Duration,
         draw_cpu_time_excluding_acquire: Duration,
+        present_cpu_time_including_acquire: Duration,
         presented_at: Instant,
     ) {
         self.heuristic.observe_presented(
             update_cpu_time,
             draw_cpu_time_excluding_acquire,
+            present_cpu_time_including_acquire,
             presented_at,
         );
 
@@ -515,11 +543,13 @@ impl FrameClock for SubductionFrameClock {
         &mut self,
         update_cpu_time: Duration,
         draw_cpu_time_excluding_acquire: Duration,
+        present_cpu_time_including_acquire: Duration,
         presented_at: Instant,
     ) {
         self.plan_state.observe_presented(
             update_cpu_time,
             draw_cpu_time_excluding_acquire,
+            present_cpu_time_including_acquire,
             presented_at,
         );
     }
@@ -669,12 +699,14 @@ impl FrameClock for WindowsSubductionFrameClock {
         &mut self,
         update_cpu_time: Duration,
         draw_cpu_time_excluding_acquire: Duration,
+        present_cpu_time_including_acquire: Duration,
         presented_at: Instant,
     ) {
         self.prev_present_time = Some(self.plan_state.instant_to_host(presented_at));
         self.plan_state.observe_presented(
             update_cpu_time,
             draw_cpu_time_excluding_acquire,
+            present_cpu_time_including_acquire,
             presented_at,
         );
     }

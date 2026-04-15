@@ -315,6 +315,30 @@ impl FrameTimingAccumulator {
         self.update_end = Some(self.update_end.map_or(span.end, |end| end.max(span.end)));
         self.spans.push(span);
     }
+
+    fn build_timing_report(self) -> TimingReport {
+        let spans = self.spans;
+        let anchor = spans.iter().map(|span| span.start).min();
+        let end = spans.iter().map(|span| span.end).max();
+        let (Some(anchor), Some(end)) = (anchor, end) else {
+            return TimingReport::default();
+        };
+
+        let total = end.saturating_duration_since(anchor);
+        let mut timings = TimingReport::new(Some(anchor), total);
+        for span in spans {
+            let duration = span.duration();
+            if duration > Duration::ZERO {
+                timings.push_span(
+                    span.label,
+                    span.start.saturating_duration_since(anchor),
+                    duration,
+                    span.kind,
+                );
+            }
+        }
+        timings
+    }
 }
 
 impl Drop for WindowHandle {
@@ -1428,41 +1452,22 @@ impl WindowHandle {
         if presented {
             let update = mem::take(&mut self.pending_timing);
             let useful_draw_cpu = update.present_total.saturating_sub(update.acquire_surface);
+            let present_cpu = update.present_total;
             let frame_end = Instant::now();
             self.record_profile_instant("FramePresented", frame_end);
-            self.frame_clock
-                .observe_presented(update.total(), useful_draw_cpu, frame_end);
-            self.last_timing_report = Some(Self::build_timing_report(update));
+            self.frame_clock.observe_presented(
+                update.total(),
+                useful_draw_cpu,
+                present_cpu,
+                frame_end,
+            );
+            self.last_timing_report = Some(update.build_timing_report());
         }
         let frame_still_underway = !matches!(self.frame_pipeline, FramePipeline::Idle);
         if presented || !frame_still_underway {
             self.frame_clock.set_frame_prepared(false);
         }
         presented
-    }
-
-    fn build_timing_report(update: FrameTimingAccumulator) -> TimingReport {
-        let spans = update.spans;
-        let anchor = spans.iter().map(|span| span.start).min();
-        let end = spans.iter().map(|span| span.end).max();
-        let (Some(anchor), Some(end)) = (anchor, end) else {
-            return TimingReport::default();
-        };
-
-        let total = end.saturating_duration_since(anchor);
-        let mut timings = TimingReport::new(Some(anchor), total);
-        for span in spans {
-            let duration = span.duration();
-            if duration > Duration::ZERO {
-                timings.push_span(
-                    span.label,
-                    span.start.saturating_duration_since(anchor),
-                    duration,
-                    span.kind,
-                );
-            }
-        }
-        timings
     }
 
     pub(crate) fn take_last_timing_report(&mut self) -> Option<TimingReport> {
@@ -1607,7 +1612,7 @@ impl WindowHandle {
         }
         update.push_span(box_tree_duration);
         update.absorb(timing);
-        let timings = Self::build_timing_report(update);
+        let timings = update.build_timing_report();
         let window_size = self.window_state.root_size;
         let state = CaptureState::collect_from(self.id, &self.window_state);
 
