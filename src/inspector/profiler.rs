@@ -380,6 +380,20 @@ fn frame_for_visible_range(
     })
 }
 
+fn frame_for_cursor_time(
+    frames: &[Rc<ProfileFrameData>],
+    cursor_time: f64,
+) -> Option<Rc<ProfileFrameData>> {
+    frames
+        .iter()
+        .min_by(|a, b| {
+            (a.start.as_secs_f64() - cursor_time)
+                .abs()
+                .total_cmp(&(b.start.as_secs_f64() - cursor_time).abs())
+        })
+        .cloned()
+}
+
 struct TimelineElement {
     element_id: ElementId,
     lane_idx: usize,
@@ -402,6 +416,7 @@ enum ProfilerViewportRequest {
 struct ProfilerTimelineView {
     id: ViewId,
     hovered_event: RwSignal<Option<TimelineItem>>,
+    cursor_time: RwSignal<Option<f64>>,
     selected_frame: RwSignal<Option<Rc<ProfileFrameData>>>,
     active_frame_index: RwSignal<Option<usize>>,
     visible_range: RwSignal<(f64, f64)>,
@@ -428,6 +443,7 @@ impl ProfilerTimelineView {
         instant_markers: Rc<[TimelineInstantMarker]>,
         total_duration: Duration,
         hovered_event: RwSignal<Option<TimelineItem>>,
+        cursor_time: RwSignal<Option<f64>>,
         selected_frame: RwSignal<Option<Rc<ProfileFrameData>>>,
         active_frame_index: RwSignal<Option<usize>>,
         visible_range: RwSignal<(f64, f64)>,
@@ -494,6 +510,7 @@ impl ProfilerTimelineView {
         let mut this = Self {
             id,
             hovered_event,
+            cursor_time,
             selected_frame,
             active_frame_index,
             visible_range,
@@ -591,6 +608,17 @@ impl ProfilerTimelineView {
                 .label_layout
                 .set_text(&element.item.label, attrs_list.clone(), None);
         }
+    }
+
+    fn time_at_root_local_x(&self, x: f64) -> Option<f64> {
+        if self.size.width <= f64::EPSILON {
+            return None;
+        }
+        Some(
+            self.viewport
+                .view_to_world_x(x.clamp(0.0, self.size.width))
+                .clamp(0.0, self.total_duration_secs()),
+        )
     }
 
     fn fit_selected_frame(&mut self, frame: &ProfileFrameData) {
@@ -882,6 +910,11 @@ impl View for ProfilerTimelineView {
                     EventPropagation::Continue
                 }
             }
+            Event::Pointer(PointerEvent::Move(event)) => {
+                let root_local_x = self.root_local_x(cx, event.current.logical_point());
+                self.cursor_time.set(self.time_at_root_local_x(root_local_x));
+                EventPropagation::Continue
+            }
             Event::Pointer(PointerEvent::Scroll(event)) => {
                 let delta = event.resolve_to_points(None, None);
                 let anchor_x = self.root_local_x(cx, event.state.logical_point());
@@ -918,6 +951,10 @@ impl View for ProfilerTimelineView {
                 self.invalidate_timeline_paint(cx.window_state);
                 self.refresh_viewport(cx.window_state);
                 EventPropagation::Stop
+            }
+            Event::Pointer(PointerEvent::Leave(_)) if cx.target == self.id.get_element_id() => {
+                self.cursor_time.set(None);
+                EventPropagation::Continue
             }
             _ => EventPropagation::Continue,
         }
@@ -1050,8 +1087,6 @@ struct OverviewPalette {
     textured_base: Color,
     viewport_fill: Color,
     viewport_stroke: Color,
-    selected: Color,
-    frame_marker: Color,
 }
 
 #[derive(Clone, Copy)]
@@ -1178,12 +1213,10 @@ fn build_overview_bins(
 struct ProfilerOverviewView {
     id: ViewId,
     bins: Rc<[OverviewBin]>,
-    frame_markers: Rc<[TimelineFrameMarker]>,
-    instant_markers: Rc<[TimelineInstantMarker]>,
     total_duration_secs: f64,
+    cursor_time: RwSignal<Option<f64>>,
     visible_range: RwSignal<(f64, f64)>,
     viewport_request: RwSignal<Option<ProfilerViewportRequest>>,
-    active_frame_index: RwSignal<Option<usize>>,
     dragging: bool,
     size: Size,
     palette: OverviewPalette,
@@ -1192,34 +1225,28 @@ struct ProfilerOverviewView {
 impl ProfilerOverviewView {
     fn new(
         bins: Rc<[OverviewBin]>,
-        frame_markers: Rc<[TimelineFrameMarker]>,
-        instant_markers: Rc<[TimelineInstantMarker]>,
         total_duration: Duration,
+        cursor_time: RwSignal<Option<f64>>,
         visible_range: RwSignal<(f64, f64)>,
         viewport_request: RwSignal<Option<ProfilerViewportRequest>>,
-        active_frame_index: RwSignal<Option<usize>>,
     ) -> Self {
         let id = ViewId::new();
         id.register_listener(LayoutChangedListener::listener_key());
 
         let effect_id = id;
         let effect_visible_range = visible_range;
-        let effect_active_frame_index = active_frame_index;
         Effect::new(move |_| {
             let _ = effect_visible_range.get();
-            let _ = effect_active_frame_index.get();
             effect_id.request_paint();
         });
 
         Self {
             id,
             bins,
-            frame_markers,
-            instant_markers,
             total_duration_secs: total_duration.as_secs_f64().max(f64::MIN_POSITIVE),
+            cursor_time,
             visible_range,
             viewport_request,
-            active_frame_index,
             dragging: false,
             size: Size::ZERO,
             palette: OverviewPalette {
@@ -1228,8 +1255,6 @@ impl ProfilerOverviewView {
                 textured_base: Color::from_rgb8(178, 186, 197),
                 viewport_fill: Color::from_rgba8(54, 111, 196, 28),
                 viewport_stroke: Color::from_rgba8(54, 111, 196, 180),
-                selected: css::TOMATO,
-                frame_marker: Color::from_rgba8(92, 102, 116, 120),
             },
         }
     }
@@ -1328,8 +1353,6 @@ impl View for ProfilerOverviewView {
             textured_base: theme.text_muted().with_alpha(0.55),
             viewport_fill: theme.primary().with_alpha(0.12),
             viewport_stroke: theme.primary().with_alpha(0.72),
-            selected: css::TOMATO,
-            frame_marker: theme.border().with_alpha(0.62),
         };
         cx.window_state.request_paint(self.id);
     }
@@ -1356,6 +1379,8 @@ impl View for ProfilerOverviewView {
                 }
             }
             Event::Pointer(PointerEvent::Move(event)) => {
+                self.cursor_time
+                    .set(self.time_at_local_point(event.current.logical_point()));
                 if self.dragging {
                     self.request_center_at(event.current.logical_point(), cx.window_state);
                     EventPropagation::Stop
@@ -1384,8 +1409,13 @@ impl View for ProfilerOverviewView {
                 self.request_zoom_at(gesture.state.logical_point(), factor, cx.window_state);
                 EventPropagation::Stop
             }
-            Event::Pointer(PointerEvent::Up(_)) | Event::Pointer(PointerEvent::Leave(_)) => {
+            Event::Pointer(PointerEvent::Up(_)) => {
                 self.dragging = false;
+                EventPropagation::Continue
+            }
+            Event::Pointer(PointerEvent::Leave(_)) => {
+                self.dragging = false;
+                self.cursor_time.set(None);
                 EventPropagation::Continue
             }
             _ => EventPropagation::Continue,
@@ -1441,39 +1471,6 @@ impl View for ProfilerOverviewView {
                     )
                     .draw();
             }
-        }
-
-        let selected_index = self.active_frame_index.get();
-        for marker in self.frame_markers.iter() {
-            let x =
-                inner.x0 + inner.width() * (marker.start.as_secs_f64() / self.total_duration_secs);
-            let color = if selected_index == Some(marker.index) {
-                self.palette.selected
-            } else {
-                self.palette.frame_marker
-            };
-            cx.painter
-                .stroke(
-                    Line::new((x, inner.y0 + 2.0), (x, inner.y1 - 2.0)),
-                    &Stroke::new(if selected_index == Some(marker.index) {
-                        1.5
-                    } else {
-                        1.0
-                    }),
-                    &Brush::Solid(color),
-                )
-                .draw();
-        }
-        for marker in self.instant_markers.iter() {
-            let x =
-                inner.x0 + inner.width() * (marker.start.as_secs_f64() / self.total_duration_secs);
-            cx.painter
-                .stroke(
-                    Line::new((x, inner.y0 + 2.0), (x, inner.y1 - 2.0)),
-                    &Stroke::new(1.0),
-                    &Brush::Solid(marker.color.with_alpha(0.8)),
-                )
-                .draw();
         }
 
         let (visible_start, visible_end) = self.visible_range.get();
@@ -1580,6 +1577,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
         .into();
     let selected_frame = RwSignal::new(None::<Rc<ProfileFrameData>>);
     let active_frame_index = RwSignal::new(None::<usize>);
+    let cursor_time = RwSignal::new(None::<f64>);
     let visible_range = RwSignal::new((0.0, total_duration.as_secs_f64()));
     let viewport_request = RwSignal::new(None::<ProfilerViewportRequest>);
     let suppress_frame_list_select = RwSignal::new(false);
@@ -1719,15 +1717,19 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
         selected_frame.set(frame);
     });
 
-    let frames_for_visible = frames.clone();
-    let visible_frame_index = Memo::new(move |_| {
-        let visible = visible_range.get();
-        frame_for_visible_range(&frames_for_visible, visible).map(|frame| frame.index)
+    let frames_for_current = frames.clone();
+    let current_frame_index = Memo::new(move |_| {
+        if let Some(cursor_time) = cursor_time.get() {
+            frame_for_cursor_time(&frames_for_current, cursor_time).map(|frame| frame.index)
+        } else {
+            let visible = visible_range.get();
+            frame_for_visible_range(&frames_for_current, visible).map(|frame| frame.index)
+        }
     });
 
     {
         Effect::new(move |_| {
-            let frame_index = visible_frame_index.get();
+            let frame_index = current_frame_index.get();
             if active_frame_index.get_untracked() != frame_index {
                 active_frame_index.set(frame_index);
             }
@@ -1807,6 +1809,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                 instant_markers.clone(),
                 total_duration,
                 hovered_event,
+                cursor_time,
                 selected_frame,
                 active_frame_index,
                 visible_range,
@@ -1826,12 +1829,10 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                 .style(|s| s.items_center().justify_between().gap(10.0)),
                 ProfilerOverviewView::new(
                     overview_bins,
-                    frame_markers.clone(),
-                    instant_markers.clone(),
                     total_duration,
+                    cursor_time,
                     visible_range,
                     viewport_request,
-                    active_frame_index,
                 )
                 .style(|s| s.width_full().height(OVERVIEW_HEIGHT)),
             ))
