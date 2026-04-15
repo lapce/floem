@@ -207,16 +207,12 @@ impl ApplicationHandle {
                     {
                         handle.accept_frame_ready(frame_id);
                         handle.refresh_frame_activity();
-                        self.request_update();
                     }
 
                     #[cfg(not(all(feature = "subduction", target_os = "macos")))]
                     {
-                        let ready_frame_accepted = handle.accept_frame_ready(frame_id);
+                        handle.accept_frame_ready(frame_id);
                         handle.refresh_frame_activity();
-                        if ready_frame_accepted {
-                            self.request_update();
-                        }
                     }
                 }
                 self.refresh_window_frame_schedule(window_id, event_loop);
@@ -227,7 +223,16 @@ impl ApplicationHandle {
                     handle.record_profile_instant("VSync", Instant::now());
                     handle.receive_frame_tick(tick);
                     handle.refresh_frame_activity();
-                    if handle.can_render_now() && handle.has_frame_work() {
+                    // Continuous animations are driven by subduction ticks.
+                    // Once a frame is already underway, do not let the next
+                    // tick start another animation frame on top of it; wait
+                    // until the current frame retires so steady-state
+                    // animation stays at one scene build per display interval.
+                    if handle.can_render_now()
+                        && !handle.has_frame_underway()
+                        && (handle.window_state.has_next_frame_work()
+                            || handle.window_state.has_pending_render())
+                    {
                         self.request_update();
                     }
                 }
@@ -1030,11 +1035,11 @@ impl ApplicationHandle {
                     {
                         state.token = None;
                         let presented = self.present_window_frame(window_id);
-                        self.refresh_window_frame_schedule(window_id, event_loop);
                         if !presented {
+                            self.refresh_window_frame_schedule(window_id, event_loop);
                             self.request_update();
+                            any_timer_fired = true;
                         }
-                        any_timer_fired = true;
                         continue;
                     }
 

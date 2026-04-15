@@ -538,7 +538,6 @@ struct OffscreenRenderWorker {
     sender: mpsc::Sender<RenderWorkerCommand>,
     receiver: mpsc::Receiver<ReadyFrame>,
     join_handle: Option<thread::JoinHandle<()>>,
-    in_flight: bool,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -828,7 +827,6 @@ impl OffscreenRenderWorker {
                 sender: command_tx,
                 receiver: result_rx,
                 join_handle: Some(join_handle),
-                in_flight: false,
             },
             init,
         ))
@@ -842,7 +840,6 @@ impl OffscreenRenderWorker {
                 size: job.size,
             })
             .expect("render worker thread stopped unexpectedly");
-        self.in_flight = true;
     }
 
     fn capture(&mut self, job: OffscreenRenderJob) -> CaptureOutput {
@@ -864,7 +861,6 @@ impl OffscreenRenderWorker {
         while let Ok(next) = self.receiver.try_recv() {
             latest = next;
         }
-        self.in_flight = false;
         (latest.frame_id == frame_id).then_some(latest.frame)
     }
 }
@@ -1395,10 +1391,6 @@ impl WindowRenderer for ThreadedWindowRenderer {
             size,
         };
         let scene = scene_start.elapsed();
-
-        if self.worker.in_flight {
-            return None;
-        }
 
         self.submit_job(job);
 

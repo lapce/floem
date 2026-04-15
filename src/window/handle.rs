@@ -1,5 +1,5 @@
 #[cfg(not(target_arch = "wasm32"))]
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 
 use crate::event::{CustomEvent, RouteKind, ScrollTo, UpdatePhaseEvent};
@@ -123,69 +123,58 @@ pub(crate) struct FrameSchedule {
 /// This keeps invalid states unrepresentable and prevents paint/present control
 /// flow from being hidden in backend readiness checks.
 #[derive(Debug)]
-enum FramePipeline {
-    /// No paint submission is in flight and no frame is waiting to present.
-    Idle,
-    /// A paint pass has submitted work to the renderer/backend, but no prepared
-    /// frame-ready notification has been accepted yet.
-    Rendering { frame_id: u64 },
-    /// A prepared frame has been received from the backend and is waiting for
-    /// the present stage to consume it by frame id.
-    Prepared {
-        frame_id: u64,
-        available_at: Instant,
-    },
+struct FramePipeline {
+    rendering: VecDeque<u64>,
+    prepared: Option<(u64, Instant)>,
 }
 
 impl FramePipeline {
+    const MAX_OUTSTANDING_FRAMES: usize = 2;
+
     /// Returns whether the pipeline owns any in-flight or prepared frame state.
     fn has_frame_underway(&self) -> bool {
-        !matches!(self, Self::Idle)
+        !self.rendering.is_empty() || self.prepared.is_some()
     }
 
     /// Returns whether the pipeline currently owns a frame that can be
     /// presented without further painting.
     fn has_frame_to_present(&self) -> bool {
-        matches!(self, Self::Prepared { .. })
+        self.prepared.is_some()
+    }
+
+    /// Returns whether the pipeline can accept another render submission.
+    fn can_submit_render(&self) -> bool {
+        self.rendering.len() + usize::from(self.prepared.is_some()) < Self::MAX_OUTSTANDING_FRAMES
     }
 
     /// Records that the paint stage submitted a frame to the backend.
     fn begin_render(&mut self, frame_id: u64) {
-        *self = Self::Rendering { frame_id };
+        self.rendering.push_back(frame_id);
     }
 
     /// Records that the backend finished preparing a frame for presentation.
     fn finish_render(&mut self, frame_id: u64, available_at: Instant) -> bool {
-        let Self::Rendering {
-            frame_id: expected_frame_id,
-        } = self
-        else {
+        let Some(index) = self.rendering.iter().position(|&id| id == frame_id) else {
             return false;
         };
-        if *expected_frame_id != frame_id {
-            return false;
-        }
-        *self = Self::Prepared {
-            frame_id,
-            available_at,
-        };
+        self.rendering.remove(index);
+        self.prepared = Some((frame_id, available_at));
         true
     }
 
     /// Starts the present stage by consuming the prepared frame from pipeline
     /// state and returning it to the caller.
     fn begin_present(&mut self) -> Option<(u64, Instant)> {
-        let Self::Prepared {
-            frame_id,
-            available_at,
-        } = self
-        else {
-            return None;
-        };
-        let frame_id = *frame_id;
-        let available_at = *available_at;
-        *self = Self::Idle;
-        Some((frame_id, available_at))
+        self.prepared.take()
+    }
+}
+
+impl Default for FramePipeline {
+    fn default() -> Self {
+        Self {
+            rendering: VecDeque::new(),
+            prepared: None,
+        }
     }
 }
 
@@ -467,7 +456,7 @@ impl WindowHandle {
             next_presents_with_transaction: false,
             pending_timing: FrameTimingAccumulator::default(),
             next_frame_id: 1,
-            frame_pipeline: FramePipeline::Idle,
+            frame_pipeline: FramePipeline::default(),
             last_timing_report: None,
             frame_clock: new_window_frame_clock(window_id, output_id),
         };
@@ -629,7 +618,7 @@ impl WindowHandle {
             next_presents_with_transaction: false,
             pending_timing: FrameTimingAccumulator::default(),
             next_frame_id: 1,
-            frame_pipeline: FramePipeline::Idle,
+            frame_pipeline: FramePipeline::default(),
             last_timing_report: None,
             frame_clock: new_window_frame_clock(window_id, 0),
         };
@@ -667,14 +656,16 @@ impl WindowHandle {
             let size = LogicalSize::new(rect.width(), rect.height());
             self.size(Size::new(size.width, size.height));
         }
-        // Now that the renderer is initialized, render and present the first frame.
-        self.paint_frame();
-        self.present_frame();
+        // Startup should enter through the same explicit frame pipeline as all
+        // later work. Eagerly painting here can leave a frame underway before
+        // the first scheduled app update, which suppresses the initial tick-
+        // driven frame turn and leaves the window blank until another event
+        // arrives.
         self.window.set_visible(true);
         self.window_state
             .request_paint(self.window_state.root_view_id);
-        Application::request_update();
         self.refresh_frame_activity();
+        Application::request_update();
     }
 
     pub fn event(&mut self, event: Event) {
@@ -1122,7 +1113,7 @@ impl WindowHandle {
     /// or present. It exists to keep the submission condition explicit rather
     /// than burying it inside `paint_frame`.
     fn needs_render_submission(&self) -> bool {
-        matches!(self.frame_pipeline, FramePipeline::Idle)
+        self.frame_pipeline.can_submit_render()
             && (self.window_state.has_pending_paint() || self.window_state.has_pending_render())
     }
 
@@ -1167,7 +1158,7 @@ impl WindowHandle {
         self.frame_pipeline.begin_render(frame_id);
         let submitted = self.paint(frame_id);
         if !submitted {
-            self.frame_pipeline = FramePipeline::Idle;
+            self.frame_pipeline.rendering.pop_back();
             return false;
         }
 
@@ -1350,7 +1341,13 @@ impl WindowHandle {
         self.frame_pipeline.has_frame_to_present()
     }
 
-    fn has_frame_underway(&self) -> bool {
+    /// Returns whether the window pipeline still owns a frame that has been
+    /// submitted but not fully retired yet.
+    ///
+    /// App-level scheduling uses this to avoid starting another tick-driven
+    /// animation frame while the current one is still rendering or waiting to
+    /// present.
+    pub(crate) fn has_frame_underway(&self) -> bool {
         self.frame_pipeline.has_frame_underway()
     }
 
@@ -1393,10 +1390,20 @@ impl WindowHandle {
         self.refresh_frame_clock(frame_interval, now);
 
         let can_render_now = self.can_render_now();
+        let has_frame_waiting_to_present = self.has_frame_to_present();
 
         // Blink-style scheduling runs begin-frame work against the current
         // frame opportunity and only paces the late present/redraw stage.
+        //
+        // However, once a frame is already prepared and waiting to present, we
+        // intentionally stop advancing newer begin-frame/render work. This
+        // avoids the steady-state "always one frame ahead" behavior for
+        // continuous animations, which would otherwise build two scenes per
+        // display interval: one waiting to present and one freshly started
+        // after the next tick. We still allow overlap while a frame is merely
+        // rendering, but not once a prepared frame exists.
         if can_render_now
+            && !has_frame_waiting_to_present
             && self
                 .frame_clock
                 .needs_frame_prepare(self.window_state.has_next_frame_work())
@@ -1404,7 +1411,7 @@ impl WindowHandle {
             self.prepare_frame();
         }
 
-        if can_render_now {
+        if can_render_now && !has_frame_waiting_to_present {
             self.paint_frame();
         }
 
@@ -1423,7 +1430,7 @@ impl WindowHandle {
                 .observe_presented(useful_draw_cpu, frame_end);
             self.last_timing_report = Some(update.build_timing_report());
         }
-        let frame_still_underway = !matches!(self.frame_pipeline, FramePipeline::Idle);
+        let frame_still_underway = self.frame_pipeline.has_frame_underway();
         if presented || !frame_still_underway {
             self.frame_clock.set_frame_prepared(false);
         }
