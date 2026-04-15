@@ -124,8 +124,21 @@ pub(crate) struct FrameSchedule {
 /// flow from being hidden in backend readiness checks.
 #[derive(Debug)]
 struct FramePipeline {
-    rendering: VecDeque<u64>,
-    prepared: Option<(u64, Instant)>,
+    rendering: VecDeque<FrameRecord>,
+    prepared: Option<PreparedFrame>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct FrameRecord {
+    id: u64,
+    #[cfg(target_os = "macos")]
+    presents_with_transaction: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PreparedFrame {
+    frame: FrameRecord,
+    available_at: Instant,
 }
 
 impl FramePipeline {
@@ -148,23 +161,28 @@ impl FramePipeline {
     }
 
     /// Records that the paint stage submitted a frame to the backend.
-    fn begin_render(&mut self, frame_id: u64) {
-        self.rendering.push_back(frame_id);
+    fn begin_render(&mut self, frame: FrameRecord) {
+        self.rendering.push_back(frame);
     }
 
     /// Records that the backend finished preparing a frame for presentation.
     fn finish_render(&mut self, frame_id: u64, available_at: Instant) -> bool {
-        let Some(index) = self.rendering.iter().position(|&id| id == frame_id) else {
+        let Some(index) = self.rendering.iter().position(|frame| frame.id == frame_id) else {
             return false;
         };
-        self.rendering.remove(index);
-        self.prepared = Some((frame_id, available_at));
+        let Some(frame) = self.rendering.remove(index) else {
+            return false;
+        };
+        self.prepared = Some(PreparedFrame {
+            frame,
+            available_at,
+        });
         true
     }
 
     /// Starts the present stage by consuming the prepared frame from pipeline
     /// state and returning it to the caller.
-    fn begin_present(&mut self) -> Option<(u64, Instant)> {
+    fn begin_present(&mut self) -> Option<PreparedFrame> {
         self.prepared.take()
     }
 }
@@ -1085,23 +1103,23 @@ impl WindowHandle {
     /// callers decide when presentation is appropriate, and this method only
     /// consumes already-window-owned frame state.
     pub(crate) fn present_frame(&mut self) -> bool {
-        let Some((frame_id, available_at)) = self.frame_pipeline.begin_present() else {
+        let Some(prepared_frame) = self.frame_pipeline.begin_present() else {
             return false;
         };
 
         #[cfg(target_os = "macos")]
-        let presents_with_transaction = self.next_presents_with_transaction;
+        let presents_with_transaction = prepared_frame.frame.presents_with_transaction;
         #[cfg(target_os = "macos")]
         if presents_with_transaction {
             self.set_presents_with_transaction_now(true);
         }
 
-        let presented = self.present_prepared_frame(frame_id, available_at);
+        let presented =
+            self.present_prepared_frame(prepared_frame.frame.id, prepared_frame.available_at);
 
         #[cfg(target_os = "macos")]
         if presents_with_transaction {
             self.set_presents_with_transaction_now(false);
-            self.next_presents_with_transaction = false;
         }
 
         self.finish_presented_frame() && presented
@@ -1155,7 +1173,12 @@ impl WindowHandle {
         }
 
         let frame_id = self.next_frame_id;
-        self.frame_pipeline.begin_render(frame_id);
+        let frame = FrameRecord {
+            id: frame_id,
+            #[cfg(target_os = "macos")]
+            presents_with_transaction: mem::take(&mut self.next_presents_with_transaction),
+        };
+        self.frame_pipeline.begin_render(frame);
         let submitted = self.paint(frame_id);
         if !submitted {
             self.frame_pipeline.rendering.pop_back();
