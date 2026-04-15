@@ -42,7 +42,6 @@ pub(crate) trait FrameClock {
     fn note_frame_prepare_started(&mut self, now: Instant);
     fn set_frame_prepared(&mut self, prepared: bool);
     fn needs_frame_prepare(&self, has_next_frame_work: bool) -> bool;
-    fn frame_prepare_deadline(&self, frame_interval: Duration, now: Instant) -> Instant;
     fn redraw_deadline(
         &self,
         frame_interval: Duration,
@@ -146,22 +145,6 @@ impl FrameClock for HeuristicFrameClock {
 
     fn needs_frame_prepare(&self, has_next_frame_work: bool) -> bool {
         !self.frame_prepared && has_next_frame_work
-    }
-
-    fn frame_prepare_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
-        let earliest_present = self.last_presented_at + frame_interval;
-        let max_prepare_lead = frame_interval
-            .checked_sub(Duration::from_millis(1))
-            .unwrap_or(frame_interval);
-        let lead_time = min_duration(
-            max_duration(
-                self.estimated_frame_prepare_lead_time,
-                Duration::from_millis(1),
-            ),
-            max_prepare_lead,
-        );
-
-        earliest_present.checked_sub(lead_time).unwrap_or(now)
     }
 
     fn redraw_deadline(
@@ -349,24 +332,6 @@ impl SubductionPlanState {
             .current_frame_time(frame_interval, now, background_rendering)
     }
 
-    fn frame_prepare_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
-        if let Some(commit_deadline) = self.latest_commit_deadline() {
-            let max_prepare_lead = frame_interval
-                .checked_sub(Duration::from_millis(1))
-                .unwrap_or(frame_interval);
-            let lead_time = min_duration(
-                max_duration(
-                    self.heuristic.estimated_frame_prepare_lead_time(),
-                    Duration::from_millis(1),
-                ),
-                max_prepare_lead,
-            );
-            return commit_deadline.checked_sub(lead_time).unwrap_or(now);
-        }
-
-        self.heuristic.frame_prepare_deadline(frame_interval, now)
-    }
-
     fn redraw_deadline(
         &self,
         frame_interval: Duration,
@@ -525,10 +490,6 @@ impl FrameClock for SubductionFrameClock {
             .needs_frame_prepare(has_next_frame_work)
     }
 
-    fn frame_prepare_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
-        self.plan_state.frame_prepare_deadline(frame_interval, now)
-    }
-
     fn redraw_deadline(
         &self,
         frame_interval: Duration,
@@ -679,10 +640,6 @@ impl FrameClock for WindowsSubductionFrameClock {
         self.plan_state
             .heuristic
             .needs_frame_prepare(has_next_frame_work)
-    }
-
-    fn frame_prepare_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
-        self.plan_state.frame_prepare_deadline(frame_interval, now)
     }
 
     fn redraw_deadline(

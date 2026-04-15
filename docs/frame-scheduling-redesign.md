@@ -878,6 +878,11 @@ The important Blink idea to borrow is not specific class names. It is the separa
 - commit deadlines
 - actual presentation feedback
 
+One concrete policy point matters here: Blink does not treat begin-frame/update work as a second
+late wakeup that is independently paced right before present. The frame opportunity arrives, main
+thread lifecycle work runs against that opportunity, and only the final presentation step stays
+late.
+
 Floem should adopt the same logical split:
 
 - a frame source delivers opportunities
@@ -885,6 +890,10 @@ Floem should adopt the same logical split:
 - lifecycle work converges state
 - rendering builds output independent of the final present target
 - presentation happens late
+
+That means Floem should not maintain a separate "prepare deadline" timer. Once a window has a frame
+opportunity and renderable work, it should promote next-frame work, run begin-frame callbacks, and
+build/render as early as practical. The only paced wakeup should be the late present/redraw step.
 
 ## Subduction Fit
 

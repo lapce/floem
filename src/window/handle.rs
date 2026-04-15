@@ -108,9 +108,6 @@ pub(crate) struct WindowHandle {
 
 #[derive(Clone, Copy)]
 pub(crate) struct FrameSchedule {
-    /// Earliest time the app loop should wake this window to run another
-    /// prepare stage, if any.
-    pub(crate) prepare: Option<Instant>,
     /// Earliest time the app loop should wake this window to make presentation
     /// progress, either by direct present or by requesting a platform redraw.
     pub(crate) redraw: Option<Instant>,
@@ -1361,7 +1358,7 @@ impl WindowHandle {
         self.frame_pipeline.has_frame_underway()
     }
 
-    /// Computes the next wakeup deadlines for prepare and present/redraw.
+    /// Computes the next wakeup deadline for present/redraw.
     ///
     /// This is pure scheduling output derived from current pipeline state and
     /// the frame clock. It does not mutate window state.
@@ -1372,48 +1369,14 @@ impl WindowHandle {
         can_render_now: bool,
     ) -> FrameSchedule {
         if !can_render_now {
-            return FrameSchedule {
-                prepare: None,
-                redraw: None,
-            };
+            return FrameSchedule { redraw: None };
         }
 
         let redraw = self
             .has_frame_to_present()
             .then(|| self.frame_clock.redraw_deadline(frame_interval, now, true));
 
-        let prepare = self
-            .frame_clock
-            .needs_frame_prepare(self.window_state.has_next_frame_work())
-            .then(|| {
-                let prepare = self.frame_clock.frame_prepare_deadline(frame_interval, now);
-                if self.has_frame_underway() {
-                    redraw.map_or(prepare, |redraw| prepare.max(redraw))
-                } else {
-                    prepare
-                }
-            });
-
-        FrameSchedule { prepare, redraw }
-    }
-
-    /// Returns whether the prepare stage is due in the current turn before a
-    /// paint stage runs.
-    ///
-    /// This keeps the clock-driven "is prepare due?" policy explicit in the
-    /// caller instead of hiding it inside `prepare_frame`.
-    fn should_prepare_before_render(
-        &self,
-        frame_interval: Duration,
-        now: Instant,
-        can_render_now: bool,
-    ) -> bool {
-        if !can_render_now {
-            return false;
-        }
-
-        let schedule = self.frame_schedule(frame_interval, now, true);
-        schedule.prepare.is_some_and(|prepare| now >= prepare)
+        FrameSchedule { redraw }
     }
 
     /// Advances the window frame pipeline for the current turn and returns the
@@ -1421,7 +1384,7 @@ impl WindowHandle {
     ///
     /// The order is:
     /// 1. refresh frame-clock state
-    /// 2. prepare if due
+    /// 2. run begin-frame work immediately if a new frame is needed
     /// 3. paint if rendering is currently allowed
     /// 4. derive the next schedule
     ///
@@ -1435,7 +1398,13 @@ impl WindowHandle {
 
         let can_render_now = self.can_render_now();
 
-        if self.should_prepare_before_render(frame_interval, now, can_render_now) {
+        // Blink-style scheduling runs begin-frame work against the current
+        // frame opportunity and only paces the late present/redraw stage.
+        if can_render_now
+            && self
+                .frame_clock
+                .needs_frame_prepare(self.window_state.has_next_frame_work())
+        {
             self.prepare_frame();
         }
 

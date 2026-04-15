@@ -46,17 +46,10 @@ struct PacedRedrawTimerState {
     deadline: Instant,
 }
 
-struct PacedPrepareTimerState {
-    token: Option<TimerToken>,
-    deadline: Instant,
-}
-
 pub(crate) struct ApplicationHandle {
     window_handles: HashMap<winit::window::WindowId, WindowHandle>,
-    redraw_requested_windows: HashMap<winit::window::WindowId, ()>,
     next_output_id: u32,
     timers: HashMap<TimerToken, Timer>,
-    paced_prepare_timers: HashMap<winit::window::WindowId, PacedPrepareTimerState>,
     paced_redraw_timers: HashMap<winit::window::WindowId, PacedRedrawTimerState>,
     pending_context_menus: Vec<PendingContextMenu>,
     pub(crate) event_listener: Option<Box<AppEventCallback>>,
@@ -70,10 +63,8 @@ impl ApplicationHandle {
     pub(crate) fn new(config: AppConfig) -> Self {
         Self {
             window_handles: HashMap::new(),
-            redraw_requested_windows: HashMap::new(),
             next_output_id: 0,
             timers: HashMap::new(),
-            paced_prepare_timers: HashMap::new(),
             paced_redraw_timers: HashMap::new(),
             pending_context_menus: Vec::new(),
             event_listener: None,
@@ -83,42 +74,9 @@ impl ApplicationHandle {
     }
 
     fn request_window_redraw(&mut self, window_id: WindowId) {
-        if self.redraw_requested_windows.contains_key(&window_id) {
-            return;
-        }
         if let Some(handle) = self.window_handles.get(&window_id) {
             handle.window.request_redraw();
-            self.redraw_requested_windows.insert(window_id, ());
         }
-    }
-
-    fn note_window_redraw_delivered(&mut self, window_id: WindowId) {
-        self.redraw_requested_windows.remove(&window_id);
-    }
-
-    /// Presents a window's prepared frame if one exists.
-    ///
-    /// The app handle does not choose frame contents or paint; it only asks the
-    /// window to perform the present stage and then finalizes profiling state.
-    fn present_window_frame(&mut self, window_id: WindowId) -> bool {
-        let Some(handle) = self.window_handles.get_mut(&window_id) else {
-            return false;
-        };
-        let start = Instant::now();
-        let presented = handle.present_frame();
-        let end = Instant::now();
-        if presented {
-            Self::finalize_presented_profile_frame(
-                handle,
-                Some(ProfileEvent {
-                    start,
-                    end,
-                    name: "DirectPresent".to_string(),
-                    depth: 0,
-                }),
-            );
-        }
-        presented
     }
 
     fn finalize_presented_profile_frame(handle: &mut WindowHandle, event: Option<ProfileEvent>) {
@@ -149,25 +107,11 @@ impl ApplicationHandle {
         schedule: crate::window::handle::FrameSchedule,
         event_loop: &dyn ActiveEventLoop,
     ) {
-        match schedule.prepare {
-            Some(deadline) => {
-                if Instant::now() >= deadline {
-                    self.cancel_paced_prepare_timer(window_id, event_loop);
-                    self.request_update();
-                } else {
-                    self.ensure_paced_prepare_timer(window_id, deadline, event_loop);
-                }
-            }
-            _ => self.cancel_paced_prepare_timer(window_id, event_loop),
-        }
-
         match schedule.redraw {
             Some(deadline) => {
                 if Instant::now() >= deadline {
                     self.cancel_paced_redraw_timer(window_id, event_loop);
-                    if !self.present_window_frame(window_id) {
-                        self.request_window_redraw(window_id);
-                    }
+                    self.request_window_redraw(window_id);
                 } else {
                     self.ensure_paced_redraw_timer(window_id, deadline, event_loop);
                 }
@@ -239,16 +183,13 @@ impl ApplicationHandle {
             } => {
                 let mut ready_frame_accepted = false;
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    let accepted = handle.accept_frame_ready(frame_id);
+                    ready_frame_accepted = handle.accept_frame_ready(frame_id);
                     handle.refresh_frame_activity();
-                    ready_frame_accepted = accepted;
                 }
-                if ready_frame_accepted && !self.present_window_frame(window_id) {
-                    if let Some(handle) = self.window_handles.get(&window_id) {
-                        handle.window.request_redraw();
-                    }
+                if ready_frame_accepted {
+                    self.request_window_redraw(window_id);
                 }
-                self.process_window_frame_from_event(window_id, event_loop);
+                self.refresh_window_frame_schedule(window_id, event_loop);
             }
             #[cfg(all(feature = "subduction", target_os = "macos"))]
             UserEvent::SubductionFrameTick { window_id, tick } => {
@@ -393,9 +334,6 @@ impl ApplicationHandle {
         event_loop: &dyn ActiveEventLoop,
     ) {
         let is_redraw = matches!(event, WindowEvent::RedrawRequested);
-        if is_redraw {
-            self.note_window_redraw_delivered(window_id);
-        }
         let mut request_redraw_after = false;
         let window_handle = match self.window_handles.get_mut(&window_id) {
             Some(window_handle) => window_handle,
@@ -840,7 +778,6 @@ impl ApplicationHandle {
     }
 
     fn close_window(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
-        self.cancel_paced_prepare_timer(window_id, event_loop);
         self.cancel_paced_redraw_timer(window_id, event_loop);
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
             handle.destroy();
@@ -969,56 +906,6 @@ impl ApplicationHandle {
         self.fire_timer(event_loop);
     }
 
-    fn ensure_paced_prepare_timer(
-        &mut self,
-        window_id: WindowId,
-        deadline: Instant,
-        event_loop: &dyn ActiveEventLoop,
-    ) {
-        let deadline = if deadline <= Instant::now() {
-            Instant::now()
-        } else {
-            deadline
-        };
-
-        let deadline = match self.paced_prepare_timers.entry(window_id) {
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                let state = entry.get_mut();
-                if state.token.is_some() && state.deadline <= deadline {
-                    return;
-                }
-                let token = TimerToken::next();
-                state.token = Some(token);
-                state.deadline = deadline;
-                deadline
-            }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                let token = TimerToken::next();
-                entry.insert(PacedPrepareTimerState {
-                    token: Some(token),
-                    deadline,
-                });
-                deadline
-            }
-        };
-
-        let token = self
-            .paced_prepare_timers
-            .get(&window_id)
-            .and_then(|state| state.token)
-            .expect("paced prepare timer token should exist when arming");
-        self.request_timer(
-            Timer {
-                token,
-                action: Box::new(|_| {}),
-                deadline,
-                is_animation: true,
-                window_id: Some(window_id),
-            },
-            event_loop,
-        );
-    }
-
     fn ensure_paced_redraw_timer(
         &mut self,
         window_id: WindowId,
@@ -1067,18 +954,6 @@ impl ApplicationHandle {
             },
             event_loop,
         );
-    }
-
-    fn cancel_paced_prepare_timer(
-        &mut self,
-        window_id: WindowId,
-        event_loop: &dyn ActiveEventLoop,
-    ) {
-        if let Some(state) = self.paced_prepare_timers.remove(&window_id)
-            && let Some(token) = state.token
-        {
-            self.remove_timer(&token, event_loop);
-        }
     }
 
     fn cancel_paced_redraw_timer(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
@@ -1134,13 +1009,6 @@ impl ApplicationHandle {
                         timer.deadline = now + Duration::from_millis(100);
                         self.timers.insert(token, timer);
                         continue;
-                    }
-
-                    if let Some(window_id) = timer.window_id
-                        && let Some(state) = self.paced_prepare_timers.get_mut(&window_id)
-                        && state.token == Some(token)
-                    {
-                        state.token = None;
                     }
 
                     if let Some(window_id) = timer.window_id
