@@ -368,6 +368,8 @@ impl ApplicationHandle {
         event: WindowEvent,
         event_loop: &dyn ActiveEventLoop,
     ) {
+        self.refresh_window_frame_from_event_turn(window_id, event_loop);
+
         let window_handle = match self.window_handles.get_mut(&window_id) {
             Some(window_handle) => window_handle,
             None => return,
@@ -550,7 +552,30 @@ impl ApplicationHandle {
             handle.refresh_frame_activity();
         }
         self.process_window_frame_from_event(window_id, event_loop);
+        self.refresh_window_frame_from_event_turn(window_id, event_loop);
         self.update_control_flow(event_loop);
+    }
+
+    /// Gives input-heavy window-event turns a chance to notice renderer
+    /// completions and present them promptly.
+    ///
+    /// This is deliberately not the main frame-ready path. Normal completion
+    /// still flows through `UserEvent::FrameReady` on the proxy wakeup side.
+    /// We only do this extra probe here so sustained input does not starve an
+    /// already-finished frame behind delayed proxy-event servicing.
+    fn refresh_window_frame_from_event_turn(
+        &mut self,
+        window_id: WindowId,
+        event_loop: &dyn ActiveEventLoop,
+    ) {
+        let Some(handle) = self.window_handles.get_mut(&window_id) else {
+            return;
+        };
+
+        if handle.accept_polled_ready_frame() {
+            handle.refresh_frame_activity();
+            self.refresh_window_frame_schedule(window_id, event_loop);
+        }
     }
 
     fn process_window_frame_from_event(

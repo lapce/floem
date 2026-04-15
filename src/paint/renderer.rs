@@ -475,6 +475,18 @@ pub(crate) trait WindowRenderer {
         Err(PresentFrameError::MissingFrame)
     }
 
+    /// Returns the latest frame id that has already finished backend
+    /// preparation and can now be presented by the window pipeline.
+    ///
+    /// The primary readiness path remains the explicit `FrameReady` proxy
+    /// event, which promotes renderer completion into app/window-owned frame
+    /// state during normal wakeups. This hook exists only as an opportunistic,
+    /// non-blocking fallback so input-heavy event turns can notice a completed
+    /// frame and present it without waiting for the proxy wakeup to run first.
+    fn poll_ready_frame(&mut self) -> Option<u64> {
+        None
+    }
+
     /// Captures output from the supplied scene source without going through the
     /// live window frame pipeline.
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput;
@@ -531,6 +543,7 @@ struct ThreadedWindowRenderer {
     name: &'static str,
     presenter: ThreadedRendererPresenter,
     worker: OffscreenRenderWorker,
+    ready_frame: Option<(u64, RenderedFrame)>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -716,6 +729,7 @@ impl ThreadedWindowRenderer {
             name: init.name(),
             presenter,
             worker,
+            ready_frame: None,
         })
     }
 
@@ -862,6 +876,14 @@ impl OffscreenRenderWorker {
             latest = next;
         }
         (latest.frame_id == frame_id).then_some(latest.frame)
+    }
+
+    fn take_latest_ready_frame(&mut self) -> Option<ReadyFrame> {
+        let mut latest = self.receiver.try_recv().ok()?;
+        while let Ok(next) = self.receiver.try_recv() {
+            latest = next;
+        }
+        Some(latest)
     }
 }
 
@@ -1404,15 +1426,31 @@ impl WindowRenderer for ThreadedWindowRenderer {
     }
 
     fn present_frame(&mut self, frame_id: u64) -> Result<PresentTiming, PresentFrameError> {
-        let frame = self
-            .worker
-            .take_ready_frame(frame_id)
-            .ok_or(PresentFrameError::MissingFrame)?;
+        let frame = match self.ready_frame.take() {
+            Some((ready_frame_id, frame)) if ready_frame_id == frame_id => frame,
+            Some((ready_frame_id, frame)) => {
+                self.ready_frame = Some((ready_frame_id, frame));
+                return Err(PresentFrameError::MissingFrame);
+            }
+            None => self
+                .worker
+                .take_ready_frame(frame_id)
+                .ok_or(PresentFrameError::MissingFrame)?,
+        };
 
         let present = self
             .present_frame(frame)
             .ok_or(PresentFrameError::MissingFrame)?;
         Ok(present)
+    }
+
+    fn poll_ready_frame(&mut self) -> Option<u64> {
+        if self.ready_frame.is_none()
+            && let Some(ready_frame) = self.worker.take_latest_ready_frame()
+        {
+            self.ready_frame = Some((ready_frame.frame_id, ready_frame.frame));
+        }
+        self.ready_frame.as_ref().map(|(frame_id, _)| *frame_id)
     }
 
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {
@@ -1580,6 +1618,10 @@ impl WindowRenderer for TargetGpuWindowRenderer {
         })
     }
 
+    fn poll_ready_frame(&mut self) -> Option<u64> {
+        self.ready_frame.as_ref().map(|(frame_id, _)| *frame_id)
+    }
+
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {
         let total_start = Instant::now();
         let scene_start = total_start;
@@ -1675,6 +1717,10 @@ impl WindowRenderer for ImageWindowRenderer {
             return Err(PresentFrameError::MissingFrame);
         }
         Ok(self.target.present_rgba(&image))
+    }
+
+    fn poll_ready_frame(&mut self) -> Option<u64> {
+        self.prepared_frame.as_ref().map(|(frame_id, _)| *frame_id)
     }
 
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {

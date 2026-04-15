@@ -1320,6 +1320,26 @@ impl WindowHandle {
         self.frame_pipeline.finish_render(frame_id, Instant::now())
     }
 
+    /// Opportunistically promotes a backend-completed frame into the explicit
+    /// window pipeline without waiting for the normal `FrameReady` proxy event.
+    ///
+    /// The proxy event path is still the main mechanism: renderer completion is
+    /// expected to arrive there and be accepted through `accept_frame_ready`.
+    /// This helper is only a fallback for long input bursts where window-event
+    /// dispatch can outrun proxy wakeups and delay presentation of an already
+    /// finished frame.
+    pub(crate) fn accept_polled_ready_frame(&mut self) -> bool {
+        if self.frame_pipeline.has_frame_to_present() {
+            return false;
+        }
+
+        let Some(frame_id) = self.paint_state.backend_mut().poll_ready_frame() else {
+            return false;
+        };
+
+        self.frame_pipeline.finish_render(frame_id, Instant::now())
+    }
+
     /// Refreshes the frame clock's active/inactive state from window-owned
     /// frame state.
     ///
