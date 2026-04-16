@@ -127,7 +127,7 @@ impl<T> ContextValue<T> {
     }
 }
 
-pub trait StylePropValue: Clone + PartialEq + Debug + crate::style::PropDebugView {
+pub trait StylePropValue: Clone + PartialEq + Debug {
     fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
         None
     }
@@ -271,13 +271,13 @@ impl<T: StylePropValue, M: StylePropValue> StylePropValue for MinMax<T, M> {
         hash_value(&(self.min.content_hash(), self.max.content_hash()))
     }
 }
-impl<T: StylePropValue, M: StylePropValue> PropDebugView for MinMax<T, M> {}
+impl<T, M> PropDebugView for MinMax<T, M> {}
 impl<T: StylePropValue> StylePropValue for Line<T> {
     fn content_hash(&self) -> u64 {
         hash_value(&(self.start.content_hash(), self.end.content_hash()))
     }
 }
-impl<T: StylePropValue> PropDebugView for Line<T> {}
+impl<T> PropDebugView for Line<T> {}
 impl StylePropValue for taffy::GridAutoFlow {
     fn content_hash(&self) -> u64 {
         hash_value(&std::mem::discriminant(self))
@@ -667,7 +667,7 @@ where
 }
 impl<A: smallvec::Array> PropDebugView for SmallVec<A>
 where
-    <A as smallvec::Array>::Item: StylePropValue,
+    <A as smallvec::Array>::Item: StylePropValue + PropDebugView,
 {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         if self.is_empty() {
@@ -822,7 +822,7 @@ impl<T: StylePropValue> StylePropValue for Option<T> {
         h.finish()
     }
 }
-impl<T: StylePropValue> PropDebugView for Option<T> {
+impl<T: PropDebugView> PropDebugView for Option<T> {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         self.as_ref().and_then(|v| v.debug_view())
     }
@@ -852,7 +852,7 @@ impl<T: StylePropValue + 'static> StylePropValue for Vec<T> {
         h.finish()
     }
 }
-impl<T: StylePropValue + 'static> PropDebugView for Vec<T> {
+impl<T: StylePropValue + PropDebugView + 'static> PropDebugView for Vec<T> {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         if self.is_empty() {
             return Some(
@@ -2143,6 +2143,7 @@ fn style_debug_prop_row(
     StyleDebugRow {
         render: Rc::new(move |_| {
             let mut value_view = (prop.info().debug_view)(&*value)
+                .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
                 .unwrap_or_else(|| Label::new((prop.info().debug_any)(&*value)).into_any());
 
             if let Some(transition) = style
@@ -2326,6 +2327,7 @@ fn style_debug_prop_rows(
                 short_style_name((info.name)()),
                 move || {
                     (info.debug_view)(&style)
+                        .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
                         .unwrap_or_else(|| Label::new("empty").into_any())
                         .into_any()
                 },

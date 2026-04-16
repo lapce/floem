@@ -19,9 +19,6 @@ use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
-use crate::view::{IntoView, View};
-use crate::views::Label;
-
 use super::Style;
 use super::selectors::StyleSelectors;
 use super::transition::TransitionState;
@@ -44,7 +41,7 @@ pub trait StyleDebugGroup: Default + Copy + 'static {
         StyleDebugGroupRef { key: Self::key() }
     }
     fn member_props() -> Vec<StyleKey>;
-    fn debug_view(style: &Style) -> Option<Box<dyn View>>;
+    fn debug_view(style: &Style) -> Option<Box<dyn Any>>;
 }
 
 #[derive(Debug, Clone)]
@@ -70,14 +67,14 @@ pub struct StyleDebugGroupInfo {
     pub(crate) name: fn() -> &'static str,
     pub(crate) inherited: bool,
     pub(crate) member_props: fn() -> Vec<StyleKey>,
-    pub(crate) debug_view: fn(style: &Style) -> Option<Box<dyn View>>,
+    pub(crate) debug_view: fn(style: &Style) -> Option<Box<dyn Any>>,
 }
 
 impl StyleDebugGroupInfo {
     pub const fn new<Name>(
         inherited: bool,
         member_props: fn() -> Vec<StyleKey>,
-        debug_view: fn(style: &Style) -> Option<Box<dyn View>>,
+        debug_view: fn(style: &Style) -> Option<Box<dyn Any>>,
     ) -> Self {
         StyleDebugGroupInfo {
             name: || std::any::type_name::<Name>(),
@@ -136,7 +133,11 @@ macro_rules! style_debug_group {
                         $crate::style::StyleDebugGroupInfo::new::<$name>(
                             style_debug_group!(@inherited $($inherited)?),
                             || vec![$(<$prop as $crate::style::StyleProp>::key()),*],
-                            $view,
+                            |style| {
+                                $view(style).map(|view| {
+                                    Box::new(view) as Box<dyn std::any::Any>
+                                })
+                            },
                         )
                     );
                 $crate::style::StyleKey { info: &INFO }
@@ -146,8 +147,8 @@ macro_rules! style_debug_group {
                 vec![$(<$prop as $crate::style::StyleProp>::key()),*]
             }
 
-            fn debug_view(style: &$crate::style::Style) -> Option<Box<dyn $crate::view::View>> {
-                $view(style)
+            fn debug_view(style: &$crate::style::Style) -> Option<Box<dyn std::any::Any>> {
+                $view(style).map(|view| Box::new(view) as Box<dyn std::any::Any>)
             }
         }
     };
@@ -191,7 +192,7 @@ pub struct StylePropInfo {
     pub(crate) default_as_any: fn() -> Rc<dyn Any>,
     pub(crate) interpolate: InterpolateFn,
     pub(crate) debug_any: fn(val: &dyn Any) -> String,
-    pub(crate) debug_view: fn(val: &dyn Any) -> Option<Box<dyn View>>,
+    pub(crate) debug_view: fn(val: &dyn Any) -> Option<Box<dyn Any>>,
     pub(crate) transition_key: StyleKey,
     /// Computes a content-based hash for a style value.
     pub(crate) hash_any: HashAnyFn,
@@ -206,6 +207,7 @@ impl StylePropInfo {
         inherited: bool,
         default_as_any: fn() -> Rc<dyn Any>,
         transition_key: StyleKey,
+        debug_view: fn(val: &dyn Any) -> Option<Box<dyn Any>>,
     ) -> Self {
         StylePropInfo {
             name: || std::any::type_name::<Name>(),
@@ -251,21 +253,7 @@ impl StylePropInfo {
                     )
                 }
             },
-            debug_view: |val| {
-                if let Some(v) = val.downcast_ref::<StyleMapValue<T>>() {
-                    match v {
-                        StyleMapValue::Val(v) | StyleMapValue::Animated(v) => v.debug_view(),
-                        StyleMapValue::Context(_) => Some(Label::new("Context(..)").into_any()),
-                        StyleMapValue::Unset => Some(Label::new("Unset").into_any()),
-                    }
-                } else {
-                    panic!(
-                        "expected type {} for property {}",
-                        type_name::<T>(),
-                        std::any::type_name::<Name>(),
-                    )
-                }
-            },
+            debug_view,
             transition_key,
             hash_any: |val| {
                 if let Some(v) = val.downcast_ref::<StyleMapValue<T>>() {
@@ -503,6 +491,32 @@ macro_rules! prop {
                     prop!([impl inherited][$($options)*]),
                     || std::rc::Rc::new($crate::style::StyleMapValue::Val($name::default_value())),
                     $crate::style::StyleKey { info: &TRANSITION_INFO },
+                    |val| {
+                        if let Some(v) = val.downcast_ref::<$crate::style::StyleMapValue<$ty>>() {
+                            match v {
+                                $crate::style::StyleMapValue::Val(v) | $crate::style::StyleMapValue::Animated(v) => {
+                                    <$ty as $crate::style::PropDebugView>::debug_view(v)
+                                        .map(|view| Box::new(view) as Box<dyn std::any::Any>)
+                                }
+                                $crate::style::StyleMapValue::Context(_) => Some(Box::new(
+                                    <$crate::views::Label as $crate::view::IntoView>::into_any(
+                                        $crate::views::Label::new("Context(..)")
+                                    )
+                                ) as Box<dyn std::any::Any>),
+                                $crate::style::StyleMapValue::Unset => Some(Box::new(
+                                    <$crate::views::Label as $crate::view::IntoView>::into_any(
+                                        $crate::views::Label::new("Unset")
+                                    )
+                                ) as Box<dyn std::any::Any>),
+                            }
+                        } else {
+                            panic!(
+                                "expected type {} for property {}",
+                                std::any::type_name::<$ty>(),
+                                std::any::type_name::<$name>(),
+                            )
+                        }
+                    },
                 ));
                 $crate::style::StyleKey { info: &INFO }
             }
