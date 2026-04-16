@@ -48,6 +48,7 @@
 //! - Only one view can be focused at a time.
 //!
 use std::{
+    collections::{HashMap, VecDeque},
     num::NonZeroU32,
     sync::{Arc, mpsc},
     thread,
@@ -441,6 +442,12 @@ pub(crate) enum PresentFrameError {
     MissingFrame,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct ImmediatePresentTiming {
+    pub render: RenderTiming,
+    pub present: PresentTiming,
+}
+
 pub(crate) trait WindowRenderer {
     /// Updates backend-owned presentation resources to the requested window
     /// size.
@@ -475,6 +482,19 @@ pub(crate) trait WindowRenderer {
         Err(PresentFrameError::MissingFrame)
     }
 
+    /// Renders and presents a frame synchronously in the current call stack.
+    ///
+    /// This exists for special cases like macOS live resize where keeping
+    /// resize, render, and present in the same transaction turn matters more
+    /// than the normal asynchronous frame pipeline.
+    fn render_immediate_and_present(
+        &mut self,
+        _size: Size,
+        _source: &mut dyn RenderSource,
+    ) -> Option<ImmediatePresentTiming> {
+        None
+    }
+
     /// Returns the latest frame id that has already finished backend
     /// preparation and can now be presented by the window pipeline.
     ///
@@ -486,6 +506,11 @@ pub(crate) trait WindowRenderer {
     fn poll_ready_frame(&mut self) -> Option<u64> {
         None
     }
+
+    /// Drops any backend-owned prepared frames that have not yet been
+    /// presented. This is used when a synchronous special-case present makes
+    /// queued async work obsolete.
+    fn discard_pending_frames(&mut self) {}
 
     /// Captures output from the supplied scene source without going through the
     /// live window frame pipeline.
@@ -543,7 +568,8 @@ struct ThreadedWindowRenderer {
     name: &'static str,
     presenter: ThreadedRendererPresenter,
     worker: OffscreenRenderWorker,
-    ready_frame: Option<(u64, RenderedFrame)>,
+    ready_frames: HashMap<u64, RenderedFrame>,
+    ready_order: VecDeque<u64>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -632,6 +658,11 @@ enum RenderWorkerCommand {
         frame_id: u64,
         scene: Scene,
         size: Size,
+    },
+    RenderSync {
+        scene: Scene,
+        size: Size,
+        response: mpsc::Sender<Option<RenderedFrame>>,
     },
     Capture {
         scene: Scene,
@@ -729,7 +760,8 @@ impl ThreadedWindowRenderer {
             name: init.name(),
             presenter,
             worker,
-            ready_frame: None,
+            ready_frames: HashMap::new(),
+            ready_order: VecDeque::new(),
         })
     }
 
@@ -741,6 +773,15 @@ impl ThreadedWindowRenderer {
 
     fn submit_job(&mut self, job: OffscreenRenderJob) {
         self.worker.submit(job);
+    }
+
+    fn drain_ready_frames(&mut self) {
+        while let Some(ready_frame) = self.worker.try_recv_ready_frame() {
+            let frame_id = ready_frame.frame_id;
+            if self.ready_frames.insert(frame_id, ready_frame.frame).is_none() {
+                self.ready_order.push_back(frame_id);
+            }
+        }
     }
 
     fn present_frame(&mut self, frame: RenderedFrame) -> Option<PresentTiming> {
@@ -782,6 +823,31 @@ impl ThreadedWindowRenderer {
             _ => None,
         }
     }
+
+    fn render_sync_and_present(
+        &mut self,
+        size: Size,
+        source: &mut dyn RenderSource,
+    ) -> Option<ImmediatePresentTiming> {
+        let total_start = Instant::now();
+        let scene_start = total_start;
+        let scene = Self::record_scene(source);
+        let render = self.worker.render_sync(scene, size)?;
+        let scene_elapsed = scene_start.elapsed();
+        let render_end = Instant::now();
+        let render_timing = RenderTiming {
+            total: render_end.saturating_duration_since(total_start),
+            scene: scene_elapsed,
+            total_span: TimingSpan::new(total_start, render_end),
+            scene_span: TimingSpan::new(scene_start, render_end),
+            ..Default::default()
+        };
+        let present = self.present_frame(render)?;
+        Some(ImmediatePresentTiming {
+            render: render_timing,
+            present,
+        })
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -819,6 +885,13 @@ impl OffscreenRenderWorker {
                                     frame_id,
                                 });
                             }
+                        }
+                        RenderWorkerCommand::RenderSync {
+                            mut scene,
+                            size,
+                            response,
+                        } => {
+                            let _ = response.send(render_offscreen(&mut backend, &mut scene, size));
                         }
                         RenderWorkerCommand::Capture {
                             mut scene,
@@ -870,20 +943,22 @@ impl OffscreenRenderWorker {
             .expect("render worker thread stopped during capture")
     }
 
-    fn take_ready_frame(&mut self, frame_id: u64) -> Option<RenderedFrame> {
-        let mut latest = self.receiver.try_recv().ok()?;
-        while let Ok(next) = self.receiver.try_recv() {
-            latest = next;
-        }
-        (latest.frame_id == frame_id).then_some(latest.frame)
+    fn render_sync(&mut self, scene: Scene, size: Size) -> Option<RenderedFrame> {
+        let (response_tx, response_rx) = mpsc::channel();
+        self.sender
+            .send(RenderWorkerCommand::RenderSync {
+                scene,
+                size,
+                response: response_tx,
+            })
+            .expect("render worker thread stopped unexpectedly");
+        response_rx
+            .recv()
+            .expect("render worker thread stopped during sync render")
     }
 
-    fn take_latest_ready_frame(&mut self) -> Option<ReadyFrame> {
-        let mut latest = self.receiver.try_recv().ok()?;
-        while let Ok(next) = self.receiver.try_recv() {
-            latest = next;
-        }
-        Some(latest)
+    fn try_recv_ready_frame(&mut self) -> Option<ReadyFrame> {
+        self.receiver.try_recv().ok()
     }
 }
 
@@ -1426,17 +1501,11 @@ impl WindowRenderer for ThreadedWindowRenderer {
     }
 
     fn present_frame(&mut self, frame_id: u64) -> Result<PresentTiming, PresentFrameError> {
-        let frame = match self.ready_frame.take() {
-            Some((ready_frame_id, frame)) if ready_frame_id == frame_id => frame,
-            Some((ready_frame_id, frame)) => {
-                self.ready_frame = Some((ready_frame_id, frame));
-                return Err(PresentFrameError::MissingFrame);
-            }
-            None => self
-                .worker
-                .take_ready_frame(frame_id)
-                .ok_or(PresentFrameError::MissingFrame)?,
+        self.drain_ready_frames();
+        let Some(frame) = self.ready_frames.remove(&frame_id) else {
+            return Err(PresentFrameError::MissingFrame);
         };
+        self.ready_order.retain(|&ready_frame_id| ready_frame_id != frame_id);
 
         let present = self
             .present_frame(frame)
@@ -1444,13 +1513,23 @@ impl WindowRenderer for ThreadedWindowRenderer {
         Ok(present)
     }
 
+    fn render_immediate_and_present(
+        &mut self,
+        size: Size,
+        source: &mut dyn RenderSource,
+    ) -> Option<ImmediatePresentTiming> {
+        self.render_sync_and_present(size, source)
+    }
+
     fn poll_ready_frame(&mut self) -> Option<u64> {
-        if self.ready_frame.is_none()
-            && let Some(ready_frame) = self.worker.take_latest_ready_frame()
-        {
-            self.ready_frame = Some((ready_frame.frame_id, ready_frame.frame));
-        }
-        self.ready_frame.as_ref().map(|(frame_id, _)| *frame_id)
+        self.drain_ready_frames();
+        self.ready_order.front().copied()
+    }
+
+    fn discard_pending_frames(&mut self) {
+        self.drain_ready_frames();
+        self.ready_frames.clear();
+        self.ready_order.clear();
     }
 
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {

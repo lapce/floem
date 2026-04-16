@@ -424,17 +424,24 @@ impl ApplicationHandle {
             None => {}
         }
 
-        let frame_presented = false;
+        let mut frame_presented = false;
 
         match event {
             WindowEvent::ActivationTokenDone { .. } => {}
             WindowEvent::SurfaceResized(size) => {
-                let size: LogicalSize<f64> = size.to_logical(window_handle.window_state.os_scale);
+                let surface_size = size;
+                let size: LogicalSize<f64> =
+                    surface_size.to_logical(window_handle.window_state.os_scale);
                 let size = Size::new(size.width, size.height);
                 window_handle.size(size);
                 #[cfg(target_os = "macos")]
-                window_handle.request_presents_with_transaction_on_next_frame();
-                self.request_update();
+                {
+                    frame_presented =
+                        window_handle.present_resize_sync_immediately(surface_size);
+                }
+                if !frame_presented {
+                    self.request_update();
+                }
             }
             WindowEvent::Moved(position) => {
                 let position: LogicalPosition<f64> =
@@ -547,6 +554,13 @@ impl ApplicationHandle {
                     }
                 }
             }
+        }
+        if frame_presented {
+            if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                handle.refresh_frame_activity();
+            }
+            self.update_control_flow(event_loop);
+            return;
         }
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
             handle.refresh_frame_activity();

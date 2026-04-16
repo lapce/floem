@@ -27,7 +27,7 @@ use peniko::color::palette;
 use peniko::kurbo::{self, Point, Size};
 use winit::{
     cursor::CursorIcon,
-    dpi::{LogicalPosition, LogicalSize},
+    dpi::{LogicalPosition, LogicalSize, PhysicalSize},
     event::Ime,
     window::{Window, WindowId},
 };
@@ -97,8 +97,6 @@ pub(crate) struct WindowHandle {
     pub(crate) gpu_resources: Option<GpuResources>,
     pub(crate) renderer_chooser: crate::paint::renderer::RendererChooser,
     is_occluded: bool,
-    #[cfg(target_os = "macos")]
-    next_presents_with_transaction: bool,
     pending_timing: FrameTimingAccumulator,
     next_frame_id: u64,
     frame_pipeline: FramePipeline,
@@ -125,14 +123,12 @@ pub(crate) struct FrameSchedule {
 #[derive(Debug)]
 struct FramePipeline {
     rendering: VecDeque<FrameRecord>,
-    prepared: Option<PreparedFrame>,
+    prepared: VecDeque<PreparedFrame>,
 }
 
 #[derive(Clone, Copy, Debug)]
 struct FrameRecord {
     id: u64,
-    #[cfg(target_os = "macos")]
-    presents_with_transaction: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -141,23 +137,31 @@ struct PreparedFrame {
     available_at: Instant,
 }
 
+fn surface_extent(size: Size, os_scale: f64) -> PhysicalSize<u32> {
+    let physical = size * os_scale;
+    PhysicalSize::new(
+        physical.width.max(1.0).round() as u32,
+        physical.height.max(1.0).round() as u32,
+    )
+}
+
 impl FramePipeline {
     const MAX_OUTSTANDING_FRAMES: usize = 2;
 
     /// Returns whether the pipeline owns any in-flight or prepared frame state.
     fn has_frame_underway(&self) -> bool {
-        !self.rendering.is_empty() || self.prepared.is_some()
+        !self.rendering.is_empty() || !self.prepared.is_empty()
     }
 
     /// Returns whether the pipeline currently owns a frame that can be
     /// presented without further painting.
     fn has_frame_to_present(&self) -> bool {
-        self.prepared.is_some()
+        !self.prepared.is_empty()
     }
 
     /// Returns whether the pipeline can accept another render submission.
     fn can_submit_render(&self) -> bool {
-        self.rendering.len() + usize::from(self.prepared.is_some()) < Self::MAX_OUTSTANDING_FRAMES
+        self.rendering.len() + self.prepared.len() < Self::MAX_OUTSTANDING_FRAMES
     }
 
     /// Records that the paint stage submitted a frame to the backend.
@@ -173,7 +177,7 @@ impl FramePipeline {
         let Some(frame) = self.rendering.remove(index) else {
             return false;
         };
-        self.prepared = Some(PreparedFrame {
+        self.prepared.push_back(PreparedFrame {
             frame,
             available_at,
         });
@@ -183,7 +187,12 @@ impl FramePipeline {
     /// Starts the present stage by consuming the prepared frame from pipeline
     /// state and returning it to the caller.
     fn begin_present(&mut self) -> Option<PreparedFrame> {
-        self.prepared.take()
+        self.prepared.pop_back()
+    }
+
+    fn discard_pending_frames(&mut self) {
+        self.rendering.clear();
+        self.prepared.clear();
     }
 }
 
@@ -191,7 +200,7 @@ impl Default for FramePipeline {
     fn default() -> Self {
         Self {
             rendering: VecDeque::new(),
-            prepared: None,
+            prepared: VecDeque::new(),
         }
     }
 }
@@ -470,8 +479,6 @@ impl WindowHandle {
             gpu_resources,
             renderer_chooser,
             is_occluded: false,
-            #[cfg(target_os = "macos")]
-            next_presents_with_transaction: false,
             pending_timing: FrameTimingAccumulator::default(),
             next_frame_id: 1,
             frame_pipeline: FramePipeline::default(),
@@ -632,8 +639,6 @@ impl WindowHandle {
             gpu_resources: None,
             renderer_chooser: crate::paint::renderer::default_renderer(),
             is_occluded: false,
-            #[cfg(target_os = "macos")]
-            next_presents_with_transaction: false,
             pending_timing: FrameTimingAccumulator::default(),
             next_frame_id: 1,
             frame_pipeline: FramePipeline::default(),
@@ -1107,20 +1112,8 @@ impl WindowHandle {
             return false;
         };
 
-        #[cfg(target_os = "macos")]
-        let presents_with_transaction = prepared_frame.frame.presents_with_transaction;
-        #[cfg(target_os = "macos")]
-        if presents_with_transaction {
-            self.set_presents_with_transaction_now(true);
-        }
-
         let presented =
             self.present_prepared_frame(prepared_frame.frame.id, prepared_frame.available_at);
-
-        #[cfg(target_os = "macos")]
-        if presents_with_transaction {
-            self.set_presents_with_transaction_now(false);
-        }
 
         self.finish_presented_frame() && presented
     }
@@ -1173,11 +1166,7 @@ impl WindowHandle {
         }
 
         let frame_id = self.next_frame_id;
-        let frame = FrameRecord {
-            id: frame_id,
-            #[cfg(target_os = "macos")]
-            presents_with_transaction: mem::take(&mut self.next_presents_with_transaction),
-        };
+        let frame = FrameRecord { id: frame_id };
         self.frame_pipeline.begin_render(frame);
         let submitted = self.paint(frame_id);
         if !submitted {
@@ -1205,11 +1194,11 @@ impl WindowHandle {
             return None;
         }
 
-        let frame_size = self.window_state.root_size * self.window_state.os_scale;
-        let frame_size = Size::new(frame_size.width.max(1.0), frame_size.height.max(1.0));
+        let extent = surface_extent(self.window_state.root_size, self.window_state.os_scale);
+        let frame_size = Size::new(extent.width as f64, extent.height as f64);
         self.paint_state
             .backend_mut()
-            .resize(frame_size.width as u32, frame_size.height as u32);
+            .resize(extent.width, extent.height);
 
         let background = if self.transparent {
             None
@@ -1294,6 +1283,71 @@ impl WindowHandle {
         render.is_some()
     }
 
+    #[cfg(target_os = "macos")]
+    pub(crate) fn present_resize_sync_immediately(
+        &mut self,
+        target_extent: PhysicalSize<u32>,
+    ) -> bool {
+        if !self.can_render_now() || !matches!(self.paint_state, PaintState::Initialized { .. }) {
+            return false;
+        }
+
+        self.paint_state
+            .backend_mut()
+            .resize(target_extent.width, target_extent.height);
+
+        let notify_start = Instant::now();
+        self.set_presents_with_transaction_now(true);
+        self.window.pre_present_notify();
+        let pre_present_notify = notify_start.elapsed();
+
+        let Some(immediate) = self.render_scene(|paint_state, frame_size, source| {
+            paint_state
+                .backend_mut()
+                .render_immediate_and_present(frame_size, source)
+        }) else {
+            self.set_presents_with_transaction_now(false);
+            return false;
+        };
+
+        self.set_presents_with_transaction_now(false);
+
+        let Some(immediate) = immediate else {
+            return false;
+        };
+
+        self.pending_timing
+            .record_paint(crate::paint::renderer::RenderPassTiming {
+                total: immediate.render.total,
+                resize: Duration::ZERO,
+                render_cpu: immediate.render.total,
+                render: Some(immediate.render),
+                total_span: immediate.render.total_span,
+            });
+        self.pending_timing
+            .record_present(crate::paint::renderer::PresentPassTiming {
+                total: pre_present_notify + immediate.present.total,
+                resize: Duration::ZERO,
+                ready_wait: Duration::ZERO,
+                pre_present_notify,
+                present_cpu: pre_present_notify + immediate.present.total,
+                present: Some(immediate.present),
+                total_span: crate::paint::renderer::TimingSpan::new(
+                    notify_start,
+                    notify_start + pre_present_notify + immediate.present.total,
+                ),
+                ready_wait_span: crate::paint::renderer::TimingSpan::default(),
+                pre_present_notify_span: crate::paint::renderer::TimingSpan::new(
+                    notify_start,
+                    notify_start + pre_present_notify,
+                ),
+            });
+        self.route_paint_present_event();
+        self.frame_pipeline.discard_pending_frames();
+        self.paint_state.backend_mut().discard_pending_frames();
+        self.finish_presented_frame()
+    }
+
     fn current_frame_time(&self) -> FrameTime {
         let now = Instant::now();
         let frame_interval = self.frame_interval();
@@ -1352,10 +1406,6 @@ impl WindowHandle {
     /// dispatch can outrun proxy wakeups and delay presentation of an already
     /// finished frame.
     pub(crate) fn accept_polled_ready_frame(&mut self) -> bool {
-        if self.frame_pipeline.has_frame_to_present() {
-            return false;
-        }
-
         let Some(frame_id) = self.paint_state.backend_mut().poll_ready_frame() else {
             return false;
         };
@@ -1496,12 +1546,11 @@ impl WindowHandle {
         }
 
         let total_start = Instant::now();
-        let frame_size = self.window_state.root_size * self.window_state.os_scale;
-        let frame_size = Size::new(frame_size.width.max(1.0), frame_size.height.max(1.0));
+        let extent = surface_extent(self.window_state.root_size, self.window_state.os_scale);
         let resize_start = Instant::now();
         self.paint_state
             .backend_mut()
-            .resize(frame_size.width as u32, frame_size.height as u32);
+            .resize(extent.width, extent.height);
         let resize = resize_start.elapsed();
         let notify_start = Instant::now();
         self.window.pre_present_notify();
@@ -2429,11 +2478,6 @@ impl WindowHandle {
         // This is crucial for test isolation - if not done, the old root ViewId
         // will still be considered a "known root" when the ViewId slot is reused.
         remove_window_id_mapping(&self.id, &self.window_id);
-    }
-
-    #[cfg(target_os = "macos")]
-    pub(crate) fn request_presents_with_transaction_on_next_frame(&mut self) {
-        self.next_presents_with_transaction = true;
     }
 
     #[cfg(target_os = "macos")]
