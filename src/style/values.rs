@@ -44,9 +44,39 @@ use crate::views::{
 };
 
 use super::{
-    FontSize, ResponsiveSelectors, StructuralSelectors, Style, StyleDebugGroupInfo, StyleKey,
-    StyleKeyInfo, StylePropRef, Transition,
+    FontSize, PropDebugView, ResponsiveSelectors, StructuralSelectors, Style, StyleDebugGroupInfo,
+    StyleKey, StyleKeyInfo, StylePropRef, Transition,
 };
+
+use crate::no_debug_view;
+
+no_debug_view!(
+    i32,
+    bool,
+    f32,
+    u16,
+    usize,
+    f64,
+    Overflow,
+    Display,
+    Position,
+    FlexDirection,
+    FlexWrap,
+    AlignItems,
+    BoxSizing,
+    AlignContent,
+    GridTemplateComponent<String>,
+    MinTrackSizingFunction,
+    MaxTrackSizingFunction,
+    taffy::GridAutoFlow,
+    GridPlacement,
+    String,
+    crate::text::Alignment,
+    LineHeightValue,
+    Size<LengthPercentage>,
+    super::Angle,
+    super::AnchorAbout,
+);
 
 pub struct ContextValue<T> {
     pub(crate) eval: Rc<dyn Fn(&Style) -> T>,
@@ -97,11 +127,7 @@ impl<T> ContextValue<T> {
     }
 }
 
-pub trait StylePropValue: Clone + PartialEq + Debug {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        None
-    }
-
+pub trait StylePropValue: Clone + PartialEq + Debug + crate::style::PropDebugView {
     fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
         None
     }
@@ -245,11 +271,13 @@ impl<T: StylePropValue, M: StylePropValue> StylePropValue for MinMax<T, M> {
         hash_value(&(self.min.content_hash(), self.max.content_hash()))
     }
 }
+impl<T: StylePropValue, M: StylePropValue> PropDebugView for MinMax<T, M> {}
 impl<T: StylePropValue> StylePropValue for Line<T> {
     fn content_hash(&self) -> u64 {
         hash_value(&(self.start.content_hash(), self.end.content_hash()))
     }
 }
+impl<T: StylePropValue> PropDebugView for Line<T> {}
 impl StylePropValue for taffy::GridAutoFlow {
     fn content_hash(&self) -> u64 {
         hash_value(&std::mem::discriminant(self))
@@ -318,6 +346,8 @@ impl StylePropValue for ObjectFit {
     fn content_hash(&self) -> u64 {
         hash_value(self)
     }
+}
+impl PropDebugView for ObjectFit {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         use peniko::kurbo::RoundedRect;
 
@@ -466,6 +496,8 @@ impl StylePropValue for ObjectPosition {
     fn content_hash(&self) -> u64 {
         hash_value(&std::mem::discriminant(self))
     }
+}
+impl PropDebugView for ObjectPosition {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         use peniko::kurbo::{Circle, RoundedRect};
 
@@ -609,6 +641,34 @@ impl<A: smallvec::Array> StylePropValue for SmallVec<A>
 where
     <A as smallvec::Array>::Item: StylePropValue,
 {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        self.iter().zip(other.iter()).try_fold(
+            SmallVec::with_capacity(self.len()),
+            |mut acc, (v1, v2)| {
+                if let Some(interpolated) = v1.interpolate(v2, value) {
+                    acc.push(interpolated);
+                    Some(acc)
+                } else {
+                    None
+                }
+            },
+        )
+    }
+
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        self.len().hash(&mut h);
+        for item in self.iter() {
+            item.content_hash().hash(&mut h);
+        }
+        h.finish()
+    }
+}
+impl<A: smallvec::Array> PropDebugView for SmallVec<A>
+where
+    <A as smallvec::Array>::Item: StylePropValue,
+{
     fn debug_view(&self) -> Option<Box<dyn View>> {
         if self.is_empty() {
             return Some(
@@ -669,30 +729,6 @@ where
                 .into_any(),
         )
     }
-
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        self.iter().zip(other.iter()).try_fold(
-            SmallVec::with_capacity(self.len()),
-            |mut acc, (v1, v2)| {
-                if let Some(interpolated) = v1.interpolate(v2, value) {
-                    acc.push(interpolated);
-                    Some(acc)
-                } else {
-                    None
-                }
-            },
-        )
-    }
-
-    fn content_hash(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = rustc_hash::FxHasher::default();
-        self.len().hash(&mut h);
-        for item in self.iter() {
-            item.content_hash().hash(&mut h);
-        }
-        h.finish()
-    }
 }
 impl StylePropValue for String {
     fn content_hash(&self) -> u64 {
@@ -703,6 +739,13 @@ impl StylePropValue for FontWeight {
     fn content_hash(&self) -> u64 {
         hash_f32(self.value())
     }
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        self.value()
+            .interpolate(&other.value(), value)
+            .map(FontWeight::new)
+    }
+}
+impl PropDebugView for FontWeight {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let clone = *self;
         Some(
@@ -711,16 +754,13 @@ impl StylePropValue for FontWeight {
                 .into_any(),
         )
     }
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        self.value()
-            .interpolate(&other.value(), value)
-            .map(FontWeight::new)
-    }
 }
 impl StylePropValue for crate::text::FontStyle {
     fn content_hash(&self) -> u64 {
         hash_value(&std::mem::discriminant(self))
     }
+}
+impl PropDebugView for crate::text::FontStyle {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let clone = *self;
         Some(
@@ -761,10 +801,6 @@ impl StylePropValue for LineHeightValue {
 impl StylePropValue for Size<LengthPercentage> {}
 
 impl<T: StylePropValue> StylePropValue for Option<T> {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        self.as_ref().and_then(|v| v.debug_view())
-    }
-
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.as_ref().and_then(|this| {
             other
@@ -786,7 +822,37 @@ impl<T: StylePropValue> StylePropValue for Option<T> {
         h.finish()
     }
 }
+impl<T: StylePropValue> PropDebugView for Option<T> {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        self.as_ref().and_then(|v| v.debug_view())
+    }
+}
 impl<T: StylePropValue + 'static> StylePropValue for Vec<T> {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        self.iter().zip(other.iter()).try_fold(
+            Vec::with_capacity(self.len()),
+            |mut acc, (v1, v2)| {
+                if let Some(interpolated) = v1.interpolate(v2, value) {
+                    acc.push(interpolated);
+                    Some(acc)
+                } else {
+                    None
+                }
+            },
+        )
+    }
+
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        self.len().hash(&mut h);
+        for item in self {
+            item.content_hash().hash(&mut h);
+        }
+        h.finish()
+    }
+}
+impl<T: StylePropValue + 'static> PropDebugView for Vec<T> {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         if self.is_empty() {
             return Some(
@@ -830,35 +896,8 @@ impl<T: StylePropValue + 'static> StylePropValue for Vec<T> {
             tooltip_view().into_any(),
         )
     }
-
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        self.iter().zip(other.iter()).try_fold(
-            Vec::with_capacity(self.len()),
-            |mut acc, (v1, v2)| {
-                if let Some(interpolated) = v1.interpolate(v2, value) {
-                    acc.push(interpolated);
-                    Some(acc)
-                } else {
-                    None
-                }
-            },
-        )
-    }
-
-    fn content_hash(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = rustc_hash::FxHasher::default();
-        self.len().hash(&mut h);
-        for item in self {
-            item.content_hash().hash(&mut h);
-        }
-        h.finish()
-    }
 }
 impl StylePropValue for Pt {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(Label::new(format!("{} pt", self.0)).into_any())
-    }
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.0.interpolate(&other.0, value).map(Pt)
     }
@@ -866,12 +905,13 @@ impl StylePropValue for Pt {
         hash_f64(self.0)
     }
 }
+impl PropDebugView for Pt {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some(Label::new(format!("{} pt", self.0)).into_any())
+    }
+}
 #[allow(deprecated)]
 impl StylePropValue for super::unit::Px {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        Pt(self.0).debug_view()
-    }
-
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.0.interpolate(&other.0, value).map(super::unit::Px)
     }
@@ -879,10 +919,13 @@ impl StylePropValue for super::unit::Px {
         hash_f64(self.0)
     }
 }
-impl StylePropValue for Pct {
+#[allow(deprecated)]
+impl PropDebugView for super::unit::Px {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(Label::new(format!("{}%", self.0)).into_any())
+        Pt(self.0).debug_view()
     }
+}
+impl StylePropValue for Pct {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.0.interpolate(&other.0, value).map(Pct)
     }
@@ -890,7 +933,35 @@ impl StylePropValue for Pct {
         hash_f64(self.0)
     }
 }
+impl PropDebugView for Pct {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some(Label::new(format!("{}%", self.0)).into_any())
+    }
+}
 impl StylePropValue for LengthAuto {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        match (self, other) {
+            (Self::Pt(v1), Self::Pt(v2)) => Some(Self::Pt(v1 + (v2 - v1) * value)),
+            (Self::Pct(v1), Self::Pct(v2)) => Some(Self::Pct(v1 + (v2 - v1) * value)),
+            (Self::Em(v1), Self::Em(v2)) => Some(Self::Em(v1 + (v2 - v1) * value)),
+            (Self::Lh(v1), Self::Lh(v2)) => Some(Self::Lh(v1 + (v2 - v1) * value)),
+            (Self::Auto, Self::Auto) => Some(Self::Auto),
+            // TODO: Figure out some way to get in the relevant layout information in order to interpolate between pixels and percent
+            _ => None,
+        }
+    }
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        std::mem::discriminant(self).hash(&mut h);
+        match self {
+            Self::Pt(v) | Self::Pct(v) | Self::Em(v) | Self::Lh(v) => v.to_bits().hash(&mut h),
+            Self::Auto => {}
+        }
+        h.finish()
+    }
+}
+impl PropDebugView for LengthAuto {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let label = match self {
             Self::Pt(v) => format!("{v} pt"),
@@ -901,34 +972,9 @@ impl StylePropValue for LengthAuto {
         };
         Some(Label::new(label).into_any())
     }
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        match (self, other) {
-            (Self::Pt(v1), Self::Pt(v2)) => Some(Self::Pt(v1 + (v2 - v1) * value)),
-            (Self::Pct(v1), Self::Pct(v2)) => Some(Self::Pct(v1 + (v2 - v1) * value)),
-            (Self::Em(v1), Self::Em(v2)) => Some(Self::Em(v1 + (v2 - v1) * value)),
-            (Self::Lh(v1), Self::Lh(v2)) => Some(Self::Lh(v1 + (v2 - v1) * value)),
-            (Self::Auto, Self::Auto) => Some(Self::Auto),
-            // TODO: Figure out some way to get in the relevant layout information in order to interpolate between pixels and percent
-            _ => None,
-        }
-    }
-    fn content_hash(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = rustc_hash::FxHasher::default();
-        std::mem::discriminant(self).hash(&mut h);
-        match self {
-            Self::Pt(v) | Self::Pct(v) | Self::Em(v) | Self::Lh(v) => v.to_bits().hash(&mut h),
-            Self::Auto => {}
-        }
-        h.finish()
-    }
 }
 #[allow(deprecated)]
 impl StylePropValue for super::unit::PxPctAuto {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        LengthAuto::from(*self).debug_view()
-    }
-
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         match (self, other) {
             (Self::Px(v1), Self::Px(v2)) => Some(Self::Px(v1 + (v2 - v1) * value)),
@@ -948,7 +994,34 @@ impl StylePropValue for super::unit::PxPctAuto {
         h.finish()
     }
 }
+#[allow(deprecated)]
+impl PropDebugView for super::unit::PxPctAuto {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        LengthAuto::from(*self).debug_view()
+    }
+}
 impl StylePropValue for Length {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        match (self, other) {
+            (Self::Pt(v1), Self::Pt(v2)) => Some(Self::Pt(v1 + (v2 - v1) * value)),
+            (Self::Pct(v1), Self::Pct(v2)) => Some(Self::Pct(v1 + (v2 - v1) * value)),
+            (Self::Em(v1), Self::Em(v2)) => Some(Self::Em(v1 + (v2 - v1) * value)),
+            (Self::Lh(v1), Self::Lh(v2)) => Some(Self::Lh(v1 + (v2 - v1) * value)),
+            // TODO: Figure out some way to get in the relevant layout information in order to interpolate between pixels and percent
+            _ => None,
+        }
+    }
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        std::mem::discriminant(self).hash(&mut h);
+        match self {
+            Self::Pt(v) | Self::Pct(v) | Self::Em(v) | Self::Lh(v) => v.to_bits().hash(&mut h),
+        }
+        h.finish()
+    }
+}
+impl PropDebugView for Length {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let label = match self {
             Self::Pt(v) => format!("{v} pt"),
@@ -958,33 +1031,9 @@ impl StylePropValue for Length {
         };
         Some(Label::new(label).into_any())
     }
-
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        match (self, other) {
-            (Self::Pt(v1), Self::Pt(v2)) => Some(Self::Pt(v1 + (v2 - v1) * value)),
-            (Self::Pct(v1), Self::Pct(v2)) => Some(Self::Pct(v1 + (v2 - v1) * value)),
-            (Self::Em(v1), Self::Em(v2)) => Some(Self::Em(v1 + (v2 - v1) * value)),
-            (Self::Lh(v1), Self::Lh(v2)) => Some(Self::Lh(v1 + (v2 - v1) * value)),
-            // TODO: Figure out some way to get in the relevant layout information in order to interpolate between pixels and percent
-            _ => None,
-        }
-    }
-    fn content_hash(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = rustc_hash::FxHasher::default();
-        std::mem::discriminant(self).hash(&mut h);
-        match self {
-            Self::Pt(v) | Self::Pct(v) | Self::Em(v) | Self::Lh(v) => v.to_bits().hash(&mut h),
-        }
-        h.finish()
-    }
 }
 #[allow(deprecated)]
 impl StylePropValue for super::unit::PxPct {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        Length::from(*self).debug_view()
-    }
-
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         match (self, other) {
             (Self::Px(v1), Self::Px(v2)) => Some(Self::Px(v1 + (v2 - v1) * value)),
@@ -1000,6 +1049,12 @@ impl StylePropValue for super::unit::PxPct {
             Self::Px(v) | Self::Pct(v) => v.to_bits().hash(&mut h),
         }
         h.finish()
+    }
+}
+#[allow(deprecated)]
+impl PropDebugView for super::unit::PxPct {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Length::from(*self).debug_view()
     }
 }
 
@@ -1016,6 +1071,13 @@ impl StylePropValue for Color {
         }
         h.finish()
     }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(self.lerp(*other, value as f32, HueDirection::default()))
+    }
+}
+
+impl PropDebugView for Color {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let color = *self;
         let swatch = ()
@@ -1106,13 +1168,28 @@ impl StylePropValue for Color {
                 .into_any(),
         )
     }
-
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        Some(self.lerp(*other, value as f32, HueDirection::default()))
-    }
 }
 
 impl StylePropValue for Gradient {
+    fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
+        None
+    }
+
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        std::mem::discriminant(&self.kind).hash(&mut h);
+        for stop in self.stops.iter() {
+            stop.offset.to_bits().hash(&mut h);
+            for c in stop.color.components {
+                c.to_bits().hash(&mut h);
+            }
+        }
+        h.finish()
+    }
+}
+
+impl PropDebugView for Gradient {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let box_width = 22.;
         let box_height = 14.;
@@ -1166,23 +1243,6 @@ impl StylePropValue for Gradient {
                 .into_any(),
         )
     }
-
-    fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
-        None
-    }
-
-    fn content_hash(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = rustc_hash::FxHasher::default();
-        std::mem::discriminant(&self.kind).hash(&mut h);
-        for stop in self.stops.iter() {
-            stop.offset.to_bits().hash(&mut h);
-            for c in stop.color.components {
-                c.to_bits().hash(&mut h);
-            }
-        }
-        h.finish()
-    }
 }
 
 // this is a convenience wrapper so border/outline setters can accept numeric widths.
@@ -1219,6 +1279,8 @@ impl StylePropValue for Stroke {
     fn content_hash(&self) -> u64 {
         hash_f64(self.width)
     }
+}
+impl PropDebugView for Stroke {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let stroke = self.clone();
         let clone = stroke.clone();
@@ -1342,13 +1404,6 @@ impl StylePropValue for Brush {
         }
         h.finish()
     }
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        match self {
-            Brush::Solid(color) => color.debug_view(),
-            Brush::Gradient(grad) => grad.debug_view(),
-            Brush::Image(_) => None,
-        }
-    }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         match (self, other) {
@@ -1409,11 +1464,16 @@ impl StylePropValue for Brush {
         }
     }
 }
-impl StylePropValue for Duration {
+impl PropDebugView for Brush {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        None
+        match self {
+            Brush::Solid(color) => color.debug_view(),
+            Brush::Gradient(grad) => grad.debug_view(),
+            Brush::Image(_) => None,
+        }
     }
-
+}
+impl StylePropValue for Duration {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.as_secs_f64()
             .interpolate(&other.as_secs_f64(), value)
@@ -1422,6 +1482,11 @@ impl StylePropValue for Duration {
 
     fn content_hash(&self) -> u64 {
         hash_value(self)
+    }
+}
+impl PropDebugView for Duration {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        None
     }
 }
 
@@ -1466,6 +1531,20 @@ impl StylePropValue for kurbo::Rect {
         self.y1.to_bits().hash(&mut h);
         h.finish()
     }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        let lerp = |a: f64, b: f64| a + (b - a) * value;
+
+        Some(Self {
+            x0: lerp(self.x0, other.x0),
+            y0: lerp(self.y0, other.y0),
+            x1: lerp(self.x1, other.x1),
+            y1: lerp(self.y1, other.y1),
+        })
+    }
+}
+
+impl PropDebugView for kurbo::Rect {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let r = *self;
 
@@ -1507,20 +1586,27 @@ impl StylePropValue for kurbo::Rect {
                 .into_any(),
         )
     }
-
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        let lerp = |a: f64, b: f64| a + (b - a) * value;
-
-        Some(Self {
-            x0: lerp(self.x0, other.x0),
-            y0: lerp(self.y0, other.y0),
-            x1: lerp(self.x1, other.x1),
-            y1: lerp(self.y1, other.y1),
-        })
-    }
 }
 
 impl StylePropValue for Affine {
+    fn interpolate(&self, other: &Self, t: f64) -> Option<Self> {
+        Some(self.lerp(other, t))
+    }
+
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = rustc_hash::FxHasher::default();
+
+        let coeffs = self.as_coeffs();
+        for coeff in coeffs {
+            coeff.to_bits().hash(&mut hasher);
+        }
+
+        hasher.finish()
+    }
+}
+
+impl PropDebugView for Affine {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let affine = *self;
         let coeffs = affine.as_coeffs();
@@ -1669,22 +1755,6 @@ impl StylePropValue for Affine {
                 .style(|s| s.items_center())
                 .into_any(),
         )
-    }
-
-    fn interpolate(&self, other: &Self, t: f64) -> Option<Self> {
-        Some(self.lerp(other, t))
-    }
-
-    fn content_hash(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = rustc_hash::FxHasher::default();
-
-        let coeffs = self.as_coeffs();
-        for coeff in coeffs {
-            coeff.to_bits().hash(&mut hasher);
-        }
-
-        hasher.finish()
     }
 }
 

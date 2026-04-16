@@ -15,7 +15,7 @@ use crate::{
     peniko::{Brush, Color, color::palette},
     prop, prop_extractor,
     reactive::{Effect, ReadSignal, RwSignal, Scope},
-    style::{CursorColor, StylePropValue, TextColor},
+    style::{CursorColor, PropDebugView, StylePropValue, TextColor},
     text::{Attrs, AttrsList, LineHeightValue, OverflowWrap, TextLayout, TextWrapMode},
     view::{IntoView, View},
 };
@@ -68,7 +68,8 @@ use self::{
 use super::Label;
 
 prop!(pub WrapProp: WrapMethod {} = WrapMethod::EditorWidth);
-impl StylePropValue for WrapMethod {
+impl StylePropValue for WrapMethod {}
+impl PropDebugView for WrapMethod {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         Some(crate::views::Label::new(self).into_any())
     }
@@ -83,13 +84,15 @@ prop!(pub PhantomColor: Color {} = palette::css::DIM_GRAY);
 prop!(pub PlaceholderColor: Color {} = palette::css::DIM_GRAY);
 prop!(pub PreeditUnderlineColor: Color {} = palette::css::WHITE);
 prop!(pub RenderWhitespaceProp: RenderWhitespace {} = RenderWhitespace::None);
-impl StylePropValue for RenderWhitespace {
+impl StylePropValue for RenderWhitespace {}
+impl PropDebugView for RenderWhitespace {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         Some(crate::views::Label::new(self).into_any())
     }
 }
 prop!(pub IndentStyleProp: IndentStyle {} = IndentStyle::Spaces(4));
-impl StylePropValue for IndentStyle {
+impl StylePropValue for IndentStyle {}
+impl PropDebugView for IndentStyle {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         Some(Label::new(self).into_any())
     }

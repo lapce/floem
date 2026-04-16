@@ -166,9 +166,12 @@ mod cache;
 mod components;
 mod custom;
 mod cx;
+mod debug_view;
 mod props;
 pub mod recalc;
 mod selectors;
+mod sink;
+mod storage;
 #[cfg(test)]
 mod tests;
 pub mod theme;
@@ -182,6 +185,7 @@ pub use components::{
 };
 pub use custom::{CustomStylable, CustomStyle};
 pub use cx::{InheritedInteractionCx, InteractionState, StyleCx};
+pub use debug_view::PropDebugView;
 pub use props::{
     ExtractorField, StyleClass, StyleClassInfo, StyleClassRef, StyleDebugGroup,
     StyleDebugGroupInfo, StyleDebugGroupRef, StyleKey, StyleKeyInfo, StyleProp, StylePropInfo,
@@ -199,6 +203,8 @@ pub use values::{
 };
 
 pub use cache::{StyleCache, StyleCacheKey};
+
+pub(crate) use storage::StyleStorage;
 
 pub(crate) use props::{RESPONSIVE_SELECTORS_INFO, STRUCTURAL_SELECTORS_INFO, style_key_selector};
 

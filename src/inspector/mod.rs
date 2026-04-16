@@ -515,8 +515,8 @@ impl CapturedView {
         let taffy = id.get_layout().unwrap_or_default();
         let view_state = id.state();
         let view_state = view_state.borrow();
-        let combined_style = view_state.combined_style.clone();
-        let focus = view_state.combined_style.builtin().set_focus();
+        let combined_style = view_state.style_storage.combined_style.clone();
+        let focus = view_state.style_storage.combined_style.builtin().set_focus();
         let focused = window_state.focus_state.current_path().last() == Some(&id.get_element_id());
         let custom_name = &view_state.debug_name;
         let view = id.view();

@@ -14,6 +14,7 @@ use crate::unit::{FontSizeCx, Length, LengthAuto};
 use crate::view::{IntoView, View};
 use crate::views::{ContainerExt, Decorators, Stack, TooltipExt};
 
+use super::PropDebugView;
 use super::values::{StrokeWrap, StylePropValue};
 
 /// Pointer event handling mode
@@ -231,6 +232,17 @@ impl StylePropValue for Border {
         self.bottom.content_hash().hash(&mut h);
         h.finish()
     }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            left: self.left.interpolate(&other.left, value)?,
+            top: self.top.interpolate(&other.top, value)?,
+            right: self.right.interpolate(&other.right, value)?,
+            bottom: self.bottom.interpolate(&other.bottom, value)?,
+        })
+    }
+}
+impl PropDebugView for Border {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let border = self.clone();
         let details_view = move || {
@@ -257,15 +269,6 @@ impl StylePropValue for Border {
             .style(|s| s.gap(4.0).padding(8.0))
         };
         Some(details_view().into_any())
-    }
-
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        Some(Self {
-            left: self.left.interpolate(&other.left, value)?,
-            top: self.top.interpolate(&other.top, value)?,
-            right: self.right.interpolate(&other.right, value)?,
-            bottom: self.bottom.interpolate(&other.bottom, value)?,
-        })
     }
 }
 
@@ -338,6 +341,17 @@ impl StylePropValue for BorderColor {
         self.bottom.content_hash().hash(&mut h);
         h.finish()
     }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            left: self.left.interpolate(&other.left, value)?,
+            top: self.top.interpolate(&other.top, value)?,
+            right: self.right.interpolate(&other.right, value)?,
+            bottom: self.bottom.interpolate(&other.bottom, value)?,
+        })
+    }
+}
+impl PropDebugView for BorderColor {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let border_color = self.clone();
         let details_view = move || {
@@ -363,15 +377,6 @@ impl StylePropValue for BorderColor {
             .style(|s| s.gap(4.0).padding(8.0))
         };
         Some(details_view().into_any())
-    }
-
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        Some(Self {
-            left: self.left.interpolate(&other.left, value)?,
-            top: self.top.interpolate(&other.top, value)?,
-            right: self.right.interpolate(&other.right, value)?,
-            bottom: self.bottom.interpolate(&other.bottom, value)?,
-        })
     }
 }
 
@@ -477,6 +482,17 @@ impl StylePropValue for BorderRadius {
         self.bottom_right.content_hash().hash(&mut h);
         h.finish()
     }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            top_left: self.top_left.interpolate(&other.top_left, value)?,
+            top_right: self.top_right.interpolate(&other.top_right, value)?,
+            bottom_left: self.bottom_left.interpolate(&other.bottom_left, value)?,
+            bottom_right: self.bottom_right.interpolate(&other.bottom_right, value)?,
+        })
+    }
+}
+impl PropDebugView for BorderRadius {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let border_radius = *self;
         let details_view = move || {
@@ -502,15 +518,6 @@ impl StylePropValue for BorderRadius {
             .style(|s| s.gap(4.0).padding(8.0))
         };
         Some(details_view().into_any())
-    }
-
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        Some(Self {
-            top_left: self.top_left.interpolate(&other.top_left, value)?,
-            top_right: self.top_right.interpolate(&other.top_right, value)?,
-            bottom_left: self.bottom_left.interpolate(&other.bottom_left, value)?,
-            bottom_right: self.bottom_right.interpolate(&other.bottom_right, value)?,
-        })
     }
 }
 
@@ -583,6 +590,17 @@ impl StylePropValue for Padding {
         self.bottom.content_hash().hash(&mut h);
         h.finish()
     }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            left: self.left.interpolate(&other.left, value)?,
+            top: self.top.interpolate(&other.top, value)?,
+            right: self.right.interpolate(&other.right, value)?,
+            bottom: self.bottom.interpolate(&other.bottom, value)?,
+        })
+    }
+}
+impl PropDebugView for Padding {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let padding = *self;
         let details_view = move || {
@@ -608,15 +626,6 @@ impl StylePropValue for Padding {
             .style(|s| s.gap(4.0).padding(8.0))
         };
         Some(details_view().into_any())
-    }
-
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        Some(Self {
-            left: self.left.interpolate(&other.left, value)?,
-            top: self.top.interpolate(&other.top, value)?,
-            right: self.right.interpolate(&other.right, value)?,
-            bottom: self.bottom.interpolate(&other.bottom, value)?,
-        })
     }
 }
 
@@ -689,6 +698,17 @@ impl StylePropValue for Margin {
         self.bottom.content_hash().hash(&mut h);
         h.finish()
     }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            left: self.left.interpolate(&other.left, value)?,
+            top: self.top.interpolate(&other.top, value)?,
+            right: self.right.interpolate(&other.right, value)?,
+            bottom: self.bottom.interpolate(&other.bottom, value)?,
+        })
+    }
+}
+impl PropDebugView for Margin {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let margin = *self;
         let details_view = move || {
@@ -715,15 +735,6 @@ impl StylePropValue for Margin {
         };
         Some(details_view().into_any())
     }
-
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        Some(Self {
-            left: self.left.interpolate(&other.left, value)?,
-            top: self.top.interpolate(&other.top, value)?,
-            right: self.right.interpolate(&other.right, value)?,
-            bottom: self.bottom.interpolate(&other.bottom, value)?,
-        })
-    }
 }
 
 // Simple StylePropValue implementations for enums
@@ -735,6 +746,7 @@ impl StylePropValue for CursorStyle {
         h.finish()
     }
 }
+impl PropDebugView for CursorStyle {}
 impl StylePropValue for TextOverflow {
     fn content_hash(&self) -> u64 {
         use std::hash::{Hash, Hasher};
@@ -743,6 +755,7 @@ impl StylePropValue for TextOverflow {
         h.finish()
     }
 }
+impl PropDebugView for TextOverflow {}
 impl StylePropValue for PointerEvents {
     fn content_hash(&self) -> u64 {
         use std::hash::{Hash, Hasher};
@@ -751,6 +764,7 @@ impl StylePropValue for PointerEvents {
         h.finish()
     }
 }
+impl PropDebugView for PointerEvents {}
 
 impl StylePropValue for BoxShadow {
     fn content_hash(&self) -> u64 {
@@ -765,6 +779,35 @@ impl StylePropValue for BoxShadow {
         self.bottom_offset.content_hash().hash(&mut h);
         h.finish()
     }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            blur_radius: self
+                .blur_radius
+                .interpolate(&other.blur_radius, value)
+                .unwrap(),
+            color: self.color.interpolate(&other.color, value).unwrap(),
+            spread: self.spread.interpolate(&other.spread, value).unwrap(),
+            left_offset: self
+                .left_offset
+                .interpolate(&other.left_offset, value)
+                .unwrap(),
+            right_offset: self
+                .right_offset
+                .interpolate(&other.right_offset, value)
+                .unwrap(),
+            top_offset: self
+                .top_offset
+                .interpolate(&other.top_offset, value)
+                .unwrap(),
+            bottom_offset: self
+                .bottom_offset
+                .interpolate(&other.bottom_offset, value)
+                .unwrap(),
+        })
+    }
+}
+impl PropDebugView for BoxShadow {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         // Create a preview container that shows a visual representation of the shadow
         let shadow = *self;
@@ -820,33 +863,6 @@ impl StylePropValue for BoxShadow {
         let view = shadow_preview.tooltip(details_view);
 
         Some(view.into_any())
-    }
-
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        Some(Self {
-            blur_radius: self
-                .blur_radius
-                .interpolate(&other.blur_radius, value)
-                .unwrap(),
-            color: self.color.interpolate(&other.color, value).unwrap(),
-            spread: self.spread.interpolate(&other.spread, value).unwrap(),
-            left_offset: self
-                .left_offset
-                .interpolate(&other.left_offset, value)
-                .unwrap(),
-            right_offset: self
-                .right_offset
-                .interpolate(&other.right_offset, value)
-                .unwrap(),
-            top_offset: self
-                .top_offset
-                .interpolate(&other.top_offset, value)
-                .unwrap(),
-            bottom_offset: self
-                .bottom_offset
-                .interpolate(&other.bottom_offset, value)
-                .unwrap(),
-        })
     }
 }
 
@@ -959,3 +975,4 @@ impl StylePropValue for Focus {
         h.finish()
     }
 }
+impl PropDebugView for Focus {}

@@ -1321,8 +1321,8 @@ impl WindowHandle {
                     }
                     UpdateMessage::ViewTransitionAnimComplete(id) => {
                         let num_waiting =
-                            id.state().borrow().num_waiting_animations.saturating_sub(1);
-                        id.state().borrow_mut().num_waiting_animations = num_waiting;
+                            id.state().borrow().style_storage.num_waiting_animations.saturating_sub(1);
+                        id.state().borrow_mut().style_storage.num_waiting_animations = num_waiting;
                     }
                     UpdateMessage::SetTheme(theme) => {
                         self.set_theme(theme, false);

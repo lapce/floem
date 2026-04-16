@@ -12,9 +12,8 @@ use crate::{
     style::{
         Background, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
         BorderLeftColor, BorderRightColor, BorderTopColor, BorderTopLeftRadius,
-        BorderTopRightRadius, BoxShadowProp, CursorStyle, InheritedInteractionCx, LayoutProps,
-        Outline, OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
-        recalc::StyleReason,
+        BorderTopRightRadius, BoxShadowProp, CursorStyle, InheritedInteractionCx, Outline,
+        OutlineColor, Style, StyleClassRef, StyleStorage, recalc::StyleReason,
     },
     view::LayoutTree,
 };
@@ -325,67 +324,18 @@ pub struct ViewState {
     /// We store the stack offset to the view style to keep the api consistent but it should
     /// always be the first offset.
     pub(crate) view_style_offset: StackOffset<Style>,
-    pub(crate) has_style_selectors: Option<StyleSelectors>,
     // the translation value that this view applies to children elements. Scroll view can use this to scroll.
     pub(crate) child_translation: Vec2,
-    pub(crate) layout_props: LayoutProps,
-    pub(crate) view_style_props: ViewStyleProps,
-    pub(crate) view_transform_props: TransformProps,
     pub(crate) animations: Stack<Animation>,
     pub(crate) classes: SmallVec<[StyleClassRef; 4]>,
     pub(crate) dragging_style: Option<Style>,
-    pub(crate) combined_pre_animation_style: Style,
-    /// The resolved style for this view (base + selectors + classes).
-    /// Does NOT include inherited properties from ancestors.
-    ///
-    /// Use for style resolution logic (what did this view define?):
-    /// - Checking if a property is explicitly set on this view
-    /// - Computing class context propagation to children
-    /// - Building style cache keys
-    pub(crate) combined_style: Style,
-    /// The final computed style including inherited properties from ancestors.
-    /// This is combined_style merged with inherited context (font_size, color, etc.).
-    ///
-    /// Use for rendering and layout (what will the user see?):
-    /// - Layout calculations via prop extractors
-    /// - Visual properties (background, border, transform)
-    /// - Anything that affects what gets rendered
-    /// - Converting to taffy style for layout engine
-    ///
-    /// This DOES NOT have final interpolated values and it DOES NOT resolve properties into points.
-    pub(crate) computed_style: Style,
+    /// Engine-owned per-node style state (resolved styles, extracted props,
+    /// visibility phase, interaction cx, etc.). See [`StyleStorage`].
+    pub(crate) style_storage: StyleStorage,
     /// this can be used to make it so that a view will pull it's style context from a different parent.
     /// This is useful for overlays that are children of the window root but should pull their style cx from the creating view
     pub(crate) style_cx_parent: Option<ViewId>,
-    /// The inherited properties context for children.
-    /// Contains only properties marked as `inherited` (font-size, color, etc.).
-    ///
-    /// Derived from this view's computed_style (which includes inherited properties
-    /// from ancestors). Children will merge this with their combined_style to produce
-    /// their computed_style.
-    pub(crate) style_cx: Style,
-    /// The class context containing class definitions for descendants.
-    /// Contains `.class(SomeClass, ...)` nested maps that flow down the tree.
-    ///
-    /// Derived from this view's combined_style (only explicitly set class definitions).
-    /// Children will use this to resolve their class references when computing their
-    /// combined_style.
-    pub(crate) class_cx: Style,
-    /// the style interaction cx that is saved after computing the final style.
-    /// This will be used as the base interaction for all **children** of this view as these are the inherited interactions
-    pub(crate) style_interaction_cx: InheritedInteractionCx,
-    /// View-local interaction flags derived from this view's resolved combined style.
-    ///
-    /// This excludes inherited parent interaction and is OR'ed onto StyleCx interaction
-    /// state during fast-path style passes that skip `compute_combined`.
-    pub(crate) post_compute_combined_interaction: InheritedInteractionCx,
-    /// This interaction context can be set by a parent on this view. This will be used when building the StyleCx for **this** view.
-    pub(crate) parent_set_style_interaction: InheritedInteractionCx,
-    /// Controls view visibility for phase transitions.
-    pub(crate) visibility: Visibility,
-    /// The cursor style set by the style pass on the view. There is also the [`Self::user_cursor`] that takes precedance over this cursor.
-    pub(crate) style_cursor: Option<CursorStyle>,
-    /// the cursor style that a user can set on a view through the `ViewId`. This takes precedance over style_cursor.
+    /// the cursor style that a user can set on a view through the `ViewId`. This takes precedance over `style_storage.style_cursor`.
     pub(crate) user_cursor: Option<CursorStyle>,
     pub(crate) taffy_style: taffy::style::Style,
     pub(crate) event_listeners: FxHashMap<EventListenerKey, EventListenerVec>,
@@ -396,7 +346,6 @@ pub struct ViewState {
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
     pub(crate) popout_menu: Option<Rc<MenuCallback>>,
     pub(crate) cleanup_listeners: Rc<RefCell<CleanupListeners>>,
-    pub(crate) num_waiting_animations: u16,
     pub(crate) disable_default_events: HashSet<EventListenerKey>,
     /// This transform is user settable and is a transfrom that is applied after the transfrom from the `view_transform_props` which is the transfrom applied by style properties.
     pub(crate) transform: Affine,
@@ -437,16 +386,11 @@ impl ViewState {
             element_id,
             style,
             view_style_offset,
-            layout_props: Default::default(),
-            view_style_props: Default::default(),
-            has_style_selectors: None,
             animations: Default::default(),
             classes: SmallVec::new(),
-            combined_pre_animation_style: Style::new(),
-            combined_style: Style::new(),
-            computed_style: Style::new(),
             taffy_style: taffy::style::Style::DEFAULT,
             dragging_style: None,
+            style_storage: StyleStorage::default(),
             event_listeners: FxHashMap::default(),
             registered_listener_keys: SmallVec::new(),
             layout: None,
@@ -455,19 +399,10 @@ impl ViewState {
             popout_menu: None,
             child_translation: Vec2::ZERO,
             cleanup_listeners: Default::default(),
-            num_waiting_animations: 0,
             disable_default_events: HashSet::new(),
-            view_transform_props: Default::default(),
             transform: Affine::IDENTITY,
             debug_name: Default::default(),
             style_cx_parent: None,
-            style_cx: Style::new(),
-            class_cx: Style::new(),
-            style_interaction_cx: Default::default(),
-            post_compute_combined_interaction: Default::default(),
-            parent_set_style_interaction: Default::default(),
-            visibility: Visibility::default(),
-            style_cursor: None,
             user_cursor: None,
             children_scope: None,
             keyed_children: None,
@@ -493,7 +428,7 @@ impl ViewState {
     }
 
     pub fn cursor(&self) -> Option<CursorStyle> {
-        self.style_cursor.or(self.user_cursor)
+        self.style_storage.style_cursor.or(self.user_cursor)
     }
 
     /// Compute the combined style by applying selectors, responsive styles, and classes.
@@ -541,22 +476,22 @@ impl ViewState {
         interact_state.is_hidden |= combined.builtin().display() == taffy::Display::None;
         interact_state.is_selected |= combined.builtin().set_selected();
         interact_state.is_disabled |= combined.builtin().set_disabled();
-        self.post_compute_combined_interaction = InheritedInteractionCx {
+        self.style_storage.post_compute_combined_interaction = InheritedInteractionCx {
             hidden: combined.builtin().display() == taffy::Display::None,
             selected: combined.builtin().set_selected(),
             disabled: combined.builtin().set_disabled(),
         };
 
-        self.has_style_selectors = Some(selectors | base_selectors);
-        self.combined_pre_animation_style = combined.clone();
-        self.combined_style = combined.clone();
+        self.style_storage.has_style_selectors = Some(selectors | base_selectors);
+        self.style_storage.combined_pre_animation_style = combined.clone();
+        self.style_storage.combined_style = combined.clone();
     }
 
     pub fn apply_animations(
         &mut self,
         interact_state: &mut crate::style::InteractionState,
     ) -> bool {
-        let mut combined = self.combined_pre_animation_style.clone();
+        let mut combined = self.style_storage.combined_pre_animation_style.clone();
         // ─────────────────────────────────────────────────────────────────────
         // Process animations
         // ─────────────────────────────────────────────────────────────────────
@@ -588,13 +523,13 @@ impl ViewState {
         interact_state.is_hidden |= combined.builtin().display() == taffy::Display::None;
         interact_state.is_selected |= combined.builtin().set_selected();
         interact_state.is_disabled |= combined.builtin().set_disabled();
-        self.post_compute_combined_interaction = InheritedInteractionCx {
+        self.style_storage.post_compute_combined_interaction = InheritedInteractionCx {
             hidden: combined.builtin().display() == taffy::Display::None,
             selected: combined.builtin().set_selected(),
             disabled: combined.builtin().set_disabled(),
         };
 
-        self.combined_style = combined;
+        self.style_storage.combined_style = combined;
 
         has_active_animation
     }

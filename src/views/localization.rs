@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 use std::rc::Rc;
 
-use crate::style::{CustomStylable, CustomStyle, Style, StylePropValue};
+use crate::style::{CustomStylable, CustomStyle, PropDebugView, Style, StylePropValue};
 use crate::views::Decorators;
 use crate::{AnyView, IntoView, View, ViewId, prop, prop_extractor, style_class};
 use floem_reactive::UpdaterEffect;
@@ -56,7 +56,8 @@ impl PartialEq for LocaleMap {
     }
 }
 
-impl StylePropValue for LocaleMap {
+impl StylePropValue for LocaleMap {}
+impl PropDebugView for LocaleMap {
     fn debug_view(&self) -> Option<AnyView> {
         use crate::prelude::*;
 
@@ -97,12 +98,13 @@ impl StylePropValue for LocaleMap {
 }
 
 impl StylePropValue for LanguageIdentifier {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(crate::views::Label::new(format!("{self:?}")).into_any())
-    }
-
     fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
         None
+    }
+}
+impl PropDebugView for LanguageIdentifier {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some(crate::views::Label::new(format!("{self:?}")).into_any())
     }
 }
 

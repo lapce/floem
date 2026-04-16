@@ -700,7 +700,7 @@ impl WindowState {
             for view_id in fixed_views {
                 if let Some(state) = s.states.get(view_id) {
                     let state_borrow = state.borrow();
-                    if !state_borrow.combined_style.builtin().is_fixed() {
+                    if !state_borrow.style_storage.combined_style.builtin().is_fixed() {
                         continue;
                     }
                     let layout_node = state_borrow.layout_id;
@@ -1065,9 +1065,9 @@ impl WindowState {
                         let overlay_element_id = overlay_state_borrow.element_id;
                         let overlay_layout_id = overlay_state_borrow.layout_id;
                         let overlay_transform = overlay_state_borrow.transform;
-                        let font_size_cx = overlay_state_borrow.layout_props.font_size_cx();
+                        let font_size_cx = overlay_state_borrow.style_storage.layout_props.font_size_cx();
                         let style_transform_props =
-                            overlay_state_borrow.view_transform_props.clone();
+                            overlay_state_borrow.style_storage.view_transform_props.clone();
                         drop(overlay_state_borrow);
 
                         let logical_parent_id = s.parent.get(overlay_id).and_then(|p| *p)?;
@@ -1137,8 +1137,8 @@ impl WindowState {
                         .unwrap_or_default();
 
                     let mut pos = Point::new(0.0, 0.0);
-                    let font_size_cx = state_borrow.layout_props.font_size_cx();
-                    let layout_props = &state_borrow.layout_props;
+                    let font_size_cx = state_borrow.style_storage.layout_props.font_size_cx();
+                    let layout_props = &state_borrow.style_storage.layout_props;
 
                     if let (Some(left), Some(_)) = (
                         layout_props
@@ -1247,7 +1247,7 @@ impl WindowState {
         let view_state = view_state.borrow();
 
         view_state
-            .has_style_selectors
+            .style_storage.has_style_selectors
             .is_some_and(|s| s.has(selector_kind))
     }
 
@@ -1420,14 +1420,14 @@ fn compute_view_box_properties(
     let state = s.states.get(view_id).unwrap();
     let state_borrow = state.borrow();
 
-    let font_size_cx = state_borrow.layout_props.font_size_cx();
+    let font_size_cx = state_borrow.style_storage.layout_props.font_size_cx();
     let style_transform = state_borrow
-        .view_transform_props
+        .style_storage.view_transform_props
         .affine(size, &font_size_cx);
     let view_local_transform = style_transform * state_borrow.transform;
     let scroll_offset = state_borrow.child_translation;
     let clip = state_borrow
-        .view_transform_props
+        .style_storage.view_transform_props
         .clip_rect(local_rect, &font_size_cx);
     let element_id = state_borrow.element_id;
 

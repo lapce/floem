@@ -398,7 +398,7 @@ impl HeadlessHarness {
     /// assert!(bg.is_some(), "Background should be set when :active");
     /// ```
     pub fn get_computed_style(&self, id: ViewId) -> Style {
-        id.state().borrow().computed_style.clone()
+        id.state().borrow().style_storage.computed_style.clone()
     }
 
     /// Trigger a style recalculation pass.

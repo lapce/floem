@@ -248,6 +248,40 @@ impl DesignSystem {
 }
 
 impl StylePropValue for DesignSystem {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        use peniko::color::HueDirection;
+        let t = value as f32;
+        let inv_t = 1.0 - t;
+        let t64 = value;
+        let inv_t64 = 1.0 - t64;
+
+        Some(DesignSystem {
+            bg_base: self.bg_base.lerp(other.bg_base, t, HueDirection::default()),
+            text_base: self
+                .text_base
+                .lerp(other.text_base, t, HueDirection::default()),
+            text_lightness: self.text_lightness * inv_t + other.text_lightness * t,
+            primary_base: self
+                .primary_base
+                .lerp(other.primary_base, t, HueDirection::default()),
+            success_base: self
+                .success_base
+                .lerp(other.success_base, t, HueDirection::default()),
+            warning_base: self
+                .warning_base
+                .lerp(other.warning_base, t, HueDirection::default()),
+            danger_base: self
+                .danger_base
+                .lerp(other.danger_base, t, HueDirection::default()),
+            is_dark: if t < 0.5 { self.is_dark } else { other.is_dark },
+            padding: self.padding * inv_t + other.padding * t,
+            border_radius: self.border_radius * inv_t + other.border_radius * t,
+            font_size: self.font_size * inv_t64 + other.font_size * t64,
+        })
+    }
+}
+
+impl PropDebugView for DesignSystem {
     fn debug_view(&self) -> Option<AnyView> {
         use crate::prelude::*;
         use crate::views::Stack;
@@ -339,38 +373,6 @@ impl StylePropValue for DesignSystem {
         });
 
         Some(content.into_any())
-    }
-
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        use peniko::color::HueDirection;
-        let t = value as f32;
-        let inv_t = 1.0 - t;
-        let t64 = value;
-        let inv_t64 = 1.0 - t64;
-
-        Some(DesignSystem {
-            bg_base: self.bg_base.lerp(other.bg_base, t, HueDirection::default()),
-            text_base: self
-                .text_base
-                .lerp(other.text_base, t, HueDirection::default()),
-            text_lightness: self.text_lightness * inv_t + other.text_lightness * t,
-            primary_base: self
-                .primary_base
-                .lerp(other.primary_base, t, HueDirection::default()),
-            success_base: self
-                .success_base
-                .lerp(other.success_base, t, HueDirection::default()),
-            warning_base: self
-                .warning_base
-                .lerp(other.warning_base, t, HueDirection::default()),
-            danger_base: self
-                .danger_base
-                .lerp(other.danger_base, t, HueDirection::default()),
-            is_dark: if t < 0.5 { self.is_dark } else { other.is_dark },
-            padding: self.padding * inv_t + other.padding * t,
-            border_radius: self.border_radius * inv_t + other.border_radius * t,
-            font_size: self.font_size * inv_t64 + other.font_size * t64,
-        })
     }
 }
 
