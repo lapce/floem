@@ -480,41 +480,6 @@ fn hash_classes(classes: &[StyleClassRef]) -> u64 {
     hasher.finish()
 }
 
-impl InteractionState {
-    /// Pack interaction state into bits for efficient hashing.
-    fn to_bits(self) -> u16 {
-        let mut bits = 0u16;
-        if self.is_hovered {
-            bits |= 1 << 0;
-        }
-        if self.is_selected {
-            bits |= 1 << 1;
-        }
-        if self.is_disabled {
-            bits |= 1 << 2;
-        }
-        if self.is_focused {
-            bits |= 1 << 3;
-        }
-        if self.is_active {
-            bits |= 1 << 4;
-        }
-        if self.is_dark_mode {
-            bits |= 1 << 5;
-        }
-        if self.is_file_hover {
-            bits |= 1 << 6;
-        }
-        if self.using_keyboard_navigation {
-            bits |= 1 << 7;
-        }
-        if self.is_focus_within {
-            bits |= 1 << 8;
-        }
-        bits
-    }
-}
-
 impl Style {
     /// Compute a content hash of this style for cache keying.
     ///
