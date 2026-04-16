@@ -170,7 +170,7 @@ impl StyleSelectors {
         self.contains(selector.flag())
     }
 
-    pub(crate) const fn responsive(self) -> Self {
+    pub const fn responsive(self) -> Self {
         self.union(StyleSelectors::RESPONSIVE)
     }
 

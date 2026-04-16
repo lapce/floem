@@ -1551,6 +1551,7 @@ dependencies = [
  "floem_reactive",
  "floem_renderer",
  "floem_skia_renderer",
+ "floem_style",
  "floem_tiny_skia_renderer",
  "floem_vello_renderer",
  "floem_vger_renderer",
@@ -1886,6 +1887,15 @@ dependencies = [
  "peniko",
  "raw-window-handle",
  "resvg",
+]
+
+[[package]]
+name = "floem_style"
+version = "0.2.0"
+dependencies = [
+ "bitflags 2.11.0",
+ "floem_renderer",
+ "taffy",
 ]
 
 [[package]]

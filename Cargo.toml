@@ -8,6 +8,7 @@ members = [
   "tiny_skia",
   "reactive",
   "editor-core",
+  "floem-style",
   "examples/*",
   "ui-events-winit",
   "test",
@@ -21,6 +22,7 @@ default-members = [
   "tiny_skia",
   "reactive",
   "editor-core",
+  "floem-style",
   "ui-events-winit",
   "test",
 ]
@@ -96,6 +98,7 @@ floem_vello_renderer = { path = "vello", version = "0.2.0", optional = true }
 floem_vger_renderer = { path = "vger", version = "0.2.0", optional = true }
 floem_tiny_skia_renderer = { path = "tiny_skia", version = "0.2.0" }
 floem_reactive = { path = "reactive", version = "0.2.0" }
+floem_style = { path = "floem-style", version = "0.2.0" }
 floem-editor-core = { path = "editor-core", version = "0.2.0", optional = true }
 copypasta = { version = "0.10", default-features = false, features = [
   "wayland",

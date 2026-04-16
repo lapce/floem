@@ -169,15 +169,17 @@ mod cx;
 mod debug_view;
 mod props;
 pub mod recalc;
-mod selectors;
 mod sink;
 mod storage;
 #[cfg(test)]
 mod tests;
 pub mod theme;
 mod transition;
-pub mod unit;
 mod values;
+
+// Re-export modules moved to the `floem_style` crate so the `floem::style::*`
+// API surface remains stable for downstream users.
+pub use floem_style::{selectors, unit};
 
 pub use components::{
     Border, BorderColor, BorderRadius, BoxShadow, CursorStyle, Margin, NoWrapOverflow, Padding,
@@ -191,10 +193,10 @@ pub use props::{
     StyleDebugGroupInfo, StyleDebugGroupRef, StyleKey, StyleKeyInfo, StyleProp, StylePropInfo,
     StylePropReader, StylePropRef,
 };
-pub use selectors::{NthChild, StructuralSelector, StyleSelector, StyleSelectors};
+pub use floem_style::selectors::{NthChild, StructuralSelector, StyleSelector, StyleSelectors};
 pub use theme::{DesignSystem, StyleThemeExt};
 pub use transition::{DirectTransition, Transition, TransitionState};
-pub use unit::{
+pub use floem_style::unit::{
     AnchorAbout, Angle, Auto, DurationUnitExt, Em, FontSizeCx, Length, LengthAuto, Lh,
     LineHeightValue, Pct, Pt, UnitExt,
 };
@@ -1493,7 +1495,13 @@ style_key_selector!(
     StyleSelectors::empty().set_selector(StyleSelector::DarkMode, true)
 );
 
-impl StyleSelector {
+// StyleSelector lives in the `floem_style` crate, so we expose `to_key` as an
+// extension trait here rather than as an inherent impl.
+trait StyleSelectorKey {
+    fn to_key(self) -> StyleKey;
+}
+
+impl StyleSelectorKey for StyleSelector {
     fn to_key(self) -> StyleKey {
         match self {
             StyleSelector::Hover => hover(),

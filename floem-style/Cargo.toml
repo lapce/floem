@@ -1,0 +1,12 @@
+[package]
+name = "floem_style"
+version.workspace = true
+edition.workspace = true
+repository = "https://github.com/lapce/floem"
+description = "Style engine for Floem UI"
+license.workspace = true
+
+[dependencies]
+bitflags = "2.9"
+taffy = { version = "0.9.2", features = ["grid"] }
+floem_renderer = { path = "../renderer", version = "0.2.0" }
