@@ -146,7 +146,7 @@ fn surface_extent(size: Size, os_scale: f64) -> PhysicalSize<u32> {
 }
 
 impl FramePipeline {
-    const MAX_OUTSTANDING_FRAMES: usize = 2;
+    const MAX_OUTSTANDING_FRAMES: usize = 1;
 
     /// Returns whether the pipeline owns any in-flight or prepared frame state.
     fn has_frame_underway(&self) -> bool {
@@ -1412,20 +1412,19 @@ impl WindowHandle {
         self.refresh_frame_clock(frame_interval, now);
 
         let can_render_now = self.can_render_now();
-        let has_frame_waiting_to_present = self.has_frame_to_present();
+        let has_frame_underway = self.has_frame_underway();
 
         // Blink-style scheduling runs begin-frame work against the current
         // frame opportunity and only paces the late present/redraw stage.
         //
-        // However, once a frame is already prepared and waiting to present, we
-        // intentionally stop advancing newer begin-frame/render work. This
-        // avoids the steady-state "always one frame ahead" behavior for
-        // continuous animations, which would otherwise build two scenes per
-        // display interval: one waiting to present and one freshly started
-        // after the next tick. We still allow overlap while a frame is merely
-        // rendering, but not once a prepared frame exists.
+        // However, once any frame is already underway, we intentionally stop
+        // advancing newer begin-frame/render work. Otherwise a hot input turn
+        // can consume the same event twice by building one scene while the
+        // previous frame is still rendering, then presenting both back to
+        // back. Floem should only build a new scene after the prior frame has
+        // fully retired.
         if can_render_now
-            && !has_frame_waiting_to_present
+            && !has_frame_underway
             && self
                 .frame_clock
                 .needs_frame_prepare(self.window_state.has_next_frame_work())
@@ -1433,7 +1432,7 @@ impl WindowHandle {
             self.prepare_frame();
         }
 
-        if can_render_now && !has_frame_waiting_to_present {
+        if can_render_now && !has_frame_underway {
             self.paint_frame();
         }
 
@@ -2619,6 +2618,33 @@ mod tests {
         assert!(
             window_handle.window_state.has_pending_render(),
             "pending box-tree damage alone should keep render submission active"
+        );
+    }
+
+    #[test]
+    fn test_advance_frame_does_not_consume_next_frame_work_while_frame_underway() {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
+
+        let view = Empty::new().style(|s| s.size(100.0, 100.0));
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
+
+        window_handle.process_update_no_paint();
+        window_handle
+            .window_state
+            .request_animation_frame(Box::new(|_| {}));
+        window_handle
+            .frame_pipeline
+            .begin_render(FrameRecord { id: 1 });
+
+        window_handle.advance_frame();
+
+        assert!(
+            window_handle
+                .window_state
+                .has_pending_begin_frame_callbacks(),
+            "begin-frame work should stay queued until the in-flight frame retires"
         );
     }
 }

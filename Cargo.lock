@@ -1524,9 +1524,9 @@ dependencies = [
  "dpi 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "educe",
  "floem-editor-core",
+ "floem-vger",
  "floem-winit",
  "floem_reactive",
- "floem_vger_renderer",
  "fluent-bundle",
  "fontique",
  "futures",
@@ -1612,12 +1612,20 @@ dependencies = [
 [[package]]
 name = "floem-vger"
 version = "0.3.2"
-source = "git+https://github.com/lapce/vger-rs?rev=9a947c453200f4e5de7780c57de784f1d96f0714#9a947c453200f4e5de7780c57de784f1d96f0714"
 dependencies = [
+ "anyhow",
  "euclid",
  "fontdue",
+ "image 0.25.10",
+ "imaging",
+ "imaging_wgpu",
  "linebender_resource_handle",
+ "parley",
+ "peniko",
  "rect_packer",
+ "skrifa 0.40.0",
+ "swash",
+ "tiny-skia",
  "wgpu 28.0.0",
 ]
 
@@ -1844,22 +1852,6 @@ version = "0.2.0"
 dependencies = [
  "parking_lot",
  "smallvec",
-]
-
-[[package]]
-name = "floem_vger_renderer"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "floem-vger",
- "image 0.25.10",
- "imaging",
- "imaging_vello_cpu",
- "imaging_wgpu",
- "parley",
- "peniko",
- "swash",
- "wgpu 28.0.0",
 ]
 
 [[package]]

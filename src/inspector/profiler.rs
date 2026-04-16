@@ -912,7 +912,8 @@ impl View for ProfilerTimelineView {
             }
             Event::Pointer(PointerEvent::Move(event)) => {
                 let root_local_x = self.root_local_x(cx, event.current.logical_point());
-                self.cursor_time.set(self.time_at_root_local_x(root_local_x));
+                self.cursor_time
+                    .set(self.time_at_root_local_x(root_local_x));
                 EventPropagation::Continue
             }
             Event::Pointer(PointerEvent::Scroll(event)) => {

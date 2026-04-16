@@ -463,8 +463,7 @@ impl ApplicationHandle {
                 window_handle.size(size);
                 #[cfg(target_os = "macos")]
                 {
-                    frame_presented =
-                        window_handle.present_resize_sync_immediately(surface_size);
+                    frame_presented = window_handle.present_resize_sync_immediately(surface_size);
                 }
                 if !frame_presented {
                     self.request_update();

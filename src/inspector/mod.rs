@@ -640,12 +640,7 @@ pub struct TimingSpan {
 }
 
 impl TimingSpan {
-    pub fn new(
-        label: &'static str,
-        start: Duration,
-        duration: Duration,
-        kind: TimingKind,
-    ) -> Self {
+    pub fn new(label: &'static str, start: Duration, duration: Duration, kind: TimingKind) -> Self {
         Self {
             label,
             start,

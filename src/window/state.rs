@@ -1104,7 +1104,8 @@ impl WindowState {
         self.apply_fixed_positioning_transforms();
 
         let dirty_rects = self.box_tree.borrow_mut().commit().dirty_rects;
-        self.pending_damage_rects.extend(dirty_rects.iter().copied());
+        self.pending_damage_rects
+            .extend(dirty_rects.iter().copied());
 
         let pointer = self.last_pointer;
         for damage_rect in &dirty_rects {
