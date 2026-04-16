@@ -640,6 +640,21 @@ pub struct TimingSpan {
 }
 
 impl TimingSpan {
+    pub fn new(
+        label: &'static str,
+        start: Duration,
+        duration: Duration,
+        kind: TimingKind,
+    ) -> Self {
+        Self {
+            label,
+            start,
+            duration,
+            kind,
+            children: Vec::new(),
+        }
+    }
+
     fn end(&self) -> Duration {
         self.start.saturating_add(self.duration)
     }
@@ -647,6 +662,13 @@ impl TimingSpan {
     fn contains_range(&self, start: Duration, duration: Duration) -> bool {
         let end = start.saturating_add(duration);
         start >= self.start && end <= self.end()
+    }
+
+    pub(crate) fn shift_by(&mut self, delta: Duration) {
+        self.start = self.start.saturating_add(delta);
+        for child in &mut self.children {
+            child.shift_by(delta);
+        }
     }
 }
 
@@ -673,13 +695,10 @@ impl TimingReport {
         duration: Duration,
         kind: TimingKind,
     ) {
-        let span = TimingSpan {
-            label,
-            start,
-            duration,
-            kind,
-            children: Vec::new(),
-        };
+        self.push_timing_span(TimingSpan::new(label, start, duration, kind));
+    }
+
+    pub fn push_timing_span(&mut self, span: TimingSpan) {
         insert_timing_span(&mut self.spans, span);
     }
 

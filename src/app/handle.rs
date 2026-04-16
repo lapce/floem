@@ -98,6 +98,34 @@ impl ApplicationHandle {
         presented
     }
 
+    /// Continues frame progression after a present attempt.
+    ///
+    /// A failed present needs an immediate schedule refresh because the window
+    /// still owns a frame that did not retire. A successful present is
+    /// different: we only need to wake the normal update loop again if the
+    /// window still has follow-up frame work. Recomputing the paced redraw
+    /// schedule immediately after present can pull the next present earlier
+    /// than intended.
+    fn continue_after_present(
+        &mut self,
+        window_id: WindowId,
+        presented: bool,
+        event_loop: &dyn ActiveEventLoop,
+    ) {
+        if !presented {
+            self.refresh_window_frame_schedule(window_id, event_loop);
+            self.request_update();
+            return;
+        }
+
+        if let Some(handle) = self.window_handles.get_mut(&window_id) {
+            handle.refresh_frame_activity();
+            if handle.has_frame_work() {
+                self.request_update();
+            }
+        }
+    }
+
     fn finalize_presented_profile_frame(handle: &mut WindowHandle, event: Option<ProfileEvent>) {
         let queued_events = handle.take_profile_events();
         let timing = handle.take_last_timing_report();
@@ -130,9 +158,8 @@ impl ApplicationHandle {
             Some(deadline) => {
                 if Instant::now() >= deadline {
                     self.cancel_paced_redraw_timer(window_id, event_loop);
-                    if !self.present_window_frame(window_id) {
-                        self.request_update();
-                    }
+                    let presented = self.present_window_frame(window_id);
+                    self.continue_after_present(window_id, presented, event_loop);
                 } else {
                     self.ensure_paced_redraw_timer(window_id, deadline, event_loop);
                 }
@@ -1074,11 +1101,8 @@ impl ApplicationHandle {
                     {
                         state.token = None;
                         let presented = self.present_window_frame(window_id);
-                        if !presented {
-                            self.refresh_window_frame_schedule(window_id, event_loop);
-                            self.request_update();
-                            any_timer_fired = true;
-                        }
+                        self.continue_after_present(window_id, presented, event_loop);
+                        any_timer_fired = true;
                         continue;
                     }
 
