@@ -2,7 +2,7 @@
 
 //! Animations
 
-pub mod easing;
+pub use floem_style::easing;
 
 pub use easing::{Bezier, Easing, Linear, Spring, Step, StepPosition};
 

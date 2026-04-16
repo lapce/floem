@@ -1,6 +1,6 @@
 //! The Easing trait and the built-in easing functions.
 
-use peniko::kurbo::{ParamCurve, Point};
+use peniko::kurbo::{CubicBez, ParamCurve, Point};
 
 /// A trait for easing functions used in animations.
 ///
@@ -190,7 +190,7 @@ impl Bezier {
         let p2 = Point::new(self.0, self.1);
         let p3 = Point::new(self.2, self.3);
         let p4 = Point::new(1., 1.);
-        let point = crate::kurbo::CubicBez::new(p1, p2, p3, p4).eval(time);
+        let point = CubicBez::new(p1, p2, p3, p4).eval(time);
         point.y
     }
 }

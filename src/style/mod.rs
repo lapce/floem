@@ -167,6 +167,7 @@ mod components;
 mod custom;
 mod cx;
 mod debug_view;
+mod macros;
 mod props;
 pub mod recalc;
 mod sink;
@@ -174,7 +175,7 @@ mod storage;
 #[cfg(test)]
 mod tests;
 pub mod theme;
-mod transition;
+mod transition_ext;
 mod values;
 
 // Re-export modules moved to the `floem_style` crate so the `floem::style::*`
@@ -195,14 +196,14 @@ pub use props::{
 };
 pub use floem_style::selectors::{NthChild, StructuralSelector, StyleSelector, StyleSelectors};
 pub use theme::{DesignSystem, StyleThemeExt};
-pub use transition::{DirectTransition, Transition, TransitionState};
+pub use floem_style::{DirectTransition, Transition, TransitionState};
+pub use transition_ext::TransitionDebugViewExt;
 pub use floem_style::unit::{
     AnchorAbout, Angle, Auto, DurationUnitExt, Em, FontSizeCx, Length, LengthAuto, Lh,
     LineHeightValue, Pct, Pt, UnitExt,
 };
-pub use values::{
-    ContextValue, ObjectFit, ObjectPosition, StrokeWrap, StyleMapValue, StylePropValue, StyleValue,
-};
+pub use floem_style::{ObjectFit, ObjectPosition, StrokeWrap};
+pub use values::{ContextValue, StyleMapValue, StylePropValue, StyleValue};
 
 pub use cache::{StyleCache, StyleCacheKey};
 
@@ -942,7 +943,7 @@ impl Style {
                     continue;
                 };
                 to.map_mut()
-                    .insert(*k, (info.resolve_inherited_any)(&**v, from));
+                    .insert(*k, (info.resolve_inherited_any)(&**v, from as &dyn std::any::Any));
                 to.has_inherited = true;
             }
             to.merge_id = combine_merge_ids(to.merge_id, from.merge_id);
@@ -968,9 +969,10 @@ impl Style {
                     let StyleKeyInfo::Prop(info) = k.info else {
                         continue;
                     };
-                    new_style
-                        .map_mut()
-                        .insert(*k, (info.resolve_inherited_any)(&**v, from));
+                    new_style.map_mut().insert(
+                        *k,
+                        (info.resolve_inherited_any)(&**v, from as &dyn std::any::Any),
+                    );
                     new_style.has_inherited = true;
                 }
                 new_style.merge_id = combine_merge_ids(new_style.merge_id, from.merge_id);

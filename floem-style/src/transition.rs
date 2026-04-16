@@ -4,45 +4,42 @@
 //! - [`Transition`] - Animation parameters (duration, easing)
 //! - [`TransitionState`] - Internal state for tracking active transitions
 //! - [`DirectTransition`] - Standalone transition controller
+//!
+//! The inspector preview for [`Transition`] (`Transition::debug_view`) lives
+//! in the `floem` crate behind the `TransitionDebugViewExt` extension trait,
+//! because it constructs views and so depends on `floem::view::View`.
 
-use floem_reactive::{RwSignal, SignalGet};
-use floem_renderer::Renderer;
-use peniko::color::palette;
-use peniko::kurbo::{self, Point, Stroke};
 use std::rc::Rc;
-use taffy::prelude::{auto, fr};
 
-use crate::platform::{Duration, Instant};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{Duration, Instant};
+#[cfg(target_arch = "wasm32")]
+use web_time::{Duration, Instant};
 
-use crate::animate::{Bezier, Easing, Linear, Spring};
-use crate::theme::StyleThemeExt;
-use crate::view::{IntoView, View};
-use crate::views::{ContainerExt, Decorators, Label, Stack, TooltipExt, canvas};
-
-use super::StylePropValue;
-use super::values::views;
+use crate::easing::{Bezier, Easing, Linear, Spring};
+use crate::prop_value::StylePropValue;
 
 #[derive(Clone, Debug)]
-pub(crate) struct ActiveTransition<T: StylePropValue> {
-    pub(crate) start: Instant,
-    pub(crate) before: T,
-    pub(crate) current: T,
-    pub(crate) after: T,
+pub struct ActiveTransition<T: StylePropValue> {
+    pub start: Instant,
+    pub before: T,
+    pub current: T,
+    pub after: T,
 }
 
 #[derive(Clone, Debug)]
 pub struct TransitionState<T: StylePropValue> {
-    pub(crate) transition: Option<Transition>,
-    pub(crate) active: Option<ActiveTransition<T>>,
-    pub(crate) initial: bool,
+    pub transition: Option<Transition>,
+    pub active: Option<ActiveTransition<T>>,
+    pub initial: bool,
 }
 
 impl<T: StylePropValue> TransitionState<T> {
-    pub(crate) fn read(&mut self, transition: Option<Transition>) {
+    pub fn read(&mut self, transition: Option<Transition>) {
         self.transition = transition;
     }
 
-    pub(crate) fn transition(&mut self, before: &T, after: &T) {
+    pub fn transition(&mut self, before: &T, after: &T) {
         if !self.initial {
             return;
         }
@@ -57,7 +54,7 @@ impl<T: StylePropValue> TransitionState<T> {
     }
 
     /// Returns true if changed
-    pub(crate) fn step(&mut self, now: &Instant, request_transition: &mut bool) -> bool {
+    pub fn step(&mut self, now: &Instant, request_transition: &mut bool) -> bool {
         if !self.initial {
             // We have observed the initial value. Any further changes may trigger animations.
             self.initial = true;
@@ -87,7 +84,7 @@ impl<T: StylePropValue> TransitionState<T> {
         }
     }
 
-    pub(crate) fn get(&self, value: &T) -> T {
+    pub fn get(&self, value: &T) -> T {
         if let Some(active) = &self.active {
             active.current.clone()
         } else {
@@ -110,146 +107,6 @@ impl<T: StylePropValue> Default for TransitionState<T> {
 pub struct Transition {
     pub duration: Duration,
     pub easing: Rc<dyn Easing>,
-}
-
-impl Transition {
-    pub fn debug_view(&self) -> Box<dyn View> {
-        let transition = self.clone();
-        let easing_clone = transition.easing.clone();
-
-        let curve_color = RwSignal::new(palette::css::BLUE);
-        let axis_color = RwSignal::new(palette::css::GRAY);
-
-        // Visual preview of the easing curve
-        let preview = canvas(move |cx, size| {
-            let width = size.width;
-            let height = size.height;
-            let padding = 4.0;
-            let graph_width = width - padding * 2.0;
-            let graph_height = height - padding * 2.0;
-
-            // Sample the easing function
-            let sample_count = 50;
-            let mut path = kurbo::BezPath::new();
-
-            for i in 0..=sample_count {
-                let t = i as f64 / sample_count as f64;
-                let eased = easing_clone.eval(t);
-                let x = padding + t * graph_width;
-                let y = padding + (1.0 - eased) * graph_height;
-
-                if i == 0 {
-                    path.move_to(Point::new(x, y));
-                } else {
-                    path.line_to(Point::new(x, y));
-                }
-            }
-
-            // Draw the curve
-            cx.stroke(
-                &path,
-                curve_color.get(),
-                &Stroke {
-                    width: 2.0,
-                    ..Default::default()
-                },
-            );
-
-            // Draw axes
-            let axis_stroke = Stroke {
-                width: 1.0,
-                ..Default::default()
-            };
-
-            // X axis
-            cx.stroke(
-                &kurbo::Line::new(
-                    Point::new(padding, height - padding),
-                    Point::new(width - padding, height - padding),
-                ),
-                axis_color.get(),
-                &axis_stroke,
-            );
-
-            // Y axis
-            cx.stroke(
-                &kurbo::Line::new(
-                    Point::new(padding, padding),
-                    Point::new(padding, height - padding),
-                ),
-                axis_color.get(),
-                &axis_stroke,
-            );
-        })
-        .style(|s| s.width(80.0).height(60.0))
-        .container()
-        .style(move |s| {
-            s.padding(4.0)
-                .border(1.)
-                .border_radius(5.0)
-                .with_theme(move |s, t| s.border_color(t.border()))
-        });
-
-        let tooltip_view = move || {
-            let transition = transition.clone();
-
-            let duration_row = views((
-                "Duration:".style(|s| s.font_bold().min_width(80.0).justify_end()),
-                Label::derived(move || format!("{:.0}ms", transition.duration.as_millis())),
-            ));
-
-            let easing_name = format!("{:?}", transition.easing);
-            let easing_row = views((
-                "Easing:".style(|s| s.font_bold().min_width(80.0).justify_end()),
-                Label::derived(move || easing_name.clone()),
-            ));
-
-            // Show velocity at key points if available
-            let velocity_samples = if transition.easing.velocity(0.0).is_some() {
-                let samples = vec![0.0, 0.25, 0.5, 0.75, 1.0]
-                    .into_iter()
-                    .filter_map(|t| {
-                        transition
-                            .easing
-                            .velocity(t)
-                            .map(|v| Label::new(format!("t={:.2}: {:.3}", t, v)))
-                    })
-                    .collect::<Vec<_>>();
-
-                if !samples.is_empty() {
-                    Some(views((
-                        "Velocity:".style(|s| s.font_bold().min_width(80.0).justify_end()),
-                        Stack::vertical_from_iter(samples).style(|s| s.gap(2.0)),
-                    )))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            let mut rows = vec![duration_row.into_any(), easing_row.into_any()];
-
-            if let Some(velocity_row) = velocity_samples {
-                rows.push(velocity_row.into_any());
-            }
-
-            Stack::vertical_from_iter(rows).style(|s| {
-                s.grid()
-                    .grid_template_columns([auto(), fr(1.)])
-                    .justify_center()
-                    .items_center()
-                    .row_gap(12)
-                    .col_gap(10)
-                    .padding(20)
-            })
-        };
-
-        preview
-            .tooltip(tooltip_view)
-            .style(|s| s.items_center())
-            .into_any()
-    }
 }
 
 impl Transition {
@@ -283,7 +140,7 @@ impl Transition {
 ///
 /// ```rust
 /// use std::time::{Duration, Instant};
-/// use floem::style::{DirectTransition, Transition};
+/// use floem_style::{DirectTransition, Transition};
 ///
 /// // Create a transition for animating opacity
 /// let mut opacity = DirectTransition::new(1., None);
