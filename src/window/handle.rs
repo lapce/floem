@@ -206,13 +206,6 @@ impl Default for FramePipeline {
 }
 
 #[derive(Clone, Debug, Default)]
-struct LayoutTiming {
-    total_span: Option<(Instant, inspector::TimingSpan)>,
-    taffy_span: Option<(Instant, inspector::TimingSpan)>,
-    box_tree_update_span: Option<(Instant, inspector::TimingSpan)>,
-}
-
-#[derive(Clone, Debug, Default)]
 struct FrameTimingAccumulator {
     anchor: Option<Instant>,
     spans: Vec<inspector::TimingSpan>,
@@ -245,48 +238,13 @@ impl FrameTimingAccumulator {
     fn record_renderer_span(
         &mut self,
         label: &'static str,
-        span: crate::paint::renderer::TimingSpan,
+        span: Option<crate::paint::renderer::TimingSpan>,
         kind: TimingKind,
     ) {
-        if let (Some(start), Some(end)) = (span.start, span.end)
-            && end > start
+        if let Some(span) = span
+            && span.end > span.start
         {
-            self.push_absolute_span(label, start, end, kind);
-        }
-    }
-
-    /// Records paint-stage timing into the current frame accumulator.
-    fn record_paint(&mut self, render_pass: crate::paint::renderer::RenderPassTiming) {
-        self.record_renderer_span("Paint", render_pass.total_span, TimingKind::Paint);
-        if let Some(render) = render_pass.render {
-            self.record_renderer_span("Prepare", render.prepare_span, TimingKind::Renderer);
-            self.record_renderer_span("Scene", render.scene_span, TimingKind::Paint);
-            self.record_renderer_span("Finish", render.finalize_span, TimingKind::Renderer);
-            self.record_renderer_span("ReadTarget", render.read_output_span, TimingKind::Renderer);
-        }
-    }
-
-    /// Records present-stage timing into the current frame accumulator.
-    fn record_present(&mut self, present_pass: crate::paint::renderer::PresentPassTiming) {
-        if let Some(present) = present_pass.present {
-            self.record_renderer_span(
-                "PrePresentNotify",
-                present_pass.pre_present_notify_span,
-                TimingKind::Renderer,
-            );
-            self.record_renderer_span("Present", present.total_span, TimingKind::Present);
-            self.record_renderer_span(
-                "AcquireSurface",
-                present.acquire_surface_span,
-                TimingKind::Present,
-            );
-            self.record_renderer_span("Compose", present.compose_span, TimingKind::Present);
-            self.record_renderer_span("Submit", present.submit_span, TimingKind::Present);
-            self.record_renderer_span(
-                "PresentCall",
-                present.present_call_span,
-                TimingKind::Present,
-            );
+            self.push_absolute_span(label, span.start, span.end, kind);
         }
     }
 
@@ -325,27 +283,6 @@ impl FrameTimingAccumulator {
         ));
     }
 
-    fn push_span(&mut self, span: (Instant, inspector::TimingSpan)) {
-        let (anchor, mut span) = span;
-        match self.anchor {
-            Some(self_anchor) if anchor < self_anchor => {
-                let delta = self_anchor.saturating_duration_since(anchor);
-                for existing in &mut self.spans {
-                    existing.shift_by(delta);
-                }
-                self.anchor = Some(anchor);
-            }
-            Some(self_anchor) if anchor > self_anchor => {
-                span.shift_by(anchor.saturating_duration_since(self_anchor));
-            }
-            None => {
-                self.anchor = Some(anchor);
-            }
-            _ => {}
-        }
-        self.spans.push(span);
-    }
-
     fn has_kind(&self, kind: TimingKind) -> bool {
         self.spans.iter().any(|span| span.kind == kind)
     }
@@ -377,6 +314,17 @@ impl FrameTimingAccumulator {
             }
         }
         timings
+    }
+}
+
+impl crate::paint::renderer::RendererTimingRecorder for FrameTimingAccumulator {
+    fn record_span(
+        &mut self,
+        label: &'static str,
+        span: Option<crate::paint::renderer::TimingSpan>,
+        kind: TimingKind,
+    ) {
+        self.record_renderer_span(label, span, kind);
     }
 }
 
@@ -689,9 +637,10 @@ impl WindowHandle {
         // and populates has_style_selectors for selector detection
         window_handle.id.request_style(StyleReason::full_recalc());
         window_handle.process_update_messages();
-        window_handle.style();
-        window_handle.layout();
-        window_handle.commit_box_tree();
+        let mut initial_timing = FrameTimingAccumulator::default();
+        window_handle.style(&mut initial_timing);
+        window_handle.layout(&mut initial_timing);
+        window_handle.commit_box_tree(&mut initial_timing);
 
         window_handle
     }
@@ -831,12 +780,14 @@ impl WindowHandle {
             self.event(Event::Window(WindowEvent::MaximizeChanged(is_maximized)));
         }
 
-        self.style();
-        self.layout();
-        self.commit_box_tree();
+        let mut timing = std::mem::take(&mut self.pending_timing);
+        self.style(&mut timing);
+        self.layout(&mut timing);
+        self.commit_box_tree(&mut timing);
+        self.pending_timing = timing;
         self.process_update_no_paint();
-        self.window_state
-            .request_paint(self.window_state.root_view_id);
+        // self.window_state
+        //     .request_paint(self.window_state.root_view_id);
     }
 
     pub(crate) fn position(&mut self, point: Point) {
@@ -911,7 +862,7 @@ impl WindowHandle {
         }
     }
 
-    fn style(&mut self) -> (Instant, inspector::TimingSpan) {
+    fn style(&mut self, timing: &mut FrameTimingAccumulator) {
         let start = Instant::now();
         // Loop until no more views need styling
         // This handles the case where styling a parent marks children dirty
@@ -935,18 +886,10 @@ impl WindowHandle {
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Style));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
         let end = Instant::now();
-        (
-            start,
-            inspector::TimingSpan::new(
-                "Style",
-                Duration::ZERO,
-                end.saturating_duration_since(start),
-                TimingKind::Style,
-            ),
-        )
+        timing.push_absolute_span("Style", start, end, TimingKind::Style);
     }
 
-    fn layout(&mut self) -> LayoutTiming {
+    fn layout(&mut self, timing: &mut FrameTimingAccumulator) {
         let start = Instant::now();
         self.window_state.compute_layout();
         let taffy_end = Instant::now();
@@ -958,57 +901,27 @@ impl WindowHandle {
         let root_element_id = self.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Layout));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
-
-        LayoutTiming {
-            total_span: Some((
-                start,
-                inspector::TimingSpan::new(
-                    "Layout",
-                    Duration::ZERO,
-                    box_tree_end.saturating_duration_since(start),
-                    TimingKind::Layout,
-                ),
-            )),
-            taffy_span: Some((
-                start,
-                inspector::TimingSpan::new(
-                    "Taffy",
-                    Duration::ZERO,
-                    taffy_end.saturating_duration_since(start),
-                    TimingKind::Layout,
-                ),
-            )),
-            box_tree_update_span: Some((
-                box_tree_start,
-                inspector::TimingSpan::new(
-                    "BoxTreeUpdate",
-                    Duration::ZERO,
-                    box_tree_end.saturating_duration_since(box_tree_start),
-                    TimingKind::BoxTree,
-                ),
-            )),
-        }
+        timing.push_absolute_span("Layout", start, box_tree_end, TimingKind::Layout);
+        timing.push_absolute_span("Taffy", start, taffy_end, TimingKind::Layout);
+        timing.push_absolute_span(
+            "BoxTreeUpdate",
+            box_tree_start,
+            box_tree_end,
+            TimingKind::BoxTree,
+        );
     }
 
-    fn update_box_tree_from_layout(&mut self) -> (Instant, inspector::TimingSpan) {
+    fn update_box_tree_from_layout(&mut self, timing: &mut FrameTimingAccumulator) {
         let start = Instant::now();
         self.window_state.update_box_tree_from_layout();
         let root_element_id = self.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreeUpdate));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
         let end = Instant::now();
-        (
-            start,
-            inspector::TimingSpan::new(
-                "BoxTreeUpdate",
-                Duration::ZERO,
-                end.saturating_duration_since(start),
-                TimingKind::BoxTree,
-            ),
-        )
+        timing.push_absolute_span("BoxTreeUpdate", start, end, TimingKind::BoxTree);
     }
 
-    fn process_pending_box_tree_updates(&mut self) -> (Instant, inspector::TimingSpan) {
+    fn process_pending_box_tree_updates(&mut self, timing: &mut FrameTimingAccumulator) {
         let start = Instant::now();
         self.window_state.process_pending_box_tree_updates();
         let root_element_id = self.window_state.root_view_id.get_element_id();
@@ -1017,18 +930,10 @@ impl WindowHandle {
         ));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
         let end = Instant::now();
-        (
-            start,
-            inspector::TimingSpan::new(
-                "BoxTreePendingUpdates",
-                Duration::ZERO,
-                end.saturating_duration_since(start),
-                TimingKind::BoxTree,
-            ),
-        )
+        timing.push_absolute_span("BoxTreePendingUpdates", start, end, TimingKind::BoxTree);
     }
 
-    fn commit_box_tree(&mut self) -> (Instant, inspector::TimingSpan) {
+    fn commit_box_tree(&mut self, timing: &mut FrameTimingAccumulator) {
         let start = Instant::now();
         self.window_state.commit_box_tree();
         self.window_state.needs_box_tree_commit = false;
@@ -1136,15 +1041,7 @@ impl WindowHandle {
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
 
         let end = Instant::now();
-        (
-            start,
-            inspector::TimingSpan::new(
-                "BoxTreeCommit",
-                Duration::ZERO,
-                end.saturating_duration_since(start),
-                TimingKind::BoxTree,
-            ),
-        )
+        timing.push_absolute_span("BoxTreeCommit", start, end, TimingKind::BoxTree);
     }
 
     /// Presents the currently prepared frame, if one exists.
@@ -1312,24 +1209,21 @@ impl WindowHandle {
     pub fn paint(&mut self, frame_id: u64) -> bool {
         let total_start = Instant::now();
         let resize_start = Instant::now();
-        let Some(render) = self.render_scene(|paint_state, frame_size, source| {
+        let mut timing = std::mem::take(&mut self.pending_timing);
+        let Some(rendered) = self.render_scene(|paint_state, frame_size, source| {
             paint_state
                 .backend_mut()
-                .render(frame_size, source, frame_id)
+                .render(frame_size, source, frame_id, &mut timing)
         }) else {
+            self.pending_timing = timing;
             return false;
         };
         let total_end = Instant::now();
 
-        self.pending_timing
-            .record_paint(crate::paint::renderer::RenderPassTiming {
-                total: total_end.saturating_duration_since(total_start),
-                resize: resize_start.elapsed(),
-                render_cpu: render.map(|render| render.total).unwrap_or(Duration::ZERO),
-                render,
-                total_span: crate::paint::renderer::TimingSpan::new(total_start, total_end),
-            });
-        render.is_some()
+        timing.push_absolute_span("Paint", total_start, total_end, TimingKind::Paint);
+        let _resize = resize_start.elapsed();
+        self.pending_timing = timing;
+        rendered
     }
 
     #[cfg(target_os = "macos")]
@@ -1348,49 +1242,35 @@ impl WindowHandle {
         let notify_start = Instant::now();
         self.set_presents_with_transaction_now(true);
         self.window.pre_present_notify();
-        let pre_present_notify = notify_start.elapsed();
+        let notify_end = Instant::now();
 
+        let mut timing = std::mem::take(&mut self.pending_timing);
         let Some(immediate) = self.render_scene(|paint_state, frame_size, source| {
             paint_state
                 .backend_mut()
-                .render_immediate_and_present(frame_size, source)
+                .render_immediate_and_present(frame_size, source, &mut timing)
         }) else {
             self.set_presents_with_transaction_now(false);
+            self.pending_timing = timing;
             return false;
         };
 
         self.set_presents_with_transaction_now(false);
 
-        let Some(immediate) = immediate else {
+        if !immediate {
+            self.pending_timing = timing;
             return false;
-        };
+        }
 
-        self.pending_timing
-            .record_paint(crate::paint::renderer::RenderPassTiming {
-                total: immediate.render.total,
-                resize: Duration::ZERO,
-                render_cpu: immediate.render.total,
-                render: Some(immediate.render),
-                total_span: immediate.render.total_span,
-            });
-        self.pending_timing
-            .record_present(crate::paint::renderer::PresentPassTiming {
-                total: pre_present_notify + immediate.present.total,
-                resize: Duration::ZERO,
-                ready_wait: Duration::ZERO,
-                pre_present_notify,
-                present_cpu: pre_present_notify + immediate.present.total,
-                present: Some(immediate.present),
-                total_span: crate::paint::renderer::TimingSpan::new(
-                    notify_start,
-                    notify_start + pre_present_notify + immediate.present.total,
-                ),
-                ready_wait_span: crate::paint::renderer::TimingSpan::default(),
-                pre_present_notify_span: crate::paint::renderer::TimingSpan::new(
-                    notify_start,
-                    notify_start + pre_present_notify,
-                ),
-            });
+        timing.record_renderer_span(
+            "PrePresentNotify",
+            Some(crate::paint::renderer::TimingSpan::new(
+                notify_start,
+                notify_end,
+            )),
+            TimingKind::Renderer,
+        );
+        self.pending_timing = timing;
         self.route_paint_present_event();
         self.frame_pipeline.discard_pending_frames();
         self.paint_state.backend_mut().discard_pending_frames();
@@ -1596,53 +1476,38 @@ impl WindowHandle {
             return false;
         }
 
-        let total_start = Instant::now();
         let extent = surface_extent(self.window_state.root_size, self.window_state.os_scale);
         let resize_start = Instant::now();
         self.paint_state
             .backend_mut()
             .resize(extent.width, extent.height);
-        let resize = resize_start.elapsed();
+        let _resize = resize_start.elapsed();
         let notify_start = Instant::now();
         self.window.pre_present_notify();
-        let pre_present_notify = notify_start.elapsed();
-        let ready_wait_span = crate::paint::renderer::TimingSpan::new(available_at, Instant::now());
-        let present = self.paint_state.backend_mut().present_frame(frame_id);
+        let notify_end = Instant::now();
+        let _ready_wait_span = crate::paint::renderer::TimingSpan::new(available_at, notify_start);
+        let mut timing = std::mem::take(&mut self.pending_timing);
+        let present = self
+            .paint_state
+            .backend_mut()
+            .present_frame(frame_id, &mut timing);
         let present_ok = present.is_ok();
-        if let Ok(_) = present {
+        if present.is_ok() {
             self.route_paint_present_event();
         }
-        let total_end = Instant::now();
-
-        self.pending_timing
-            .record_present(crate::paint::renderer::PresentPassTiming {
-                total: total_end.saturating_duration_since(total_start),
-                resize,
-                ready_wait: present
-                    .as_ref()
-                    .map_or(Duration::ZERO, |_| ready_wait_span.duration()),
-                pre_present_notify: present
-                    .as_ref()
-                    .map_or(Duration::ZERO, |_| pre_present_notify),
-                present_cpu: present
-                    .as_ref()
-                    .map_or(Duration::ZERO, |present| pre_present_notify + present.total),
-                present: present.ok(),
-                total_span: crate::paint::renderer::TimingSpan::new(total_start, total_end),
-                ready_wait_span: present
-                    .as_ref()
-                    .map(|_| ready_wait_span)
-                    .unwrap_or_default(),
-                pre_present_notify_span: present
-                    .as_ref()
-                    .map(|_| {
-                        crate::paint::renderer::TimingSpan::new(
-                            notify_start,
-                            notify_start + pre_present_notify,
-                        )
-                    })
-                    .unwrap_or_default(),
-            });
+        if present_ok {
+            // this is sometimes useful. but most of the time it's just noise
+            // timing.record_renderer_span("ReadyWait", Some(_ready_wait_span), TimingKind::Present);
+            timing.record_renderer_span(
+                "PrePresentNotify",
+                Some(crate::paint::renderer::TimingSpan::new(
+                    notify_start,
+                    notify_end,
+                )),
+                TimingKind::Renderer,
+            );
+        }
+        self.pending_timing = timing;
         present_ok
     }
 
@@ -1680,39 +1545,25 @@ impl WindowHandle {
             }
         }
 
-        let style_duration = self.style();
-
+        let mut update = FrameTimingAccumulator::default();
+        self.style(&mut update);
         let taffy_root_node = self.id.state().borrow().layout_id;
-        let layout_timing = self.layout();
-        let box_tree_duration = self.commit_box_tree();
+        self.layout(&mut update);
+        self.commit_box_tree(&mut update);
         let mut timing = FrameTimingAccumulator::default();
         let total_start = Instant::now();
         let resize_start = Instant::now();
-        if let Some(render) = self.render_scene(|paint_state, frame_size, source| {
-            paint_state.backend_mut().render(frame_size, source, 0)
+        if let Some(rendered) = self.render_scene(|paint_state, frame_size, source| {
+            paint_state
+                .backend_mut()
+                .render(frame_size, source, 0, &mut timing)
         }) {
             let total_end = Instant::now();
-            timing.record_paint(crate::paint::renderer::RenderPassTiming {
-                total: total_end.saturating_duration_since(total_start),
-                resize: resize_start.elapsed(),
-                render_cpu: render.map(|render| render.total).unwrap_or(Duration::ZERO),
-                render,
-                total_span: crate::paint::renderer::TimingSpan::new(total_start, total_end),
-            });
+            timing.push_absolute_span("Paint", total_start, total_end, TimingKind::Paint);
+            let _resize = resize_start.elapsed();
+            let _ = rendered;
         }
         let capture_output = self.capture_image();
-        let mut update = FrameTimingAccumulator::default();
-        update.push_span(style_duration);
-        if let Some(span) = layout_timing.total_span {
-            update.push_span(span);
-        }
-        if let Some(span) = layout_timing.taffy_span {
-            update.push_span(span);
-        }
-        if let Some(span) = layout_timing.box_tree_update_span {
-            update.push_span(span);
-        }
-        update.push_span(box_tree_duration);
         update.absorb(timing);
         let timings = update.build_timing_report();
         let window_size = self.window_state.root_size;
@@ -1771,36 +1622,33 @@ impl WindowHandle {
                 }
 
                 if needs_style {
-                    let style = self.style();
-                    self.pending_timing.push_span(style);
+                    let mut timing = std::mem::take(&mut self.pending_timing);
+                    self.style(&mut timing);
+                    self.pending_timing = timing;
                 }
 
                 if self.needs_layout() {
-                    let layout = self.layout();
-                    if let Some(span) = layout.total_span {
-                        self.pending_timing.push_span(span);
-                    }
-                    if let Some(span) = layout.taffy_span {
-                        self.pending_timing.push_span(span);
-                    }
-                    if let Some(span) = layout.box_tree_update_span {
-                        self.pending_timing.push_span(span);
-                    }
+                    let mut timing = std::mem::take(&mut self.pending_timing);
+                    self.layout(&mut timing);
+                    self.pending_timing = timing;
                 }
 
                 if self.needs_box_tree_update() {
-                    let box_tree_update = self.update_box_tree_from_layout();
-                    self.pending_timing.push_span(box_tree_update);
+                    let mut timing = std::mem::take(&mut self.pending_timing);
+                    self.update_box_tree_from_layout(&mut timing);
+                    self.pending_timing = timing;
                 }
 
                 if !self.window_state.views_needing_box_tree_update.is_empty() {
-                    let pending_updates = self.process_pending_box_tree_updates();
-                    self.pending_timing.push_span(pending_updates);
+                    let mut timing = std::mem::take(&mut self.pending_timing);
+                    self.process_pending_box_tree_updates(&mut timing);
+                    self.pending_timing = timing;
                 }
 
                 if self.needs_box_tree_commit() {
-                    let commit = self.commit_box_tree();
-                    self.pending_timing.push_span(commit);
+                    let mut timing = std::mem::take(&mut self.pending_timing);
+                    self.commit_box_tree(&mut timing);
+                    self.pending_timing = timing;
                 }
 
                 iterations += 1;
@@ -1850,37 +1698,34 @@ impl WindowHandle {
                 }
 
                 if needs_style {
-                    let style = self.style();
-                    self.pending_timing.push_span(style);
+                    let mut timing = std::mem::take(&mut self.pending_timing);
+                    self.style(&mut timing);
+                    self.pending_timing = timing;
                 }
 
                 if self.needs_layout() {
-                    let layout = self.layout();
-                    if let Some(span) = layout.total_span {
-                        self.pending_timing.push_span(span);
-                    }
-                    if let Some(span) = layout.taffy_span {
-                        self.pending_timing.push_span(span);
-                    }
-                    if let Some(span) = layout.box_tree_update_span {
-                        self.pending_timing.push_span(span);
-                    }
+                    let mut timing = std::mem::take(&mut self.pending_timing);
+                    self.layout(&mut timing);
+                    self.pending_timing = timing;
                 }
 
                 if self.needs_box_tree_update() {
-                    let box_tree_update = self.update_box_tree_from_layout();
-                    self.pending_timing.push_span(box_tree_update);
+                    let mut timing = std::mem::take(&mut self.pending_timing);
+                    self.update_box_tree_from_layout(&mut timing);
+                    self.pending_timing = timing;
                 }
 
                 // Process any pending individual box tree updates after layout
                 if !self.window_state.views_needing_box_tree_update.is_empty() {
-                    let pending_updates = self.process_pending_box_tree_updates();
-                    self.pending_timing.push_span(pending_updates);
+                    let mut timing = std::mem::take(&mut self.pending_timing);
+                    self.process_pending_box_tree_updates(&mut timing);
+                    self.pending_timing = timing;
                 }
 
                 if self.needs_box_tree_commit() {
-                    let commit = self.commit_box_tree();
-                    self.pending_timing.push_span(commit);
+                    let mut timing = std::mem::take(&mut self.pending_timing);
+                    self.commit_box_tree(&mut timing);
+                    self.pending_timing = timing;
                 }
             }
             if !self.has_deferred_update_messages() {
@@ -2511,23 +2356,17 @@ impl WindowHandle {
 
     #[cfg(target_os = "macos")]
     fn set_presents_with_transaction_now(&mut self, value: bool) {
-        #[cfg(not(any(feature = "vello", feature = "vger", feature = "skia")))]
-        let _ = value;
+        use wgpu::hal::api::Metal;
+        let Some(surface) = self.paint_state.backend().gpu_surface() else {
+            return;
+        };
 
-        #[cfg(any(feature = "vello", feature = "vger", feature = "skia"))]
-        {
-            use wgpu::hal::api::Metal;
-            let Some(surface) = self.paint_state.backend().gpu_surface() else {
-                return;
-            };
-
-            unsafe {
-                if let Some(metal_surface) = surface.as_hal::<Metal>() {
-                    metal_surface
-                        .render_layer()
-                        .lock()
-                        .set_presents_with_transaction(value);
-                }
+        unsafe {
+            if let Some(metal_surface) = surface.as_hal::<Metal>() {
+                metal_surface
+                    .render_layer()
+                    .lock()
+                    .set_presents_with_transaction(value);
             }
         }
     }

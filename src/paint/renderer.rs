@@ -70,28 +70,27 @@ use wgpu::util::TextureBlitter;
 use winit::window::{Window, WindowId};
 
 use crate::app::UserEvent;
+use crate::inspector::TimingKind;
 use crate::platform::{Duration, Instant};
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct TimingSpan {
-    pub start: Option<Instant>,
-    pub end: Option<Instant>,
+    pub start: Instant,
+    pub end: Instant,
 }
 
 impl TimingSpan {
     pub fn new(start: Instant, end: Instant) -> Self {
-        Self {
-            start: Some(start),
-            end: Some(end),
-        }
+        Self { start, end }
     }
 
     pub fn duration(&self) -> Duration {
-        match (self.start, self.end) {
-            (Some(start), Some(end)) => end.saturating_duration_since(start),
-            _ => Duration::ZERO,
-        }
+        self.end.saturating_duration_since(self.start)
     }
+}
+
+pub(crate) trait RendererTimingRecorder {
+    fn record_span(&mut self, label: &'static str, span: Option<TimingSpan>, kind: TimingKind);
 }
 
 pub(crate) type WindowBackend = Box<dyn WindowRenderer>;
@@ -364,60 +363,6 @@ struct GpuWindowTarget {
     config: wgpu::SurfaceConfiguration,
 }
 
-#[allow(
-    dead_code,
-    reason = "CPU window backend factories may be unused when no CPU renderer is enabled in the current build."
-)]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct RenderTiming {
-    pub total: Duration,
-    pub prepare: Duration,
-    pub scene: Duration,
-    pub finalize: Duration,
-    pub read_output: Duration,
-    pub total_span: TimingSpan,
-    pub prepare_span: TimingSpan,
-    pub scene_span: TimingSpan,
-    pub finalize_span: TimingSpan,
-    pub read_output_span: TimingSpan,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct RenderPassTiming {
-    pub total: Duration,
-    pub resize: Duration,
-    pub render_cpu: Duration,
-    pub render: Option<RenderTiming>,
-    pub total_span: TimingSpan,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct PresentPassTiming {
-    pub total: Duration,
-    pub resize: Duration,
-    pub ready_wait: Duration,
-    pub pre_present_notify: Duration,
-    pub present_cpu: Duration,
-    pub present: Option<PresentTiming>,
-    pub total_span: TimingSpan,
-    pub ready_wait_span: TimingSpan,
-    pub pre_present_notify_span: TimingSpan,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct PresentTiming {
-    pub total: Duration,
-    pub acquire_surface: Duration,
-    pub compose: Duration,
-    pub submit: Duration,
-    pub present_call: Duration,
-    pub total_span: TimingSpan,
-    pub acquire_surface_span: TimingSpan,
-    pub compose_span: TimingSpan,
-    pub submit_span: TimingSpan,
-    pub present_call_span: TimingSpan,
-}
-
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CaptureTiming {
     pub total: Duration,
@@ -442,12 +387,6 @@ pub(crate) enum PresentFrameError {
     MissingFrame,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct ImmediatePresentTiming {
-    pub render: RenderTiming,
-    pub present: PresentTiming,
-}
-
 pub(crate) trait WindowRenderer {
     /// Updates backend-owned presentation resources to the requested window
     /// size.
@@ -462,23 +401,28 @@ pub(crate) trait WindowRenderer {
     /// begin or complete backend preparation of a frame. The window layer calls
     /// this from its paint stage.
     ///
-    /// Returning `Some(RenderTiming)` means the backend accepted paint work for
-    /// the supplied frame id. A non-zero frame id participates in the live
-    /// window frame pipeline and becomes ready later through an explicit
-    /// `FrameReady` app event.
+    /// Returning `true` means the backend accepted paint work for the supplied
+    /// frame id and recorded any backend-local timing spans into `timing`. A
+    /// non-zero frame id participates in the live window frame pipeline and
+    /// becomes ready later through an explicit `FrameReady` app event.
     fn render(
         &mut self,
         size: Size,
         source: &mut dyn RenderSource,
         frame_id: u64,
-    ) -> Option<RenderTiming>;
+        timing: &mut dyn RendererTimingRecorder,
+    ) -> bool;
 
     /// Presents the explicit prepared frame selected by the caller.
     ///
     /// This must not paint or poll for work. It only consumes the prepared
     /// frame identified by `frame_id` and attempts the backend/platform present
     /// step.
-    fn present_frame(&mut self, _frame_id: u64) -> Result<PresentTiming, PresentFrameError> {
+    fn present_frame(
+        &mut self,
+        _frame_id: u64,
+        _timing: &mut dyn RendererTimingRecorder,
+    ) -> Result<(), PresentFrameError> {
         Err(PresentFrameError::MissingFrame)
     }
 
@@ -491,8 +435,9 @@ pub(crate) trait WindowRenderer {
         &mut self,
         _size: Size,
         _source: &mut dyn RenderSource,
-    ) -> Option<ImmediatePresentTiming> {
-        None
+        _timing: &mut dyn RendererTimingRecorder,
+    ) -> bool {
+        false
     }
 
     /// Returns the latest frame id that has already finished backend
@@ -537,9 +482,10 @@ impl WindowRenderer for NullWindowBackend {
         _size: Size,
         source: &mut dyn RenderSource,
         _frame_id: u64,
-    ) -> Option<RenderTiming> {
+        _timing: &mut dyn RendererTimingRecorder,
+    ) -> bool {
         source.paint_into(&mut self.renderer);
-        None
+        false
     }
 
     fn capture(&mut self, _size: Size, source: &mut dyn RenderSource) -> CaptureOutput {
@@ -778,19 +724,28 @@ impl ThreadedWindowRenderer {
     fn drain_ready_frames(&mut self) {
         while let Some(ready_frame) = self.worker.try_recv_ready_frame() {
             let frame_id = ready_frame.frame_id;
-            if self.ready_frames.insert(frame_id, ready_frame.frame).is_none() {
+            if self
+                .ready_frames
+                .insert(frame_id, ready_frame.frame)
+                .is_none()
+            {
                 self.ready_order.push_back(frame_id);
             }
         }
     }
 
-    fn present_frame(&mut self, frame: RenderedFrame) -> Option<PresentTiming> {
+    fn present_frame(
+        &mut self,
+        frame: RenderedFrame,
+        timing: &mut dyn RendererTimingRecorder,
+    ) -> bool {
         match (&mut self.presenter, frame) {
             (ThreadedRendererPresenter::Cpu(target), RenderedFrame::Cpu(frame)) => {
                 if !target.matches_size(frame.image.width, frame.image.height) {
-                    return None;
+                    return false;
                 }
-                Some(target.present_rgba(&frame.image))
+                target.present_rgba(&frame.image, timing);
+                true
             }
             (ThreadedRendererPresenter::Gpu(target), RenderedFrame::Gpu(texture)) => {
                 let start = Instant::now();
@@ -799,28 +754,34 @@ impl ThreadedWindowRenderer {
                     .surface
                     .get_current_texture()
                     .expect("failed to acquire surface texture");
-                let acquire_surface = acquire_start.elapsed();
                 let compose_start = Instant::now();
                 target.copy_texture_to_surface(&texture, &surface_texture.texture);
-                let compose = compose_start.elapsed();
                 let present_call_start = Instant::now();
                 surface_texture.present();
-                let present_call = present_call_start.elapsed();
                 let end = Instant::now();
-                Some(PresentTiming {
-                    total: start.elapsed(),
-                    acquire_surface,
-                    compose,
-                    submit: Duration::ZERO,
-                    present_call,
-                    total_span: TimingSpan::new(start, end),
-                    acquire_surface_span: TimingSpan::new(acquire_start, compose_start),
-                    compose_span: TimingSpan::new(compose_start, present_call_start),
-                    submit_span: TimingSpan::default(),
-                    present_call_span: TimingSpan::new(present_call_start, end),
-                })
+                timing.record_span(
+                    "Present",
+                    Some(TimingSpan::new(start, end)),
+                    TimingKind::Present,
+                );
+                timing.record_span(
+                    "AcquireSurface",
+                    Some(TimingSpan::new(acquire_start, compose_start)),
+                    TimingKind::Present,
+                );
+                timing.record_span(
+                    "Compose",
+                    Some(TimingSpan::new(compose_start, present_call_start)),
+                    TimingKind::Present,
+                );
+                timing.record_span(
+                    "PresentCall",
+                    Some(TimingSpan::new(present_call_start, end)),
+                    TimingKind::Present,
+                );
+                true
             }
-            _ => None,
+            _ => false,
         }
     }
 
@@ -828,25 +789,27 @@ impl ThreadedWindowRenderer {
         &mut self,
         size: Size,
         source: &mut dyn RenderSource,
-    ) -> Option<ImmediatePresentTiming> {
+        timing: &mut dyn RendererTimingRecorder,
+    ) -> bool {
         let total_start = Instant::now();
         let scene_start = total_start;
         let scene = Self::record_scene(source);
-        let render = self.worker.render_sync(scene, size)?;
-        let scene_elapsed = scene_start.elapsed();
-        let render_end = Instant::now();
-        let render_timing = RenderTiming {
-            total: render_end.saturating_duration_since(total_start),
-            scene: scene_elapsed,
-            total_span: TimingSpan::new(total_start, render_end),
-            scene_span: TimingSpan::new(scene_start, render_end),
-            ..Default::default()
+        let render = match self.worker.render_sync(scene, size) {
+            Some(render) => render,
+            None => return false,
         };
-        let present = self.present_frame(render)?;
-        Some(ImmediatePresentTiming {
-            render: render_timing,
-            present,
-        })
+        let render_end = Instant::now();
+        timing.record_span(
+            "Paint",
+            Some(TimingSpan::new(total_start, render_end)),
+            TimingKind::Paint,
+        );
+        timing.record_span(
+            "Scene",
+            Some(TimingSpan::new(scene_start, render_end)),
+            TimingKind::Paint,
+        );
+        self.present_frame(render, timing)
     }
 }
 
@@ -1309,14 +1272,13 @@ where
             .expect("failed to resize surface");
     }
 
-    fn present_rgba(&mut self, image: &RgbaImage) -> PresentTiming {
+    fn present_rgba(&mut self, image: &RgbaImage, timing: &mut dyn RendererTimingRecorder) {
         let start = Instant::now();
         let acquire_start = start;
         let mut buffer = self
             .surface
             .buffer_mut()
             .expect("failed to get the surface buffer");
-        let acquire_surface = acquire_start.elapsed();
         let compose_start = Instant::now();
         let width = image.width as usize;
         for y in 0..image.height as usize {
@@ -1327,25 +1289,31 @@ where
                 *out_pixel = ((rgba[0] as u32) << 16) | ((rgba[1] as u32) << 8) | (rgba[2] as u32);
             }
         }
-        let compose = compose_start.elapsed();
         let present_call_start = Instant::now();
         buffer
             .present()
             .expect("failed to present the surface buffer");
-        let present_call = present_call_start.elapsed();
         let end = Instant::now();
-        PresentTiming {
-            total: start.elapsed(),
-            acquire_surface,
-            compose,
-            submit: Duration::ZERO,
-            present_call,
-            total_span: TimingSpan::new(start, end),
-            acquire_surface_span: TimingSpan::new(acquire_start, compose_start),
-            compose_span: TimingSpan::new(compose_start, present_call_start),
-            submit_span: TimingSpan::default(),
-            present_call_span: TimingSpan::new(present_call_start, end),
-        }
+        timing.record_span(
+            "Present",
+            Some(TimingSpan::new(start, end)),
+            TimingKind::Present,
+        );
+        timing.record_span(
+            "AcquireSurface",
+            Some(TimingSpan::new(acquire_start, compose_start)),
+            TimingKind::Present,
+        );
+        timing.record_span(
+            "Compose",
+            Some(TimingSpan::new(compose_start, present_call_start)),
+            TimingKind::Present,
+        );
+        timing.record_span(
+            "PresentCall",
+            Some(TimingSpan::new(present_call_start, end)),
+            TimingKind::Present,
+        );
     }
 }
 
@@ -1377,11 +1345,11 @@ where
         }
     }
 
-    fn present_rgba(&mut self, image: &RgbaImage) -> PresentTiming {
+    fn present_rgba(&mut self, image: &RgbaImage, timing: &mut dyn RendererTimingRecorder) {
         match self {
             #[cfg(not(target_arch = "wasm32"))]
-            Self::Pixels(target) => target.present_rgba(image),
-            Self::Softbuffer(target) => target.present_rgba(image),
+            Self::Pixels(target) => target.present_rgba(image, timing),
+            Self::Softbuffer(target) => target.present_rgba(image, timing),
         }
     }
 
@@ -1442,26 +1410,30 @@ impl PixelsWindowTarget {
         }
     }
 
-    fn present_rgba(&mut self, image: &RgbaImage) -> PresentTiming {
+    fn present_rgba(&mut self, image: &RgbaImage, timing: &mut dyn RendererTimingRecorder) {
         let start = Instant::now();
         let compose_start = start;
         self.pixels.frame_mut().copy_from_slice(&image.data);
-        let compose = compose_start.elapsed();
         let submit_start = Instant::now();
         self.pixels
             .render()
             .expect("failed to present pixels frame");
-        let submit = submit_start.elapsed();
         let end = Instant::now();
-        PresentTiming {
-            total: start.elapsed(),
-            compose,
-            submit,
-            total_span: TimingSpan::new(start, end),
-            compose_span: TimingSpan::new(compose_start, submit_start),
-            submit_span: TimingSpan::new(submit_start, end),
-            ..Default::default()
-        }
+        timing.record_span(
+            "Present",
+            Some(TimingSpan::new(start, end)),
+            TimingKind::Present,
+        );
+        timing.record_span(
+            "Compose",
+            Some(TimingSpan::new(compose_start, submit_start)),
+            TimingKind::Present,
+        );
+        timing.record_span(
+            "Submit",
+            Some(TimingSpan::new(submit_start, end)),
+            TimingKind::Present,
+        );
     }
 }
 
@@ -1479,7 +1451,8 @@ impl WindowRenderer for ThreadedWindowRenderer {
         size: Size,
         source: &mut dyn RenderSource,
         frame_id: u64,
-    ) -> Option<RenderTiming> {
+        timing: &mut dyn RendererTimingRecorder,
+    ) -> bool {
         let total_start = Instant::now();
         let scene_start = total_start;
         let job = OffscreenRenderJob {
@@ -1487,38 +1460,42 @@ impl WindowRenderer for ThreadedWindowRenderer {
             scene: Self::record_scene(source),
             size,
         };
-        let scene = scene_start.elapsed();
-
         self.submit_job(job);
-
-        Some(RenderTiming {
-            total: total_start.elapsed(),
-            scene,
-            total_span: TimingSpan::new(total_start, Instant::now()),
-            scene_span: TimingSpan::new(scene_start, Instant::now()),
-            ..Default::default()
-        })
+        let end = Instant::now();
+        timing.record_span(
+            "Scene",
+            Some(TimingSpan::new(scene_start, end)),
+            TimingKind::Paint,
+        );
+        true
     }
 
-    fn present_frame(&mut self, frame_id: u64) -> Result<PresentTiming, PresentFrameError> {
+    fn present_frame(
+        &mut self,
+        frame_id: u64,
+        timing: &mut dyn RendererTimingRecorder,
+    ) -> Result<(), PresentFrameError> {
         self.drain_ready_frames();
         let Some(frame) = self.ready_frames.remove(&frame_id) else {
             return Err(PresentFrameError::MissingFrame);
         };
-        self.ready_order.retain(|&ready_frame_id| ready_frame_id != frame_id);
+        self.ready_order
+            .retain(|&ready_frame_id| ready_frame_id != frame_id);
 
-        let present = self
-            .present_frame(frame)
-            .ok_or(PresentFrameError::MissingFrame)?;
-        Ok(present)
+        if self.present_frame(frame, timing) {
+            Ok(())
+        } else {
+            Err(PresentFrameError::MissingFrame)
+        }
     }
 
     fn render_immediate_and_present(
         &mut self,
         size: Size,
         source: &mut dyn RenderSource,
-    ) -> Option<ImmediatePresentTiming> {
-        self.render_sync_and_present(size, source)
+        timing: &mut dyn RendererTimingRecorder,
+    ) -> bool {
+        self.render_sync_and_present(size, source, timing)
     }
 
     fn poll_ready_frame(&mut self) -> Option<u64> {
@@ -1567,7 +1544,8 @@ impl WindowRenderer for TargetGpuWindowRenderer {
         size: Size,
         source: &mut dyn RenderSource,
         frame_id: u64,
-    ) -> Option<RenderTiming> {
+        timing: &mut dyn RendererTimingRecorder,
+    ) -> bool {
         let start = Instant::now();
         let prepare_start = Instant::now();
         let width = size.width.max(1.0) as u32;
@@ -1597,19 +1575,13 @@ impl WindowRenderer for TargetGpuWindowRenderer {
                         frame_id,
                     });
                 }
-                let prepare = Duration::ZERO;
-                let scene = prepare_start.elapsed();
-                let finalize = Duration::ZERO;
                 let end = Instant::now();
-                return Some(RenderTiming {
-                    total: start.elapsed(),
-                    prepare,
-                    scene,
-                    finalize,
-                    total_span: TimingSpan::new(start, end),
-                    scene_span: TimingSpan::new(prepare_start, end),
-                    ..Default::default()
-                });
+                timing.record_span(
+                    "Scene",
+                    Some(TimingSpan::new(prepare_start, end)),
+                    TimingKind::Paint,
+                );
+                return true;
             }
             (GpuRendererBackend::TextureView(backend), GpuOutputMode::OwnedTexture) => {
                 let texture = backend
@@ -1622,19 +1594,13 @@ impl WindowRenderer for TargetGpuWindowRenderer {
                         frame_id,
                     });
                 }
-                let prepare = Duration::ZERO;
-                let scene = prepare_start.elapsed();
-                let finalize = Duration::ZERO;
                 let end = Instant::now();
-                return Some(RenderTiming {
-                    total: start.elapsed(),
-                    prepare,
-                    scene,
-                    finalize,
-                    total_span: TimingSpan::new(start, end),
-                    scene_span: TimingSpan::new(prepare_start, end),
-                    ..Default::default()
-                });
+                timing.record_span(
+                    "Scene",
+                    Some(TimingSpan::new(prepare_start, end)),
+                    TimingKind::Paint,
+                );
+                return true;
             }
         }
         if frame_id != 0 {
@@ -1644,22 +1610,20 @@ impl WindowRenderer for TargetGpuWindowRenderer {
                 frame_id,
             });
         }
-        let prepare = Duration::ZERO;
-        let scene = prepare_start.elapsed();
-        let finalize = Duration::ZERO;
         let end = Instant::now();
-        Some(RenderTiming {
-            total: start.elapsed(),
-            prepare,
-            scene,
-            finalize,
-            total_span: TimingSpan::new(start, end),
-            scene_span: TimingSpan::new(prepare_start, end),
-            ..Default::default()
-        })
+        timing.record_span(
+            "Scene",
+            Some(TimingSpan::new(prepare_start, end)),
+            TimingKind::Paint,
+        );
+        true
     }
 
-    fn present_frame(&mut self, frame_id: u64) -> Result<PresentTiming, PresentFrameError> {
+    fn present_frame(
+        &mut self,
+        frame_id: u64,
+        timing: &mut dyn RendererTimingRecorder,
+    ) -> Result<(), PresentFrameError> {
         let (ready_frame_id, texture) = self
             .ready_frame
             .take()
@@ -1675,26 +1639,33 @@ impl WindowRenderer for TargetGpuWindowRenderer {
             .surface
             .get_current_texture()
             .expect("failed to acquire surface texture");
-        let acquire_surface = acquire_start.elapsed();
         let compose_start = Instant::now();
         self.target
             .copy_texture_to_surface(&texture, &surface_texture.texture);
-        let compose = compose_start.elapsed();
         let present_call_start = Instant::now();
         surface_texture.present();
-        let present_call = present_call_start.elapsed();
         let end = Instant::now();
-        Ok(PresentTiming {
-            total: start.elapsed(),
-            acquire_surface,
-            compose,
-            submit: Duration::ZERO,
-            present_call,
-            total_span: TimingSpan::new(start, end),
-            acquire_surface_span: TimingSpan::new(acquire_start, compose_start),
-            compose_span: TimingSpan::new(compose_start, present_call_start),
-            present_call_span: TimingSpan::new(present_call_start, end),
-        })
+        timing.record_span(
+            "Present",
+            Some(TimingSpan::new(start, end)),
+            TimingKind::Present,
+        );
+        timing.record_span(
+            "AcquireSurface",
+            Some(TimingSpan::new(acquire_start, compose_start)),
+            TimingKind::Present,
+        );
+        timing.record_span(
+            "Compose",
+            Some(TimingSpan::new(compose_start, present_call_start)),
+            TimingKind::Present,
+        );
+        timing.record_span(
+            "PresentCall",
+            Some(TimingSpan::new(present_call_start, end)),
+            TimingKind::Present,
+        );
+        Ok(())
     }
 
     fn poll_ready_frame(&mut self) -> Option<u64> {
@@ -1759,7 +1730,8 @@ impl WindowRenderer for ImageWindowRenderer {
         size: Size,
         source: &mut dyn RenderSource,
         frame_id: u64,
-    ) -> Option<RenderTiming> {
+        timing: &mut dyn RendererTimingRecorder,
+    ) -> bool {
         let total_start = Instant::now();
         let scene_start = total_start;
         let width = size.width.max(1.0) as u32;
@@ -1777,16 +1749,20 @@ impl WindowRenderer for ImageWindowRenderer {
                 frame_id,
             });
         }
-        Some(RenderTiming {
-            total: total_start.elapsed(),
-            scene: scene_start.elapsed(),
-            total_span: TimingSpan::new(total_start, Instant::now()),
-            scene_span: TimingSpan::new(scene_start, Instant::now()),
-            ..Default::default()
-        })
+        let end = Instant::now();
+        timing.record_span(
+            "Scene",
+            Some(TimingSpan::new(scene_start, end)),
+            TimingKind::Paint,
+        );
+        true
     }
 
-    fn present_frame(&mut self, frame_id: u64) -> Result<PresentTiming, PresentFrameError> {
+    fn present_frame(
+        &mut self,
+        frame_id: u64,
+        timing: &mut dyn RendererTimingRecorder,
+    ) -> Result<(), PresentFrameError> {
         let (ready_frame_id, image) = self
             .prepared_frame
             .take()
@@ -1795,7 +1771,8 @@ impl WindowRenderer for ImageWindowRenderer {
             self.prepared_frame = Some((ready_frame_id, image));
             return Err(PresentFrameError::MissingFrame);
         }
-        Ok(self.target.present_rgba(&image))
+        self.target.present_rgba(&image, timing);
+        Ok(())
     }
 
     fn poll_ready_frame(&mut self) -> Option<u64> {
