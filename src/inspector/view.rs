@@ -20,6 +20,7 @@ use crate::{
     },
     window::WindowConfig,
 };
+use crate::ElementIdExt;
 use floem_reactive::{Effect, Memo, RwSignal, SignalGet, SignalUpdate};
 use peniko::{
     Color,
@@ -680,7 +681,9 @@ fn register_capture_elements(
             bt.set_element_meta(
                 element.0,
                 Some(crate::ElementMeta::new(ElementId(
-                    element.0, owner_id, false,
+                    element.0,
+                    owner_id.as_raw(),
+                    false,
                 ))),
             );
             drop(bt);

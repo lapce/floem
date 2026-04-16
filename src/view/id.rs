@@ -22,6 +22,7 @@ thread_local! {
     static PENDING_SCOPE_REPARENTS: RefCell<HashSet<ViewId>> = RefCell::new(HashSet::new());
 }
 use crate::context::EventCallbackConfig;
+use crate::ElementIdExt;
 use crate::event::listener::EventListenerKey;
 use crate::event::{RouteKind, listener};
 use crate::style::recalc::StyleReason;
@@ -80,6 +81,15 @@ impl slotmap::__impl::From<slotmap::KeyData> for ViewId {
 unsafe impl slotmap::Key for ViewId {
     fn data(&self) -> slotmap::KeyData {
         self.0
+    }
+}
+
+impl ViewId {
+    /// Raw bits of this `ViewId`'s slotmap key, suitable for storing in
+    /// host-agnostic engine structures like `floem_style::ElementId`.
+    #[inline]
+    pub fn as_raw(&self) -> u64 {
+        self.0.as_ffi()
     }
 }
 
@@ -1289,7 +1299,7 @@ impl ViewId {
                 Some(parent_box_node.0),
                 understory_box_tree::LocalNode::default(),
             );
-            let element_id = ElementId(child_element_id, *self, false);
+            let element_id = ElementId(child_element_id, self.as_raw(), false);
             box_tree
                 .borrow_mut()
                 .set_element_meta(child_element_id, Some(crate::ElementMeta::new(element_id)));

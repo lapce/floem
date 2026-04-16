@@ -371,7 +371,7 @@ impl ViewState {
 
         let element_id = crate::ElementId(
             box_tree.push_child(None, understory_box_tree::LocalNode::default()),
-            id,
+            id.as_raw(),
             true,
         );
         box_tree.set_element_meta(element_id.0, Some(crate::ElementMeta::new(element_id)));

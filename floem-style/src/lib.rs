@@ -7,9 +7,11 @@
 //! can run the same engine over its own node type by implementing the
 //! traits this crate exposes.
 
+pub mod element_id;
 pub mod interaction;
 pub mod responsive;
 pub mod selectors;
 pub mod unit;
 
+pub use element_id::ElementId;
 pub use interaction::{InheritedInteractionCx, InteractionState};

@@ -29,6 +29,7 @@ use crate::{
     view::{VIEW_STORAGE, View},
     window::WindowState,
 };
+use crate::ElementIdExt;
 
 static START_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 

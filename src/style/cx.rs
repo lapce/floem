@@ -27,6 +27,7 @@ use crate::{
     view::ViewId,
     window::state::WindowState,
 };
+use crate::ElementIdExt;
 
 use super::{Style, StyleProp};
 

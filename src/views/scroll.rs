@@ -10,6 +10,7 @@ use taffy::Overflow;
 use ui_events::pointer::{PointerButton, PointerEvent, PointerId};
 
 use crate::easing::Linear;
+use crate::ElementIdExt;
 use crate::event::{
     DragEvent, DragSourceEvent, PointerCaptureEvent, PointerScrollEventExt, RouteKind, ScrollTo,
 };

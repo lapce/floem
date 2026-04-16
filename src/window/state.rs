@@ -7,6 +7,7 @@ use crate::{
     style::{StyleCache, StyleSelectors, recalc::StyleReason},
     view::ViewStorage,
 };
+use crate::ElementIdExt;
 
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size, Vec2};
 use rustc_hash::{FxHashMap, FxHashSet};

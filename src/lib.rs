@@ -220,7 +220,7 @@ pub mod receiver_signal {
     pub use stream_signal::*;
 }
 
-pub use box_tree::{BoxTree, ElementId, ElementMeta, FocusNavMeta};
+pub use box_tree::{BoxTree, ElementId, ElementIdExt, ElementMeta, FocusNavMeta};
 pub(crate) use box_tree::{bump_focus_nav_meta_revision, focus_nav_meta_revision};
 
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};

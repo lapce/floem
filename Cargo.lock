@@ -1896,6 +1896,7 @@ dependencies = [
  "bitflags 2.11.0",
  "floem_renderer",
  "taffy",
+ "understory_box_tree",
 ]
 
 [[package]]

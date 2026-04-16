@@ -43,21 +43,21 @@ use crate::ViewId;
 ///
 /// // But hit testing can distinguish which specific rectangle was hit
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ElementId(
-    pub(crate) understory_box_tree::NodeId,
-    pub(crate) ViewId,
-    pub(crate) bool,
-);
+pub use floem_style::ElementId;
 
-impl ElementId {
-    pub fn owning_id(&self) -> crate::ViewId {
-        self.1
-    }
+/// Extension methods on [`ElementId`] that return host-specific types.
+///
+/// [`ElementId`] itself lives in `floem_style` and stores the owning view
+/// as raw `u64` bits to stay host-agnostic; this trait re-lifts those bits
+/// into Floem's concrete [`ViewId`].
+pub trait ElementIdExt {
+    /// The owning view for this element id.
+    fn owning_id(&self) -> ViewId;
+}
 
-    /// Returns true if the element id is the primary element for a view.
-    pub fn is_view(&self) -> bool {
-        self.2
+impl ElementIdExt for ElementId {
+    fn owning_id(&self) -> ViewId {
+        ViewId::from(slotmap::KeyData::from_ffi(self.1))
     }
 }
 
