@@ -2408,6 +2408,7 @@ mod tests {
     use super::*;
     use crate::{
         event::{Event, WindowEvent, listener},
+        view::HasViewId,
         views::{Decorators, Empty},
     };
     use std::{cell::Cell, rc::Rc};
@@ -2581,5 +2582,43 @@ mod tests {
         assert_eq!(window_handle.window_state.effective_scale(), 1.5);
         assert_eq!(observed_scale.get(), 1.5);
         assert!(window_handle.window_state.has_pending_paint());
+    }
+
+    #[test]
+    fn test_box_tree_damage_queues_pending_render_without_paint_dirty() {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
+
+        let view = Empty::new().style(|s| s.size(100.0, 100.0));
+        let element_id = view.view_id().get_element_id();
+
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
+
+        // Settle the initial layout/box tree state, then clear any bootstrapping paint/render work.
+        window_handle.process_update_no_paint();
+        window_handle.window_state.clear_pending_paint();
+        window_handle.window_state.clear_pending_damage();
+
+        {
+            let mut box_tree = window_handle.window_state.box_tree.borrow_mut();
+            box_tree.set_world_position(element_id.0, Some(Point::new(25.0, 0.0)));
+        }
+        window_handle.window_state.needs_box_tree_commit = true;
+
+        window_handle.process_update_no_paint();
+
+        assert!(
+            !window_handle.window_state.has_pending_paint(),
+            "pure box-tree damage should not require explicit paint dirtiness"
+        );
+        assert!(
+            !window_handle.window_state.pending_damage_rects.is_empty(),
+            "box-tree commit damage should be retained as pending render work"
+        );
+        assert!(
+            window_handle.window_state.has_pending_render(),
+            "pending box-tree damage alone should keep render submission active"
+        );
     }
 }

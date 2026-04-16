@@ -60,15 +60,26 @@ pub(crate) trait FrameClock {
     fn receive_frame_tick(&mut self, _tick: FrameTick) {}
 }
 
+fn force_heuristic_frame_clock_requested() -> bool {
+    std::env::var("FLOEM_FORCE_HEURISTIC_FRAME_CLOCK")
+        .ok()
+        .is_some_and(|value| value.as_str() == "1")
+}
+
 pub(crate) fn new_window_frame_clock(window_id: WindowId, output_id: u32) -> Box<dyn FrameClock> {
+    if force_heuristic_frame_clock_requested() {
+        let _ = (window_id, output_id);
+        return Box::new(HeuristicFrameClock::default());
+    }
+
     #[cfg(all(feature = "subduction", target_os = "macos"))]
     {
-        return Box::new(SubductionFrameClock::new(window_id, OutputId(output_id)));
+        Box::new(SubductionFrameClock::new(window_id, OutputId(output_id)))
     }
 
     #[cfg(all(feature = "subduction", target_os = "windows"))]
     {
-        return Box::new(WindowsSubductionFrameClock::new(OutputId(output_id)));
+        Box::new(WindowsSubductionFrameClock::new(OutputId(output_id)))
     }
 
     #[cfg(not(any(
