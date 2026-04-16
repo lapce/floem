@@ -495,6 +495,7 @@ impl<'a> LayoutCx<'a> {
         {
             return node;
         }
+
         view_state
             .borrow_mut()
             .requested_changes

@@ -516,6 +516,14 @@ impl PaintCx<'_> {
     pub fn is_focused(&self, id: ViewId) -> bool {
         self.window_state.is_focused(&id)
     }
+
+    /// Returns the current clip rectangle, if any.
+    ///
+    /// This is useful for custom views that want to implement viewport culling
+    /// by skipping paint operations for children outside the visible area.
+    pub fn clip_rect(&self) -> Option<RoundedRect> {
+        self.clip
+    }
 }
 
 // TODO: should this be private?

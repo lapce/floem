@@ -496,6 +496,10 @@ impl EventCx<'_> {
     fn dispatch_to_children(&mut self, view_id: ViewId, event: &Event) -> DispatchOutcome {
         let items = collect_stacking_context_items(view_id);
 
+        // During drag operations, we need to dispatch to ALL children so each can
+        // check if the pointer is over them and fire DragOver events.
+        let is_dragging = self.window_state.is_dragging();
+
         for item in items.iter().rev() {
             let should_send = self.should_send(item.view_id, event);
 
@@ -504,10 +508,10 @@ impl EventCx<'_> {
             // which will handle its own children.
             if !should_send {
                 // Still dispatch to the view in case it has children outside its clip rect
-                if self
-                    .dispatch_to_view(item.view_id, event, false)
-                    .is_processed()
-                {
+                let outcome = self.dispatch_to_view(item.view_id, event, false);
+                // During drag, don't return early on Processed - we need to check ALL siblings
+                // so they can all potentially receive DragOver events
+                if outcome.is_processed() && !is_dragging {
                     return DispatchOutcome::Processed;
                 }
                 continue;
@@ -519,7 +523,9 @@ impl EventCx<'_> {
                 return DispatchOutcome::Processed;
             }
 
-            if event.is_pointer() && outcome == DispatchOutcome::Consumed {
+            // During drag, don't stop at Consumed - continue to siblings so they can
+            // all check for DragOver
+            if event.is_pointer() && outcome == DispatchOutcome::Consumed && !is_dragging {
                 return DispatchOutcome::Consumed;
             }
         }

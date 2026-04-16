@@ -216,6 +216,9 @@ pub trait WindowIdExt: WindowIdExtSealed {
     /// Get the dots-per-inch scaling of this window or 1.0 if the platform does not
     /// support it (Android).
     fn scale(&self) -> f64;
+
+    /// Request that the window manager focus this window, bringing it to the front.
+    fn focus(&self);
 }
 
 impl WindowIdExt for WindowId {
@@ -278,6 +281,10 @@ impl WindowIdExt for WindowId {
 
     fn scale(&self) -> f64 {
         with_window(self, |window| window.scale_factor()).unwrap_or(1.0)
+    }
+
+    fn focus(&self) {
+        with_window(self, |window| window.focus_window());
     }
 }
 

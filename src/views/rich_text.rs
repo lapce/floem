@@ -1,9 +1,9 @@
-use std::any::Any;
+use std::{any::Any, mem::swap};
 
 use floem_reactive::Effect;
 use floem_renderer::{
     Renderer,
-    text::{Attrs, AttrsList, AttrsOwned, TextLayout},
+    text::{Attrs, AttrsList, AttrsOwned, TextLayout, Cursor},
 };
 use peniko::{
     Color,
@@ -12,15 +12,36 @@ use peniko::{
 };
 use smallvec::{SmallVec, smallvec};
 use taffy::tree::NodeId;
+use ui_events::{
+    keyboard::{Key, KeyState, KeyboardEvent},
+    pointer::{PointerButtonEvent, PointerEvent},
+};
 
 use crate::{
-    IntoView,
+    Clipboard, IntoView,
     context::UpdateCx,
-    style::{Style, TextOverflow},
+    event::{Event, EventPropagation},
+    prop_extractor,
+    style::{SelectionStyle, Selectable, Style, TextOverflow},
     unit::PxPct,
     view::View,
     view::ViewId,
+    views::TextCommand,
 };
+
+prop_extractor! {
+    RichTextExtractor {
+        text_selectable: Selectable,
+    }
+}
+
+#[derive(Debug, Clone)]
+enum SelectionState {
+    None,
+    Ready(Point),
+    Selecting(Point, Point),
+    Selected(Point, Point),
+}
 
 pub struct RichText {
     id: ViewId,
@@ -29,6 +50,11 @@ pub struct RichText {
     text_overflow: TextOverflow,
     available_width: Option<f32>,
     available_text_layout: Option<TextLayout>,
+    // Selection support
+    selection_state: SelectionState,
+    selection_range: Option<(Cursor, Cursor)>,
+    selection_style: SelectionStyle,
+    style: RichTextExtractor,
 }
 
 pub fn rich_text(text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
@@ -45,6 +71,133 @@ pub fn rich_text(text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
         text_overflow: TextOverflow::Wrap,
         available_width: None,
         available_text_layout: None,
+        selection_state: SelectionState::None,
+        selection_range: None,
+        selection_style: Default::default(),
+        style: Default::default(),
+    }
+}
+
+impl RichText {
+    fn effective_text_layout(&self) -> &TextLayout {
+        self.available_text_layout
+            .as_ref()
+            .unwrap_or(&self.text_layout)
+    }
+
+    fn get_text_content(&self) -> String {
+        self.text_layout
+            .lines()
+            .iter()
+            .enumerate()
+            .map(|(i, line)| {
+                if i == 0 {
+                    line.text().to_string()
+                } else {
+                    // Include newline to match lines_range indices which account for line endings
+                    format!("\n{}", line.text())
+                }
+            })
+            .collect()
+    }
+
+    fn get_hit_point(&self, point: Point) -> Option<Cursor> {
+        let text_node = self.text_node?;
+        let location = self
+            .id
+            .taffy()
+            .borrow()
+            .layout(text_node)
+            .map_or(taffy::Layout::new().location, |layout| layout.location);
+        self.effective_text_layout().hit(
+            point.x as f32 - location.x,
+            point.y as f32 - location.y,
+        )
+    }
+
+    fn set_selection_range(&mut self) {
+        match self.selection_state {
+            SelectionState::None => {
+                self.selection_range = None;
+            }
+            SelectionState::Selecting(start, end) | SelectionState::Selected(start, end) => {
+                let mut start_cursor = self.get_hit_point(start).expect("Start position is valid");
+                if let Some(mut end_cursor) = self.get_hit_point(end) {
+                    if start_cursor.line > end_cursor.line
+                        || (start_cursor.line == end_cursor.line
+                            && start_cursor.index > end_cursor.index)
+                    {
+                        swap(&mut start_cursor, &mut end_cursor);
+                    }
+                    self.selection_range = Some((start_cursor, end_cursor));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_modifier_cmd(&mut self, command: &TextCommand) -> bool {
+        match command {
+            TextCommand::Copy => {
+                if let Some((start_c, end_c)) = &self.selection_range {
+                    let text_layout = self.effective_text_layout();
+                    let lines_range = text_layout.lines_range();
+                    if !lines_range.is_empty()
+                        && start_c.line < lines_range.len()
+                        && end_c.line < lines_range.len()
+                    {
+                        let start_line_idx = lines_range[start_c.line].start;
+                        let end_line_idx = lines_range[end_c.line].start;
+                        let start_idx = start_line_idx + start_c.index;
+                        let end_idx = end_line_idx + end_c.index;
+                        let text = self.get_text_content();
+                        if end_idx <= text.len() {
+                            let selection_txt = text[start_idx..end_idx].to_string();
+                            let _ = Clipboard::set_contents(selection_txt);
+                        }
+                    }
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn handle_key_down(&mut self, event: &KeyboardEvent) -> bool {
+        if event.modifiers.is_empty() {
+            return false;
+        }
+        if !matches!(event.key, Key::Character(_)) {
+            return false;
+        }
+        self.handle_modifier_cmd(&event.into())
+    }
+
+    fn paint_selection(&self, text_layout: &TextLayout, cx: &mut crate::context::PaintCx) {
+        if let Some((start_c, end_c)) = &self.selection_range {
+            let location = self
+                .id
+                .taffy()
+                .borrow()
+                .layout(self.text_node.unwrap())
+                .cloned()
+                .unwrap_or_default()
+                .location;
+            let ss = &self.selection_style;
+            let selection_color = ss.selection_color();
+
+            for run in text_layout.layout_runs() {
+                if let Some((mut start_x, width)) = run.highlight(*start_c, *end_c) {
+                    start_x += location.x;
+                    let end_x = width + start_x;
+                    let start_y = location.y as f64 + run.line_top as f64;
+                    let end_y = start_y + run.line_height as f64;
+                    let rect = Rect::new(start_x.into(), start_y, end_x.into(), end_y)
+                        .to_rounded_rect(ss.corner_radius());
+                    cx.fill(&rect, &selection_color, 0.0);
+                }
+            }
+        }
     }
 }
 
@@ -71,6 +224,74 @@ impl View for RichText {
             self.available_width = None;
             self.available_text_layout = None;
             self.id.request_layout();
+        }
+    }
+
+    fn event_before_children(
+        &mut self,
+        _cx: &mut crate::context::EventCx,
+        event: &Event,
+    ) -> EventPropagation {
+        match event {
+            Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
+                if self.style.text_selectable() {
+                    self.selection_range = None;
+                    self.selection_state = SelectionState::Ready(state.logical_point());
+                    self.id.request_layout();
+                }
+            }
+            Event::Pointer(PointerEvent::Move(pu)) => {
+                if !self.style.text_selectable() {
+                    if self.selection_range.is_some() {
+                        self.selection_state = SelectionState::None;
+                        self.selection_range = None;
+                        self.id.request_layout();
+                    }
+                } else {
+                    let (SelectionState::Selecting(start, _) | SelectionState::Ready(start)) =
+                        self.selection_state
+                    else {
+                        return EventPropagation::Continue;
+                    };
+                    if start.distance(pu.current.logical_point()).abs() > 2. {
+                        self.selection_state =
+                            SelectionState::Selecting(start, pu.current.logical_point());
+                        self.id.request_active();
+                        self.id.request_focus();
+                        self.id.request_layout();
+                    }
+                }
+            }
+            Event::Pointer(PointerEvent::Up { .. }) => {
+                if let SelectionState::Selecting(start, end) = self.selection_state {
+                    self.selection_state = SelectionState::Selected(start, end);
+                } else {
+                    self.selection_state = SelectionState::None;
+                }
+                self.id.clear_active();
+                self.id.request_layout();
+            }
+            Event::Key(
+                ke @ KeyboardEvent {
+                    state: KeyState::Down,
+                    ..
+                },
+            ) => {
+                if self.handle_key_down(ke) {
+                    return EventPropagation::Stop;
+                }
+            }
+            _ => {}
+        }
+        EventPropagation::Continue
+    }
+
+    fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        if self.style.read(cx) {
+            self.id.request_paint();
+        }
+        if self.selection_style.read(cx) {
+            self.id.request_paint();
         }
     }
 
@@ -140,6 +361,8 @@ impl View for RichText {
             }
         }
 
+        self.set_selection_range();
+
         None
     }
 
@@ -154,11 +377,15 @@ impl View for RichText {
             .unwrap_or_default()
             .location;
         let point = Point::new(location.x as f64, location.y as f64);
-        if let Some(text_layout) = self.available_text_layout.as_ref() {
-            cx.draw_text(text_layout, point);
-        } else {
-            cx.draw_text(&self.text_layout, point);
+        let text_layout = self.effective_text_layout();
+
+        // Paint selection highlight first (behind text)
+        if cx.window_state.is_focused(&self.id()) {
+            self.paint_selection(text_layout, cx);
         }
+
+        // Draw the text
+        cx.draw_text(text_layout, point);
     }
 }
 

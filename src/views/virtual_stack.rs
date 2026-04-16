@@ -267,6 +267,9 @@ where
             VirtualItemSize::Fn(size_fn) => {
                 let mut main_axis = 0.0;
                 let total_len = items_vector.total_len();
+                // When viewport is zero (initial render), render first few items
+                // to ensure something is visible. Use a reasonable default viewport.
+                let effective_max = if max == 0.0 { 1000.0 } else { max };
                 for (idx, item) in items_vector.slice(0..total_len).enumerate() {
                     let item_size = size_fn(&item);
                     content_size += item_size;
@@ -277,7 +280,7 @@ where
                         continue;
                     }
 
-                    if main_axis <= max {
+                    if main_axis <= effective_max {
                         main_axis += item_size;
                         items.push(item);
                     }
