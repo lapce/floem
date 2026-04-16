@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc, time::Instant};
 
 use floem::{
-    ViewId,
+    ElementIdExt as _, ViewId,
     context::{EventCx, LayoutChanged, LayoutChangedListener, PaintCx},
     easing::Spring,
     event::{CustomEvent, Event, EventPropagation},

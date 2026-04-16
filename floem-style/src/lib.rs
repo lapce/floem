@@ -9,9 +9,13 @@
 
 pub mod element_id;
 pub mod interaction;
+pub mod prop_value;
 pub mod responsive;
 pub mod selectors;
 pub mod unit;
+pub mod value_impls;
 
 pub use element_id::ElementId;
 pub use interaction::{InheritedInteractionCx, InteractionState};
+pub use prop_value::StylePropValue;
+pub use value_impls::AffineLerp;

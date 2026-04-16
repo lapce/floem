@@ -91,7 +91,6 @@ impl PropDebugView for RenderWhitespace {
     }
 }
 prop!(pub IndentStyleProp: IndentStyle {} = IndentStyle::Spaces(4));
-impl StylePropValue for IndentStyle {}
 impl PropDebugView for IndentStyle {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         Some(Label::new(self).into_any())

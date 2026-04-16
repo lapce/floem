@@ -97,11 +97,10 @@ impl PropDebugView for LocaleMap {
     }
 }
 
-impl StylePropValue for LanguageIdentifier {
-    fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
-        None
-    }
-}
+// `impl StylePropValue for LanguageIdentifier` lives in
+// `floem_style::value_impls::localization` (behind the `localization` feature)
+// to satisfy the orphan rule.
+
 impl PropDebugView for LanguageIdentifier {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         Some(crate::views::Label::new(format!("{self:?}")).into_any())

@@ -11,6 +11,7 @@ serde = { workspace = true, optional = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 ui-events.workspace = true
+floem_style = { path = "../floem-style", version = "0.2.0" }
 
 lapce-xi-rope = { workspace = true }
 

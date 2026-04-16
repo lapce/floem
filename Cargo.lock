@@ -1602,6 +1602,7 @@ name = "floem-editor-core"
 version = "0.2.0"
 dependencies = [
  "bitflags 2.11.0",
+ "floem_style",
  "itertools 0.14.0",
  "lapce-xi-rope",
  "memchr",
@@ -1895,8 +1896,14 @@ version = "0.2.0"
 dependencies = [
  "bitflags 2.11.0",
  "floem_renderer",
+ "parley",
+ "peniko",
+ "rustc-hash 2.1.1",
+ "smallvec",
  "taffy",
  "understory_box_tree",
+ "unic-langid",
+ "web-time",
 ]
 
 [[package]]
