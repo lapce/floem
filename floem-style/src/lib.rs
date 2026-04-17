@@ -1,11 +1,51 @@
 //! The Floem style engine.
 //!
-//! This crate holds the view-agnostic parts of Floem's style system: unit
-//! types, pseudo-class selectors, the cascade, built-in property definitions,
-//! transitions, and per-node style storage. It is consumed by the `floem`
-//! crate, and is designed so a second host (e.g. a native-widget backend)
-//! can run the same engine over its own node type by implementing the
-//! traits this crate exposes.
+//! A CSS-style cascade engine tied to [`taffy`] for layout. Holds the
+//! view-agnostic parts of Floem's style system: unit types, pseudo-class
+//! selectors, the cascade, built-in property definitions, transitions,
+//! per-node style storage, and the [`StyleTree`] that drives it all.
+//!
+//! # Scope
+//!
+//! Floem's model follows CSS: layout *is* style. `display`, `flex-*`,
+//! `grid-*`, `width`, `padding` etc. are style properties the cascade
+//! resolves, and their resolved values are the input to a layout solver.
+//! This crate embraces that by bundling [`taffy`] as the layout-input
+//! contract: style types in `floem_style` include taffy's enums
+//! ([`Display`](taffy::style::Display),
+//! [`FlexDirection`](taffy::style::FlexDirection),
+//! [`AlignItems`](taffy::style::AlignItems), etc.) as first-class values,
+//! and [`Style::to_taffy_style`] is the public bridge.
+//!
+//! The whole `taffy` crate is re-exported as [`crate::taffy`] so consumers
+//! don't need a separate dependency.
+//!
+//! # What this crate does NOT own
+//!
+//! - **Reactive runtime**: hosts bring their own signal/effect primitives.
+//!   The engine itself holds no reactive state.
+//! - **View tree / hit-test structure**: hosts own their node type
+//!   ([`floem::ViewId`], etc.) and map it to [`StyleNodeId`] via the
+//!   [`ElementId`] abstraction.
+//! - **Rendering / input**: out of scope.
+//!
+//! # Integration
+//!
+//! A host drives the engine by:
+//! 1. Implementing the [`StyleSink`] trait on its window/root state.
+//! 2. Allocating a [`StyleNodeId`] per element via [`StyleTree::new_node`]
+//!    and wiring parent/children edges.
+//! 3. Pushing direct styles and classes via
+//!    [`StyleTree::set_direct_style`] / [`StyleTree::set_classes`].
+//! 4. Calling [`StyleTree::compute_style`] each frame, which runs the
+//!    cascade (including animations, selector matching, inherited/class
+//!    context propagation, and side-effects via the sink).
+//! 5. Reading resolved values from the [`StyleNode`] and converting
+//!    layout-relevant ones to a [`taffy::style::Style`] via
+//!    [`Style::to_taffy_style`] before passing to taffy.
+//!
+//! See `tests/mock_sink.rs` and `tests/style_tree_cascade.rs` for
+//! end-to-end examples without floem.
 
 pub mod builtin_props;
 pub mod cache;
@@ -37,6 +77,12 @@ pub mod unit;
 pub(crate) mod value_impls;
 pub mod values;
 pub mod visibility;
+
+/// Re-export of the [`taffy`] crate. floem-style owns the style →
+/// layout-input bridge for taffy (see crate-level docs), so consumers
+/// can reach taffy types directly through `floem_style::taffy::...`
+/// without adding a separate dependency.
+pub use taffy;
 
 pub use builtin_props::{
     AlignContent, AlignContentProp, AlignItems, AlignItemsProp, AlignSelf, AspectRatio,

@@ -15,16 +15,14 @@
 //!                     → tree.set_children(parent, &[...])
 //! host sets style     → tree.set_direct_style(node, style)
 //! host marks dirty    → tree.mark_dirty(node, reason)
-//! host runs pass      → tree.compute_style(root, &mut sink)    (Phase 1b)
+//! host runs pass      → tree.compute_style(root, &mut sink)
 //! host reads result   → tree.computed_style(node)
 //! ```
-//!
-//! Phase 1a (this commit) provides the storage and CRUD surface. The
-//! cascade routine that populates computed-style caches lands in Phase 1b.
 
 use smallvec::SmallVec;
 use slotmap::{SlotMap, new_key_type};
 
+use crate::builtin_props::Display;
 use crate::cache::{StyleCache, StyleCacheKey};
 use crate::cascade::resolve_nested_maps;
 use crate::element_id::ElementId;
@@ -459,7 +457,7 @@ impl StyleTree {
             let builtin = direct_style.builtin();
             interact_state.is_disabled |= builtin.set_disabled();
             interact_state.is_selected |= builtin.set_selected();
-            interact_state.is_hidden |= builtin.display() == taffy::style::Display::None;
+            interact_state.is_hidden |= builtin.display() == Display::None;
         }
 
         // Check the sink's style cache. A hit lets us skip the cascade
@@ -506,10 +504,10 @@ impl StyleTree {
                 let builtin = combined_style.builtin();
                 interact_state.is_disabled |= builtin.set_disabled();
                 interact_state.is_selected |= builtin.set_selected();
-                interact_state.is_hidden |= builtin.display() == taffy::style::Display::None;
+                interact_state.is_hidden |= builtin.display() == Display::None;
             }
             let post_interact = InheritedInteractionCx {
-                hidden: combined_style.builtin().display() == taffy::style::Display::None,
+                hidden: combined_style.builtin().display() == Display::None,
                 selected: combined_style.builtin().set_selected(),
                 disabled: combined_style.builtin().set_disabled(),
             };

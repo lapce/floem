@@ -4,6 +4,8 @@
 //! advances the phase via [`VisibilityPhase::transition`], invoking
 //! host-provided callbacks to start/stop/reset animations at each edge.
 
+use crate::builtin_props::Display;
+
 /// The current phase of visibility for enter/exit animations.
 ///
 /// This enum tracks the display state during CSS-driven visibility transitions
@@ -14,16 +16,16 @@ pub enum VisibilityPhase {
     #[default]
     Initial,
     /// Visible with the given display mode.
-    Visible(taffy::style::Display),
+    Visible(Display),
     /// Exit animation in progress.
-    Animating(taffy::style::Display),
+    Animating(Display),
     /// Hidden (display: none).
     Hidden,
 }
 
 impl VisibilityPhase {
-    /// Returns the `taffy::Display` override this phase imposes, if any.
-    pub fn get_display_override(&self) -> Option<taffy::style::Display> {
+    /// Returns the [`Display`] override this phase imposes, if any.
+    pub fn get_display_override(&self) -> Option<Display> {
         match self {
             VisibilityPhase::Animating(dis) => Some(*dis),
             _ => None,
@@ -34,13 +36,13 @@ impl VisibilityPhase {
     /// to start/stop/reset enter and exit animations at the edges.
     pub fn transition(
         &mut self,
-        computed_display: taffy::Display,
+        computed_display: Display,
         remove_animations: impl FnOnce() -> bool,
         add_animations: impl FnOnce(),
         stop_reset_animations: impl FnOnce(),
         num_waiting_anim: impl FnOnce() -> u16,
     ) {
-        let computed_has_hide = computed_display == taffy::Display::None;
+        let computed_has_hide = computed_display == Display::None;
         *self = match self {
             // Initial states — skip animations on initial app/view load.
             Self::Initial if computed_has_hide => Self::Hidden,
