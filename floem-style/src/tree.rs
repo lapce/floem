@@ -578,6 +578,16 @@ impl StyleTree {
             };
             for child in children {
                 self.mark_dirty(child, reason.clone());
+                // Also surface the dirty to the host so floem's own
+                // `style_dirty` map includes the child on the next
+                // traversal — otherwise downstream per-view work
+                // (animations, taffy push) wouldn't run for
+                // inherited/class-context-changed descendants.
+                if let Some(child_element_id) =
+                    self.nodes.get(child).map(|n| n.element_id)
+                {
+                    sink.mark_style_dirty_with(child_element_id, reason.clone());
+                }
             }
         }
 
