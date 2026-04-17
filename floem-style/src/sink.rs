@@ -9,10 +9,12 @@
 //! node-id type. Implementors derive whatever internal identity they need
 //! (e.g. floem's `ViewId` via `ElementId::owning_id()`).
 //!
-//! The trait is `#[allow(dead_code)]` because `StyleCx` currently calls
-//! host-specific inherent methods directly for most operations; a follow-up
-//! step will retarget those calls through this trait to complete the
-//! abstraction.
+//! Most methods are currently only invoked by a host's inherent impls rather
+//! than through this trait; the trait exists so a second host (`floem-native`,
+//! tests, etc.) can plug into `floem_style` without hard-coding floem's
+//! `WindowState`. The `#[allow(dead_code)]` on the trait suppresses
+//! "unused method" warnings for trait items that floem itself doesn't
+//! route through the trait yet.
 
 use crate::cache::StyleCache;
 use crate::element_id::ElementId;

@@ -152,8 +152,6 @@ mod props;
 mod sink;
 mod storage;
 mod style_debug_ext;
-#[cfg(test)]
-mod tests;
 pub mod theme;
 mod transition_ext;
 mod values;

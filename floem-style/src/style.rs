@@ -1297,3 +1297,52 @@ impl Style {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! Standalone Style tests covering `apply`, aggregate-setter round-trips,
+    //! and context-value resolution at property-read time.
+
+    use super::*;
+    use crate::builtin_props::{Background, PaddingBottom, PaddingLeft, PaddingRight, TextColor};
+    use crate::components::Padding;
+    use crate::unit::Length;
+    use peniko::color::palette::css;
+    use peniko::Brush;
+
+    #[test]
+    fn apply_overrides_matching_props_and_preserves_others() {
+        let style1 = Style::new().padding_left(32.0);
+        let style2 = Style::new().padding_left(64.0);
+        let style = style1.apply(style2);
+        assert_eq!(style.get(PaddingLeft), Length::Pt(64.0));
+
+        let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
+        let style2 = Style::new().padding_left(64.0);
+        let style = style1.apply(style2);
+        assert_eq!(style.get(PaddingLeft), Length::Pt(64.0));
+        assert_eq!(style.get(PaddingBottom), Length::Pt(45.0));
+    }
+
+    #[test]
+    fn apply_padding_aggregate_matches_individual_setters() {
+        let style1 = Style::new().apply_padding(Padding::new().left(32.0).bottom(45.0));
+        let style2 = Style::new().apply_padding(Padding::new().left(64.0));
+        let style = style1.apply(style2);
+        assert_eq!(style.get(PaddingLeft), Length::Pt(64.0));
+        assert_eq!(style.get(PaddingBottom), Length::Pt(45.0));
+
+        let custom_padding = Padding::new().left(100.0).right(200.0);
+        let style1 = Style::new().apply_padding(custom_padding);
+        assert_eq!(style1.get(PaddingLeft), Length::Pt(100.0));
+        assert_eq!(style1.get(PaddingRight), Length::Pt(200.0));
+    }
+
+    #[test]
+    fn context_value_resolves_at_property_read() {
+        let style = Style::new()
+            .set(TextColor, Some(css::RED))
+            .with::<TextColor>(|s, t| s.set_context(Background, t.map(|tc| tc.map(Brush::Solid))));
+        assert_eq!(style.get(Background), Some(Brush::Solid(css::RED)));
+    }
+}
