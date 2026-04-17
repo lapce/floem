@@ -1299,6 +1299,101 @@ impl WindowState {
         })
     }
 
+    /// Drive one cascade over the subtree rooted at `root_view`, given
+    /// the set of views the traversal wants to re-style.
+    ///
+    /// Three passes:
+    ///   1. Mirror each view's `view_style` (when the reason requests),
+    ///      merged direct style, classes, parent-set interaction, and
+    ///      structural position into the [`floem_style::StyleTree`].
+    ///   2. Call [`floem_style::StyleTree::compute_style`]. `self` briefly
+    ///      hands out its tree by move so it can pass itself as the
+    ///      `&mut dyn StyleSink` sink (trait methods don't touch
+    ///      `style_tree`, so the split is safe).
+    ///   3. Copy cascade outputs back into each view's `style_storage` so
+    ///      downstream per-view work (animations, taffy push, prop
+    ///      extractors) continues reading from `ViewState` unchanged.
+    pub(crate) fn run_style_cascade(
+        &mut self,
+        root_view: ViewId,
+        traversal: &[(ViewId, StyleReason)],
+    ) {
+        // Pass 1: sync host state into the tree.
+        for (view_id, traversal_reason) in traversal {
+            let style_node = self.ensure_style_node(*view_id);
+
+            if traversal_reason
+                .flags
+                .contains(floem_style::recalc::StyleReasonFlags::VIEW_STYLE)
+                && let Some(view_style) = view_id.view().borrow().view_style()
+            {
+                let state = view_id.state();
+                let mut vs = state.borrow_mut();
+                let offset = vs.view_style_offset;
+                vs.style.set(offset, view_style);
+            }
+
+            let view_class = view_id.view().borrow().view_class();
+            let state = view_id.state();
+            let direct = state.borrow_mut().style();
+            let mut all_classes: SmallVec<[floem_style::StyleClassRef; 4]> =
+                state.borrow().classes.clone();
+            if let Some(vc) = view_class {
+                all_classes.push(vc);
+            }
+            let parent_set_interaction = state.borrow().style_storage.parent_set_style_interaction;
+            let structural = self.structural_position_for(*view_id);
+
+            self.style_tree.set_direct_style(style_node, direct);
+            self.style_tree.set_classes(style_node, &all_classes);
+            self.style_tree
+                .set_parent_interaction(style_node, parent_set_interaction);
+            self.style_tree
+                .set_structural_position_override(style_node, Some(structural));
+        }
+
+        // Pass 2: engine cascade.
+        if let Some(root_style_node) = root_view.state().borrow().style_node {
+            let mut tree = std::mem::take(&mut self.style_tree);
+            tree.compute_style(root_style_node, self);
+            self.style_tree = tree;
+        }
+
+        // Pass 3: copy outputs back into per-view `style_storage`.
+        for (view_id, _) in traversal {
+            let Some(style_node) = view_id.state().borrow().style_node else {
+                continue;
+            };
+            let Some(combined) = self.style_tree.combined_style(style_node).cloned() else {
+                continue;
+            };
+            let inherited_cx = self
+                .style_tree
+                .inherited_context(style_node)
+                .cloned()
+                .unwrap_or_default();
+            let class_cx = self
+                .style_tree
+                .class_context(style_node)
+                .cloned()
+                .unwrap_or_default();
+            let post_interact = self
+                .style_tree
+                .style_interaction_cx(style_node)
+                .unwrap_or_default();
+            let has_selectors = self.style_tree.has_style_selectors(style_node);
+
+            let state = view_id.state();
+            let mut vs = state.borrow_mut();
+            vs.style_storage.combined_pre_animation_style = combined.clone();
+            vs.style_storage.combined_style = combined;
+            vs.style_storage.style_cx = inherited_cx;
+            vs.style_storage.class_cx = class_cx;
+            vs.style_storage.post_compute_combined_interaction = post_interact;
+            vs.style_storage.has_style_selectors = has_selectors;
+        }
+    }
+
     /// Requests that the style pass will run for a specific element target on the next frame.
     ///
     /// Use this when a style update should be scoped to a sub-element owned by a view,

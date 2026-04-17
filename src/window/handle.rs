@@ -607,96 +607,11 @@ impl WindowHandle {
                 break;
             }
 
-            // Phase 2b/2c: refresh `view_style` (if requested by this
-            // pass), then mirror each view's merged direct style + class
-            // list into the engine's StyleTree. Kept separate from the
-            // per-view loop below so the tree sees the full traversal set
-            // before computing.
-            for (view_id, traversal_reason) in &traversal {
-                let style_node = self.window_state.ensure_style_node(*view_id);
-
-                // Apply view_style (from the `View` trait) BEFORE syncing
-                // so the tree cascade picks up the freshest baseline.
-                if traversal_reason
-                    .flags
-                    .contains(floem_style::recalc::StyleReasonFlags::VIEW_STYLE)
-                    && let Some(view_style) = view_id.view().borrow().view_style()
-                {
-                    let state = view_id.state();
-                    let mut vs = state.borrow_mut();
-                    let offset = vs.view_style_offset;
-                    vs.style.set(offset, view_style);
-                }
-
-                let view_class = view_id.view().borrow().view_class();
-                let state = view_id.state();
-                let direct = state.borrow_mut().style();
-                let mut all_classes: smallvec::SmallVec<[floem_style::StyleClassRef; 4]> =
-                    state.borrow().classes.clone();
-                if let Some(vc) = view_class {
-                    all_classes.push(vc);
-                }
-                let parent_set_interaction =
-                    state.borrow().style_storage.parent_set_style_interaction;
-                let structural = self.window_state.structural_position_for(*view_id);
-                self.window_state
-                    .style_tree
-                    .set_direct_style(style_node, direct);
-                self.window_state
-                    .style_tree
-                    .set_classes(style_node, &all_classes);
-                self.window_state
-                    .style_tree
-                    .set_parent_interaction(style_node, parent_set_interaction);
-                self.window_state
-                    .style_tree
-                    .set_structural_position_override(style_node, Some(structural));
-            }
-
-            // Run the engine cascade over the root subtree. We briefly
-            // move the tree out of `window_state` so we can pass the rest
-            // of it as the `&mut dyn StyleSink` sink — trait methods
-            // don't touch `style_tree`, so the split is safe.
-            if let Some(root_style_node) = self.id.state().borrow().style_node {
-                let mut tree = std::mem::take(&mut self.window_state.style_tree);
-                tree.compute_style(root_style_node, &mut self.window_state);
-                self.window_state.style_tree = tree;
-            }
-
-            // Phase 2c-flip: copy cascade outputs from the tree into each
-            // view's `style_storage`. Downstream code (animations, taffy
-            // update, prop extractors, children's `StyleCx::new` reading
-            // parent's `style_cx` / `class_cx`) continues to read from
-            // `ViewState` exactly as before; `StyleCx::style_view` no
-            // longer invokes `compute_combined`.
-            for (view_id, _) in &traversal {
-                let Some(style_node) = view_id.state().borrow().style_node else {
-                    continue;
-                };
-                let tree = &self.window_state.style_tree;
-                let Some(combined) = tree.combined_style(style_node).cloned() else {
-                    continue;
-                };
-                let inherited_cx = tree
-                    .inherited_context(style_node)
-                    .cloned()
-                    .unwrap_or_default();
-                let class_cx = tree
-                    .class_context(style_node)
-                    .cloned()
-                    .unwrap_or_default();
-                let post_interact = tree.style_interaction_cx(style_node).unwrap_or_default();
-                let has_selectors = tree.has_style_selectors(style_node);
-
-                let state = view_id.state();
-                let mut vs = state.borrow_mut();
-                vs.style_storage.combined_pre_animation_style = combined.clone();
-                vs.style_storage.combined_style = combined;
-                vs.style_storage.style_cx = inherited_cx;
-                vs.style_storage.class_cx = class_cx;
-                vs.style_storage.post_compute_combined_interaction = post_interact;
-                vs.style_storage.has_style_selectors = has_selectors;
-            }
+            // Sync host state into the engine's StyleTree, run the
+            // cascade, and copy outputs back into each view's
+            // `style_storage`. See `WindowState::run_style_cascade` for
+            // the three-pass breakdown.
+            self.window_state.run_style_cascade(self.id, &traversal);
 
             // Per-view loop: animations, taffy, View::style_pass. The
             // cascade has already run; `style_view` reads results from
