@@ -607,21 +607,14 @@ impl WindowHandle {
                 break;
             }
 
-            // Style each view in order, passing the global change for first iteration
-            for (view_id, traversal_reason) in traversal {
-                // Mint / refresh the companion StyleTree node before running
-                // the cascade for this view. Traversal is top-down so the
-                // parent's style-node is already present by the time we get
-                // here and the parent edge can be wired immediately.
-                let style_node = self.window_state.ensure_style_node(view_id);
-
-                let cx = &mut StyleCx::new(&mut self.window_state, view_id, traversal_reason);
-                cx.style_view();
-
-                // Phase 2b: mirror the view's merged direct style + class
-                // list into the engine's StyleTree so it stays in sync with
-                // ViewState. Phase 2c will flip the cascade to read from
-                // here instead of `style_view` computing it inline.
+            // Phase 2b: mirror each view's merged direct style + class list
+            // into the engine's StyleTree, then run the engine's own
+            // cascade. Kept separate from the per-view loop below so the
+            // tree sees the full traversal set before computing. Phase 2c
+            // will have `StyleCx::style_view` read cascade outputs from
+            // here instead of running `compute_combined` inline.
+            for (view_id, _) in &traversal {
+                let style_node = self.window_state.ensure_style_node(*view_id);
                 let view_class = view_id.view().borrow().view_class();
                 let state = view_id.state();
                 let direct = state.borrow_mut().style();
@@ -636,6 +629,24 @@ impl WindowHandle {
                 self.window_state
                     .style_tree
                     .set_classes(style_node, &all_classes);
+            }
+
+            // Run the engine cascade over the root subtree. We briefly
+            // move the tree out of `window_state` so we can pass the rest
+            // of it as the `&mut dyn StyleSink` sink — trait methods
+            // don't touch `style_tree`, so the split is safe.
+            if let Some(root_style_node) = self.id.state().borrow().style_node {
+                let mut tree = std::mem::take(&mut self.window_state.style_tree);
+                tree.compute_style(root_style_node, &mut self.window_state);
+                self.window_state.style_tree = tree;
+            }
+
+            // Per-view loop: animations, taffy, View::style_pass. Cascade
+            // outputs are available in `self.window_state.style_tree`;
+            // reading from them lands in Phase 2c-next.
+            for (view_id, traversal_reason) in traversal {
+                let cx = &mut StyleCx::new(&mut self.window_state, view_id, traversal_reason);
+                cx.style_view();
             }
             if self.window_state.capture.is_some() {
                 self.window_state.style_dirty.clear();
