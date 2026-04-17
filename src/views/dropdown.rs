@@ -229,7 +229,7 @@ impl<T: 'static + Clone + PartialEq + core::fmt::Debug> View for Dropdown<T> {
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.style.read(cx) {
-            cx.window_state.request_paint(self.id);
+            cx.window_state.request_paint(self.id.into());
         }
     }
 

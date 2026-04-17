@@ -22,6 +22,7 @@ use crate::recalc::StyleReason;
 use crate::responsive::ScreenSizeBp;
 use crate::selectors::{StyleSelector, StyleSelectors};
 use crate::style::Style;
+use crate::values::CursorStyle;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -70,4 +71,17 @@ pub trait StyleSink {
     fn request_paint(&mut self, id: ElementId);
     fn mark_needs_cursor_resolution(&mut self);
     fn mark_needs_layout(&mut self);
+
+    /// Override the cursor displayed over `id`. Returns the previous override,
+    /// if any.
+    fn set_cursor(&mut self, id: ElementId, cursor: CursorStyle) -> Option<CursorStyle>;
+    /// Clear any cursor override on `id`. Returns the removed override, if
+    /// one was set.
+    fn clear_cursor(&mut self, id: ElementId) -> Option<CursorStyle>;
+
+    /// Called at the end of a style resolution pass so hosts running under
+    /// a debugger/inspector can snapshot the computed style. Default no-op;
+    /// floem's `WindowState` overrides this to route into the inspector
+    /// capture map when one is active.
+    fn inspector_capture_style(&mut self, _id: ElementId, _computed_style: &Style) {}
 }

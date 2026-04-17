@@ -586,9 +586,12 @@ pub struct CaptureState {
 
 impl CaptureState {
     pub(crate) fn capture_style(id: ViewId, cx: &mut StyleCx, computed_style: Style) {
-        if let Some(capture) = cx.window_state.capture.as_mut() {
-            capture.computed_styles.insert(id, computed_style);
-        }
+        cx.window_state
+            .inspector_capture_style(id.get_element_id(), &computed_style);
+    }
+
+    pub(crate) fn record_computed_style(&mut self, id: ViewId, style: Style) {
+        self.computed_styles.insert(id, style);
     }
 }
 

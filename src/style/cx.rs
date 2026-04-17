@@ -24,7 +24,6 @@ use crate::{
         resolve_nested_maps,
     },
     view::ViewId,
-    window::state::WindowState,
 };
 use crate::ElementIdExt;
 use floem_style::StyleSink;
@@ -34,7 +33,7 @@ use super::{Style, StyleProp};
 pub use floem_style::{InheritedInteractionCx, InteractionState};
 
 pub struct StyleCx<'a> {
-    pub window_state: &'a mut WindowState,
+    pub window_state: &'a mut dyn StyleSink,
 
     pub(crate) current_view: ViewId,
 
@@ -80,7 +79,11 @@ pub struct StyleCx<'a> {
 }
 
 impl<'a> StyleCx<'a> {
-    pub fn new(window_state: &'a mut WindowState, view_id: ViewId, reason: StyleReason) -> Self {
+    pub fn new(
+        window_state: &'a mut dyn StyleSink,
+        view_id: ViewId,
+        reason: StyleReason,
+    ) -> Self {
         // Get the style parent: either custom style_cx_parent or DOM parent
         let style_parent = view_id
             .state()
@@ -110,7 +113,8 @@ impl<'a> StyleCx<'a> {
         let mut reason_for_children = reason.for_children();
         if let Some(selectors) = reason_for_children.selectors {
             if selectors.has_responsive() {
-                window_state.mark_descendants_with_responsive_selector_dirty(view_id);
+                window_state
+                    .mark_descendants_with_responsive_selector_dirty(view_id.get_element_id());
                 reason_for_children.selectors =
                     Some(selectors.difference(crate::style::StyleSelectors::RESPONSIVE));
             }
@@ -120,7 +124,7 @@ impl<'a> StyleCx<'a> {
                 .is_some_and(|s| s.has(crate::style::StyleSelector::Disabled))
             {
                 window_state.mark_descendants_with_selector_dirty(
-                    view_id,
+                    view_id.get_element_id(),
                     crate::style::StyleSelector::Disabled,
                 );
                 reason_for_children.selectors = reason_for_children
@@ -308,12 +312,15 @@ impl<'a> StyleCx<'a> {
                 .apply_animations(&mut self.view_interact_state);
             if has_active_animation {
                 self.window_state
-                    .schedule_style(view_id, StyleReason::animation());
+                    .schedule_style(view_id.get_element_id(), StyleReason::animation());
             }
         }
 
         self.window_state
-            .update_selector_interest(view_id, view_state.borrow().style_storage.has_style_selectors);
+            .update_selector_interest(
+                view_id.get_element_id(),
+                view_state.borrow().style_storage.has_style_selectors,
+            );
 
         let old_interact_state = {
             let vs = view_state.borrow();
@@ -369,9 +376,11 @@ impl<'a> StyleCx<'a> {
 
             let new_is_fixed = computed_style.builtin().is_fixed();
             if new_is_fixed {
-                self.window_state.register_fixed_element(view_id);
+                self.window_state
+                    .register_fixed_element(view_id.get_element_id());
             } else {
-                self.window_state.unregister_fixed_element(view_id);
+                self.window_state
+                    .unregister_fixed_element(view_id.get_element_id());
             }
 
             {
@@ -440,7 +449,7 @@ impl<'a> StyleCx<'a> {
 
             if transitioning {
                 self.window_state
-                    .schedule_style(view_id, StyleReason::transition());
+                    .schedule_style(view_id.get_element_id(), StyleReason::transition());
             }
         }
 
@@ -457,8 +466,10 @@ impl<'a> StyleCx<'a> {
                 .selectors
                 .is_some_and(|s| s.has(super::StyleSelector::Selected))
         {
-            self.window_state
-                .mark_descendants_with_selector_dirty(view_id, super::StyleSelector::Selected);
+            self.window_state.mark_descendants_with_selector_dirty(
+                view_id.get_element_id(),
+                super::StyleSelector::Selected,
+            );
         }
         if old_interact_state.disabled != self.view_interact_state.is_disabled
             && !self
@@ -466,8 +477,10 @@ impl<'a> StyleCx<'a> {
                 .selectors
                 .is_some_and(|s| s.has(super::StyleSelector::Disabled))
         {
-            self.window_state
-                .mark_descendants_with_selector_dirty(view_id, super::StyleSelector::Disabled);
+            self.window_state.mark_descendants_with_selector_dirty(
+                view_id.get_element_id(),
+                super::StyleSelector::Disabled,
+            );
         }
 
         CaptureState::capture_style(view_id, self, view_state.borrow().style_storage.computed_style.clone());
@@ -516,6 +529,7 @@ impl<'a> StyleCx<'a> {
                 // Update taffy style if layout properties changed (must happen after visibility phase override)
                 // ─────────────────────────────────────────────────────────────────────
                 let mut vs = view_state.borrow_mut();
+                let element_id = vs.element_id;
                 let is_hidden_final = self.view_interact_state.is_hidden
                     || display_override.is_some_and(|d| d == taffy::Display::None);
                 let mut taffy_style = vs.style_storage.combined_style.to_taffy_style();
@@ -542,7 +556,6 @@ impl<'a> StyleCx<'a> {
                 let focus_nav_changed;
                 {
                     let box_tree = view_id.box_tree();
-                    let element_id = vs.element_id;
                     let box_tree = &mut box_tree.borrow_mut();
                     let old_flags = box_tree.flags(element_id.0).unwrap_or(NodeFlags::empty());
                     let old_focus = box_tree.focus_nav_meta(element_id.0).unwrap_or_default();
@@ -590,7 +603,7 @@ impl<'a> StyleCx<'a> {
                 // Phase 8.3: request paint for view style changes if not hidden
                 // ─────────────────────────────────────────────────────────────────────
                 if !is_hidden_final && need_paint {
-                    self.window_state.request_paint(view_id);
+                    self.window_state.request_paint(element_id);
                 }
             }
         }
@@ -689,7 +702,7 @@ impl<'a> StyleCx<'a> {
     }
 
     pub fn get_interact_state(
-        window_state: &WindowState,
+        window_state: &dyn StyleSink,
         id: impl Into<crate::ElementId>,
     ) -> InteractionState {
         let id: crate::ElementId = id.into();

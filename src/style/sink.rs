@@ -100,4 +100,22 @@ impl StyleSink for WindowState {
     fn mark_needs_layout(&mut self) {
         self.needs_layout = true;
     }
+
+    fn set_cursor(
+        &mut self,
+        id: ElementId,
+        cursor: crate::style::CursorStyle,
+    ) -> Option<crate::style::CursorStyle> {
+        WindowState::set_cursor(self, id, cursor)
+    }
+
+    fn clear_cursor(&mut self, id: ElementId) -> Option<crate::style::CursorStyle> {
+        WindowState::clear_cursor(self, id)
+    }
+
+    fn inspector_capture_style(&mut self, id: ElementId, computed_style: &Style) {
+        if let Some(capture) = self.capture.as_mut() {
+            capture.record_computed_style(id.owning_id(), computed_style.clone());
+        }
+    }
 }
