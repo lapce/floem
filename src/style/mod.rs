@@ -138,7 +138,6 @@ use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::marker::PhantomData;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use taffy::GridTemplateComponent;
 
 pub use taffy::style::{
@@ -214,20 +213,10 @@ pub(crate) use storage::StyleStorage;
 
 pub(crate) use props::{RESPONSIVE_SELECTORS_INFO, STRUCTURAL_SELECTORS_INFO, style_key_selector};
 
-static NEXT_STYLE_MERGE_ID: AtomicU64 = AtomicU64::new(1);
-const MERGE_MIX_CONST: u64 = 0x9E3779B97F4A7C15;
-static DEFERRED_EFFECTS_INFO: StyleKeyInfo = StyleKeyInfo::DeferredEffects;
-const DEFERRED_EFFECTS_KEY: StyleKey = StyleKey {
-    info: &DEFERRED_EFFECTS_INFO,
+use floem_style::selectors::StyleSelectorKey;
+use floem_style::{
+    combine_merge_ids, next_style_merge_id, DEFERRED_EFFECTS_KEY,
 };
-
-fn next_style_merge_id() -> u64 {
-    NEXT_STYLE_MERGE_ID.fetch_add(1, Ordering::Relaxed)
-}
-
-fn combine_merge_ids(a: u64, b: u64) -> u64 {
-    a.rotate_left(13) ^ b.wrapping_mul(MERGE_MIX_CONST)
-}
 
 type StructuralSelectorRules = SmallVec<[(StructuralSelector, Rc<Style>); 2]>;
 type ResponsiveSelectorRules = SmallVec<[(ResponsiveSelector, Rc<Style>); 2]>;
@@ -1459,69 +1448,8 @@ impl Debug for Style {
     }
 }
 
-style_key_selector!(
-    hover,
-    StyleSelectors::empty().set_selector(StyleSelector::Hover, true)
-);
-style_key_selector!(
-    file_hover,
-    StyleSelectors::empty().set_selector(StyleSelector::FileHover, true)
-);
-style_key_selector!(
-    focus,
-    StyleSelectors::empty().set_selector(StyleSelector::Focus, true)
-);
-style_key_selector!(
-    focus_visible,
-    StyleSelectors::empty().set_selector(StyleSelector::FocusVisible, true)
-);
-style_key_selector!(
-    focus_within,
-    StyleSelectors::empty().set_selector(StyleSelector::FocusWithin, true)
-);
-style_key_selector!(
-    disabled,
-    StyleSelectors::empty().set_selector(StyleSelector::Disabled, true)
-);
-style_key_selector!(
-    active,
-    StyleSelectors::empty().set_selector(StyleSelector::Active, true)
-);
-style_key_selector!(
-    dragging,
-    StyleSelectors::empty().set_selector(StyleSelector::Dragging, true)
-);
-style_key_selector!(
-    selected,
-    StyleSelectors::empty().set_selector(StyleSelector::Selected, true)
-);
-style_key_selector!(
-    darkmode,
-    StyleSelectors::empty().set_selector(StyleSelector::DarkMode, true)
-);
-
-// StyleSelector lives in the `floem_style` crate, so we expose `to_key` as an
-// extension trait here rather than as an inherent impl.
-trait StyleSelectorKey {
-    fn to_key(self) -> StyleKey;
-}
-
-impl StyleSelectorKey for StyleSelector {
-    fn to_key(self) -> StyleKey {
-        match self {
-            StyleSelector::Hover => hover(),
-            StyleSelector::Focus => focus(),
-            StyleSelector::FocusVisible => focus_visible(),
-            StyleSelector::FocusWithin => focus_within(),
-            StyleSelector::Disabled => disabled(),
-            StyleSelector::Active => active(),
-            StyleSelector::Dragging => dragging(),
-            StyleSelector::Selected => selected(),
-            StyleSelector::DarkMode => darkmode(),
-            StyleSelector::FileHover => file_hover(),
-        }
-    }
-}
+// The per-selector `StyleKey` functions (hover(), focus(), ...) and the
+// `StyleSelectorKey` trait live in `floem_style::selectors` — imported above.
 
 /// Defines built-in style properties with optional builder methods.
 ///

@@ -15,6 +15,7 @@ pub mod easing;
 pub mod element_id;
 pub mod inspector_render;
 pub mod interaction;
+pub mod merge_id;
 pub mod prop_value;
 pub mod props;
 pub mod recalc;
@@ -35,6 +36,10 @@ pub use easing::{Bezier, Easing, Linear, Spring, Step, StepPosition};
 pub use element_id::ElementId;
 pub use inspector_render::InspectorRender;
 pub use interaction::{InheritedInteractionCx, InteractionState};
+pub use merge_id::{
+    combine_merge_ids, next_style_merge_id, DEFERRED_EFFECTS_INFO, DEFERRED_EFFECTS_KEY,
+};
+pub use selectors::StyleSelectorKey;
 pub use prop_value::StylePropValue;
 pub use style_value::{StyleMapValue, StyleValue};
 pub use props::{
