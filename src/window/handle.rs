@@ -609,6 +609,12 @@ impl WindowHandle {
 
             // Style each view in order, passing the global change for first iteration
             for (view_id, traversal_reason) in traversal {
+                // Mint / refresh the companion StyleTree node before running
+                // the cascade for this view. Traversal is top-down so the
+                // parent's style-node is already present by the time we get
+                // here and the parent edge can be wired immediately.
+                self.window_state.ensure_style_node(view_id);
+
                 let cx = &mut StyleCx::new(&mut self.window_state, view_id, traversal_reason);
                 cx.style_view();
             }

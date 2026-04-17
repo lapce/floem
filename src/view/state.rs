@@ -241,6 +241,11 @@ pub struct ViewState {
     /// Engine-owned per-node style state (resolved styles, extracted props,
     /// visibility phase, interaction cx, etc.). See [`StyleStorage`].
     pub(crate) style_storage: StyleStorage,
+    /// Companion node in [`WindowState::style_tree`](crate::window::state::WindowState).
+    /// Populated when the view is first seen by the window and cleared on
+    /// teardown. Phase 2a wires lifecycle only; style data and cascade still
+    /// live in `StyleStorage` / `StyleCx`.
+    pub(crate) style_node: Option<floem_style::StyleNodeId>,
     /// this can be used to make it so that a view will pull it's style context from a different parent.
     /// This is useful for overlays that are children of the window root but should pull their style cx from the creating view
     pub(crate) style_cx_parent: Option<ViewId>,
@@ -300,6 +305,7 @@ impl ViewState {
             taffy_style: taffy::style::Style::DEFAULT,
             dragging_style: None,
             style_storage: StyleStorage::default(),
+            style_node: None,
             event_listeners: FxHashMap::default(),
             registered_listener_keys: SmallVec::new(),
             layout: None,

@@ -173,6 +173,16 @@ pub struct WindowState {
     /// Views with identical styles and interaction states can share resolved styles.
     pub(crate) style_cache: StyleCache,
 
+    /// Engine-owned style tree. One [`StyleNodeId`](floem_style::StyleNodeId)
+    /// per styled view — kept in sync with the view hierarchy by this crate,
+    /// then walked by [`StyleTree::compute_style`] during the style pass.
+    ///
+    /// Phase 2a (this commit): the tree's node set and parent/child edges
+    /// track view lifecycle; style data and cascade invocation still live
+    /// in `StyleCx`. Later phases push style/class data and flip the
+    /// cascade to run here.
+    pub(crate) style_tree: floem_style::StyleTree,
+
     /// The default theme style containing class definitions for built-in components.
     /// This is used as the root style context for all views when no parent exists.
     /// Contains styling like `.class(ListClass, |s| { s.class(ListItemClass, ...) })`.
@@ -249,6 +259,7 @@ impl WindowState {
             context_menu: HashMap::new(),
             capture: None,
             style_cache: StyleCache::new(),
+            style_tree: floem_style::StyleTree::new(),
             default_theme: theme,
             default_theme_inherited: inherited,
             needs_layout: true,
@@ -378,6 +389,14 @@ impl WindowState {
         self.disabled_selector_views.remove(&id);
         self.selected_selector_views.remove(&id);
         self.views_needing_box_tree_update.remove(&id);
+
+        // Release the companion StyleTree node. `remove_view` recurses
+        // into children first, so their nodes are already gone by the
+        // time we reach this point and no orphan descendants are left
+        // behind.
+        if let Some(style_node) = view_state.borrow().style_node {
+            self.style_tree.remove_node(style_node);
+        }
 
         // Clean up pointer capture state for removed view
         self.pointer_capture_target
@@ -1198,6 +1217,36 @@ impl WindowState {
     /// scheduled to happen.
     pub fn schedule_style(&mut self, id: ViewId, reason: StyleReason) {
         self.schedule_style_with_target(id.get_element_id(), reason);
+    }
+
+    /// Ensure `view_id` has a companion [`floem_style::StyleNodeId`] in
+    /// [`Self::style_tree`] and that its parent edge matches the current
+    /// view-tree parent. Allocates the node on first call.
+    ///
+    /// Relies on top-down style traversal: when a child calls this, the
+    /// parent's style-node has already been allocated in the same or an
+    /// earlier pass, so the parent edge can be wired immediately.
+    pub(crate) fn ensure_style_node(&mut self, view_id: ViewId) -> floem_style::StyleNodeId {
+        let element_id = view_id.state().borrow().element_id;
+        let existing = view_id.state().borrow().style_node;
+        let node = match existing {
+            Some(id) if self.style_tree.contains(id) => id,
+            _ => {
+                let id = self.style_tree.new_node(element_id);
+                view_id.state().borrow_mut().style_node = Some(id);
+                id
+            }
+        };
+
+        let parent_node = view_id
+            .parent()
+            .and_then(|p| p.state().borrow().style_node)
+            .filter(|p| self.style_tree.contains(*p));
+        let current_parent = self.style_tree.get(node).and_then(|n| n.parent());
+        if current_parent != parent_node {
+            self.style_tree.set_parent(node, parent_node);
+        }
+        node
     }
 
     /// Requests that the style pass will run for a specific element target on the next frame.
