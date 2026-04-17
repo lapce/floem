@@ -1353,7 +1353,8 @@ impl WindowState {
         }
 
         // Pass 2: engine cascade.
-        if let Some(root_style_node) = root_view.state().borrow().style_node {
+        let root_style_node = root_view.state().borrow().style_node;
+        if let Some(root_style_node) = root_style_node {
             let mut tree = std::mem::take(&mut self.style_tree);
             tree.compute_style(root_style_node, self);
             self.style_tree = tree;

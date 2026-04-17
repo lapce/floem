@@ -481,7 +481,7 @@ impl StyleTree {
             .as_ref()
             .and_then(|k| sink.style_cache_mut().get(k, &parent_inherited));
 
-        let (combined_style, selectors, post_interact) = if let Some(hit) = cache_hit {
+        let (mut combined_style, selectors, post_interact) = if let Some(hit) = cache_hit {
             let sels = hit.has_style_selectors.unwrap_or_default();
             let post = hit.post_interact;
             // Match the OR'ing a cascade would have done so selectors
@@ -524,6 +524,17 @@ impl StyleTree {
             }
             (combined_style, selectors, post_interact)
         };
+
+        // Apply host-owned animations on top of the cached/cascaded
+        // combined_style. Animations must run AFTER the cache write so the
+        // cache holds pre-animation baselines (per-pass time-varying
+        // values can't be cached), and BEFORE inherited context derivation
+        // below so animated inherited props propagate to descendants.
+        let has_active_animation =
+            sink.apply_animations(element_id, &mut combined_style, &mut interact_state);
+        if has_active_animation {
+            sink.schedule_style(element_id, StyleReason::animation());
+        }
 
         // Merge inherited + combined → computed style for this node.
         let mut computed_style = parent_inherited.clone();

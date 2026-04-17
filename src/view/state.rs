@@ -333,47 +333,39 @@ impl ViewState {
         self.style_storage.style_cursor.or(self.user_cursor)
     }
 
+    /// Apply this view's animation stack on top of `combined`, mutating
+    /// it in place with interpolated values. ORs any animated
+    /// `display:none`/`set_disabled`/`set_selected` into `interact_state`.
+    /// Returns `true` iff any animation is still active (so the tree
+    /// cascade can schedule another pass).
     pub fn apply_animations(
         &mut self,
+        combined: &mut Style,
         interact_state: &mut crate::style::InteractionState,
     ) -> bool {
-        // `run_style_cascade` resets `combined_style` from the tree each
-        // pass (the tree is unaffected by animations), so it's always the
-        // pre-animation baseline at this point.
-        let mut combined = self.style_storage.combined_style.clone();
-        // ─────────────────────────────────────────────────────────────────────
-        // Process animations
-        // ─────────────────────────────────────────────────────────────────────
-        // Animations modify the computed style by interpolating between keyframe values.
-        // We process animations here, after the base style is computed but before
-        // it's stored, so animated values override static style values.
         let mut has_active_animation = false;
+        for animation in self
+            .animations
+            .stack
+            .iter_mut()
+            .filter(|anim| anim.can_advance() || anim.should_apply_folded())
         {
-            for animation in self
-                .animations
-                .stack
-                .iter_mut()
-                .filter(|anim| anim.can_advance() || anim.should_apply_folded())
-            {
-                if animation.can_advance() {
-                    has_active_animation = true;
-                    animation.animate_into(&mut combined);
-                    animation.advance();
-                } else {
-                    animation.apply_folded(&mut combined);
-                }
-                debug_assert!(
-                    !animation.is_idle(),
-                    "Animation should not be idle after processing"
-                );
+            if animation.can_advance() {
+                has_active_animation = true;
+                animation.animate_into(combined);
+                animation.advance();
+            } else {
+                animation.apply_folded(combined);
             }
+            debug_assert!(
+                !animation.is_idle(),
+                "Animation should not be idle after processing"
+            );
         }
 
         interact_state.is_hidden |= combined.builtin().display() == taffy::Display::None;
         interact_state.is_selected |= combined.builtin().set_selected();
         interact_state.is_disabled |= combined.builtin().set_disabled();
-
-        self.style_storage.combined_style = combined;
 
         has_active_animation
     }

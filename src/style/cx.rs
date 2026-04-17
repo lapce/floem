@@ -225,8 +225,9 @@ impl<'a> StyleCx<'a> {
         // ─────────────────────────────────────────────────────────────────────
         // Phase 4: Absorb cascade outputs
         // ─────────────────────────────────────────────────────────────────────
-        // `WindowHandle::style` ran `StyleTree::compute_style` and copied
-        // the tree's outputs into this view's `style_storage` already. We
+        // `WindowHandle::style` ran `StyleTree::compute_style` (which also
+        // applies this view's animations on top of the resolved style) and
+        // copied the tree's outputs into this view's `style_storage`. We
         // just need to OR the view-local interaction flags (disabled /
         // selected / hidden) into `self.view_interact_state` so the rest
         // of `style_view` observes them.
@@ -240,16 +241,6 @@ impl<'a> StyleCx<'a> {
         self.view_interact_state.is_hidden |= cached.hidden;
         self.view_interact_state.is_selected |= cached.selected;
         self.view_interact_state.is_disabled |= cached.disabled;
-
-        if self.reason.needs_animation() {
-            let has_active_animation = view_state
-                .borrow_mut()
-                .apply_animations(&mut self.view_interact_state);
-            if has_active_animation {
-                self.window_state
-                    .schedule_style(view_id.get_element_id(), StyleReason::animation());
-            }
-        }
 
         self.window_state
             .update_selector_interest(

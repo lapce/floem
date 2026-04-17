@@ -118,4 +118,14 @@ impl StyleSink for WindowState {
             capture.record_computed_style(id.owning_id(), computed_style.clone());
         }
     }
+
+    fn apply_animations(
+        &mut self,
+        id: ElementId,
+        combined: &mut Style,
+        interact: &mut floem_style::InteractionState,
+    ) -> bool {
+        let view_state = id.owning_id().state();
+        view_state.borrow_mut().apply_animations(combined, interact)
+    }
 }

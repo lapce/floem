@@ -18,6 +18,7 @@
 
 use crate::cache::StyleCache;
 use crate::element_id::ElementId;
+use crate::interaction::InteractionState;
 use crate::recalc::StyleReason;
 use crate::responsive::ScreenSizeBp;
 use crate::selectors::{StyleSelector, StyleSelectors};
@@ -84,4 +85,20 @@ pub trait StyleSink {
     /// floem's `WindowState` overrides this to route into the inspector
     /// capture map when one is active.
     fn inspector_capture_style(&mut self, _id: ElementId, _computed_style: &Style) {}
+
+    /// Apply any host-owned animations for `id` on top of the resolved
+    /// `combined` style. Called by the tree cascade after classes +
+    /// selectors are resolved but before inherited context is merged, so
+    /// animated inherited properties propagate to descendants on the same
+    /// pass. Animated `display/disabled/selected` bits are OR'd back into
+    /// `interact`. Returns `true` iff any animation is still active — the
+    /// cascade uses that to schedule another pass. Default no-op.
+    fn apply_animations(
+        &mut self,
+        _id: ElementId,
+        _combined: &mut Style,
+        _interact: &mut InteractionState,
+    ) -> bool {
+        false
+    }
 }
