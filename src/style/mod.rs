@@ -155,14 +155,12 @@ use taffy::{
 
 use crate::layout::responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp};
 
-use crate::style::components::Focus;
 use crate::text::{OverflowWrap, WordBreakStrength};
 use crate::views::editor::SelectionColor;
 // Import macros from crate root (they are #[macro_export] in props.rs)
 use crate::{prop, prop_extractor};
 
 mod cache;
-mod components;
 mod context_ext;
 mod custom;
 mod cx;
@@ -183,7 +181,7 @@ mod values;
 // API surface remains stable for downstream users.
 pub use floem_style::{recalc, selectors, unit};
 
-pub use components::{CursorStyle, NoWrapOverflow, PointerEvents, TextOverflow};
+pub use floem_style::{CursorStyle, Focus, NoWrapOverflow, PointerEvents, TextOverflow};
 pub use floem_style::{Border, BorderColor, BorderRadius, BoxShadow, Margin, Padding};
 pub use context_ext::ContextValueExt;
 pub use custom::{CustomStylable, CustomStyle};

@@ -50,5 +50,8 @@ pub use props::{
 };
 pub use transition::{ActiveTransition, DirectTransition, Transition, TransitionState};
 pub use value_impls::AffineLerp;
-pub use values::{ObjectFit, ObjectPosition, StrokeWrap};
+pub use values::{
+    CursorStyle, Focus, NoWrapOverflow, ObjectFit, ObjectPosition, PointerEvents, StrokeWrap,
+    TextOverflow,
+};
 pub use visibility::{Visibility, VisibilityPhase};
