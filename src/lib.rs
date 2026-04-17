@@ -264,6 +264,7 @@ pub mod prelude {
     pub use crate::event::listener as el;
     pub use crate::event::listener;
     pub use crate::event::listener::EventListenerTrait;
+    pub use crate::style::StyleCustomExt;
     pub use crate::unit::{DurationUnitExt, UnitExt};
     pub use crate::view::IntoViewIter;
     pub use crate::view::ViewTuple;
