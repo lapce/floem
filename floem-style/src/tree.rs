@@ -25,6 +25,7 @@
 use smallvec::SmallVec;
 use slotmap::{SlotMap, new_key_type};
 
+use crate::cache::{StyleCache, StyleCacheKey};
 use crate::cascade::resolve_nested_maps;
 use crate::element_id::ElementId;
 use crate::interaction::{InheritedInteractionCx, InteractionState};
@@ -461,25 +462,68 @@ impl StyleTree {
             interact_state.is_hidden |= builtin.display() == taffy::style::Display::None;
         }
 
-        // Resolve classes + selectors against parent contexts.
-        let (combined_style, selectors) = resolve_nested_maps(
-            direct_style,
-            &mut interact_state,
-            sink.screen_size_bp(),
-            &classes,
-            &parent_inherited,
-            &parent_class_cx,
-        );
+        // Check the sink's style cache. A hit lets us skip the cascade
+        // entirely — it stores `combined_style`, `has_style_selectors`,
+        // and the post-cascade interaction flags.
+        let cacheable = StyleCache::is_cacheable(&direct_style)
+            && !parent_class_cx.has_structural_selectors();
+        let cache_key = cacheable.then(|| {
+            StyleCacheKey::new_from_hash(
+                direct_style.content_hash(),
+                &interact_state,
+                sink.screen_size_bp(),
+                &classes,
+                &parent_class_cx,
+            )
+        });
 
-        // After cascade, the combined style may have set_disabled /
-        // set_selected / display:None explicitly (e.g. via a selector
-        // branch). OR those into the interaction cx we store & propagate.
-        {
-            let builtin = combined_style.builtin();
-            interact_state.is_disabled |= builtin.set_disabled();
-            interact_state.is_selected |= builtin.set_selected();
-            interact_state.is_hidden |= builtin.display() == taffy::style::Display::None;
-        }
+        let cache_hit = cache_key
+            .as_ref()
+            .and_then(|k| sink.style_cache_mut().get(k, &parent_inherited));
+
+        let (combined_style, selectors, post_interact) = if let Some(hit) = cache_hit {
+            let sels = hit.has_style_selectors.unwrap_or_default();
+            let post = hit.post_interact;
+            // Match the OR'ing a cascade would have done so selectors
+            // depending on these bits activate for downstream logic.
+            interact_state.is_disabled |= post.disabled;
+            interact_state.is_selected |= post.selected;
+            interact_state.is_hidden |= post.hidden;
+            (hit.combined_style, sels, post)
+        } else {
+            let (combined_style, selectors) = resolve_nested_maps(
+                direct_style,
+                &mut interact_state,
+                sink.screen_size_bp(),
+                &classes,
+                &parent_inherited,
+                &parent_class_cx,
+            );
+            // After cascade, the combined style may have set_disabled /
+            // set_selected / display:None explicitly (e.g. via a selector
+            // branch). OR those into the interaction cx we store & propagate.
+            {
+                let builtin = combined_style.builtin();
+                interact_state.is_disabled |= builtin.set_disabled();
+                interact_state.is_selected |= builtin.set_selected();
+                interact_state.is_hidden |= builtin.display() == taffy::style::Display::None;
+            }
+            let post_interact = InheritedInteractionCx {
+                hidden: combined_style.builtin().display() == taffy::style::Display::None,
+                selected: combined_style.builtin().set_selected(),
+                disabled: combined_style.builtin().set_disabled(),
+            };
+            if let Some(key) = cache_key {
+                sink.style_cache_mut().insert(
+                    key,
+                    &combined_style,
+                    Some(selectors),
+                    post_interact,
+                    &parent_inherited,
+                );
+            }
+            (combined_style, selectors, post_interact)
+        };
 
         // Merge inherited + combined → computed style for this node.
         let mut computed_style = parent_inherited.clone();
@@ -501,11 +545,12 @@ impl StyleTree {
             .class_maps_eq(&new_class_cx);
         let class_cx_changed = !changed_classes.is_empty();
 
-        let new_interaction_cx = InheritedInteractionCx {
-            disabled: interact_state.is_disabled,
-            selected: interact_state.is_selected,
-            hidden: interact_state.is_hidden,
-        };
+        // Propagate only the post-cascade combined-style bits to children.
+        // Sink-queried / parent-override state (e.g. a list item's
+        // `parent_set_style_interaction.selected`) is scoped to THIS view
+        // and shouldn't leak to grandchildren; matches the old
+        // `compute_combined` → `post_compute_combined_interaction` behavior.
+        let new_interaction_cx = post_interact;
 
         {
             let node = &mut self.nodes[id];
