@@ -1,13 +1,21 @@
 //! A side-trait that types opt into when they can render an inspector
 //! preview of their value. Kept separate from `StylePropValue` so the
-//! engine's value types don't depend on `crate::view::View`; when
-//! `floem-style` is extracted, `PropDebugView` stays in floem proper
-//! while the value types and `StylePropValue` move out.
+//! engine's value types don't depend on `crate::view::View`.
+//!
+//! The trait's body receives an `&dyn InspectorRender` (from `floem_style`)
+//! and returns a `Box<dyn Any>`. The concrete renderer in `floem` is
+//! `FloemInspectorRender`, which builds `Box<dyn View>` widgets and wraps
+//! them as `Any`; inspector call sites downcast back to `Box<dyn View>`.
+//! Because the signature no longer names `View`, `PropDebugView` (and its
+//! impls on types that live in `floem_style`) can be moved into
+//! `floem_style` in a subsequent pass.
 
-use crate::view::View;
+use std::any::Any;
+
+pub use floem_style::InspectorRender;
 
 pub trait PropDebugView {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self, _r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
         None
     }
 }

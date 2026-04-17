@@ -9,6 +9,7 @@
 
 pub mod easing;
 pub mod element_id;
+pub mod inspector_render;
 pub mod interaction;
 pub mod prop_value;
 pub mod props;
@@ -23,6 +24,7 @@ pub mod visibility;
 
 pub use easing::{Bezier, Easing, Linear, Spring, Step, StepPosition};
 pub use element_id::ElementId;
+pub use inspector_render::InspectorRender;
 pub use interaction::{InheritedInteractionCx, InteractionState};
 pub use prop_value::StylePropValue;
 pub use props::{

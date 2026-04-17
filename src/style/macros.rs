@@ -134,8 +134,10 @@ macro_rules! prop {
                         if let Some(v) = val.downcast_ref::<$crate::style::StyleMapValue<$ty>>() {
                             match v {
                                 $crate::style::StyleMapValue::Val(v) | $crate::style::StyleMapValue::Animated(v) => {
-                                    <$ty as $crate::style::PropDebugView>::debug_view(v)
-                                        .map(|view| Box::new(view) as Box<dyn std::any::Any>)
+                                    <$ty as $crate::style::PropDebugView>::debug_view(
+                                        v,
+                                        &$crate::style::FloemInspectorRender,
+                                    )
                                 }
                                 $crate::style::StyleMapValue::Context(_) => Some(Box::new(
                                     <$crate::views::Label as $crate::view::IntoView>::into_any(

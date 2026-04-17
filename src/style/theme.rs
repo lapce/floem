@@ -7,7 +7,7 @@ use crate::view::View;
 use crate::views::editor::SelectionColor;
 use crate::views::resizable::{ResizableClass, ResizableHandleClass};
 use crate::{
-    AnyView, prop, style_class, style_debug_group,
+    prop, style_class, style_debug_group,
     views::{
         ButtonClass, CheckboxClass, LabelClass, LabelCustomExprStyle, LabelCustomStyle,
         LabeledCheckboxClass, LabeledRadioButtonClass, ListClass, ListItemClass,
@@ -25,54 +25,55 @@ use smallvec::smallvec;
 
 style_class!(pub HoverTargetClass);
 
+fn debug_view_of<T: PropDebugView>(value: T) -> Option<Box<dyn View>> {
+    value
+        .debug_view(&FloemInspectorRender)
+        .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+}
+
 fn border_debug_view(style: &Style) -> Option<Box<dyn View>> {
-    Border {
+    debug_view_of(Border {
         left: style.get_prop::<BorderLeft>(),
         top: style.get_prop::<BorderTop>(),
         right: style.get_prop::<BorderRight>(),
         bottom: style.get_prop::<BorderBottom>(),
-    }
-    .debug_view()
+    })
 }
 
 fn border_color_debug_view(style: &Style) -> Option<Box<dyn View>> {
-    BorderColor {
+    debug_view_of(BorderColor {
         left: style.get_prop::<BorderLeftColor>().flatten(),
         top: style.get_prop::<BorderTopColor>().flatten(),
         right: style.get_prop::<BorderRightColor>().flatten(),
         bottom: style.get_prop::<BorderBottomColor>().flatten(),
-    }
-    .debug_view()
+    })
 }
 
 fn border_radius_debug_view(style: &Style) -> Option<Box<dyn View>> {
-    BorderRadius {
+    debug_view_of(BorderRadius {
         top_left: style.get_prop::<BorderTopLeftRadius>(),
         top_right: style.get_prop::<BorderTopRightRadius>(),
         bottom_left: style.get_prop::<BorderBottomLeftRadius>(),
         bottom_right: style.get_prop::<BorderBottomRightRadius>(),
-    }
-    .debug_view()
+    })
 }
 
 fn padding_debug_view(style: &Style) -> Option<Box<dyn View>> {
-    Padding {
+    debug_view_of(Padding {
         left: style.get_prop::<PaddingLeft>(),
         top: style.get_prop::<PaddingTop>(),
         right: style.get_prop::<PaddingRight>(),
         bottom: style.get_prop::<PaddingBottom>(),
-    }
-    .debug_view()
+    })
 }
 
 fn margin_debug_view(style: &Style) -> Option<Box<dyn View>> {
-    Margin {
+    debug_view_of(Margin {
         left: style.get_prop::<MarginLeft>(),
         top: style.get_prop::<MarginTop>(),
         right: style.get_prop::<MarginRight>(),
         bottom: style.get_prop::<MarginBottom>(),
-    }
-    .debug_view()
+    })
 }
 
 style_debug_group!(
@@ -282,7 +283,7 @@ impl StylePropValue for DesignSystem {
 }
 
 impl PropDebugView for DesignSystem {
-    fn debug_view(&self) -> Option<AnyView> {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn std::any::Any>> {
         use crate::prelude::*;
         use crate::views::Stack;
 
@@ -290,9 +291,13 @@ impl PropDebugView for DesignSystem {
         let is_expanded = RwSignal::new(false);
 
         let color_swatch = |label: &str, color: Color| {
+            let swatch: Box<dyn View> = color
+                .debug_view(r)
+                .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+                .unwrap();
             Stack::new((
                 label.to_string().style(|s| s.width(120.0).font_size(12.0)),
-                color.debug_view().unwrap(),
+                swatch,
             ))
             .style(|s| s.flex_row().items_center().gap(8.0).padding_vert(2.0))
         };
@@ -372,7 +377,8 @@ impl PropDebugView for DesignSystem {
                 .flex_shrink(1.)
         });
 
-        Some(content.into_any())
+        let view: Box<dyn View> = content.into_any();
+        Some(Box::new(view))
     }
 }
 

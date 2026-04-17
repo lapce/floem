@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use crate::style::{CustomStylable, CustomStyle, PropDebugView, Style, StylePropValue};
 use crate::views::Decorators;
-use crate::{AnyView, IntoView, View, ViewId, prop, prop_extractor, style_class};
+use crate::{IntoView, View, ViewId, prop, prop_extractor, style_class};
 use floem_reactive::UpdaterEffect;
 use fluent_bundle::{FluentBundle, FluentResource};
 use ouroboros::self_referencing;
@@ -58,14 +58,17 @@ impl PartialEq for LocaleMap {
 
 impl StylePropValue for LocaleMap {}
 impl PropDebugView for LocaleMap {
-    fn debug_view(&self) -> Option<AnyView> {
+    fn debug_view(
+        &self,
+        _r: &dyn crate::style::InspectorRender,
+    ) -> Option<Box<dyn std::any::Any>> {
         use crate::prelude::*;
 
         let languages: Vec<String> = self.0.keys().map(|lang_id| lang_id.to_string()).collect();
 
         let count = languages.len();
 
-        let view = Stack::new((
+        let view: Box<dyn crate::view::View> = Stack::new((
             format!("Languages ({count})").style(|s| {
                 s.font_size(12.0)
                     .font_weight(floem_renderer::text::FontWeight::SEMI_BOLD)
@@ -91,9 +94,10 @@ impl PropDebugView for LocaleMap {
                 .border_color(palette::css::WHITE.with_alpha(0.3))
                 .border_radius(6.0)
                 .min_width(120.0)
-        });
+        })
+        .into_any();
 
-        Some(view.into_any())
+        Some(Box::new(view))
     }
 }
 
@@ -102,8 +106,11 @@ impl PropDebugView for LocaleMap {
 // to satisfy the orphan rule.
 
 impl PropDebugView for LanguageIdentifier {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(crate::views::Label::new(format!("{self:?}")).into_any())
+    fn debug_view(
+        &self,
+        r: &dyn crate::style::InspectorRender,
+    ) -> Option<Box<dyn std::any::Any>> {
+        Some(r.text(&format!("{self:?}")))
     }
 }
 

@@ -1,18 +1,14 @@
 //! Core style property value trait and implementations.
 
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
-use floem_renderer::Renderer;
 use floem_renderer::text::{FontWeight, LineHeightValue};
-use floem_style::AffineLerp;
-use peniko::color::palette;
-use peniko::kurbo::{self, Affine, Point, Stroke};
-use peniko::{Brush, Color, Gradient, GradientKind, LinearGradientPosition};
+use peniko::kurbo::{self, Affine, Stroke};
+use peniko::{Brush, Color, Gradient};
 use smallvec::SmallVec;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::rc::Rc;
 use taffy::GridTemplateComponent;
-use taffy::prelude::{auto, fr};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
@@ -32,19 +28,18 @@ use crate::AnyView;
 use crate::prelude::ViewTuple;
 use crate::style::CursorStyle;
 use crate::theme::StyleThemeExt;
-use crate::theme::Theme;
 use crate::unit::{Length, LengthAuto, Pct, Pt};
-use crate::view::ViewTupleFlat;
 use crate::view::{IntoView, View};
 use crate::views::{
-    ButtonClass, ContainerExt, Decorators, Empty, Label, Stack, StackExt, TabSelectorClass,
-    TooltipExt, canvas, dyn_view, svg, tab,
+    ButtonClass, ContainerExt, Decorators, Empty, Label, Stack, TabSelectorClass, dyn_view, svg,
+    tab,
 };
 
 use super::{
-    FontSize, PropDebugView, ResponsiveSelectors, StructuralSelectors, Style, StyleDebugGroupInfo,
-    StyleKey, StyleKeyInfo, StylePropRef, Transition, TransitionDebugViewExt,
+    FontSize, InspectorRender, PropDebugView, ResponsiveSelectors, StructuralSelectors, Style,
+    StyleDebugGroupInfo, StyleKey, StyleKeyInfo, StylePropRef, Transition, TransitionDebugViewExt,
 };
+use std::any::Any;
 
 use crate::no_debug_view;
 
@@ -138,287 +133,14 @@ impl<T> PropDebugView for Line<T> {}
 pub use floem_style::{ObjectFit, ObjectPosition};
 
 impl PropDebugView for ObjectFit {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        use peniko::kurbo::RoundedRect;
-
-        let object_fit = *self;
-        let container_color = RwSignal::new(palette::css::GRAY);
-        let image_color = RwSignal::new(palette::css::BLUE);
-
-        // Visual preview showing how an image with 2:1 aspect ratio fits in a square container
-        let preview = canvas(move |cx, size| {
-            let width = size.width;
-            let height = size.height;
-            let padding = 4.0;
-            let container_size = width.min(height) - padding * 2.0;
-
-            // Draw container box (square)
-            let container_x = (width - container_size) / 2.0;
-            let container_y = (height - container_size) / 2.0;
-            let container_rect = RoundedRect::from_rect(
-                kurbo::Rect::new(
-                    container_x,
-                    container_y,
-                    container_x + container_size,
-                    container_y + container_size,
-                ),
-                2.0,
-            );
-            cx.stroke(
-                &container_rect,
-                container_color.get(),
-                &Stroke {
-                    width: 1.5,
-                    ..Default::default()
-                },
-            );
-
-            // Simulate an image with 2:1 aspect ratio (wider than tall)
-            let image_aspect = 2.0;
-            let (img_width, img_height) = match object_fit {
-                ObjectFit::Fill => {
-                    // Stretch to fill container
-                    (container_size, container_size)
-                }
-                ObjectFit::Contain => {
-                    // Fit inside while maintaining aspect ratio
-                    // Image is 2:1, container is 1:1, so width is the constraint
-                    let w = container_size;
-                    let h = w / image_aspect;
-                    (w, h)
-                }
-                ObjectFit::Cover => {
-                    // Cover entire container while maintaining aspect ratio
-                    // Height is the constraint
-                    let h = container_size;
-                    let w = h * image_aspect;
-                    (w, h)
-                }
-                ObjectFit::ScaleDown => {
-                    // Like contain but don't scale up
-                    // Assume natural image size is smaller than container
-                    let natural_w = container_size * 0.6;
-                    let natural_h = natural_w / image_aspect;
-                    (natural_w, natural_h)
-                }
-                ObjectFit::None => {
-                    // Natural size (simulated as 60% of container)
-                    let natural_w = container_size * 0.6;
-                    let natural_h = natural_w / image_aspect;
-                    (natural_w, natural_h)
-                }
-            };
-
-            // Center the image in the container
-            let img_x = container_x + (container_size - img_width) / 2.0;
-            let img_y = container_y + (container_size - img_height) / 2.0;
-
-            // Clip to container bounds for Cover mode
-            if matches!(object_fit, ObjectFit::Cover) {
-                // Draw the image rect (it will extend beyond container)
-                let img_rect = RoundedRect::from_rect(
-                    kurbo::Rect::new(img_x, img_y, img_x + img_width, img_y + img_height),
-                    2.0,
-                );
-                // Show it as semi-transparent to indicate it's clipped
-                let clipped_color = image_color.get().with_alpha(0.7);
-                cx.fill(&img_rect, clipped_color, 0.0);
-            } else {
-                // Draw the image rect normally
-                let img_rect = RoundedRect::from_rect(
-                    kurbo::Rect::new(img_x, img_y, img_x + img_width, img_y + img_height),
-                    2.0,
-                );
-                cx.fill(&img_rect, image_color.get(), 0.0);
-            }
-        })
-        .style(|s| s.width(70.0).height(70.0))
-        .container()
-        .style(move |s| {
-            s.padding(4.0)
-                .border(1.)
-                .border_radius(5.0)
-                .with_theme(move |s, t| s.border_color(t.border()))
-        });
-
-        let label_text = match object_fit {
-            ObjectFit::Fill => "Fill",
-            ObjectFit::Contain => "Contain",
-            ObjectFit::Cover => "Cover",
-            ObjectFit::ScaleDown => "ScaleDown",
-            ObjectFit::None => "None",
-        };
-
-        let tooltip_view = move || {
-            let description = match object_fit {
-                ObjectFit::Fill => "Stretches content to fill the box.\nMay distort aspect ratio.",
-                ObjectFit::Contain => {
-                    "Scales content to fit inside the box.\nPreserves aspect ratio (letterboxed)."
-                }
-                ObjectFit::Cover => {
-                    "Scales content to cover the box.\nPreserves aspect ratio (may clip)."
-                }
-                ObjectFit::ScaleDown => {
-                    "Like 'contain' but won't scale up.\nNever larger than natural size."
-                }
-                ObjectFit::None => {
-                    "Content keeps its natural size.\nMay overflow or be smaller than box."
-                }
-            };
-
-            Stack::vertical((
-                Label::new(label_text).style(|s| s.font_bold()),
-                Label::new(description).style(|s| s.with_theme(|s, t| s.color(t.text_muted()))),
-            ))
-            .style(|s| s.gap(8.0).padding(12.0).max_width(220.0))
-        };
-
-        Some(
-            preview
-                .tooltip(tooltip_view)
-                .style(|s| s.items_center())
-                .into_any(),
-        )
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Some(r.object_fit(*self))
     }
 }
 
 impl PropDebugView for ObjectPosition {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        use peniko::kurbo::{Circle, RoundedRect};
-
-        let object_position = *self;
-        let container_color = RwSignal::new(palette::css::GRAY);
-        let image_color = RwSignal::new(palette::css::BLUE);
-        let marker_color = RwSignal::new(palette::css::RED);
-
-        let preview = canvas(move |cx, size| {
-            let width = size.width;
-            let height = size.height;
-            let padding = 6.0;
-            let container_size = width.min(height) - padding * 2.0;
-            let container_x = (width - container_size) / 2.0;
-            let container_y = (height - container_size) / 2.0;
-            let container_rect = RoundedRect::from_rect(
-                kurbo::Rect::new(
-                    container_x,
-                    container_y,
-                    container_x + container_size,
-                    container_y + container_size,
-                ),
-                2.0,
-            );
-            cx.stroke(
-                &container_rect,
-                container_color.get(),
-                &Stroke {
-                    width: 1.5,
-                    ..Default::default()
-                },
-            );
-
-            let image_w = container_size * 0.55;
-            let image_h = container_size * 0.35;
-            let free_x = container_size - image_w;
-            let free_y = container_size - image_h;
-            let font_size_cx = crate::style::FontSizeCx::new(16.0, 16.0);
-
-            let (offset_x, offset_y) = match object_position {
-                ObjectPosition::TopLeft => (0.0, 0.0),
-                ObjectPosition::Top => (free_x * 0.5, 0.0),
-                ObjectPosition::TopRight => (free_x, 0.0),
-                ObjectPosition::Left => (0.0, free_y * 0.5),
-                ObjectPosition::Center => (free_x * 0.5, free_y * 0.5),
-                ObjectPosition::Right => (free_x, free_y * 0.5),
-                ObjectPosition::BottomLeft => (0.0, free_y),
-                ObjectPosition::Bottom => (free_x * 0.5, free_y),
-                ObjectPosition::BottomRight => (free_x, free_y),
-                ObjectPosition::Custom(x, y) => (
-                    x.resolve(free_x, &font_size_cx),
-                    y.resolve(free_y, &font_size_cx),
-                ),
-            };
-
-            let img_x = container_x + offset_x;
-            let img_y = container_y + offset_y;
-            let img_rect = RoundedRect::from_rect(
-                kurbo::Rect::new(img_x, img_y, img_x + image_w, img_y + image_h),
-                2.0,
-            );
-            cx.fill(&img_rect, image_color.get(), 0.0);
-
-            let marker = Circle::new(
-                kurbo::Point::new(img_x + image_w / 2.0, img_y + image_h / 2.0),
-                2.5,
-            );
-            cx.fill(&marker, marker_color.get(), 0.0);
-        })
-        .style(|s| s.width(70.0).height(70.0))
-        .container()
-        .style(move |s| {
-            s.padding(4.0)
-                .border(1.)
-                .border_radius(5.0)
-                .with_theme(move |s, t| s.border_color(t.border()))
-        });
-
-        let (label_text, description) = match object_position {
-            ObjectPosition::TopLeft => ("TopLeft", "Anchors content to the top-left corner."),
-            ObjectPosition::Top => (
-                "Top",
-                "Anchors content to the top edge, centered horizontally.",
-            ),
-            ObjectPosition::TopRight => ("TopRight", "Anchors content to the top-right corner."),
-            ObjectPosition::Left => (
-                "Left",
-                "Anchors content to the left edge, centered vertically.",
-            ),
-            ObjectPosition::Center => ("Center", "Centers content on both axes."),
-            ObjectPosition::Right => (
-                "Right",
-                "Anchors content to the right edge, centered vertically.",
-            ),
-            ObjectPosition::BottomLeft => {
-                ("BottomLeft", "Anchors content to the bottom-left corner.")
-            }
-            ObjectPosition::Bottom => (
-                "Bottom",
-                "Anchors content to the bottom edge, centered horizontally.",
-            ),
-            ObjectPosition::BottomRight => {
-                ("BottomRight", "Anchors content to the bottom-right corner.")
-            }
-            ObjectPosition::Custom(x, y) => {
-                let label = format!("Custom({x:?}, {y:?})");
-                let description = "Uses explicit horizontal and vertical offsets. Percentages resolve against remaining free space.";
-                return Some(
-                    preview
-                        .tooltip(move || {
-                            Stack::vertical((
-                                Label::new(label.clone()).style(|s| s.font_bold()),
-                                Label::new(description)
-                                    .style(|s| s.with_theme(|s, t| s.color(t.text_muted()))),
-                            ))
-                            .style(|s| s.gap(8.0).padding(12.0).max_width(240.0))
-                        })
-                        .style(|s| s.items_center())
-                        .into_any(),
-                );
-            }
-        };
-
-        Some(
-            preview
-                .tooltip(move || {
-                    Stack::vertical((
-                        Label::new(label_text).style(|s| s.font_bold()),
-                        Label::new(description)
-                            .style(|s| s.with_theme(|s, t| s.color(t.text_muted()))),
-                    ))
-                    .style(|s| s.gap(8.0).padding(12.0).max_width(240.0))
-                })
-                .style(|s| s.items_center())
-                .into_any(),
-        )
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Some(r.object_position(self))
     }
 }
 
@@ -426,13 +148,9 @@ impl<A: smallvec::Array> PropDebugView for SmallVec<A>
 where
     <A as smallvec::Array>::Item: StylePropValue + PropDebugView,
 {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
         if self.is_empty() {
-            return Some(
-                Label::new("smallvec\n[]")
-                    .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
-                    .into_any(),
-            );
+            return Some(r.text("smallvec\n[]"));
         }
 
         let count = self.len();
@@ -459,122 +177,116 @@ where
                 .with::<FontSize>(|s, fs| s.font_size(fs.def(|fs| fs * 0.85)))
         });
 
-        // Clone items for the tooltip view
-        let items = self.clone();
-
-        let tooltip_view = move || {
-            Stack::vertical_from_iter(items.iter().enumerate().map(|(i, item)| {
+        // Render each item via the renderer; downcast back to concrete
+        // view type so the tooltip closure can own them.
+        let item_views: Vec<Box<dyn View>> = self
+            .iter()
+            .enumerate()
+            .map(|(i, item)| {
                 let index_label = Label::new(format!("[{}]", i))
                     .style(|s| s.with_theme(|s, t| s.color(t.text_muted())));
 
-                let item_view = item.debug_view().unwrap_or_else(|| {
-                    Label::new(format!("{:?}", item))
-                        .style(|s| s.flex_grow(1.0))
-                        .into_any()
-                });
+                let item_view: Box<dyn View> = item
+                    .debug_view(r)
+                    .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+                    .unwrap_or_else(|| {
+                        Label::new(format!("{:?}", item))
+                            .style(|s| s.flex_grow(1.0))
+                            .into_any()
+                    });
 
                 Stack::new((index_label, item_view))
                     .style(|s| s.items_center().gap(8.0).padding(4.0))
-            }))
-            .style(|s| s.gap(4.0))
-        };
+                    .into_any()
+            })
+            .collect();
 
-        // Return the tooltip view wrapped in the preview
-        Some(
-            Stack::new((preview, tooltip_view()))
-                .style(|s| s.gap(8.0))
-                .into_any(),
-        )
+        let tooltip = Stack::vertical_from_iter(item_views).style(|s| s.gap(4.0));
+
+        let view: Box<dyn View> = Stack::new((preview, tooltip))
+            .style(|s| s.gap(8.0))
+            .into_any();
+        Some(Box::new(view))
     }
 }
 impl PropDebugView for FontWeight {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self, _r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
         let clone = *self;
-        Some(
-            format!("{clone:?}")
-                .style(move |s| s.font_weight(clone))
-                .into_any(),
-        )
+        let view: Box<dyn View> = format!("{clone:?}")
+            .style(move |s| s.font_weight(clone))
+            .into_any();
+        Some(Box::new(view))
     }
 }
 impl PropDebugView for crate::text::FontStyle {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self, _r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
         let clone = *self;
-        Some(
-            format!("{clone:?}")
-                .style(move |s| s.font_style(clone))
-                .into_any(),
-        )
+        let view: Box<dyn View> = format!("{clone:?}")
+            .style(move |s| s.font_style(clone))
+            .into_any();
+        Some(Box::new(view))
     }
 }
 impl<T: PropDebugView> PropDebugView for Option<T> {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        self.as_ref().and_then(|v| v.debug_view())
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        self.as_ref().and_then(|v| v.debug_view(r))
     }
 }
 impl<T: StylePropValue + PropDebugView + 'static> PropDebugView for Vec<T> {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
         if self.is_empty() {
-            return Some(
-                Label::new("[]")
-                    .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
-                    .into_any(),
-            );
+            let view: Box<dyn View> = Label::new("[]")
+                .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
+                .into_any();
+            return Some(Box::new(view));
         }
 
-        let count = self.len();
-        let _preview = Label::derived(move || format!("[{}]", count)).style(|s| {
-            s.padding(2.0)
-                .padding_horiz(6.0)
-                .border(1.)
-                .border_radius(5.0)
-                .margin_left(6.0)
-                .with_theme(|s, t| s.color(t.text()).border_color(t.border()))
-                .with::<FontSize>(|s, fs| s.font_size(fs.def(|fs| fs * 0.85)))
-        });
-
-        let items = self.clone();
-        let tooltip_view = move || {
-            Stack::vertical_from_iter(items.iter().enumerate().map(|(i, item)| {
+        let item_views: Vec<Box<dyn View>> = self
+            .iter()
+            .enumerate()
+            .map(|(i, item)| {
                 let index_label = Label::new(format!("[{}]", i))
                     .style(|s| s.with_theme(|s, t| s.color(t.text_muted())));
 
-                let item_view = item.debug_view().unwrap_or_else(|| {
-                    Label::new(format!("{:?}", item))
-                        .style(|s| s.flex_grow(1.0))
-                        .into_any()
-                });
+                let item_view: Box<dyn View> = item
+                    .debug_view(r)
+                    .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+                    .unwrap_or_else(|| {
+                        Label::new(format!("{:?}", item))
+                            .style(|s| s.flex_grow(1.0))
+                            .into_any()
+                    });
 
                 Stack::new((index_label, item_view))
                     .style(|s| s.items_center().gap(8.0).padding(4.0))
-            }))
-            .style(|s| s.gap(4.0))
-        };
+                    .into_any()
+            })
+            .collect();
 
-        Some(
-            // preview
-            tooltip_view().into_any(),
-        )
+        let view: Box<dyn View> = Stack::vertical_from_iter(item_views)
+            .style(|s| s.gap(4.0))
+            .into_any();
+        Some(Box::new(view))
     }
 }
 impl PropDebugView for Pt {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(Label::new(format!("{} pt", self.0)).into_any())
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Some(r.text(&format!("{} pt", self.0)))
     }
 }
 #[allow(deprecated)]
 impl PropDebugView for super::unit::Px {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        Pt(self.0).debug_view()
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Pt(self.0).debug_view(r)
     }
 }
 impl PropDebugView for Pct {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(Label::new(format!("{}%", self.0)).into_any())
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Some(r.text(&format!("{}%", self.0)))
     }
 }
 impl PropDebugView for LengthAuto {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
         let label = match self {
             Self::Pt(v) => format!("{v} pt"),
             Self::Pct(v) => format!("{v}%"),
@@ -582,30 +294,30 @@ impl PropDebugView for LengthAuto {
             Self::Lh(v) => format!("{v} lh"),
             Self::Auto => "auto".to_string(),
         };
-        Some(Label::new(label).into_any())
+        Some(r.text(&label))
     }
 }
 #[allow(deprecated)]
 impl PropDebugView for super::unit::PxPctAuto {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        LengthAuto::from(*self).debug_view()
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        LengthAuto::from(*self).debug_view(r)
     }
 }
 impl PropDebugView for Length {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
         let label = match self {
             Self::Pt(v) => format!("{v} pt"),
             Self::Pct(v) => format!("{v}%"),
             Self::Em(v) => format!("{v} em"),
             Self::Lh(v) => format!("{v} lh"),
         };
-        Some(Label::new(label).into_any())
+        Some(r.text(&label))
     }
 }
 #[allow(deprecated)]
 impl PropDebugView for super::unit::PxPct {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        Length::from(*self).debug_view()
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Length::from(*self).debug_view(r)
     }
 }
 
@@ -614,472 +326,47 @@ pub(crate) fn views(views: impl ViewTuple) -> Vec<AnyView> {
 }
 
 impl PropDebugView for Color {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        let color = *self;
-        let swatch = ()
-            .style(move |s| {
-                s.background(color)
-                    .width(22.0)
-                    .height(14.0)
-                    .border(1.)
-                    .border_color(palette::css::WHITE.with_alpha(0.5))
-                    .border_radius(5.0)
-            })
-            .container()
-            .style(|s| {
-                s.border(1.)
-                    .border_color(palette::css::BLACK.with_alpha(0.5))
-                    .border_radius(5.0)
-            });
-
-        let tooltip_view = move || {
-            // Convert to RGBA8 for standard representations
-            let c = color.to_rgba8();
-            let (r, g, b, a) = (c.r, c.g, c.b, c.a);
-
-            // Hex representation
-            let hex = if a == 255 {
-                format!("#{:02X}{:02X}{:02X}", r, g, b)
-            } else {
-                format!("#{:02X}{:02X}{:02X}{:02X}", r, g, b, a)
-            };
-
-            // RGBA string
-            let rgba_str = format!("rgba({}, {}, {}, {:.3})", r, g, b, a as f32 / 255.0);
-
-            // Alpha percentage
-            let alpha_str = format!(
-                "{:.1}% ({:.3})",
-                (a as f32 / 255.0) * 100.0,
-                a as f32 / 255.0
-            );
-
-            let components = color.components;
-            let color_space_str = format!("{:?}", color.cs);
-
-            let hex = views((
-                "Hex:".style(|s| s.font_bold().min_width(80.0).justify_end()),
-                Label::derived(move || hex.clone()),
-            ));
-            let rgba = views((
-                "RGBA:".style(|s| s.font_bold().min_width(80.0).justify_end()),
-                Label::derived(move || rgba_str.clone()),
-            ));
-            let components = views((
-                "Components:".style(|s| s.font_bold().min_width(80.0).justify_end()),
-                (
-                    Label::derived(move || format!("[0]: {:.3}", components[0])),
-                    Label::derived(move || format!("[1]: {:.3}", components[1])),
-                    Label::derived(move || format!("[2]: {:.3}", components[2])),
-                    Label::derived(move || format!("[3]: {:.3}", components[3])),
-                )
-                    .v_stack()
-                    .style(|s| s.gap(2.0)),
-            ));
-            let color_space = views((
-                "Color Space:".style(|s| s.font_bold().min_width(80.0).justify_end()),
-                Label::derived(move || color_space_str.clone()),
-            ));
-            let alpha = views((
-                "Alpha:".style(|s| s.font_bold().min_width(80.0).justify_end()),
-                Label::derived(move || alpha_str.clone()),
-            ));
-            (hex, rgba, components, color_space, alpha)
-                .flatten()
-                .style(|s| {
-                    s.grid()
-                        .grid_template_columns([auto(), fr(1.)])
-                        .justify_center()
-                        .items_center()
-                        .row_gap(20)
-                        .col_gap(10)
-                        .padding(30)
-                })
-        };
-
-        Some(
-            swatch
-                .tooltip(tooltip_view)
-                .style(|s| s.items_center())
-                .into_any(),
-        )
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Some(r.color(*self))
     }
 }
 
 impl PropDebugView for Gradient {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        let box_width = 22.;
-        let box_height = 14.;
-        let mut grad = self.clone();
-        grad.kind = match grad.kind {
-            GradientKind::Linear(LinearGradientPosition { start, end }) => {
-                let dx = end.x - start.x;
-                let dy = end.y - start.y;
-
-                let scale_x = box_width / dx.abs();
-                let scale_y = box_height / dy.abs();
-                let scale = scale_x.min(scale_y);
-
-                let new_dx = dx * scale;
-                let new_dy = dy * scale;
-
-                let new_start = Point {
-                    x: if dx > 0.0 { 0.0 } else { box_width },
-                    y: if dy > 0.0 { 0.0 } else { box_height },
-                };
-
-                let new_end = Point {
-                    x: new_start.x + new_dx,
-                    y: new_start.y + new_dy,
-                };
-
-                GradientKind::Linear(LinearGradientPosition {
-                    start: new_start,
-                    end: new_end,
-                })
-            }
-            _ => grad.kind,
-        };
-        let color = ().style(move |s| {
-            s.background(grad.clone())
-                .width(box_width)
-                .height(box_height)
-                .border(1.)
-                .border_color(palette::css::WHITE.with_alpha(0.5))
-                .border_radius(5.0)
-        });
-        let color = color.container().style(|s| {
-            s.border(1.)
-                .border_color(palette::css::BLACK.with_alpha(0.5))
-                .border_radius(5.0)
-                .margin_left(6.0)
-        });
-        Some(
-            Stack::new((Label::new(format!("{self:?}")), color))
-                .style(|s| s.items_center())
-                .into_any(),
-        )
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Some(r.gradient(self))
     }
 }
 
 pub use floem_style::StrokeWrap;
 
 impl PropDebugView for Stroke {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        let stroke = self.clone();
-        let clone = stroke.clone();
-
-        let color = RwSignal::new(palette::css::RED);
-
-        // Visual preview of the stroke
-        let preview = canvas(move |cx, size| {
-            cx.stroke(
-                &kurbo::Line::new(
-                    Point::new(0., size.height / 2.),
-                    Point::new(size.width, size.height / 2.),
-                ),
-                color.get(),
-                &clone,
-            );
-        })
-        .style(move |s| s.width(80.0).height(20.0))
-        .container()
-        .style(move |s| {
-            s.with_theme(move |s, t| s.border_color(t.border()))
-                .defer::<Theme>(move |t| color.set(t.primary()))
-                .padding(4.0)
-        });
-
-        let tooltip_view = move || {
-            let stroke = stroke.clone();
-
-            let width_row = views((
-                "Width:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                Label::derived(move || format!("{:.1}px", stroke.width)),
-            ));
-
-            let join_row = views((
-                "Join:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                Label::derived(move || format!("{:?}", stroke.join)),
-            ));
-
-            let miter_row = views((
-                "Miter Limit:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                Label::derived(move || format!("{:.2}", stroke.miter_limit)),
-            ));
-
-            let start_cap_row = views((
-                "Start Cap:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                Label::derived(move || format!("{:?}", stroke.start_cap)),
-            ));
-
-            let end_cap_row = views((
-                "End Cap:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                Label::derived(move || format!("{:?}", stroke.end_cap)),
-            ));
-
-            let pattern_clone = stroke.dash_pattern.clone();
-
-            let dash_pattern_row = views((
-                "Dash Pattern:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                Label::derived(move || {
-                    if pattern_clone.is_empty() {
-                        "Solid".to_string()
-                    } else {
-                        format!("{:?}", pattern_clone.as_slice())
-                    }
-                }),
-            ));
-
-            let dash_offset_row = if !stroke.dash_pattern.is_empty() {
-                Some(views((
-                    "Dash Offset:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                    Label::derived(move || format!("{:.1}", stroke.dash_offset)),
-                )))
-            } else {
-                None
-            };
-
-            let mut rows = vec![
-                width_row.into_any(),
-                join_row.into_any(),
-                miter_row.into_any(),
-                start_cap_row.into_any(),
-                end_cap_row.into_any(),
-                dash_pattern_row.into_any(),
-            ];
-
-            if let Some(offset_row) = dash_offset_row {
-                rows.push(offset_row.into_any());
-            }
-
-            Stack::vertical_from_iter(rows).style(|s| {
-                s.grid()
-                    .grid_template_columns([auto(), fr(1.)])
-                    .justify_center()
-                    .items_center()
-                    .row_gap(12)
-                    .col_gap(10)
-                    .padding(20)
-            })
-        };
-
-        Some(
-            preview
-                .tooltip(tooltip_view)
-                .style(|s| s.items_center())
-                .into_any(),
-        )
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Some(r.stroke(self))
     }
 }
 impl PropDebugView for Brush {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
         match self {
-            Brush::Solid(color) => color.debug_view(),
-            Brush::Gradient(grad) => grad.debug_view(),
+            Brush::Solid(_) | Brush::Gradient(_) => Some(r.brush(self)),
             Brush::Image(_) => None,
         }
     }
 }
 impl PropDebugView for Duration {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self, _r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
         None
     }
 }
 
 impl PropDebugView for kurbo::Rect {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        let r = *self;
-
-        let w = r.x1 - r.x0;
-        let h = r.y1 - r.y0;
-
-        let coords = [
-            format!("x0: {:.2}", r.x0),
-            format!("y0: {:.2}", r.y0),
-            format!("x1: {:.2}", r.x1),
-            format!("y1: {:.2}", r.y1),
-        ]
-        .v_stack();
-
-        let wh = [format!("w: {:.2}", w), format!("h: {:.2}", h)].h_stack();
-
-        let preview = Empty::new().style(move |s| {
-            let max = w.abs().max(h.abs()).max(1.0);
-            let scale = 60.0 / max;
-
-            s.width(w.abs() * scale)
-                .height(h.abs() * scale)
-                .border(1.0)
-                .with_theme(|s, t| {
-                    s.border_color(t.border())
-                        .background(t.primary_muted())
-                        .border_radius(t.border_radius())
-                })
-        });
-
-        Some(
-            (
-                "Rect",
-                preview,
-                coords.style(|s| s.gap(2)),
-                wh.style(|s| s.gap(8)),
-            )
-                .v_stack()
-                .into_any(),
-        )
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Some(r.rect(self))
     }
 }
 
 impl PropDebugView for Affine {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        let affine = *self;
-        let coeffs = affine.as_coeffs();
-
-        // Decompose to show meaningful transform components
-        let (scale, rotation) = affine.svd();
-        let translation = affine.translation();
-
-        // Create a visual preview showing the transform effect
-        let preview = canvas(move |cx, size| {
-            let center = Point::new(size.width / 2., size.height / 2.);
-            let box_size = 20.0;
-
-            // Draw original position (dashed outline)
-            let original_rect =
-                kurbo::Rect::from_center_size(center, kurbo::Size::new(box_size, box_size));
-            cx.stroke(
-                &original_rect,
-                palette::css::GRAY.with_alpha(0.5),
-                &kurbo::Stroke::new(1.0).with_dashes(0., [3., 3.]),
-            );
-
-            // Draw transformed position
-            let transform_offset =
-                Affine::translate((center.x - box_size / 2., center.y - box_size / 2.));
-            let display_transform = transform_offset * affine * transform_offset.inverse();
-
-            let transformed_rect = kurbo::Rect::new(0., 0., box_size, box_size);
-            cx.fill(
-                &display_transform.transform_rect_bbox(transformed_rect),
-                palette::css::BLUE.with_alpha(0.7),
-                0.,
-            );
-            cx.stroke(
-                &(display_transform.transform_rect_bbox(transformed_rect)),
-                palette::css::BLUE,
-                &kurbo::Stroke::new(2.0),
-            );
-
-            // Draw origin point
-            let origin_marker = kurbo::Circle::new(display_transform * Point::ZERO, 3.0);
-            cx.fill(&origin_marker, palette::css::RED, 0.);
-        })
-        .style(|s| s.width(80.0).height(60.0))
-        .container()
-        .style(|s| {
-            s.padding(4.0)
-                .border(1.)
-                .border_radius(5.0)
-                .with_theme(|s, t| s.border_color(t.border()))
-        });
-
-        let tooltip_view = move || {
-            // Matrix coefficients in a grid
-            let matrix_label = Label::new("Matrix:").style(|s| s.font_bold().margin_bottom(8.0));
-
-            let matrix_grid = (
-                views((
-                    Label::new(format!("{:.3}", coeffs[0])),
-                    Label::new(format!("{:.3}", coeffs[2])),
-                    Label::new(format!("{:.3}", coeffs[4])),
-                )),
-                views((
-                    Label::new(format!("{:.3}", coeffs[1])),
-                    Label::new(format!("{:.3}", coeffs[3])),
-                    Label::new(format!("{:.3}", coeffs[5])),
-                )),
-                views((Label::new("0"), Label::new("0"), Label::new("1"))),
-            )
-                .v_stack()
-                .style(|s| {
-                    s.gap(4.0)
-                        .padding(8.0)
-                        .border(1.)
-                        .border_radius(4.0)
-                        .with_theme(|s, t| {
-                            s.background(t.def(|t| t.primary().with_alpha(0.5)))
-                                .border_color(t.border())
-                        })
-                });
-
-            // Decomposed components
-            let components_label = Label::new("Components:")
-                .style(|s| s.font_bold().margin_top(16.0).margin_bottom(8.0));
-
-            let translate_row = views((
-                "Translate:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                Label::derived(move || format!("({:.2}, {:.2})", translation.x, translation.y)),
-            ));
-
-            let rotate_row = views((
-                "Rotate:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                Label::derived(move || format!("{:.1}°", rotation.to_degrees())),
-            ));
-
-            let scale_row = views((
-                "Scale:".style(|s| s.font_bold().min_width(100.0).justify_end()),
-                Label::derived(move || format!("({:.2}, {:.2})", scale.x, scale.y)),
-            ));
-
-            // Check for special properties
-            let is_identity = affine == Affine::IDENTITY;
-            let determinant = coeffs[0] * coeffs[3] - coeffs[1] * coeffs[2];
-            let has_reflection = determinant < 0.0;
-
-            let properties = if is_identity {
-                Some(
-                    Label::new("Identity (no transform)")
-                        .style(|s| s.with_theme(|s, t| s.color(t.text_muted()))),
-                )
-            } else if has_reflection {
-                Some(
-                    Label::new("⚠ Contains reflection")
-                        .style(|s| s.with_theme(|s, t| s.color(t.warning()))),
-                )
-            } else {
-                None
-            };
-
-            let components_grid = (translate_row, rotate_row, scale_row).flatten().style(|s| {
-                s.grid()
-                    .grid_template_columns([auto(), fr(1.)])
-                    .justify_center()
-                    .items_center()
-                    .row_gap(8)
-                    .col_gap(10)
-            });
-
-            let mut content = vec![
-                matrix_label.into_any(),
-                matrix_grid.into_any(),
-                components_label.into_any(),
-                components_grid.into_any(),
-            ];
-
-            if let Some(props) = properties {
-                content.push(props.into_any());
-            }
-
-            Stack::vertical_from_iter(content).style(|s| s.padding(20))
-        };
-
-        Some(
-            preview
-                .tooltip(tooltip_view)
-                .style(|s| s.items_center())
-                .into_any(),
-        )
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Some(r.affine(self))
     }
 }
 

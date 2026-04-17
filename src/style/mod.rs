@@ -167,6 +167,7 @@ mod components;
 mod custom;
 mod cx;
 mod debug_view;
+mod inspector_render_impl;
 mod macros;
 mod props;
 mod sink;
@@ -187,7 +188,8 @@ pub use components::{
 };
 pub use custom::{CustomStylable, CustomStyle};
 pub use cx::{InheritedInteractionCx, InteractionState, StyleCx};
-pub use debug_view::PropDebugView;
+pub use debug_view::{InspectorRender, PropDebugView};
+pub use inspector_render_impl::FloemInspectorRender;
 pub use props::{
     ExtractorField, StyleClass, StyleClassInfo, StyleClassRef, StyleDebugGroup,
     StyleDebugGroupInfo, StyleDebugGroupRef, StyleKey, StyleKeyInfo, StyleProp, StylePropInfo,

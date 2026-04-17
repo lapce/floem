@@ -14,8 +14,9 @@ use crate::unit::{FontSizeCx, Length, LengthAuto};
 use crate::view::{IntoView, View};
 use crate::views::{ContainerExt, Decorators, Stack, TooltipExt};
 
-use super::PropDebugView;
 use super::values::{StrokeWrap, StylePropValue};
+use super::{InspectorRender, PropDebugView};
+use std::any::Any;
 
 /// Pointer event handling mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -243,32 +244,36 @@ impl StylePropValue for Border {
     }
 }
 impl PropDebugView for Border {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
         let border = self.clone();
-        let details_view = move || {
-            let sides = [
-                ("Left:", border.left),
-                ("Top:", border.top),
-                ("Right:", border.right),
-                ("Bottom:", border.bottom),
-            ];
+        let sides = [
+            ("Left:", border.left),
+            ("Top:", border.top),
+            ("Right:", border.right),
+            ("Bottom:", border.bottom),
+        ];
 
-            Stack::vertical_from_iter(
-                sides
-                    .into_iter()
-                    .filter_map(|(l, v)| v.map(|v| (l, v)))
-                    .map(|(label, value)| {
-                        Stack::horizontal((
-                            label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
-                            value.debug_view().unwrap(),
-                        ))
-                        .style(|s| s.items_center().gap(4.0))
-                        .into_any()
-                    }),
-            )
+        let rows: Vec<Box<dyn View>> = sides
+            .into_iter()
+            .filter_map(|(l, v)| v.map(|v| (l, v)))
+            .map(|(label, value)| {
+                let child: Box<dyn View> = value
+                    .debug_view(r)
+                    .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+                    .unwrap();
+                Stack::horizontal((
+                    label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
+                    child,
+                ))
+                .style(|s| s.items_center().gap(4.0))
+                .into_any()
+            })
+            .collect();
+
+        let view: Box<dyn View> = Stack::vertical_from_iter(rows)
             .style(|s| s.gap(4.0).padding(8.0))
-        };
-        Some(details_view().into_any())
+            .into_any();
+        Some(Box::new(view))
     }
 }
 
@@ -352,31 +357,36 @@ impl StylePropValue for BorderColor {
     }
 }
 impl PropDebugView for BorderColor {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
         let border_color = self.clone();
-        let details_view = move || {
-            let sides = [
-                ("Left:", border_color.left),
-                ("Top:", border_color.top),
-                ("Right:", border_color.right),
-                ("Bottom:", border_color.bottom),
-            ];
+        let sides = [
+            ("Left:", border_color.left),
+            ("Top:", border_color.top),
+            ("Right:", border_color.right),
+            ("Bottom:", border_color.bottom),
+        ];
 
-            Stack::vertical_from_iter(
-                sides
-                    .into_iter()
-                    .filter_map(|(l, v)| v.map(|v| (l, v)))
-                    .map(|(label, color)| {
-                        Stack::horizontal((
-                            label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
-                            color.debug_view().unwrap(),
-                        ))
-                        .style(|s| s.items_center().gap(4.0))
-                    }),
-            )
+        let rows: Vec<Box<dyn View>> = sides
+            .into_iter()
+            .filter_map(|(l, v)| v.map(|v| (l, v)))
+            .map(|(label, color)| {
+                let child: Box<dyn View> = color
+                    .debug_view(r)
+                    .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+                    .unwrap();
+                Stack::horizontal((
+                    label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
+                    child,
+                ))
+                .style(|s| s.items_center().gap(4.0))
+                .into_any()
+            })
+            .collect();
+
+        let view: Box<dyn View> = Stack::vertical_from_iter(rows)
             .style(|s| s.gap(4.0).padding(8.0))
-        };
-        Some(details_view().into_any())
+            .into_any();
+        Some(Box::new(view))
     }
 }
 
@@ -493,31 +503,36 @@ impl StylePropValue for BorderRadius {
     }
 }
 impl PropDebugView for BorderRadius {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
         let border_radius = *self;
-        let details_view = move || {
-            let corners = [
-                ("Top Left:", border_radius.top_left),
-                ("Top Right:", border_radius.top_right),
-                ("Bottom Left:", border_radius.bottom_left),
-                ("Bottom Right:", border_radius.bottom_right),
-            ];
+        let corners = [
+            ("Top Left:", border_radius.top_left),
+            ("Top Right:", border_radius.top_right),
+            ("Bottom Left:", border_radius.bottom_left),
+            ("Bottom Right:", border_radius.bottom_right),
+        ];
 
-            Stack::vertical_from_iter(
-                corners
-                    .into_iter()
-                    .filter_map(|(l, v)| v.map(|v| (l, v)))
-                    .map(|(label, radius)| {
-                        Stack::horizontal((
-                            label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
-                            radius.debug_view().unwrap(),
-                        ))
-                        .style(|s| s.items_center().gap(4.0))
-                    }),
-            )
+        let rows: Vec<Box<dyn View>> = corners
+            .into_iter()
+            .filter_map(|(l, v)| v.map(|v| (l, v)))
+            .map(|(label, radius)| {
+                let child: Box<dyn View> = radius
+                    .debug_view(r)
+                    .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+                    .unwrap();
+                Stack::horizontal((
+                    label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
+                    child,
+                ))
+                .style(|s| s.items_center().gap(4.0))
+                .into_any()
+            })
+            .collect();
+
+        let view: Box<dyn View> = Stack::vertical_from_iter(rows)
             .style(|s| s.gap(4.0).padding(8.0))
-        };
-        Some(details_view().into_any())
+            .into_any();
+        Some(Box::new(view))
     }
 }
 
@@ -601,31 +616,36 @@ impl StylePropValue for Padding {
     }
 }
 impl PropDebugView for Padding {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
         let padding = *self;
-        let details_view = move || {
-            let sides = [
-                ("Left:", padding.left),
-                ("Top:", padding.top),
-                ("Right:", padding.right),
-                ("Bottom:", padding.bottom),
-            ];
+        let sides = [
+            ("Left:", padding.left),
+            ("Top:", padding.top),
+            ("Right:", padding.right),
+            ("Bottom:", padding.bottom),
+        ];
 
-            Stack::vertical_from_iter(
-                sides
-                    .into_iter()
-                    .filter_map(|(l, v)| v.map(|v| (l, v)))
-                    .map(|(label, padding)| {
-                        Stack::horizontal((
-                            label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
-                            padding.debug_view().unwrap(),
-                        ))
-                        .style(|s| s.items_center().gap(4.0))
-                    }),
-            )
+        let rows: Vec<Box<dyn View>> = sides
+            .into_iter()
+            .filter_map(|(l, v)| v.map(|v| (l, v)))
+            .map(|(label, padding)| {
+                let child: Box<dyn View> = padding
+                    .debug_view(r)
+                    .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+                    .unwrap();
+                Stack::horizontal((
+                    label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
+                    child,
+                ))
+                .style(|s| s.items_center().gap(4.0))
+                .into_any()
+            })
+            .collect();
+
+        let view: Box<dyn View> = Stack::vertical_from_iter(rows)
             .style(|s| s.gap(4.0).padding(8.0))
-        };
-        Some(details_view().into_any())
+            .into_any();
+        Some(Box::new(view))
     }
 }
 
@@ -709,31 +729,36 @@ impl StylePropValue for Margin {
     }
 }
 impl PropDebugView for Margin {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
         let margin = *self;
-        let details_view = move || {
-            let sides = [
-                ("Left:", margin.left),
-                ("Top:", margin.top),
-                ("Right:", margin.right),
-                ("Bottom:", margin.bottom),
-            ];
+        let sides = [
+            ("Left:", margin.left),
+            ("Top:", margin.top),
+            ("Right:", margin.right),
+            ("Bottom:", margin.bottom),
+        ];
 
-            Stack::vertical_from_iter(
-                sides
-                    .into_iter()
-                    .filter_map(|(l, v)| v.map(|v| (l, v)))
-                    .map(|(label, margin)| {
-                        Stack::horizontal((
-                            label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
-                            margin.debug_view().unwrap(),
-                        ))
-                        .style(|s| s.items_center().gap(4.0))
-                    }),
-            )
+        let rows: Vec<Box<dyn View>> = sides
+            .into_iter()
+            .filter_map(|(l, v)| v.map(|v| (l, v)))
+            .map(|(label, margin)| {
+                let child: Box<dyn View> = margin
+                    .debug_view(r)
+                    .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+                    .unwrap();
+                Stack::horizontal((
+                    label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
+                    child,
+                ))
+                .style(|s| s.items_center().gap(4.0))
+                .into_any()
+            })
+            .collect();
+
+        let view: Box<dyn View> = Stack::vertical_from_iter(rows)
             .style(|s| s.gap(4.0).padding(8.0))
-        };
-        Some(details_view().into_any())
+            .into_any();
+        Some(Box::new(view))
     }
 }
 
@@ -808,7 +833,7 @@ impl StylePropValue for BoxShadow {
     }
 }
 impl PropDebugView for BoxShadow {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
         // Create a preview container that shows a visual representation of the shadow
         let shadow = *self;
 
@@ -826,12 +851,21 @@ impl PropDebugView for BoxShadow {
                         })
                 });
 
-        // Create a details section showing the shadow properties
+        // Rebuild the color preview each time the tooltip is shown. We
+        // can't hold `&dyn InspectorRender` inside a 'static closure, so
+        // reach for the concrete floem renderer — this impl stays in the
+        // floem crate for now.
+        let _ = r;
         let details_view = move || {
+            let color_view: Box<dyn View> = shadow
+                .color
+                .debug_view(&crate::style::FloemInspectorRender)
+                .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+                .unwrap();
             Stack::vertical((
                 Stack::horizontal((
                     "Color:".style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
-                    shadow.color.debug_view().unwrap(),
+                    color_view,
                 ))
                 .style(|s| s.items_center().gap(4.0)),
                 Stack::horizontal((
@@ -860,9 +894,9 @@ impl PropDebugView for BoxShadow {
         };
 
         // Combine preview and details
-        let view = shadow_preview.tooltip(details_view);
+        let view: Box<dyn View> = shadow_preview.tooltip(details_view).into_any();
 
-        Some(view.into_any())
+        Some(Box::new(view))
     }
 }
 
