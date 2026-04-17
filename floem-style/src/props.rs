@@ -8,12 +8,11 @@
 //! - [`StylePropInfo`] / [`StyleClassInfo`] / [`StyleDebugGroupInfo`] —
 //!   reflective metadata for each kind of key.
 //!
-//! The `style_class!` macro lives alongside [`StyleClass`] in this module.
-//! Other accompanying macros (`prop!`, `prop_extractor!`,
-//! `style_debug_group!`) still live in the `floem` crate because they
-//! reference `floem::style::Style` directly; once `Style` moves here they
-//! can follow. `StylePropInfo`'s fields are `pub` rather than hidden
-//! behind a `new` constructor because those macros construct it directly.
+//! The `style_class!`, `prop!`, and `style_debug_group!` macros live in this
+//! crate (see `props.rs` and `style_macros.rs`). `prop_extractor!` remains
+//! in the `floem` crate because it references `floem::context::StyleCx`.
+//! `StylePropInfo`'s fields are `pub` rather than hidden behind a `new`
+//! constructor because those macros construct it directly.
 
 use std::any::Any;
 use std::fmt::{self, Debug};

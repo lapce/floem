@@ -1,11 +1,11 @@
 //! `StyleDebugViewExt` — the inspector entry point for rendering a `Style`
 //! as a tree of debug rows.
 //!
-//! This is an extension trait rather than an inherent method on `Style` so
-//! that `Style` itself can eventually move into `floem_style` (which doesn't
-//! know about `View` or the widget layer). The implementation body continues
-//! to live in `src/style/values.rs` alongside the `style_debug_*` helper
-//! functions it drives.
+//! This is an extension trait rather than an inherent method because [`Style`]
+//! lives in `floem_style` (which has no `View` or widget layer), so the orphan
+//! rule prevents inherent impls here. The implementation body lives in
+//! `src/style/values.rs` alongside the `style_debug_*` helper functions it
+//! drives.
 
 use crate::View;
 use crate::style::Style;
