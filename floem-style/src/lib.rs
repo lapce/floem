@@ -27,7 +27,9 @@ pub mod responsive;
 pub mod selectors;
 pub mod sink;
 pub mod style;
-pub mod style_macros;
+// Holds only `#[macro_export]` macros, which surface at the crate root;
+// no user needs to name this module directly.
+pub(crate) mod style_macros;
 pub mod style_value;
 pub mod transition;
 pub mod unit;
