@@ -1389,14 +1389,21 @@ impl WindowState {
                 .unwrap_or_default();
             let has_selectors = self.style_tree.has_style_selectors(style_node);
 
+            let new_cursor = computed.builtin().cursor();
             let state = view_id.state();
             let mut vs = state.borrow_mut();
+            let cursor_changed = vs.style_storage.style_cursor != new_cursor;
             vs.style_storage.combined_style = combined;
             vs.style_storage.computed_style = computed;
             vs.style_storage.style_cx = inherited_cx;
             vs.style_storage.class_cx = class_cx;
             vs.style_storage.style_interaction_cx = post_interact;
             vs.style_storage.has_style_selectors = has_selectors;
+            if cursor_changed {
+                vs.style_storage.style_cursor = new_cursor;
+                drop(vs);
+                self.needs_cursor_resolution = true;
+            }
         }
     }
 

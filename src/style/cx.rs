@@ -289,12 +289,6 @@ impl<'a> StyleCx<'a> {
                 if box_tree_changed {
                     view_id.request_box_tree_update_for_view();
                 }
-
-                let old_cursor = vs.style_storage.style_cursor;
-                if old_cursor != computed.builtin().cursor() {
-                    vs.style_storage.style_cursor = computed.builtin().cursor();
-                    self.window_state.mark_needs_cursor_resolution();
-                }
             }
 
             if transitioning {
