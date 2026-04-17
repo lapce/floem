@@ -311,3 +311,210 @@ pub(crate) fn extract_responsive_selectors(style: &mut Style) -> Option<Responsi
         .map(|rc| take_any::<ResponsiveSelectors>(rc).0)
 }
 
+#[cfg(test)]
+mod tests {
+    //! Standalone cascade tests exercising `floem_style` without any floem/view
+    //! scaffolding. These validate that the extracted engine can resolve
+    //! nested selector maps, classes, and structural selectors using only
+    //! the crate's public API.
+
+    use super::*;
+    use crate::builtin_props::{Background, Disabled, FontSize, TextColor};
+    use crate::props::StyleClass;
+    use crate::style_class;
+    use peniko::color::palette::css;
+
+    fn default_bp() -> ScreenSizeBp {
+        ScreenSizeBp::Xs
+    }
+
+    fn empty_state() -> InteractionState {
+        InteractionState::default()
+    }
+
+    #[test]
+    fn plain_style_passes_through_with_no_selectors() {
+        let style = Style::new().background(css::RED);
+        let mut state = empty_state();
+        let (resolved, selectors) = resolve_nested_maps(
+            style,
+            &mut state,
+            default_bp(),
+            &[],
+            &Style::new(),
+            &Style::new(),
+        );
+        assert_eq!(resolved.get(Background), Some(css::RED.into()));
+        assert!(selectors.is_empty());
+    }
+
+    #[test]
+    fn hover_nested_map_applies_when_hovered() {
+        let style = Style::new()
+            .background(css::RED)
+            .hover(|s| s.background(css::BLUE));
+
+        // Not hovered → base background wins.
+        let mut state = empty_state();
+        let (resolved, _) = resolve_nested_maps(
+            style.clone(),
+            &mut state,
+            default_bp(),
+            &[],
+            &Style::new(),
+            &Style::new(),
+        );
+        assert_eq!(resolved.get(Background), Some(css::RED.into()));
+
+        // Hovered → hover nested map overrides.
+        let mut state = InteractionState {
+            is_hovered: true,
+            ..Default::default()
+        };
+        let (resolved, selectors) = resolve_nested_maps(
+            style,
+            &mut state,
+            default_bp(),
+            &[],
+            &Style::new(),
+            &Style::new(),
+        );
+        assert_eq!(resolved.get(Background), Some(css::BLUE.into()));
+        assert!(selectors.has(StyleSelector::Hover));
+    }
+
+    #[test]
+    fn disabled_selector_short_circuits_hover() {
+        let style = Style::new()
+            .background(css::RED)
+            .hover(|s| s.background(css::BLUE))
+            .disabled(|s| s.background(css::GRAY));
+
+        // Both hovered and disabled → cascade enters the disabled branch and
+        // skips hover (matching resolve_selectors' design).
+        let mut state = InteractionState {
+            is_hovered: true,
+            is_disabled: true,
+            ..Default::default()
+        };
+        let (resolved, _) = resolve_nested_maps(
+            style,
+            &mut state,
+            default_bp(),
+            &[],
+            &Style::new(),
+            &Style::new(),
+        );
+        assert_eq!(resolved.get(Background), Some(css::GRAY.into()));
+    }
+
+    #[test]
+    fn inherited_prop_resolves_from_context() {
+        let inherited = Style::new().set(TextColor, Some(css::RED));
+        let style = Style::new();
+        let mut state = empty_state();
+        let (resolved, _) = resolve_nested_maps(
+            style,
+            &mut state,
+            default_bp(),
+            &[],
+            &inherited,
+            &Style::new(),
+        );
+        // TextColor is inherited, so resolved should pick it up from the inherited context.
+        assert_eq!(resolved.get(TextColor), Some(css::RED));
+    }
+
+    #[test]
+    fn class_application_merges_class_map_into_result() {
+        style_class!(pub MyClass);
+
+        let class_ctx = Style::new().class(MyClass, |s| s.background(css::GREEN));
+        let base = Style::new().background(css::RED);
+        let mut state = empty_state();
+        let (resolved, _) = resolve_nested_maps(
+            base,
+            &mut state,
+            default_bp(),
+            &[MyClass::class_ref()],
+            &Style::new(),
+            &class_ctx,
+        );
+        // Class resolves first, then base overrides with RED (later application wins).
+        assert_eq!(resolved.get(Background), Some(css::RED.into()));
+    }
+
+    #[test]
+    fn nested_hover_inside_class_applies_when_hovered() {
+        style_class!(pub ButtonClass);
+
+        let class_ctx = Style::new().class(ButtonClass, |s| {
+            s.background(css::RED).hover(|s| s.background(css::BLUE))
+        });
+
+        let base = Style::new();
+
+        // Not hovered → class background wins.
+        let mut state = empty_state();
+        let (resolved, _) = resolve_nested_maps(
+            base.clone(),
+            &mut state,
+            default_bp(),
+            &[ButtonClass::class_ref()],
+            &Style::new(),
+            &class_ctx,
+        );
+        assert_eq!(resolved.get(Background), Some(css::RED.into()));
+
+        // Hovered → hover nested inside class applies.
+        let mut state = InteractionState {
+            is_hovered: true,
+            ..Default::default()
+        };
+        let (resolved, _) = resolve_nested_maps(
+            base,
+            &mut state,
+            default_bp(),
+            &[ButtonClass::class_ref()],
+            &Style::new(),
+            &class_ctx,
+        );
+        assert_eq!(resolved.get(Background), Some(css::BLUE.into()));
+    }
+
+    #[test]
+    fn inherited_font_size_survives_cascade() {
+        let inherited = Style::new().set(FontSize, 20.0);
+        let style = Style::new().background(css::RED);
+        let mut state = empty_state();
+        let (resolved, _) = resolve_nested_maps(
+            style,
+            &mut state,
+            default_bp(),
+            &[],
+            &inherited,
+            &Style::new(),
+        );
+        assert_eq!(resolved.get(FontSize), 20.0);
+    }
+
+    #[test]
+    fn disabled_prop_on_style_enables_disabled_selector() {
+        // Even without interact_state.is_disabled, setting Disabled=true in the
+        // style itself opens the :disabled branch.
+        let style = Style::new()
+            .set(Disabled, true)
+            .background(css::RED)
+            .disabled(|s| s.background(css::GRAY));
+        let mut state = empty_state();
+        let (resolved, _) = resolve_nested_maps(
+            style,
+            &mut state,
+            default_bp(),
+            &[],
+            &Style::new(),
+            &Style::new(),
+        );
+        assert_eq!(resolved.get(Background), Some(css::GRAY.into()));
+    }
+}
