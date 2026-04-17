@@ -12,7 +12,7 @@ use crate::{
     style::{
         Background, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
         BorderLeftColor, BorderRightColor, BorderTopColor, BorderTopLeftRadius,
-        BorderTopRightRadius, BoxShadowProp, CursorStyle, InheritedInteractionCx, Outline,
+        BorderTopRightRadius, BoxShadowProp, CursorStyle, Outline,
         OutlineColor, Style, StyleClassRef, StyleStorage, recalc::StyleReason,
     },
     view::LayoutTree,
@@ -372,11 +372,6 @@ impl ViewState {
         interact_state.is_hidden |= combined.builtin().display() == taffy::Display::None;
         interact_state.is_selected |= combined.builtin().set_selected();
         interact_state.is_disabled |= combined.builtin().set_disabled();
-        self.style_storage.post_compute_combined_interaction = InheritedInteractionCx {
-            hidden: combined.builtin().display() == taffy::Display::None,
-            selected: combined.builtin().set_selected(),
-            disabled: combined.builtin().set_disabled(),
-        };
 
         self.style_storage.combined_style = combined;
 
