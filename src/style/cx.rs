@@ -259,12 +259,12 @@ impl<'a> StyleCx<'a> {
         //
         // The `StyleTree` cascade already computed combined_style,
         // computed_style, inherited_context, and class_context for this
-        // node (see `WindowState::run_style_cascade`), and propagated
-        // dirty flags to children whose inherited/class context
-        // changed. Here we just plumb the fresh storage into StyleCx so
-        // `view.style_pass` callbacks see the right values, and fix up
-        // the window-level `fixed_element` registry + record the new
-        // `style_interaction_cx` for next pass's change-detection.
+        // node (see `WindowState::run_style_cascade`), propagated dirty
+        // flags to children whose inherited/class context changed, and
+        // updated the fixed-element registry. Here we just plumb the
+        // fresh storage into StyleCx so `view.style_pass` callbacks see
+        // the right values, and record the new `style_interaction_cx`
+        // for next pass's change-detection.
         // ─────────────────────────────────────────────────────────────────────
         {
             let mut vs = view_state.borrow_mut();
@@ -277,22 +277,6 @@ impl<'a> StyleCx<'a> {
                 selected: self.view_interact_state.is_selected,
                 hidden: self.view_interact_state.is_hidden,
             };
-        }
-
-        if did_refresh_style {
-            let is_fixed = view_state
-                .borrow()
-                .style_storage
-                .computed_style
-                .builtin()
-                .is_fixed();
-            if is_fixed {
-                self.window_state
-                    .register_fixed_element(view_id.get_element_id());
-            } else {
-                self.window_state
-                    .unregister_fixed_element(view_id.get_element_id());
-            }
         }
 
         if self.reason.needs_property_extraction() {

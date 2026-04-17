@@ -541,6 +541,12 @@ impl StyleTree {
         computed_style.apply_mut(&combined_style);
         let computed_style = computed_style.with_inherited_context(&parent_inherited);
 
+        if computed_style.builtin().is_fixed() {
+            sink.register_fixed_element(element_id);
+        } else {
+            sink.unregister_fixed_element(element_id);
+        }
+
         // Derive the inherited + class contexts children will see.
         let mut new_inherited = parent_inherited.clone();
         Style::apply_only_inherited(&mut new_inherited, &combined_style);
