@@ -303,3 +303,106 @@ impl<T: StylePropValue> DirectTransition<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! Standalone transition tests exercising the interpolation machinery
+    //! without any floem/view scaffolding.
+
+    use super::*;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn instant_plus(base: Instant, millis: u64) -> Instant {
+        base + Duration::from_millis(millis)
+    }
+    #[cfg(target_arch = "wasm32")]
+    fn instant_plus(base: Instant, millis: u64) -> Instant {
+        base + Duration::from_millis(millis)
+    }
+
+    #[test]
+    fn no_transition_set_ignores_trigger() {
+        let mut state: TransitionState<f64> = TransitionState::default();
+        state.initial = true; // bypass first-read gate
+        state.transition(&0.0, &100.0);
+        assert!(
+            state.active.is_none(),
+            "TransitionState::transition should not activate when no transition is configured"
+        );
+        assert_eq!(state.get(&100.0), 100.0);
+    }
+
+    #[test]
+    fn first_read_does_not_animate_initial_value() {
+        // The `initial` flag exists so the very first value observation does not
+        // fire a spurious transition (e.g. baseline→default on mount).
+        let mut state: TransitionState<f64> = TransitionState::default();
+        state.read(Some(Transition::linear(Duration::from_millis(100))));
+        state.transition(&0.0, &100.0);
+        assert!(
+            state.active.is_none(),
+            "initial transition() call should be suppressed until initial is observed"
+        );
+    }
+
+    #[test]
+    fn linear_transition_midpoint_is_interpolated() {
+        let mut state: DirectTransition<f64> =
+            DirectTransition::new(0.0, Some(Transition::linear(Duration::from_millis(100))));
+        let started = Instant::now();
+        // Trigger transition 0 → 100.
+        assert!(state.transition_to(100.0));
+        assert!(state.is_active());
+
+        // Step forward to ~50% of the duration.
+        let mid = instant_plus(started, 50);
+        let _changed = state.step(&mid);
+        let current = state.get();
+        assert!(
+            (30.0..=70.0).contains(&current),
+            "midpoint value should lie between before/after, got {current}"
+        );
+    }
+
+    #[test]
+    fn linear_transition_completes_at_target() {
+        let mut state: DirectTransition<f64> =
+            DirectTransition::new(0.0, Some(Transition::linear(Duration::from_millis(50))));
+        let started = Instant::now();
+        state.transition_to(100.0);
+
+        // Step past duration — transition should clear and `get` returns the target.
+        let after = instant_plus(started, 200);
+        state.step(&after);
+        assert!(!state.is_active());
+        assert_eq!(state.get(), 100.0);
+    }
+
+    #[test]
+    fn direct_transition_reports_progress() {
+        let mut state: DirectTransition<f64> =
+            DirectTransition::new(0.0, Some(Transition::linear(Duration::from_millis(100))));
+        let started = Instant::now();
+        state.transition_to(100.0);
+
+        let quarter = instant_plus(started, 25);
+        let prog = state.progress(&quarter).unwrap();
+        assert!(
+            (0.15..=0.40).contains(&prog),
+            "quarter-elapsed progress should be roughly 0.25, got {prog}"
+        );
+    }
+
+    #[test]
+    fn set_immediate_cancels_active_transition() {
+        let mut state: DirectTransition<f64> =
+            DirectTransition::new(0.0, Some(Transition::linear(Duration::from_millis(100))));
+        state.transition_to(100.0);
+        assert!(state.is_active());
+
+        state.set_immediate(42.0);
+        assert!(!state.is_active());
+        assert_eq!(state.get(), 42.0);
+    }
+
+}
