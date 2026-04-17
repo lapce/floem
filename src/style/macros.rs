@@ -8,24 +8,6 @@
 //! resolves from `floem`.
 
 #[macro_export]
-macro_rules! style_class {
-    ($(#[$meta:meta])* $v:vis $name:ident) => {
-        $(#[$meta])*
-        #[derive(Default, Copy, Clone)]
-        $v struct $name;
-
-        impl $crate::style::StyleClass for $name {
-            fn key() -> $crate::style::StyleKey {
-                static INFO: $crate::style::StyleKeyInfo = $crate::style::StyleKeyInfo::Class(
-                    $crate::style::StyleClassInfo::new::<$name>()
-                );
-                $crate::style::StyleKey { info: &INFO }
-            }
-        }
-    };
-}
-
-#[macro_export]
 macro_rules! style_debug_group {
     ($(#[$meta:meta])* $v:vis $name:ident $(, inherited = $inherited:ident)?, members = [$($prop:ty),* $(,)?], view = $view:path) => {
         $(#[$meta])*

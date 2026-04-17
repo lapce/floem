@@ -8,14 +8,12 @@
 //! - [`StylePropInfo`] / [`StyleClassInfo`] / [`StyleDebugGroupInfo`] —
 //!   reflective metadata for each kind of key.
 //!
-//! The accompanying macros (`prop!`, `prop_extractor!`, `style_class!`,
-//! `style_debug_group!`) live in the `floem` crate so they can embed
-//! `$crate::views::Label` fallbacks for debug views. Those macros construct
-//! the types below directly, which is why `StylePropInfo`'s fields are
-//! `pub` rather than hidden behind a `new` constructor: the bodies of
-//! `StylePropInfo::new` would need to reference `StyleMapValue<T>` (which
-//! holds a `ContextValue<T>` that evaluates against `Style`), but `Style`
-//! lives in `floem` proper.
+//! The `style_class!` macro lives alongside [`StyleClass`] in this module.
+//! Other accompanying macros (`prop!`, `prop_extractor!`,
+//! `style_debug_group!`) still live in the `floem` crate because they
+//! reference `floem::style::Style` directly; once `Style` moves here they
+//! can follow. `StylePropInfo`'s fields are `pub` rather than hidden
+//! behind a `new` constructor because those macros construct it directly.
 
 use std::any::Any;
 use std::fmt::{self, Debug};
@@ -34,6 +32,29 @@ pub trait StyleClass: Default + Copy + 'static {
     fn class_ref() -> StyleClassRef {
         StyleClassRef { key: Self::key() }
     }
+}
+
+/// Declare a style class marker type.
+///
+/// Expands to a zero-sized struct that implements [`StyleClass`] by installing
+/// a unique `'static` [`StyleKeyInfo::Class`] and returning a [`StyleKey`]
+/// pointing at it.
+#[macro_export]
+macro_rules! style_class {
+    ($(#[$meta:meta])* $v:vis $name:ident) => {
+        $(#[$meta])*
+        #[derive(Default, Copy, Clone)]
+        $v struct $name;
+
+        impl $crate::StyleClass for $name {
+            fn key() -> $crate::StyleKey {
+                static INFO: $crate::StyleKeyInfo = $crate::StyleKeyInfo::Class(
+                    $crate::StyleClassInfo::new::<$name>()
+                );
+                $crate::StyleKey { info: &INFO }
+            }
+        }
+    };
 }
 
 /// A trait for defining a logical grouping of [`StyleProp`] entries for the
