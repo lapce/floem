@@ -22,7 +22,7 @@ use peniko::{Brush, Color, Gradient, GradientKind, LinearGradientPosition};
 use taffy::prelude::{auto, fr};
 
 use crate::prelude::ViewTuple;
-use crate::style::values::views;
+use crate::style::debug_view_impl::views;
 use crate::style::{CursorStyle, FontSizeCx, ObjectFit, ObjectPosition};
 use crate::theme::{StyleThemeExt, Theme};
 use crate::view::{IntoView, View};

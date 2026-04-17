@@ -1,8 +1,9 @@
-//! Style-debug view impls for floem `Style`.
+//! Inspector debug-view implementation for [`Style`].
 //!
-//! `ContextValue<T>`, `StyleMapValue<T>`, and `StyleValue<T>` now live in the
-//! `floem_style` crate; they are re-exported from `crate::style` for
-//! compatibility.
+//! Builds the tabbed properties/selectors/classes tree shown in the Floem
+//! inspector. Counterpart to [`super::inspector_render_impl`] — that file
+//! implements per-prop previews via the `InspectorRender` trait, while this
+//! file assembles those previews into the top-level style debug view.
 
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
 use std::collections::HashSet;

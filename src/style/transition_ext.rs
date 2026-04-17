@@ -101,13 +101,13 @@ impl TransitionDebugViewExt for floem_style::Transition {
         let tooltip_view = move || {
             let transition = transition.clone();
 
-            let duration_row = super::values::views((
+            let duration_row = super::debug_view_impl::views((
                 "Duration:".style(|s| s.font_bold().min_width(80.0).justify_end()),
                 Label::derived(move || format!("{:.0}ms", transition.duration.as_millis())),
             ));
 
             let easing_name = format!("{:?}", transition.easing);
-            let easing_row = super::values::views((
+            let easing_row = super::debug_view_impl::views((
                 "Easing:".style(|s| s.font_bold().min_width(80.0).justify_end()),
                 Label::derived(move || easing_name.clone()),
             ));
@@ -125,7 +125,7 @@ impl TransitionDebugViewExt for floem_style::Transition {
                     .collect::<Vec<_>>();
 
                 if !samples.is_empty() {
-                    Some(super::values::views((
+                    Some(super::debug_view_impl::views((
                         "Velocity:".style(|s| s.font_bold().min_width(80.0).justify_end()),
                         Stack::vertical_from_iter(samples).style(|s| s.gap(2.0)),
                     )))

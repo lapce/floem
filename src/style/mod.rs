@@ -150,8 +150,8 @@ mod sink;
 mod storage;
 mod style_debug_ext;
 pub mod theme;
+mod debug_view_impl;
 mod transition_ext;
-mod values;
 
 // Re-export modules moved to the `floem_style` crate so the `floem::style::*`
 // API surface remains stable for downstream users.
