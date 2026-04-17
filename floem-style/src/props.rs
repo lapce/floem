@@ -151,6 +151,13 @@ pub type EqAnyFn = fn(val1: &dyn Any, val2: &dyn Any) -> bool;
 /// concrete `Style` type lives in `floem`.
 pub type ResolveInheritedAnyFn = fn(val: &dyn Any, style: &dyn Any) -> Rc<dyn Any>;
 
+/// Function pointer type for rendering a property's inspector preview. The
+/// renderer is passed as `&dyn InspectorRender` so hosts can provide their
+/// own widget-building logic; the returned value is type-erased as
+/// `Box<dyn Any>` and downcast by the caller to the host's view type.
+pub type DebugViewFn =
+    fn(val: &dyn Any, r: &dyn crate::InspectorRender) -> Option<Box<dyn Any>>;
+
 #[derive(Debug)]
 pub struct StylePropInfo {
     pub name: fn() -> &'static str,
@@ -164,7 +171,7 @@ pub struct StylePropInfo {
     /// Takes `&dyn InspectorRender` so the renderer is chosen by the caller,
     /// keeping this crate free of view-layer dependencies. Floem hosts pass
     /// their concrete `FloemInspectorRender`; other hosts can pass their own.
-    pub debug_view: fn(val: &dyn Any, r: &dyn crate::InspectorRender) -> Option<Box<dyn Any>>,
+    pub debug_view: DebugViewFn,
     pub transition_key: StyleKey,
     /// Computes a content-based hash for a style value.
     pub hash_any: HashAnyFn,

@@ -1154,11 +1154,10 @@ impl Style {
     /// Applies a shadow for the stylized view. Use [BoxShadow] builder
     /// to construct each shadow.
     /// ```rust
-    /// use floem::prelude::*;
-    /// use floem::prelude::palette::css;
-    /// use floem::style::BoxShadow;
+    /// use floem_style::{BoxShadow, Style};
+    /// use peniko::color::palette::css;
     ///
-    /// empty().style(|s| s.apply_box_shadows(vec![
+    /// let _ = Style::new().apply_box_shadows(vec![
     ///    BoxShadow::new()
     ///        .color(css::BLACK)
     ///        .top_offset(5.)
@@ -1167,21 +1166,21 @@ impl Style {
     ///        .left_offset(10.)
     ///        .blur_radius(5.)
     ///        .spread(10.)
-    /// ]));
+    /// ]);
     /// ```
     /// ### Info
     /// If you only specify one shadow on the view, use standard style methods directly
     /// on [Style] struct:
     /// ```rust
-    /// use floem::prelude::*;
-    /// empty().style(|s| s
+    /// use floem_style::Style;
+    ///
+    /// let _ = Style::new()
     ///     .box_shadow_top_offset(-5.)
     ///     .box_shadow_bottom_offset(30.)
     ///     .box_shadow_right_offset(20.)
     ///     .box_shadow_left_offset(-10.)
     ///     .box_shadow_spread(1.)
-    ///     .box_shadow_blur(3.)
-    /// );
+    ///     .box_shadow_blur(3.);
     /// ```
     pub fn apply_box_shadows(self, shadow: impl Into<SmallVec<[BoxShadow; 3]>>) -> Self {
         self.set(BoxShadowProp, shadow.into())
@@ -1327,10 +1326,10 @@ impl Style {
     ///
     /// # Example
     /// ```rust
-    /// use floem::style::Style;
+    /// use floem_style::Style;
     ///
     /// // Create a full-screen overlay
-    /// Style::new().fixed().inset(0.0);
+    /// let _ = Style::new().fixed().inset(0.0);
     /// ```
     pub fn fixed(self) -> Self {
         self.position(taffy::style::Position::Absolute)

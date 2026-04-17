@@ -13,8 +13,13 @@
 use std::any::Any;
 use std::rc::Rc;
 
+/// Erased evaluator closure stored inside [`ContextValue`]. The host-specific
+/// style type is erased behind `&dyn Any` so this crate does not depend on
+/// any concrete `Style`.
+pub type ContextEvalFn<T> = Rc<dyn Fn(&dyn Any) -> T>;
+
 pub struct ContextValue<T> {
-    pub(crate) eval: Rc<dyn Fn(&dyn Any) -> T>,
+    pub(crate) eval: ContextEvalFn<T>,
 }
 
 impl<T> Clone for ContextValue<T> {

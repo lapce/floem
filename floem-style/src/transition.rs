@@ -322,8 +322,7 @@ mod tests {
 
     #[test]
     fn no_transition_set_ignores_trigger() {
-        let mut state: TransitionState<f64> = TransitionState::default();
-        state.initial = true; // bypass first-read gate
+        let mut state: TransitionState<f64> = initial_state();
         state.transition(&0.0, &100.0);
         assert!(
             state.active.is_none(),
@@ -343,6 +342,14 @@ mod tests {
             state.active.is_none(),
             "initial transition() call should be suppressed until initial is observed"
         );
+    }
+
+    fn initial_state<T: StylePropValue>() -> TransitionState<T> {
+        // Bypass the first-read gate so `transition()` activates on first call.
+        TransitionState {
+            initial: true,
+            ..Default::default()
+        }
     }
 
     #[test]

@@ -29,7 +29,7 @@ pub struct InteractionState {
     /// active: pointer down and not up with the pointer in the element either by
     ///   1. remaining in, or
     ///   2. returning into the element
-    /// or keyboard trigger is down.
+    ///      or keyboard trigger is down.
     pub is_active: bool,
     /// Whether dark mode is enabled.
     pub is_dark_mode: bool,
