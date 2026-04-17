@@ -19,7 +19,7 @@ use crate::{
     prelude::*,
     style::{
         BorderRadius, FontSizeCx, Length, LengthAuto, OverflowX, OverflowY, StrokeWrap, Style,
-        StyleCx, StyleDebugViewExt, StyleThemeExt, TextColor,
+        StyleDebugViewExt, StyleThemeExt, TextColor,
     },
 };
 
@@ -585,11 +585,6 @@ pub struct CaptureState {
 }
 
 impl CaptureState {
-    pub(crate) fn capture_style(id: ViewId, cx: &mut StyleCx, computed_style: Style) {
-        cx.window_state
-            .inspector_capture_style(id.get_element_id(), &computed_style);
-    }
-
     pub(crate) fn record_computed_style(&mut self, id: ViewId, style: Style) {
         self.computed_styles.insert(id, style);
     }

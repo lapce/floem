@@ -17,7 +17,6 @@ use web_time::Instant;
 use crate::{
     ElementId,
     animate::{AnimStateKind, RepeatMode},
-    inspector::CaptureState,
     style::{
         StyleClassRef,
         recalc::{StyleReason, StyleReasonFlags},
@@ -303,8 +302,6 @@ impl<'a> StyleCx<'a> {
                     .schedule_style(view_id.get_element_id(), StyleReason::transition());
             }
         }
-
-        CaptureState::capture_style(view_id, self, view_state.borrow().style_storage.computed_style.clone());
 
         if did_refresh_style || self.reason.has_transition() || self.reason.has_visiblity() {
             // ─────────────────────────────────────────────────────────────────────
