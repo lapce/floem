@@ -14,8 +14,7 @@ use std::time::Instant;
 use web_time::Instant;
 
 use super::Style;
-use super::values::StyleValue;
-use floem_style::TransitionState;
+use floem_style::{StyleValue, TransitionState};
 
 pub use floem_style::props::{StyleClass, StyleClassInfo, StyleClassRef};
 pub use floem_style::props::{StyleDebugGroup, StyleDebugGroupInfo, StyleDebugGroupRef};

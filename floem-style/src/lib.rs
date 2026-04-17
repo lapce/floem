@@ -8,6 +8,7 @@
 //! traits this crate exposes.
 
 pub mod components;
+pub mod context_value;
 pub mod debug_view;
 pub mod design_system;
 pub mod easing;
@@ -19,6 +20,7 @@ pub mod props;
 pub mod recalc;
 pub mod responsive;
 pub mod selectors;
+pub mod style_value;
 pub mod transition;
 pub mod unit;
 pub mod value_impls;
@@ -26,6 +28,7 @@ pub mod values;
 pub mod visibility;
 
 pub use components::{Border, BorderColor, BorderRadius, BoxShadow, Margin, Padding};
+pub use context_value::ContextValue;
 pub use debug_view::PropDebugView;
 pub use design_system::DesignSystem;
 pub use easing::{Bezier, Easing, Linear, Spring, Step, StepPosition};
@@ -33,6 +36,7 @@ pub use element_id::ElementId;
 pub use inspector_render::InspectorRender;
 pub use interaction::{InheritedInteractionCx, InteractionState};
 pub use prop_value::StylePropValue;
+pub use style_value::{StyleMapValue, StyleValue};
 pub use props::{
     EqAnyFn, HashAnyFn, InterpolateFn, ResolveInheritedAnyFn, StyleClass, StyleClassInfo,
     StyleClassRef, StyleDebugGroup, StyleDebugGroupInfo, StyleDebugGroupRef, StyleKey,

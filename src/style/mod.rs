@@ -164,6 +164,7 @@ use crate::{prop, prop_extractor};
 
 mod cache;
 mod components;
+mod context_ext;
 mod custom;
 mod cx;
 mod debug_view;
@@ -185,6 +186,7 @@ pub use floem_style::{recalc, selectors, unit};
 
 pub use components::{CursorStyle, NoWrapOverflow, PointerEvents, TextOverflow};
 pub use floem_style::{Border, BorderColor, BorderRadius, BoxShadow, Margin, Padding};
+pub use context_ext::ContextValueExt;
 pub use custom::{CustomStylable, CustomStyle};
 pub use cx::{InheritedInteractionCx, InteractionState, StyleCx};
 pub use debug_view::{InspectorRender, PropDebugView};
@@ -203,8 +205,8 @@ pub use floem_style::unit::{
     AnchorAbout, Angle, Auto, DurationUnitExt, Em, FontSizeCx, Length, LengthAuto, Lh,
     LineHeightValue, Pct, Pt, UnitExt,
 };
-pub use floem_style::{ObjectFit, ObjectPosition, StrokeWrap};
-pub use values::{ContextValue, StyleMapValue, StylePropValue, StyleValue};
+pub use floem_style::{ContextValue, ObjectFit, ObjectPosition, StrokeWrap, StyleMapValue, StyleValue};
+pub use values::StylePropValue;
 
 pub use cache::{StyleCache, StyleCacheKey};
 
@@ -286,7 +288,7 @@ impl<P: StyleProp> ContextRef<P> {
         P::Type: 'static,
         T: 'static,
     {
-        ContextValue::new(move |style| {
+        ContextValue::new(move |style: &Style| {
             let value = style.get_prop::<P>().unwrap_or_else(P::default_value);
             f(value)
         })
@@ -2564,7 +2566,7 @@ impl Style {
             StyleValue::Context(value) => {
                 self.has_context_values = true;
                 let previous_value = previous_value.clone();
-                StyleMapValue::Context(ContextValue::new(move |style| {
+                StyleMapValue::Context(ContextValue::new(move |style: &Style| {
                     let mut base_style = style.clone();
                     base_style.map_mut().remove(&P::key());
                     // A deferred value for property `P` is allowed to read `P` from context,

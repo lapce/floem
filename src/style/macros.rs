@@ -204,7 +204,9 @@ macro_rules! prop {
                                 $crate::style::StyleMapValue::Val(value.clone())
                             }
                             $crate::style::StyleMapValue::Context(context_value) => {
-                                $crate::style::StyleMapValue::Val(context_value.resolve(style))
+                                $crate::style::StyleMapValue::Val(
+                                    $crate::style::ContextValueExt::resolve(context_value, style),
+                                )
                             }
                             $crate::style::StyleMapValue::Unset => $crate::style::StyleMapValue::Unset,
                         };

@@ -256,6 +256,7 @@ pub use window::{
 pub use app::take_close_window_event_count;
 
 /// Re-export unit and theme modules from style for backward compatibility.
+pub use style::ContextValueExt;
 pub use style::{theme, unit};
 
 pub mod prelude {
