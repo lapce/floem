@@ -545,12 +545,18 @@ impl StyleTree {
             .class_maps_eq(&new_class_cx);
         let class_cx_changed = !changed_classes.is_empty();
 
-        // Propagate only the post-cascade combined-style bits to children.
-        // Sink-queried / parent-override state (e.g. a list item's
-        // `parent_set_style_interaction.selected`) is scoped to THIS view
-        // and shouldn't leak to grandchildren; matches the old
-        // `compute_combined` → `post_compute_combined_interaction` behavior.
-        let new_interaction_cx = post_interact;
+        // Children see the full post-cascade interaction state — combined
+        // style bits OR'd with parent_set_style_interaction and ancestor
+        // context — so e.g. descendants of a list-selected item inherit
+        // the selected bit. Matches floem's old `style_interaction_cx`
+        // write-back. `post_interact` is still stored separately for
+        // cache validation.
+        let new_interaction_cx = InheritedInteractionCx {
+            disabled: interact_state.is_disabled,
+            selected: interact_state.is_selected,
+            hidden: interact_state.is_hidden,
+        };
+        let _ = post_interact;
 
         {
             let node = &mut self.nodes[id];
