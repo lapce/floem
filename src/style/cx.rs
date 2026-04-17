@@ -239,12 +239,6 @@ impl<'a> StyleCx<'a> {
         self.view_interact_state.is_selected |= cached.selected;
         self.view_interact_state.is_disabled |= cached.disabled;
 
-        self.window_state
-            .update_selector_interest(
-                view_id.get_element_id(),
-                view_state.borrow().style_storage.has_style_selectors,
-            );
-
         let mut need_paint = false;
         // ─────────────────────────────────────────────────────────────────────
         // Phase 5: Absorb tree outputs

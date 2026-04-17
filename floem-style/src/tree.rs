@@ -650,6 +650,10 @@ impl StyleTree {
             );
         }
 
+        // Keep the host's window-level selector-interest registry in
+        // sync with this node's resolved selector set.
+        sink.update_selector_interest(element_id, Some(selectors));
+
         // Let the host snapshot the computed style (inspector, tests, etc.).
         let computed_ref = self.nodes[id].computed_style.clone();
         sink.inspector_capture_style(element_id, &computed_ref);
