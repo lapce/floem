@@ -83,26 +83,20 @@ impl<'a> StyleCx<'a> {
         view_id: ViewId,
         reason: StyleReason,
     ) -> Self {
-        // Get the style parent: either custom style_cx_parent or DOM parent
-        let style_parent = view_id
-            .state()
-            .borrow()
-            .style_cx_parent
-            .or_else(|| view_id.parent());
-
-        // Initialize inherited and class contexts separately
-        let (inherited, class_context) = if let Some(parent_id) = style_parent {
-            let parent_state = parent_id.state();
-            let parent_state = parent_state.borrow();
-
-            let inherited_style = parent_state.style_storage.style_cx.clone();
-            let class_ctx = parent_state.style_storage.class_cx.clone();
-
-            (inherited_style, class_ctx)
-        } else {
+        // By the time `StyleCx::new` runs, `WindowHandle::style` has
+        // already driven `run_style_cascade` Pass 3, which mirrored the
+        // tree's outputs (combined / inherited / class context) into
+        // this view's `style_storage`. Read them here so `style_view`
+        // doesn't need a separate plumbing block later and
+        // `view.style_pass` callbacks (`cx.direct_style()`,
+        // `cx.resolve_nested_maps(..)`) see the right values.
+        let (direct, inherited, class_context) = {
+            let state = view_id.state();
+            let vs = state.borrow();
             (
-                window_state.default_theme_inherited().clone(),
-                window_state.default_theme_classes().clone(),
+                vs.style_storage.combined_style.clone(),
+                vs.style_storage.style_cx.clone(),
+                vs.style_storage.class_cx.clone(),
             )
         };
 
@@ -165,7 +159,7 @@ impl<'a> StyleCx<'a> {
             current_view: view_id,
             inherited,
             class_context,
-            direct: Default::default(),
+            direct,
             now,
             view_interact_state,
             reason,
@@ -239,24 +233,6 @@ impl<'a> StyleCx<'a> {
         self.view_interact_state.is_disabled |= cached.disabled;
 
         let mut need_paint = false;
-        // ─────────────────────────────────────────────────────────────────────
-        // Phase 5: Absorb tree outputs
-        //
-        // The `StyleTree` cascade already computed combined_style,
-        // computed_style, inherited_context, and class_context for this
-        // node (see `WindowState::run_style_cascade`), propagated dirty
-        // flags to children whose inherited/class context changed, updated
-        // the fixed-element registry, and dirtied descendants when this
-        // view's hidden/selected/disabled flipped. Here we just plumb
-        // fresh storage values into StyleCx so `view.style_pass`
-        // callbacks see the right values.
-        // ─────────────────────────────────────────────────────────────────────
-        {
-            let vs = view_state.borrow();
-            self.direct = vs.style_storage.combined_style.clone();
-            self.inherited = vs.style_storage.style_cx.clone();
-            self.class_context = vs.style_storage.class_cx.clone();
-        }
 
         if self.reason.needs_property_extraction() {
             // ─────────────────────────────────────────────────────────────────────
