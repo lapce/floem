@@ -31,7 +31,7 @@ pub mod style_macros;
 pub mod style_value;
 pub mod transition;
 pub mod unit;
-pub mod value_impls;
+pub(crate) mod value_impls;
 pub mod values;
 pub mod visibility;
 
