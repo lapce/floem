@@ -32,6 +32,7 @@ pub mod style;
 pub(crate) mod style_macros;
 pub mod style_value;
 pub mod transition;
+pub mod tree;
 pub mod unit;
 pub(crate) mod value_impls;
 pub mod values;
@@ -81,6 +82,7 @@ pub use sink::StyleSink;
 pub use style::{BuiltinStyle, ContextRef, DeferredStyleEffect, ExprStyle, Style};
 pub use style_value::{StyleMapValue, StyleValue};
 pub use transition::{ActiveTransition, DirectTransition, Transition, TransitionState};
+pub use tree::{StyleNode, StyleNodeId, StyleTree};
 pub use value_impls::AffineLerp;
 pub use values::{
     CursorStyle, Focus, NoWrapOverflow, ObjectFit, ObjectPosition, PointerEvents, StrokeWrap,

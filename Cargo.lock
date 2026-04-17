@@ -1901,6 +1901,7 @@ dependencies = [
  "paste",
  "peniko",
  "rustc-hash 2.1.1",
+ "slotmap",
  "smallvec",
  "taffy",
  "understory_box_tree",

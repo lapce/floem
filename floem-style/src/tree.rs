@@ -1,0 +1,615 @@
+//! Engine-owned style tree — the host-agnostic counterpart to Taffy's layout
+//! tree.
+//!
+//! A [`StyleTree`] stores one [`StyleNode`] per styled element, carrying the
+//! node's direct style, applied classes, cached cascade outputs, and the
+//! parent/child edges needed for selector matching (`:first-child`,
+//! `:nth-child`, cascade propagation).
+//!
+//! Hosts (floem, future floem-native) keep a mapping from their own id type
+//! (e.g. `ViewId`) to [`StyleNodeId`] and push state changes here:
+//!
+//! ```text
+//! host creates view   → tree.new_node(element_id)
+//! host adds child     → tree.set_parent(child, parent)
+//!                     → tree.set_children(parent, &[...])
+//! host sets style     → tree.set_direct_style(node, style)
+//! host marks dirty    → tree.mark_dirty(node, reason)
+//! host runs pass      → tree.compute_style(root, &mut sink)    (Phase 1b)
+//! host reads result   → tree.computed_style(node)
+//! ```
+//!
+//! Phase 1a (this commit) provides the storage and CRUD surface. The
+//! cascade routine that populates computed-style caches lands in Phase 1b.
+
+use smallvec::SmallVec;
+use slotmap::{SlotMap, new_key_type};
+
+use crate::cascade::resolve_nested_maps;
+use crate::element_id::ElementId;
+use crate::interaction::{InheritedInteractionCx, InteractionState};
+use crate::props::StyleClassRef;
+use crate::recalc::StyleReason;
+use crate::selectors::StyleSelectors;
+use crate::sink::StyleSink;
+use crate::style::Style;
+
+new_key_type! {
+    /// Identity of a node inside a [`StyleTree`]. Dense key backed by
+    /// [`slotmap`]; stable across removals within the same tree but not
+    /// across trees.
+    pub struct StyleNodeId;
+}
+
+/// Per-element state owned by the style engine.
+///
+/// Most fields are caches populated by `compute_style`. Host-pushed inputs
+/// are [`direct_style`](Self::direct_style), [`classes`](Self::classes), the
+/// parent/children edges, and
+/// [`parent_set_style_interaction`](Self::parent_set_style_interaction).
+#[derive(Debug, Clone)]
+pub struct StyleNode {
+    /// Host-side identity for this node, used when the cascade needs to
+    /// query the sink (`is_hovered(element_id)`, etc.) or emit per-element
+    /// callbacks (`request_paint(element_id)`).
+    pub element_id: ElementId,
+
+    // ── Tree edges ──────────────────────────────────────────────────────
+    pub(crate) parent: Option<StyleNodeId>,
+    pub(crate) children: Vec<StyleNodeId>,
+
+    // ── Host-pushed inputs ──────────────────────────────────────────────
+    /// Style set directly on this node via the `.style(...)` setter.
+    pub direct_style: Style,
+    /// Classes applied to this node via `.class(...)` / `.apply_class(...)`.
+    pub classes: SmallVec<[StyleClassRef; 4]>,
+    /// Interaction overrides pushed by a parent (e.g. "force-disable
+    /// descendants"). OR'd with inherited parent state during cascade.
+    pub parent_set_style_interaction: InheritedInteractionCx,
+
+    // ── Cascade outputs (populated by compute_style — Phase 1b) ────────
+    /// Resolved style after class + selector merging, without inherited
+    /// properties from ancestors. Used for cache keys and child
+    /// propagation.
+    pub(crate) combined_style: Style,
+    /// Final style including inherited properties. This is what prop
+    /// extractors read.
+    pub(crate) computed_style: Style,
+    /// Inherited-only slice of this node's computed style. Passed to
+    /// children as their inherited context. Populated by Phase 1b cascade;
+    /// unused in Phase 1a.
+    #[allow(dead_code)]
+    pub(crate) inherited_context: Style,
+    /// Class-map-only slice of this node's direct style. Passed to
+    /// children as their class context. Populated by Phase 1b cascade;
+    /// unused in Phase 1a.
+    #[allow(dead_code)]
+    pub(crate) class_context: Style,
+    /// Interaction cx after resolving — becomes the inherited cx for
+    /// children.
+    pub(crate) style_interaction_cx: InheritedInteractionCx,
+    /// Selectors present in this node's style tree, cached for fast-path
+    /// dirty propagation.
+    pub(crate) has_style_selectors: Option<StyleSelectors>,
+
+    // ── Dirty bookkeeping ──────────────────────────────────────────────
+    /// Why this node (or a subtree rooted here) is pending recomputation.
+    /// Empty means the caches are up to date.
+    pub(crate) dirty: StyleReason,
+}
+
+impl StyleNode {
+    fn new(element_id: ElementId) -> Self {
+        Self {
+            element_id,
+            parent: None,
+            children: Vec::new(),
+            direct_style: Style::new(),
+            classes: SmallVec::new(),
+            parent_set_style_interaction: InheritedInteractionCx::default(),
+            combined_style: Style::new(),
+            computed_style: Style::new(),
+            inherited_context: Style::new(),
+            class_context: Style::new(),
+            style_interaction_cx: InheritedInteractionCx::default(),
+            has_style_selectors: None,
+            dirty: StyleReason::style_pass(),
+        }
+    }
+
+    pub fn parent(&self) -> Option<StyleNodeId> {
+        self.parent
+    }
+
+    pub fn children(&self) -> &[StyleNodeId] {
+        &self.children
+    }
+}
+
+/// Engine-owned slotmap of [`StyleNode`]s. Cheap to clone if you need a
+/// snapshot (nodes are plain data). Typical use is a single long-lived
+/// instance per host window.
+#[derive(Default, Debug)]
+pub struct StyleTree {
+    nodes: SlotMap<StyleNodeId, StyleNode>,
+}
+
+impl StyleTree {
+    pub fn new() -> Self {
+        Self {
+            nodes: SlotMap::with_key(),
+        }
+    }
+
+    /// Allocate a new orphan node tied to `element_id`. The node has no
+    /// parent and no children until a setter is called.
+    pub fn new_node(&mut self, element_id: ElementId) -> StyleNodeId {
+        self.nodes.insert(StyleNode::new(element_id))
+    }
+
+    /// Remove a node. Detaches from its parent's child list and clears
+    /// each child's `parent` pointer (children are NOT recursively removed
+    /// — hosts are responsible for removing subtrees explicitly).
+    pub fn remove_node(&mut self, id: StyleNodeId) -> Option<StyleNode> {
+        let node = self.nodes.remove(id)?;
+        if let Some(parent) = node.parent
+            && let Some(parent_node) = self.nodes.get_mut(parent)
+        {
+            parent_node.children.retain(|c| *c != id);
+        }
+        for child in &node.children {
+            if let Some(child_node) = self.nodes.get_mut(*child) {
+                child_node.parent = None;
+            }
+        }
+        Some(node)
+    }
+
+    pub fn contains(&self, id: StyleNodeId) -> bool {
+        self.nodes.contains_key(id)
+    }
+
+    pub fn get(&self, id: StyleNodeId) -> Option<&StyleNode> {
+        self.nodes.get(id)
+    }
+
+    pub fn get_mut(&mut self, id: StyleNodeId) -> Option<&mut StyleNode> {
+        self.nodes.get_mut(id)
+    }
+
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
+    // ── Tree-structure setters ──────────────────────────────────────────
+
+    /// Set `child`'s parent to `parent`. Detaches `child` from any previous
+    /// parent. Panics if either id is unknown or if the operation would
+    /// create a cycle (parent must not be a descendant of child).
+    pub fn set_parent(&mut self, child: StyleNodeId, parent: Option<StyleNodeId>) {
+        assert!(self.contains(child), "unknown child node");
+        if let Some(p) = parent {
+            assert!(self.contains(p), "unknown parent node");
+            debug_assert!(
+                !self.is_descendant_of(p, child),
+                "set_parent would create a cycle"
+            );
+        }
+
+        let old_parent = self.nodes[child].parent;
+        if old_parent == parent {
+            return;
+        }
+
+        if let Some(old) = old_parent
+            && let Some(old_node) = self.nodes.get_mut(old)
+        {
+            old_node.children.retain(|c| *c != child);
+        }
+
+        self.nodes[child].parent = parent;
+        if let Some(p) = parent {
+            self.nodes[p].children.push(child);
+        }
+        let reason = StyleReason::inherited();
+        self.mark_dirty(child, reason);
+    }
+
+    /// Replace `parent`'s child list. Each child's `parent` pointer is
+    /// updated to point at `parent`. Previous children retained in the new
+    /// list keep their position; removed children become orphans.
+    pub fn set_children(&mut self, parent: StyleNodeId, children: &[StyleNodeId]) {
+        assert!(self.contains(parent), "unknown parent node");
+        for c in children {
+            assert!(self.contains(*c), "unknown child node");
+        }
+
+        let old_children = std::mem::take(&mut self.nodes[parent].children);
+        for c in &old_children {
+            if !children.contains(c)
+                && let Some(node) = self.nodes.get_mut(*c)
+            {
+                node.parent = None;
+            }
+        }
+        for c in children {
+            if let Some(node) = self.nodes.get_mut(*c) {
+                if let Some(prev_parent) = node.parent
+                    && prev_parent != parent
+                    && let Some(prev) = self.nodes.get_mut(prev_parent)
+                {
+                    prev.children.retain(|existing| existing != c);
+                }
+                self.nodes[*c].parent = Some(parent);
+            }
+        }
+        self.nodes[parent].children = children.to_vec();
+        self.mark_dirty(parent, StyleReason::inherited());
+    }
+
+    fn is_descendant_of(&self, candidate: StyleNodeId, root: StyleNodeId) -> bool {
+        let mut cursor = Some(candidate);
+        while let Some(id) = cursor {
+            if id == root {
+                return true;
+            }
+            cursor = self.nodes.get(id).and_then(|n| n.parent);
+        }
+        false
+    }
+
+    // ── Style input setters ─────────────────────────────────────────────
+
+    pub fn set_direct_style(&mut self, id: StyleNodeId, style: Style) {
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.direct_style = style;
+            node.dirty.merge(StyleReason::style_pass());
+        }
+    }
+
+    pub fn set_classes(&mut self, id: StyleNodeId, classes: &[StyleClassRef]) {
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.classes.clear();
+            node.classes.extend_from_slice(classes);
+            node.dirty.merge(StyleReason::class_cx(Default::default()));
+        }
+    }
+
+    pub fn set_parent_interaction(
+        &mut self,
+        id: StyleNodeId,
+        interaction: InheritedInteractionCx,
+    ) {
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.parent_set_style_interaction = interaction;
+            node.dirty.merge(StyleReason::style_pass());
+        }
+    }
+
+    pub fn mark_dirty(&mut self, id: StyleNodeId, reason: StyleReason) {
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.dirty.merge(reason);
+        }
+    }
+
+    pub fn is_dirty(&self, id: StyleNodeId) -> bool {
+        self.nodes
+            .get(id)
+            .map(|n| !n.dirty.is_empty())
+            .unwrap_or(false)
+    }
+
+    // ── Cached-output readers ──────────────────────────────────────────
+
+    /// Final computed style (host-inherited + direct + selectors). Returns
+    /// the *last result of `compute_style`* — will be empty until the
+    /// cascade has run (Phase 1b).
+    pub fn computed_style(&self, id: StyleNodeId) -> Option<&Style> {
+        self.nodes.get(id).map(|n| &n.computed_style)
+    }
+
+    /// The pre-inheritance merged style (classes + selectors resolved) for
+    /// this node. Used for cache keys.
+    pub fn combined_style(&self, id: StyleNodeId) -> Option<&Style> {
+        self.nodes.get(id).map(|n| &n.combined_style)
+    }
+
+    pub fn has_style_selectors(&self, id: StyleNodeId) -> Option<StyleSelectors> {
+        self.nodes.get(id).and_then(|n| n.has_style_selectors)
+    }
+
+    pub fn style_interaction_cx(&self, id: StyleNodeId) -> Option<InheritedInteractionCx> {
+        self.nodes.get(id).map(|n| n.style_interaction_cx)
+    }
+
+    // ── Cascade ─────────────────────────────────────────────────────────
+
+    /// Run the style cascade over the subtree rooted at `root`.
+    ///
+    /// For each dirty node in the subtree: resolves classes + selectors +
+    /// inherited context into `combined_style` / `computed_style`, updates
+    /// the child-facing `inherited_context` and `class_context`, and
+    /// forwards host side-effects (inspector capture) through `sink`.
+    /// Marks descendants dirty when inherited or class context changes so
+    /// their caches are refreshed on the same walk.
+    ///
+    /// Clean nodes are traversed (so dirty descendants are visited) but
+    /// their own computed state is not recomputed.
+    pub fn compute_style(&mut self, root: StyleNodeId, sink: &mut dyn StyleSink) {
+        if !self.contains(root) {
+            return;
+        }
+        self.compute_subtree(root, sink);
+    }
+
+    fn compute_subtree(&mut self, id: StyleNodeId, sink: &mut dyn StyleSink) {
+        if self.is_dirty(id) {
+            self.compute_one(id, sink);
+        }
+        // Always descend — a clean parent may have dirty descendants.
+        let children: Vec<StyleNodeId> = self
+            .nodes
+            .get(id)
+            .map(|n| n.children.clone())
+            .unwrap_or_default();
+        for child in children {
+            self.compute_subtree(child, sink);
+        }
+    }
+
+    fn compute_one(&mut self, id: StyleNodeId, sink: &mut dyn StyleSink) {
+        // Gather parent context (or theme defaults if orphan / root).
+        let (parent_inherited, parent_class_cx, parent_interaction_cx) = {
+            let parent_id = self.nodes[id].parent;
+            match parent_id.and_then(|p| self.nodes.get(p)) {
+                Some(p) => (
+                    p.inherited_context.clone(),
+                    p.class_context.clone(),
+                    p.style_interaction_cx,
+                ),
+                None => (
+                    sink.default_theme_inherited().clone(),
+                    sink.default_theme_classes().clone(),
+                    InheritedInteractionCx::default(),
+                ),
+            }
+        };
+
+        // Structural position among siblings (1-based; None if orphan).
+        let (child_index, sibling_count) = self.structural_position(id);
+
+        // Snapshot node inputs while borrowed immutably.
+        let (element_id, direct_style, classes, parent_overrides) = {
+            let node = &self.nodes[id];
+            (
+                node.element_id,
+                node.direct_style.clone(),
+                node.classes.clone(),
+                node.parent_set_style_interaction,
+            )
+        };
+
+        // Build the interaction state the cascade reads.
+        let mut interact_state = InteractionState {
+            is_selected: parent_overrides.selected | parent_interaction_cx.selected,
+            is_disabled: parent_overrides.disabled | parent_interaction_cx.disabled,
+            is_hidden: parent_overrides.hidden | parent_interaction_cx.hidden,
+            is_hovered: sink.is_hovered(element_id),
+            is_focused: sink.is_focused(element_id),
+            is_focus_within: sink.is_focus_within(element_id),
+            is_active: sink.is_active(element_id),
+            is_dark_mode: sink.is_dark_mode(),
+            is_file_hover: sink.is_file_hover(element_id),
+            using_keyboard_navigation: sink.keyboard_navigation(),
+            child_index,
+            sibling_count,
+            window_width: sink.root_size_width(),
+        };
+
+        // Resolve classes + selectors against parent contexts.
+        let (combined_style, selectors) = resolve_nested_maps(
+            direct_style,
+            &mut interact_state,
+            sink.screen_size_bp(),
+            &classes,
+            &parent_inherited,
+            &parent_class_cx,
+        );
+
+        // Merge inherited + combined → computed style for this node.
+        let mut computed_style = parent_inherited.clone();
+        computed_style.apply_mut(&combined_style);
+        let computed_style = computed_style.with_inherited_context(&parent_inherited);
+
+        // Derive the inherited + class contexts children will see.
+        let mut new_inherited = parent_inherited.clone();
+        Style::apply_only_inherited(&mut new_inherited, &combined_style);
+        let mut new_class_cx = parent_class_cx.clone();
+        Style::apply_only_class_maps(&mut new_class_cx, &combined_style);
+
+        // Did child-facing context change? If so, dirty the children.
+        let old_inherited_id = self.nodes[id].inherited_context.merge_id();
+        let inherited_changed = new_inherited.merge_id() != old_inherited_id;
+        let changed_classes = self
+            .nodes[id]
+            .class_context
+            .class_maps_eq(&new_class_cx);
+        let class_cx_changed = !changed_classes.is_empty();
+
+        let new_interaction_cx = InheritedInteractionCx {
+            disabled: interact_state.is_disabled,
+            selected: interact_state.is_selected,
+            hidden: interact_state.is_hidden,
+        };
+
+        {
+            let node = &mut self.nodes[id];
+            node.combined_style = combined_style;
+            node.computed_style = computed_style;
+            node.inherited_context = new_inherited;
+            node.class_context = new_class_cx;
+            node.style_interaction_cx = new_interaction_cx;
+            node.has_style_selectors = Some(selectors);
+            node.dirty = StyleReason::empty();
+        }
+
+        if inherited_changed || class_cx_changed {
+            let children: Vec<StyleNodeId> = self.nodes[id].children.clone();
+            let reason = if class_cx_changed {
+                StyleReason::class_cx(changed_classes)
+            } else {
+                StyleReason::inherited()
+            };
+            for child in children {
+                self.mark_dirty(child, reason.clone());
+            }
+        }
+
+        // Let the host snapshot the computed style (inspector, tests, etc.).
+        let computed_ref = self.nodes[id].computed_style.clone();
+        sink.inspector_capture_style(element_id, &computed_ref);
+    }
+
+    /// Return `(child_index, sibling_count)` for `id` using the tree's own
+    /// parent/children edges. `child_index` is 1-based to match the CSS
+    /// `:nth-child()` semantics expected by [`crate::cascade`].
+    fn structural_position(&self, id: StyleNodeId) -> (Option<usize>, usize) {
+        match self.nodes.get(id).and_then(|n| n.parent) {
+            Some(parent) => {
+                let siblings = self
+                    .nodes
+                    .get(parent)
+                    .map(|p| p.children.as_slice())
+                    .unwrap_or(&[]);
+                let idx = siblings.iter().position(|c| *c == id).map(|i| i + 1);
+                (idx, siblings.len())
+            }
+            None => (None, 0),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Phase 1a scaffolding tests: node allocation, parent/child edges,
+    //! style setters. Cascade behavior is covered in Phase 1b tests.
+
+    use super::*;
+    use crate::builtin_props::Background;
+    use understory_box_tree::{LocalNode, Tree};
+
+    fn fresh_element(tree: &mut Tree, owning: u64) -> ElementId {
+        let node = tree.push_child(None, LocalNode::default());
+        ElementId(node, owning, true)
+    }
+
+    #[test]
+    fn new_node_allocates_a_fresh_id() {
+        let mut tree = Tree::new();
+        let mut st = StyleTree::new();
+        let a = st.new_node(fresh_element(&mut tree, 1));
+        let b = st.new_node(fresh_element(&mut tree, 2));
+        assert_ne!(a, b);
+        assert_eq!(st.len(), 2);
+        assert!(st.contains(a));
+        assert!(st.contains(b));
+    }
+
+    #[test]
+    fn set_parent_updates_both_sides() {
+        let mut tree = Tree::new();
+        let mut st = StyleTree::new();
+        let parent = st.new_node(fresh_element(&mut tree, 1));
+        let child = st.new_node(fresh_element(&mut tree, 2));
+
+        st.set_parent(child, Some(parent));
+        assert_eq!(st.get(child).unwrap().parent(), Some(parent));
+        assert_eq!(st.get(parent).unwrap().children(), &[child]);
+    }
+
+    #[test]
+    fn set_parent_detaches_from_old_parent() {
+        let mut tree = Tree::new();
+        let mut st = StyleTree::new();
+        let p1 = st.new_node(fresh_element(&mut tree, 1));
+        let p2 = st.new_node(fresh_element(&mut tree, 2));
+        let child = st.new_node(fresh_element(&mut tree, 3));
+
+        st.set_parent(child, Some(p1));
+        st.set_parent(child, Some(p2));
+        assert_eq!(st.get(p1).unwrap().children(), &[]);
+        assert_eq!(st.get(p2).unwrap().children(), &[child]);
+    }
+
+    #[test]
+    fn set_children_replaces_and_updates_parents() {
+        let mut tree = Tree::new();
+        let mut st = StyleTree::new();
+        let parent = st.new_node(fresh_element(&mut tree, 1));
+        let c1 = st.new_node(fresh_element(&mut tree, 2));
+        let c2 = st.new_node(fresh_element(&mut tree, 3));
+        let c3 = st.new_node(fresh_element(&mut tree, 4));
+
+        st.set_children(parent, &[c1, c2]);
+        assert_eq!(st.get(parent).unwrap().children(), &[c1, c2]);
+        assert_eq!(st.get(c1).unwrap().parent(), Some(parent));
+        assert_eq!(st.get(c2).unwrap().parent(), Some(parent));
+
+        // Replacing with a different set detaches c2, attaches c3.
+        st.set_children(parent, &[c1, c3]);
+        assert_eq!(st.get(parent).unwrap().children(), &[c1, c3]);
+        assert_eq!(st.get(c2).unwrap().parent(), None);
+        assert_eq!(st.get(c3).unwrap().parent(), Some(parent));
+    }
+
+    #[test]
+    fn remove_node_detaches_from_tree() {
+        let mut tree = Tree::new();
+        let mut st = StyleTree::new();
+        let parent = st.new_node(fresh_element(&mut tree, 1));
+        let child = st.new_node(fresh_element(&mut tree, 2));
+        let grandchild = st.new_node(fresh_element(&mut tree, 3));
+        st.set_parent(child, Some(parent));
+        st.set_parent(grandchild, Some(child));
+
+        let removed = st.remove_node(child);
+        assert!(removed.is_some());
+        assert!(!st.contains(child));
+        // Parent's child list no longer references it.
+        assert_eq!(st.get(parent).unwrap().children(), &[]);
+        // Grandchild is orphaned (not recursively removed).
+        assert_eq!(st.get(grandchild).unwrap().parent(), None);
+    }
+
+    #[test]
+    fn set_direct_style_stores_style_and_marks_dirty() {
+        let mut tree = Tree::new();
+        let mut st = StyleTree::new();
+        let n = st.new_node(fresh_element(&mut tree, 1));
+
+        let style = Style::new().background(peniko::color::palette::css::RED);
+        st.set_direct_style(n, style);
+
+        assert_eq!(
+            st.get(n).unwrap().direct_style.get(Background),
+            Some(peniko::color::palette::css::RED.into())
+        );
+        assert!(st.is_dirty(n));
+    }
+
+    #[test]
+    #[should_panic(expected = "would create a cycle")]
+    fn set_parent_rejects_cycle() {
+        let mut tree = Tree::new();
+        let mut st = StyleTree::new();
+        let a = st.new_node(fresh_element(&mut tree, 1));
+        let b = st.new_node(fresh_element(&mut tree, 2));
+        st.set_parent(b, Some(a));
+        // This would put `a` under its own descendant.
+        st.set_parent(a, Some(b));
+    }
+}
