@@ -19,7 +19,8 @@ use crate::{
         slider::{SliderClass, SliderCustomExprStyle, SliderCustomStyle},
     },
 };
-use peniko::{Brush, Color, color::palette::css};
+use imaging::Brush;
+use peniko::{Color, color::palette::css};
 use smallvec::smallvec;
 
 style_class!(pub HoverTargetClass);

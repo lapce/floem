@@ -1207,25 +1207,50 @@ impl StylePropValue for Stroke {
     }
 }
 
-impl IntoView for Brush {
+impl IntoView for imaging::Brush {
     type V = AnyView;
     type Intermediate = AnyView;
 
     fn into_intermediate(self) -> Self::Intermediate {
         match self {
-            Brush::Solid(color) => color.into_any(),
-            Brush::Gradient(grad) => grad.into_any(),
-            Brush::Image(image) => Label::new(format!("{image:?}")).into_any(),
+            imaging::Brush::Solid(color) => color.into_any(),
+            imaging::Brush::Gradient(grad) => grad.into_any(),
+            imaging::Brush::Image(image) => Stack::vertical((
+                Label::new("image brush").style(|s| {
+                    s.font_size(10.0)
+                        .font_bold()
+                        .with_theme(|s, t| s.color(t.text_muted()))
+                }),
+                Label::new(format!("{:?}", image.image)).style(|s| {
+                    s.font_size(11.0).min_width(0.0).text_wrap()
+                }),
+                Label::new(format!(
+                    "quality: {:?}, extend: {:?}/{:?}, alpha: {:.3}",
+                    image.sampler.quality,
+                    image.sampler.x_extend,
+                    image.sampler.y_extend,
+                    image.sampler.alpha
+                ))
+                .style(|s| {
+                    s.font_size(11.0)
+                        .min_width(0.0)
+                        .text_wrap()
+                        .with_theme(|s, t| s.color(t.text_muted()))
+                }),
+            ))
+            .style(|s| s.gap(3.0).min_width(0.0))
+            .into_any(),
         }
     }
 }
 
-impl StylePropValue for Brush {
+impl StylePropValue for imaging::Brush {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         Some(self.clone().into_any())
     }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        use imaging::Brush;
         match (self, other) {
             (Brush::Solid(color), Brush::Solid(other)) => Some(Self::Solid(color.lerp(
                 *other,

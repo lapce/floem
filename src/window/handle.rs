@@ -22,7 +22,7 @@ use winit::window::{
 use crate::frame_clock::{FrameClock, new_window_frame_clock};
 use crate::gpu_resources::GpuResources;
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
-use imaging::{FillRef, PaintSink, RenderSource};
+use imaging::{Brush, FillRef, PaintSink, RenderSource};
 use peniko::color::palette;
 use peniko::kurbo::{self, Point, Size};
 use winit::{
@@ -102,13 +102,28 @@ pub(crate) struct WindowHandle {
     frame_pipeline: FramePipeline,
     last_timing_report: Option<TimingReport>,
     frame_clock: Box<dyn FrameClock>,
+    present_immediately_when_ready: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FrameWakeKind {
+    Present,
+    Update,
 }
 
 #[derive(Clone, Copy)]
+pub(crate) struct ScheduledFrameWake {
+    pub(crate) deadline: Instant,
+    pub(crate) kind: FrameWakeKind,
+}
+
+#[derive(Clone, Copy, Default)]
 pub(crate) struct FrameSchedule {
-    /// Earliest time the app loop should wake this window to make presentation
-    /// progress, either by direct present or by requesting a platform redraw.
-    pub(crate) redraw: Option<Instant>,
+    /// Earliest wake the app loop should arm for this window.
+    ///
+    /// `Present` wakes retire an already prepared frame. `Update` wakes
+    /// advance deferred next-frame work when nothing is ready to present yet.
+    pub(crate) wake: Option<ScheduledFrameWake>,
 }
 
 /// Window-owned frame pipeline state.
@@ -462,6 +477,7 @@ impl WindowHandle {
             frame_pipeline: FramePipeline::default(),
             last_timing_report: None,
             frame_clock: new_window_frame_clock(window_id, output_id),
+            present_immediately_when_ready: false,
         };
         if paint_state_initialized {
             window_handle.init_renderer();
@@ -622,6 +638,7 @@ impl WindowHandle {
             frame_pipeline: FramePipeline::default(),
             last_timing_report: None,
             frame_clock: new_window_frame_clock(window_id, 0),
+            present_immediately_when_ready: false,
         };
 
         window_handle
@@ -1153,7 +1170,7 @@ impl WindowHandle {
                 self.default_theme
                     .as_ref()
                     .and_then(|theme| theme.get(crate::style::Background))
-                    .unwrap_or(peniko::Brush::Solid(palette::css::WHITE)),
+                    .unwrap_or(Brush::Solid(palette::css::WHITE)),
             )
         };
 
@@ -1172,7 +1189,7 @@ impl WindowHandle {
 
         struct SceneSource<'a> {
             frame_size: Size,
-            background: Option<peniko::Brush>,
+            background: Option<Brush>,
             id: ViewId,
             cx: crate::paint::GlobalPaintCx<'a>,
         }
@@ -1356,11 +1373,16 @@ impl WindowHandle {
         self.window_state.has_next_frame_work()
             || self.window_state.has_pending_begin_frame_callbacks()
             || self.window_state.has_pending_render()
+            || self.has_frame_to_present()
             || self.has_frame_underway()
     }
 
     pub(crate) fn has_frame_to_present(&self) -> bool {
         self.frame_pipeline.has_frame_to_present()
+    }
+
+    pub(crate) fn take_present_immediately_when_ready(&mut self) -> bool {
+        std::mem::take(&mut self.present_immediately_when_ready)
     }
 
     /// Returns whether the window pipeline still owns a frame that has been
@@ -1384,14 +1406,44 @@ impl WindowHandle {
         can_render_now: bool,
     ) -> FrameSchedule {
         if !can_render_now {
-            return FrameSchedule { redraw: None };
+            return FrameSchedule::default();
         }
 
-        let redraw = self
-            .has_frame_to_present()
-            .then(|| self.frame_clock.redraw_deadline(frame_interval, now, true));
+        let present = self.has_frame_to_present().then(|| ScheduledFrameWake {
+            deadline: self.frame_clock.redraw_deadline(frame_interval, now, true),
+            kind: FrameWakeKind::Present,
+        });
+        let update = (self.window_state.has_next_frame_work()
+            && !self.frame_clock.has_external_frame_signal())
+        .then(|| {
+            // A frame opportunity may advance animations or begin-frame
+            // callbacks without producing damage to present immediately. Keep a
+            // paced wakeup armed for that deferred work, but do not conflate it
+            // with a prepared-frame present deadline.
+            //
+            // External-signal clocks (for example display-link/subduction on
+            // macOS) must not synthesize these update wakeups: those backends
+            // already own authoritative frame opportunities. However, a ready
+            // frame may still need a late present deadline, so `present`
+            // remains clock-driven for all backends.
+            ScheduledFrameWake {
+                deadline: self.frame_clock.redraw_deadline(frame_interval, now, false),
+                kind: FrameWakeKind::Update,
+            }
+        });
 
-        FrameSchedule { redraw }
+        let wake = match (present, update) {
+            (Some(present), Some(update)) => Some(if present.deadline <= update.deadline {
+                present
+            } else {
+                update
+            }),
+            (Some(present), None) => Some(present),
+            (None, Some(update)) => Some(update),
+            (None, None) => None,
+        };
+
+        FrameSchedule { wake }
     }
 
     /// Advances the window frame pipeline for the current turn and returns the
@@ -1412,6 +1464,15 @@ impl WindowHandle {
         self.refresh_frame_clock(frame_interval, now);
 
         let can_render_now = self.can_render_now();
+        if can_render_now
+            && !self.has_frame_to_present()
+            && self.frame_pipeline.has_frame_underway()
+            && self
+                .frame_clock
+                .should_present_immediately_on_frame_ready(frame_interval, now)
+        {
+            self.present_immediately_when_ready = true;
+        }
         let has_frame_underway = self.has_frame_underway();
 
         // Blink-style scheduling runs begin-frame work against the current
@@ -1423,17 +1484,31 @@ impl WindowHandle {
         // previous frame is still rendering, then presenting both back to
         // back. Floem should only build a new scene after the prior frame has
         // fully retired.
-        if can_render_now
+        let prepared_frame = if can_render_now
             && !has_frame_underway
             && self
                 .frame_clock
                 .needs_frame_prepare(self.window_state.has_next_frame_work())
         {
-            self.prepare_frame();
-        }
+            self.prepare_frame()
+        } else {
+            false
+        };
 
         if can_render_now && !has_frame_underway {
             self.paint_frame();
+        }
+
+        if prepared_frame
+            && !self.frame_pipeline.has_frame_underway()
+            && !self.window_state.has_pending_render()
+        {
+            // This frame opportunity consumed deferred work but produced no
+            // renderable damage. Release the prepared latch so the next paced
+            // or newly queued future frame work can still be promoted instead
+            // of leaving the animation pipeline wedged until an unrelated
+            // present occurs.
+            self.frame_clock.set_frame_prepared(false);
         }
 
         self.frame_schedule(frame_interval, Instant::now(), can_render_now)
@@ -1443,6 +1518,7 @@ impl WindowHandle {
         self.window_state.clear_pending_damage();
         let presented = self.pending_timing.has_kind(TimingKind::Present);
         if presented {
+            self.present_immediately_when_ready = false;
             let update = mem::take(&mut self.pending_timing);
             let useful_draw_cpu = update
                 .max_duration_for_label("Present")
@@ -2645,6 +2721,70 @@ mod tests {
                 .window_state
                 .has_pending_begin_frame_callbacks(),
             "begin-frame work should stay queued until the in-flight frame retires"
+        );
+    }
+
+    #[test]
+    fn test_advance_frame_keeps_animation_progress_alive_without_render_damage() {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
+
+        let view = Empty::new().style(|s| s.size(100.0, 100.0));
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
+
+        window_handle.process_update_no_paint();
+        window_handle.window_state.clear_pending_paint();
+        window_handle.window_state.clear_pending_damage();
+
+        let runs = Rc::new(Cell::new(0));
+        let runs_for_callback = runs.clone();
+        window_handle
+            .window_state
+            .request_animation_frame(Box::new(move |_| {
+                runs_for_callback.set(runs_for_callback.get() + 1);
+            }));
+
+        window_handle.advance_frame();
+        assert_eq!(runs.get(), 1, "first frame opportunity should run callback");
+
+        let runs_for_second_callback = runs.clone();
+        window_handle
+            .window_state
+            .request_animation_frame(Box::new(move |_| {
+                runs_for_second_callback.set(runs_for_second_callback.get() + 1);
+            }));
+
+        window_handle.advance_frame();
+
+        assert_eq!(
+            runs.get(),
+            2,
+            "second frame opportunity should still advance deferred begin-frame work"
+        );
+    }
+
+    #[test]
+    fn test_prepared_frame_counts_as_frame_work() {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
+
+        let view = Empty::new().style(|s| s.size(100.0, 100.0));
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
+
+        window_handle.process_update_no_paint();
+        window_handle
+            .frame_pipeline
+            .finish_render(1, Instant::now());
+
+        assert!(
+            window_handle.has_frame_to_present(),
+            "test setup should leave a prepared frame waiting to present"
+        );
+        assert!(
+            window_handle.has_frame_work(),
+            "prepared frames must count as frame work so scheduling does not need app-layer special cases"
         );
     }
 }

@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use floem_reactive::{Effect, SignalGet, SignalUpdate};
-use peniko::Brush;
+use imaging::Brush;
 use peniko::kurbo::{Point, Rect, Shape, Size};
 use ui_events::pointer::PointerEvent;
 

@@ -20,8 +20,8 @@ use crate::{
     views::editor::SelectionColor,
 };
 use floem_reactive::UpdaterEffect;
+use imaging::Brush;
 use peniko::{
-    Brush,
     color::palette::{self},
     kurbo::Point,
 };

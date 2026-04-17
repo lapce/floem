@@ -2,16 +2,17 @@ use imaging::{
     Composite, Filter,
     record::{AppliedMask, Clip, Command, Context, Draw, Geometry, Group, Mask, Scene, replay},
 };
+use floem_reactive::{RwSignal, SignalGet, SignalUpdate};
 use peniko::{
     Color,
     color::palette::css,
-    kurbo::{Affine, Rect, Shape},
+    kurbo::{Affine, Rect, Shape, Size},
 };
 
 use crate::{
     AnyView, IntoView, View,
     style::{BoxShadow, StylePropValue, StyleThemeExt},
-    views::{ContainerExt, Decorators, Label, ScrollExt, Stack, canvas},
+    views::{ContainerExt, Decorators, Label, ScrollExt, Stack, canvas, dyn_view, svg},
 };
 
 #[derive(Clone)]
@@ -45,17 +46,20 @@ fn format_affine(transform: Affine) -> String {
     )
 }
 
-fn geometry_bounds(geometry: &Geometry) -> Rect {
-    match geometry {
-        Geometry::Rect(rect) => *rect,
-        Geometry::RoundedRect(rect) => rect.bounding_box(),
-        Geometry::Path(path) => path.bounding_box(),
-    }
-}
-
 fn detail_label(text: impl Into<String>) -> AnyView {
     Label::new(text.into())
-        .style(|s| s.font_size(11.0).min_width(0.0))
+        .style(|s| s.font_size(11.0).min_width(0.0).text_wrap())
+        .into_any()
+}
+
+fn debug_block(text: impl Into<String>) -> AnyView {
+    Label::new(text.into())
+        .style(|s| {
+            s.font_size(11.0)
+                .min_width(0.0)
+                .text_wrap()
+                .padding_vert(2.0)
+        })
         .into_any()
 }
 
@@ -71,12 +75,13 @@ fn field_row(name: impl Into<String>, value: impl Into<String>) -> AnyView {
         Label::new(format!("{}:", name.into())).style(|s| {
             s.font_size(11.0)
                 .font_bold()
-                .min_width(88.0)
-                .padding_right(6.0)
+                .min_width(92.0)
+                .padding_right(10.0)
+                .with_theme(|s, t| s.color(t.text_muted()))
         }),
         detail_label(value),
     ))
-    .style(|s| s.items_start().width_full().min_width(0.0))
+    .style(|s| s.items_start().width_full().min_width(0.0).gap(2.0))
     .into_any()
 }
 
@@ -85,12 +90,13 @@ fn field_view(name: impl Into<String>, value: AnyView) -> AnyView {
         Label::new(format!("{}:", name.into())).style(|s| {
             s.font_size(11.0)
                 .font_bold()
-                .min_width(88.0)
-                .padding_right(6.0)
+                .min_width(92.0)
+                .padding_right(10.0)
+                .with_theme(|s, t| s.color(t.text_muted()))
         }),
-        value,
+        value.style(|s| s.min_width(0.0).flex_grow(1.0)),
     ))
-    .style(|s| s.items_start().width_full().min_width(0.0))
+    .style(|s| s.items_start().width_full().min_width(0.0).gap(2.0))
     .into_any()
 }
 
@@ -103,10 +109,21 @@ where
 
 fn section(title: impl Into<String>, body: AnyView) -> AnyView {
     Stack::vertical((
-        Label::new(title.into()).style(|s| s.font_size(11.0).font_bold()),
-        body.style(|s| s.padding_left(10.0)),
+        Label::new(title.into()).style(|s| {
+            s.font_size(10.5)
+                .font_bold()
+                .with_theme(|s, t| s.color(t.text_muted()))
+        }),
+        body.style(|s| s.padding_left(12.0)),
     ))
-    .style(|s| s.width_full().gap(4.0))
+    .style(|s| {
+        s.width_full()
+            .gap(6.0)
+            .padding(8.0)
+            .border_radius(8.0)
+            .border(1.0)
+            .with_theme(|s, t| s.background(t.bg_base()).border_color(t.border()))
+    })
     .into_any()
 }
 
@@ -114,6 +131,211 @@ fn stack_rows(rows: Vec<AnyView>) -> AnyView {
     Stack::vertical_from_iter(rows)
         .style(|s| s.width_full().gap(4.0).min_width(0.0))
         .into_any()
+}
+
+fn metric_chip(label: impl Into<String>, value: impl Into<String>) -> AnyView {
+    Stack::horizontal((
+        Label::new(label.into()).style(|s| {
+            s.font_size(10.0)
+                .font_bold()
+                .with_theme(|s, t| s.color(t.text_muted()))
+        }),
+        Label::new(value.into()).style(|s| s.font_size(11.0)),
+    ))
+    .style(|s| s.items_center().gap(4.0))
+    .into_any()
+}
+
+fn bounds_view(rect: Rect) -> AnyView {
+    Stack::vertical((
+        Stack::horizontal((
+            metric_chip("x", format_float(rect.x0)),
+            metric_chip("y", format_float(rect.y0)),
+        )),
+        Stack::horizontal((
+            metric_chip("w", format_float(rect.width())),
+            metric_chip("h", format_float(rect.height())),
+        )),
+    ))
+    .style(|s| s.gap(2.0).min_width(0.0))
+    .into_any()
+}
+
+fn disclosure_icon(expanded: bool) -> AnyView {
+    let icon = if expanded {
+        r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z"/></svg>"#
+    } else {
+        r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6.427 4.427l3.396 3.396a.25.25 0 010 .354l-3.396 3.396A.25.25 0 016 11.396V4.604a.25.25 0 01.427-.177z"/></svg>"#
+    };
+    svg(icon)
+        .style(|s| s.size(14.0, 14.0).with_theme(|s, t| s.color(t.text_muted())))
+        .into_any()
+}
+
+fn collapsible_section(
+    title: impl Into<String>,
+    subtitle: impl Into<Option<String>>,
+    default_open: bool,
+    body: impl Fn() -> AnyView + 'static,
+) -> AnyView {
+    let title = title.into();
+    let subtitle = subtitle.into();
+    let expanded = RwSignal::new(default_open);
+    let subtitle_view = subtitle
+        .map(|subtitle| {
+            Label::new(subtitle)
+                .style(|s| s.font_size(10.0).with_theme(|s, t| s.color(t.text_muted())))
+                .into_any()
+        })
+        .unwrap_or_else(|| ().into_any());
+    Stack::vertical((
+        Stack::horizontal((
+            dyn_view(move || disclosure_icon(expanded.get())),
+            Stack::vertical((
+                Label::new(title).style(|s| s.font_size(11.0).font_bold()),
+                subtitle_view,
+            ))
+            .style(|s| s.gap(1.0).min_width(0.0).flex_grow(1.0)),
+        ))
+        .style(|s| {
+            s.items_start()
+                .gap(6.0)
+                .width_full()
+                .padding_horiz(8.0)
+                .padding_vert(7.0)
+                .border_radius(8.0)
+                .border(1.0)
+                .with_theme(|s, t| {
+                    s.background(t.bg_base())
+                        .border_color(t.border())
+                })
+        })
+        .action(move || expanded.update(|value| *value = !*value)),
+        dyn_view(move || {
+            if expanded.get() {
+                body()
+                    .style(|s| s.padding_left(10.0).padding_top(4.0))
+                    .into_any()
+            } else {
+                ().into_any()
+            }
+        }),
+    ))
+    .style(|s| s.width_full().gap(2.0))
+    .into_any()
+}
+
+fn raw_debug_section(title: impl Into<String>, text: impl Into<String>) -> AnyView {
+    let text = text.into();
+    let subtitle = format!("{} characters", text.len());
+    collapsible_section(title, Some(subtitle), false, move || {
+        debug_block(text.clone())
+            .style(|s| {
+                s.padding(8.0)
+                    .border_radius(8.0)
+                    .border(1.0)
+                    .with_theme(|s, t| {
+                        s.background(t.bg_base())
+                            .border_color(t.border())
+                    })
+            })
+            .into_any()
+    })
+}
+
+fn scene_size_hint(size: Size) -> Size {
+    let width = size.width.clamp(120.0, 220.0);
+    let height = size.height.clamp(72.0, 160.0);
+    Size::new(width, height)
+}
+
+fn nested_scene_section(title: impl Into<String>, subtitle: impl Into<String>, scene: Scene, size: Size) -> AnyView {
+    collapsible_section(title, Some(subtitle.into()), false, move || {
+        scene_debug_view_with_size(scene.clone(), scene_size_hint(size))
+            .style(|s| {
+                s.padding(8.0)
+                    .border_radius(10.0)
+                    .border(1.0)
+                    .with_theme(|s, t| {
+                        s.background(t.bg_base())
+                            .border_color(t.border())
+                    })
+            })
+            .into_any()
+    })
+}
+
+fn brush_summary_view(brush: &imaging::Brush) -> AnyView {
+    match brush {
+        imaging::Brush::Solid(color) => Stack::horizontal((
+            Label::new("solid").style(|s| {
+                s.font_size(10.0)
+                    .font_bold()
+                    .with_theme(|s, t| s.color(t.text_muted()))
+            }),
+            color.clone().into_any(),
+        ))
+        .style(|s| s.items_center().gap(8.0).min_width(0.0))
+        .into_any(),
+        imaging::Brush::Gradient(gradient) => Stack::vertical((
+            Label::new("gradient").style(|s| {
+                s.font_size(10.0)
+                    .font_bold()
+                    .with_theme(|s, t| s.color(t.text_muted()))
+            }),
+            gradient.clone().into_any(),
+        ))
+        .style(|s| s.gap(4.0).min_width(0.0))
+        .into_any(),
+        imaging::Brush::Image(image_brush) => {
+            let source_label = match &image_brush.image {
+                imaging::Image::Raster(image) => format!("raster {}×{}", image.width, image.height),
+                imaging::Image::Scene(scene) => {
+                    format!("scene image #{}  {}×{}", scene.id(), scene.width(), scene.height())
+                }
+            };
+            let mut rows = vec![
+                Stack::horizontal((
+                    Label::new("image brush").style(|s| {
+                        s.font_size(10.0)
+                            .font_bold()
+                            .with_theme(|s, t| s.color(t.text_muted()))
+                    }),
+                    detail_label(source_label),
+                ))
+                .style(|s| s.items_center().gap(8.0))
+                .into_any(),
+                Stack::horizontal((
+                    metric_chip("quality", format!("{:?}", image_brush.sampler.quality)),
+                    metric_chip(
+                        "extend",
+                        format!(
+                            "{:?}/{:?}",
+                            image_brush.sampler.x_extend, image_brush.sampler.y_extend
+                        ),
+                    ),
+                    metric_chip("alpha", format!("{:.3}", image_brush.sampler.alpha)),
+                ))
+                .style(|s| s.items_center().gap(10.0).min_width(0.0).text_wrap())
+                .into_any(),
+            ];
+            match &image_brush.image {
+                imaging::Image::Scene(scene_image) => {
+                    rows.push(nested_scene_section(
+                        "Scene Image",
+                        format!("picture #{}", scene_image.picture().id()),
+                        scene_image.scene().clone(),
+                        Size::new(scene_image.width() as f64, scene_image.height() as f64),
+                    ));
+                    rows.push(raw_debug_section("Image Metadata", format!("{:?}", scene_image)));
+                }
+                imaging::Image::Raster(image) => {
+                    rows.push(raw_debug_section("Image Metadata", format!("{:?}", image)));
+                }
+            }
+            stack_rows(rows)
+        }
+    }
 }
 
 fn default_composite(composite: Composite) -> bool {
@@ -176,16 +398,25 @@ impl IntoView for Geometry {
     type Intermediate = AnyView;
 
     fn into_intermediate(self) -> Self::Intermediate {
-        let mut rows = vec![field_row("shape", format!("{self:?}"))];
-        rows.push(field_row("bounds", format!("{:?}", geometry_bounds(&self))));
-        rows.push(field_row(
-            "elements",
-            match &self {
-                Geometry::Rect(_) => "1".to_string(),
-                Geometry::RoundedRect(_) => "1".to_string(),
-                Geometry::Path(path) => path.elements().len().to_string(),
-            },
-        ));
+        let mut rows = match &self {
+            Geometry::Rect(rect) => vec![
+                field_row("kind", "rect"),
+                field_view("bounds", bounds_view(*rect)),
+                field_row("elements", "1"),
+            ],
+            Geometry::RoundedRect(rect) => vec![
+                field_row("kind", "rounded rect"),
+                field_view("bounds", bounds_view(rect.bounding_box())),
+                field_row("radii", format!("{:?}", rect.radii())),
+                field_row("elements", "1"),
+            ],
+            Geometry::Path(path) => vec![
+                field_row("kind", "path"),
+                field_view("bounds", bounds_view(path.bounding_box())),
+                field_row("elements", path.elements().len().to_string()),
+            ],
+        };
+        rows.push(raw_debug_section("Shape Detail", format!("{self:?}")));
         stack_rows(rows)
     }
 }
@@ -208,10 +439,17 @@ impl IntoView for Mask {
     type Intermediate = AnyView;
 
     fn into_intermediate(self) -> Self::Intermediate {
-        stack_rows(vec![
+        let mut rows = vec![
             field_row("mode", format!("{:?}", self.mode)),
             field_row("scene commands", self.scene.commands().len().to_string()),
-        ])
+        ];
+        rows.push(nested_scene_section(
+            "Mask Scene",
+            format!("{} commands", self.scene.commands().len()),
+            self.scene.clone(),
+            Size::new(180.0, 100.0),
+        ));
+        stack_rows(rows)
     }
 }
 
@@ -326,7 +564,7 @@ impl IntoView for Draw {
                 let mut rows = vec![
                     field_row("kind", "fill"),
                     field_row("fill rule", format!("{fill_rule:?}")),
-                    field_value("brush", &brush),
+                    field_view("brush", brush_summary_view(&brush)),
                     field_view("shape", shape.into_any()),
                 ];
                 if transform != Affine::IDENTITY {
@@ -351,7 +589,7 @@ impl IntoView for Draw {
                 let mut rows = vec![
                     field_row("kind", "stroke"),
                     field_value("stroke", &stroke),
-                    field_value("brush", &brush),
+                    field_view("brush", brush_summary_view(&brush)),
                     field_view("shape", shape.into_any()),
                 ];
                 if transform != Affine::IDENTITY {
@@ -372,7 +610,7 @@ impl IntoView for Draw {
                     field_row("glyphs", run.glyphs.len().to_string()),
                     field_row("hint", run.hint.to_string()),
                     field_row("style", format!("{:?}", run.style)),
-                    field_value("brush", &run.brush),
+                    field_view("brush", brush_summary_view(&run.brush)),
                 ];
                 if run.transform != Affine::IDENTITY {
                     rows.insert(1, field_value("transform", &run.transform));
@@ -405,6 +643,24 @@ impl IntoView for Draw {
                 if !default_composite(draw.composite) {
                     rows.push(section("Composite", draw.composite.into_any()));
                 }
+                stack_rows(rows)
+            }
+            Draw::ScenePicture { transform, picture } => {
+                let mut rows = vec![
+                    field_row("kind", "scene picture"),
+                    field_row("picture id", picture.id().to_string()),
+                    field_view("bounds", bounds_view(picture.bounds())),
+                    field_row("scene commands", picture.scene().commands().len().to_string()),
+                ];
+                if transform != Affine::IDENTITY {
+                    rows.insert(1, field_value("transform", &transform));
+                }
+                rows.push(nested_scene_section(
+                    "Picture Scene",
+                    format!("{} commands", picture.scene().commands().len()),
+                    picture.scene().clone(),
+                    picture.bounds().size(),
+                ));
                 stack_rows(rows)
             }
         }
@@ -460,10 +716,21 @@ impl IntoView for ResolvedCommand {
 
 fn command_card(title: impl Into<String>, body: AnyView) -> AnyView {
     Stack::vertical((
-        Label::new(title.into()).style(|s| s.font_bold().font_size(12.0)),
-        body,
+        Label::new(title.into()).style(|s| s.font_bold().font_size(12.5)),
+        body.style(|s| s.padding_left(2.0)),
     ))
-    .style(|s| s.width_full().gap(6.0).padding(8.0).min_width(0.0))
+    .style(|s| {
+        s.width_full()
+            .gap(8.0)
+            .padding(10.0)
+            .min_width(0.0)
+            .border_radius(10.0)
+            .border(1.0)
+            .with_theme(|s, t| {
+                s.background(t.bg_elevated())
+                    .border_color(t.border())
+            })
+    })
     .into_any()
 }
 

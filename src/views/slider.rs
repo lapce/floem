@@ -3,7 +3,7 @@
 use std::ops::RangeInclusive;
 
 use floem_reactive::{SignalGet, SignalUpdate, UpdaterEffect};
-use peniko::Brush;
+use imaging::Brush;
 use peniko::color::palette;
 use peniko::kurbo::{Circle, Point, RoundedRect, RoundedRectRadii, Shape};
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};

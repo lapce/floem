@@ -1,7 +1,8 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Duration, time::Instant};
 
-use floem::imaging::Painter;
 use floem::imaging::record::Scene;
+use floem::imaging::{ImageBrush, Painter, SceneImage};
+use floem::peniko::color::Oklch;
 use floem::{
     ViewId,
     context::{EventCx, LayoutChanged, LayoutChangedListener, PaintCx},
@@ -12,7 +13,7 @@ use floem::{
     },
     kurbo::{Circle, Point, Rect, Shape, Size, Stroke},
     peniko::{
-        Brush, Compose, Gradient, Mix,
+        Brush, Compose, Extend, Gradient, ImageQuality, Mix,
         color::{
             AlphaColor,
             ColorSpaceTag::{self, LinearSrgb},
@@ -30,14 +31,14 @@ use crate::form::{form, form_item};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct CheckerboardCacheKey {
-    width_bits: u64,
-    height_bits: u64,
+    cell_size_bits: u64,
+    light_color_bits: [u32; 4],
+    dark_color_bits: [u32; 4],
 }
 
 thread_local! {
-    static TRANSPARENCY_CHECKERBOARD_CACHE:
-        RefCell<HashMap<CheckerboardCacheKey, Rc<Scene>>> =
-            RefCell::new(HashMap::new());
+    static CHECKERBOARD_TILE_IMAGE_CACHE: RefCell<HashMap<CheckerboardCacheKey, SceneImage>> =
+        RefCell::new(HashMap::new());
 }
 
 pub fn canvas_view() -> impl IntoView {
@@ -109,7 +110,7 @@ fn color_picker(color: RwSignal<Color>) -> impl IntoView {
 
             let base_color = color.get();
 
-            draw_transparency_checkerboard(cx, size, &rect_path);
+            draw_checkerboard(cx, size, &rect_path, 8.0, css::WHITE, css::LIGHT_GRAY);
 
             let brush = Brush::Solid(base_color);
             cx.painter.fill(rect_path, &brush).draw();
@@ -136,63 +137,83 @@ fn two_d_picker(color: RwSignal<Color>) -> impl IntoView {
         .debug_name("2d picker")
 }
 
-fn draw_transparency_checkerboard(cx: &mut PaintCx, size: Size, clip_path: &impl Shape) {
-    let scene = cached_transparency_checkerboard(size);
+fn draw_checkerboard(
+    cx: &mut PaintCx,
+    size: Size,
+    clip_path: &impl Shape,
+    cell_size: f64,
+    light_color: Color,
+    dark_color: Color,
+) {
     cx.painter.with_fill_clip(clip_path.to_path(0.1), |p| {
-        p.replay(scene.as_ref());
+        let brush = checkerboard_tile_brush(cell_size, light_color, dark_color);
+        p.fill(Rect::ZERO.with_size(size), &brush).draw();
     });
 }
 
-fn size_cache_key(size: Size) -> CheckerboardCacheKey {
+fn checkerboard_cache_key(
+    cell_size: f64,
+    light_color: Color,
+    dark_color: Color,
+) -> CheckerboardCacheKey {
     CheckerboardCacheKey {
-        width_bits: size.width.to_bits(),
-        height_bits: size.height.to_bits(),
+        cell_size_bits: cell_size.to_bits(),
+        light_color_bits: light_color.components.map(f32::to_bits),
+        dark_color_bits: dark_color.components.map(f32::to_bits),
     }
 }
 
-fn cached_transparency_checkerboard(size: Size) -> Rc<Scene> {
-    let key = size_cache_key(size);
+fn checkerboard_tile_brush(
+    cell_size: f64,
+    light_color: Color,
+    dark_color: Color,
+) -> ImageBrush {
+    let image = cached_checkerboard_tile_image(cell_size, light_color, dark_color);
+    ImageBrush::new(image)
+        .with_extend(Extend::Repeat)
+        .with_quality(ImageQuality::Low)
+}
 
-    TRANSPARENCY_CHECKERBOARD_CACHE.with(|cache| {
+fn cached_checkerboard_tile_image(
+    cell_size: f64,
+    light_color: Color,
+    dark_color: Color,
+) -> SceneImage {
+    let key = checkerboard_cache_key(cell_size, light_color, dark_color);
+    CHECKERBOARD_TILE_IMAGE_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        if let Some(scene) = cache.get(&key) {
-            return scene.clone();
-        }
-
-        let mut scene = Scene::new();
-        let mut painter = Painter::new(&mut scene);
-        {
-            let cell_size = 8.0;
-            let dark_color = Brush::Solid(css::LIGHT_GRAY);
-            let light_color = Brush::Solid(css::WHITE);
-
-            let cols = (size.width / cell_size).ceil() as usize;
-            let rows = (size.height / cell_size).ceil() as usize;
-
-            for row in 0..rows {
-                for col in 0..cols {
-                    let brush = if (row + col) % 2 == 0 {
-                        &dark_color
-                    } else {
-                        &light_color
-                    };
-
-                    let rect = Rect::new(
-                        col as f64 * cell_size,
-                        row as f64 * cell_size,
-                        (col + 1) as f64 * cell_size,
-                        (row + 1) as f64 * cell_size,
-                    );
-
-                    painter.fill(rect, brush).draw();
-                }
-            }
-        }
-        let scene = Rc::new(scene);
-
-        cache.insert(key, scene.clone());
-        scene
+        cache
+            .entry(key)
+            .or_insert_with(|| build_checkerboard_tile_image(cell_size, light_color, dark_color))
+            .clone()
     })
+}
+
+fn build_checkerboard_tile_image(
+    cell_size: f64,
+    light_color: Color,
+    dark_color: Color,
+) -> SceneImage {
+    let tile_size = (cell_size * 2.0).max(1.0).round();
+    let mut scene = Scene::new();
+    let mut painter = Painter::new(&mut scene);
+    let dark_brush = Brush::Solid(dark_color);
+    let light_brush = Brush::Solid(light_color);
+
+    painter
+        .fill(Rect::new(0.0, 0.0, tile_size, tile_size), &light_brush)
+        .draw();
+    painter
+        .fill(Rect::new(0.0, 0.0, cell_size, cell_size), &dark_brush)
+        .draw();
+    painter
+        .fill(
+            Rect::new(cell_size, cell_size, tile_size, tile_size),
+            &dark_brush,
+        )
+        .draw();
+
+    SceneImage::new(scene, tile_size as u32, tile_size as u32)
 }
 
 fn build_sat_value_field(size: Size, hue: f32) -> Rc<Scene> {
@@ -242,11 +263,11 @@ fn build_hue_picker_gradient(size: Size) -> Rc<Scene> {
             Point::new(size.width, size.height / 2.0),
         )
         .with_stops([
-            (0.0, AlphaColor::<Hsl>::new([0.0, 100.0, 50.0, 1.0])),
-            (1.0, AlphaColor::<Hsl>::new([360.0, 100.0, 50.0, 1.0])),
+            (0.0, AlphaColor::<Oklch>::new([0.7, 0.3, 0.0, 1.0])),
+            (1.0, AlphaColor::<Oklch>::new([0.7, 0.3, 360.0, 1.0])),
         ])
         .with_hue_direction(floem::peniko::color::HueDirection::Longer)
-        .with_interpolation_cs(ColorSpaceTag::Hsl)
+        .with_interpolation_cs(ColorSpaceTag::Oklch)
         .into();
 
         p.fill(rect_path, &hue_gradient).draw();
@@ -406,7 +427,7 @@ impl View for SatValuePicker {
 pub struct HuePicker {
     id: ViewId,
     size: Size,
-    current_color: AlphaColor<Hsl>,
+    current_color: AlphaColor<Oklch>,
     on_change: Option<Box<dyn Fn(Color)>>,
     retained_draw: Option<Rc<Scene>>,
 }
@@ -425,14 +446,14 @@ impl HuePicker {
         }
     }
 
-    fn position_to_hsl(&self, pos: Point) -> AlphaColor<Hsl> {
-        let hue = (pos.x / self.size.width * 360.0).clamp(0.0, 360.0);
-
-        let saturation = self.current_color.components[1];
-        let value = self.current_color.components[2];
-        let alpha = self.current_color.components[3];
-
-        AlphaColor::<Hsl>::new([hue as f32, saturation, value, alpha])
+    fn position_to_oklch(&self, pos: Point) -> AlphaColor<Oklch> {
+        let hue = (pos.x / self.size.width * 360.0).clamp(0.0, 360.0) as f32;
+        AlphaColor::<Oklch>::new([
+            self.current_color.components[0], // preserve L
+            self.current_color.components[1], // preserve C
+            hue,
+            self.current_color.components[3], // preserve alpha
+        ])
     }
 
     pub fn on_change(mut self, on_change: impl Fn(Color) + 'static) -> Self {
@@ -447,7 +468,7 @@ impl HuePicker {
 
     fn set_from_point(&mut self, point: Point) -> Color {
         self.id.request_paint();
-        self.current_color = self.position_to_hsl(point);
+        self.current_color = self.position_to_oklch(point);
         self.current_color.convert()
     }
 }
@@ -513,7 +534,7 @@ impl View for HuePicker {
             cx.painter.replay(scene.as_ref());
         }
         if size.width > 0.0 {
-            let hue = self.current_color.components[0];
+            let hue = self.current_color.components[2];
             let x_pos = hue as f64 / 360. * size.width;
 
             let indicator_width = 2.0;
@@ -629,7 +650,7 @@ impl View for OpacityPicker {
         let size = self.size;
         let rect_path = Rect::ZERO.with_size(size).to_rounded_rect(8.);
 
-        draw_transparency_checkerboard(cx, size, &rect_path);
+        draw_checkerboard(cx, size, &rect_path, 8.0, css::WHITE, css::LIGHT_GRAY);
 
         let opacity_gradient: Brush = Gradient::new_linear(
             Point::new(0.0, size.height / 2.0),

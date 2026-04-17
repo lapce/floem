@@ -1,4 +1,4 @@
-use floem::peniko::Brush;
+use floem::imaging::Brush;
 use floem::prelude::palette::css;
 use floem::prelude::*;
 use floem::reactive::Effect;

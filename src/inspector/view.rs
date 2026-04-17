@@ -273,7 +273,7 @@ fn capture_view(
         |it| *it,
         move |it| {
             match it {
-                0 => selected_view(&capture_sig.get(), capture_view).into_any(),
+                0 => selected_view(&capture_sig.get(), capture_view, datas).into_any(),
                 1 => stats(&capture_sig.get()).into_any(),
                 _ => panic!(),
             }
@@ -661,7 +661,7 @@ impl InspectorImageView {
     fn overlay_rect(&self, selection: Option<InspectorSelection>) -> Option<Rect> {
         let bounds = match selection? {
             InspectorSelection::View(id) => self.capture.root.find(id)?.world_bounds,
-            InspectorSelection::Element(id) => {
+            InspectorSelection::BoxNode(id) => {
                 self.capture.state.elements_root.find(id)?.world_bounds
             }
         };
@@ -808,7 +808,13 @@ impl View for InspectorImageView {
                     self.contain_ids
                         .last()
                         .copied()
-                        .map(InspectorSelection::Element),
+                        .map(|id| {
+                            if id.is_view() {
+                                InspectorSelection::View(id.owning_id())
+                            } else {
+                                InspectorSelection::BoxNode(id)
+                            }
+                        }),
                 );
             }
             Event::Pointer(PointerEvent::Up(_)) => {

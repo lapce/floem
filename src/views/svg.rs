@@ -1,11 +1,12 @@
 use std::{cell::RefCell, rc::Rc};
 
 use floem_reactive::Effect;
-use imaging::MaskMode;
-use imaging::Painter;
-use imaging::record::{Scene, replay_transformed};
+use imaging::{
+    Brush, MaskMode, Painter,
+    record::{Scene, replay_transformed},
+};
 use peniko::{
-    Brush, GradientKind, LinearGradientPosition,
+    GradientKind, LinearGradientPosition,
     kurbo::{Affine, Point, Size},
 };
 use svg_imaging::{ParseOptions, RenderOptions, SvgDocument};
@@ -348,20 +349,20 @@ impl View for Svg {
             let brush = self.svg_style.color_brush();
             let mut scene = Scene::new();
             let mut painter = Painter::new(&mut scene);
-            // if let Some(brush) = brush.as_ref() {
-            //     let bounds = document.size().to_rect();
-            //     painter.with_masked_group(
-            //         MaskMode::Alpha,
-            //         |mask| {
-            //             let _ = document.render(mask, &RenderOptions::default());
-            //         },
-            //         |painter| {
-            //             painter.fill(bounds, brush).draw();
-            //         },
-            //     );
-            // } else {
-            let _ = document.render(&mut painter, &RenderOptions::default());
-            // }
+            if let Some(brush) = brush.as_ref() {
+                let bounds = document.size().to_rect();
+                painter.with_masked_group(
+                    MaskMode::Alpha,
+                    |mask| {
+                        let _ = document.render(mask, &RenderOptions::default());
+                    },
+                    |painter| {
+                        painter.fill(bounds, brush).draw();
+                    },
+                );
+            } else {
+                let _ = document.render(&mut painter, &RenderOptions::default());
+            }
             replay_transformed(&scene, cx.painter.sink_mut(), transform);
         }
     }

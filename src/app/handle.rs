@@ -32,7 +32,11 @@ use crate::{
     },
     paint::PaintState,
     view::View,
-    window::{WindowConfig, handle::WindowHandle, id::process_window_updates},
+    window::{
+        WindowConfig,
+        handle::{FrameSchedule, FrameWakeKind, WindowHandle},
+        id::process_window_updates,
+    },
 };
 
 struct PendingContextMenu {
@@ -41,16 +45,23 @@ struct PendingContextMenu {
     pos: Option<Point>,
 }
 
-struct PacedRedrawTimerState {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PacedWakeKind {
+    Present,
+    Update,
+}
+
+struct PacedWakeTimerState {
     token: Option<TimerToken>,
     deadline: Instant,
+    kind: PacedWakeKind,
 }
 
 pub(crate) struct ApplicationHandle {
     window_handles: HashMap<winit::window::WindowId, WindowHandle>,
     next_output_id: u32,
     timers: HashMap<TimerToken, Timer>,
-    paced_redraw_timers: HashMap<winit::window::WindowId, PacedRedrawTimerState>,
+    paced_wake_timers: HashMap<winit::window::WindowId, PacedWakeTimerState>,
     pending_context_menus: Vec<PendingContextMenu>,
     pub(crate) event_listener: Option<Box<AppEventCallback>>,
     pub(crate) gpu_resources: Option<GpuResources>,
@@ -65,7 +76,7 @@ impl ApplicationHandle {
             window_handles: HashMap::new(),
             next_output_id: 0,
             timers: HashMap::new(),
-            paced_redraw_timers: HashMap::new(),
+            paced_wake_timers: HashMap::new(),
             pending_context_menus: Vec::new(),
             event_listener: None,
             gpu_resources: None,
@@ -151,20 +162,18 @@ impl ApplicationHandle {
     fn apply_window_frame_schedule(
         &mut self,
         window_id: WindowId,
-        schedule: crate::window::handle::FrameSchedule,
+        schedule: FrameSchedule,
         event_loop: &dyn ActiveEventLoop,
     ) {
-        match schedule.redraw {
-            Some(deadline) => {
-                if Instant::now() >= deadline {
-                    self.cancel_paced_redraw_timer(window_id, event_loop);
-                    let presented = self.present_window_frame(window_id);
-                    self.continue_after_present(window_id, presented, event_loop);
-                } else {
-                    self.ensure_paced_redraw_timer(window_id, deadline, event_loop);
-                }
+        match schedule.wake {
+            Some(wake) => {
+                let kind = match wake.kind {
+                    FrameWakeKind::Present => PacedWakeKind::Present,
+                    FrameWakeKind::Update => PacedWakeKind::Update,
+                };
+                self.ensure_paced_wake_timer(window_id, wake.deadline, kind, event_loop);
             }
-            None => self.cancel_paced_redraw_timer(window_id, event_loop),
+            None => self.cancel_paced_wake_timer(window_id, event_loop),
         }
     }
 
@@ -229,11 +238,14 @@ impl ApplicationHandle {
                 window_id,
                 frame_id,
             } => {
+                #[cfg(all(feature = "subduction", target_os = "macos"))]
+                let mut should_present_immediately = false;
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
                     #[cfg(all(feature = "subduction", target_os = "macos"))]
                     {
                         handle.accept_frame_ready(frame_id);
                         handle.refresh_frame_activity();
+                        should_present_immediately = handle.take_present_immediately_when_ready();
                     }
 
                     #[cfg(not(all(feature = "subduction", target_os = "macos")))]
@@ -242,26 +254,38 @@ impl ApplicationHandle {
                         handle.refresh_frame_activity();
                     }
                 }
+
+                #[cfg(all(feature = "subduction", target_os = "macos"))]
+                {
+                    if should_present_immediately {
+                        let presented = self.present_window_frame(window_id);
+                        self.continue_after_present(window_id, presented, event_loop);
+                        return;
+                    }
+                }
+
                 self.refresh_window_frame_schedule(window_id, event_loop);
             }
             #[cfg(all(feature = "subduction", target_os = "macos"))]
             UserEvent::SubductionFrameTick { window_id, tick } => {
+                let mut should_refresh_schedule = false;
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
                     handle.record_profile_instant("VSync", Instant::now());
                     handle.receive_frame_tick(tick);
                     handle.refresh_frame_activity();
-                    // Continuous animations are driven by subduction ticks.
-                    // Once a frame is already underway, do not let the next
-                    // tick start another animation frame on top of it; wait
-                    // until the current frame retires so steady-state
-                    // animation stays at one scene build per display interval.
                     if handle.can_render_now()
                         && !handle.has_frame_underway()
-                        && (handle.window_state.has_next_frame_work()
-                            || handle.window_state.has_pending_render())
+                        && handle.has_frame_work()
                     {
-                        self.request_update();
+                        // Subduction owns frame opportunities on this path.
+                        // The app layer should only feed updated window state
+                        // back into scheduling; it should not invent a separate
+                        // "present now" branch here.
+                        should_refresh_schedule = true;
                     }
+                }
+                if should_refresh_schedule {
+                    self.refresh_window_frame_schedule(window_id, event_loop);
                 }
             }
         }
@@ -861,7 +885,7 @@ impl ApplicationHandle {
     }
 
     fn close_window(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
-        self.cancel_paced_redraw_timer(window_id, event_loop);
+        self.cancel_paced_wake_timer(window_id, event_loop);
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
             handle.destroy();
         }
@@ -947,7 +971,7 @@ impl ApplicationHandle {
             .get_mut(&window_id)
             .map(|handle| handle.advance_frame())
         else {
-            self.cancel_paced_redraw_timer(window_id, event_loop);
+            self.cancel_paced_wake_timer(window_id, event_loop);
             return;
         };
 
@@ -989,44 +1013,47 @@ impl ApplicationHandle {
         self.fire_timer(event_loop);
     }
 
-    fn ensure_paced_redraw_timer(
+    fn ensure_paced_wake_timer(
         &mut self,
         window_id: WindowId,
         deadline: Instant,
+        kind: PacedWakeKind,
         event_loop: &dyn ActiveEventLoop,
     ) {
         let deadline = if deadline <= Instant::now() {
-            Instant::now()
+            Instant::now() + Duration::from_millis(1)
         } else {
             deadline
         };
 
-        let deadline = match self.paced_redraw_timers.entry(window_id) {
+        let deadline = match self.paced_wake_timers.entry(window_id) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 let state = entry.get_mut();
-                if state.token.is_some() && state.deadline <= deadline {
+                if state.token.is_some() && state.deadline <= deadline && state.kind == kind {
                     return;
                 }
                 let token = TimerToken::next();
                 state.token = Some(token);
                 state.deadline = deadline;
+                state.kind = kind;
                 deadline
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
                 let token = TimerToken::next();
-                entry.insert(PacedRedrawTimerState {
+                entry.insert(PacedWakeTimerState {
                     token: Some(token),
                     deadline,
+                    kind,
                 });
                 deadline
             }
         };
 
         let token = self
-            .paced_redraw_timers
+            .paced_wake_timers
             .get(&window_id)
             .and_then(|state| state.token)
-            .expect("paced redraw timer token should exist when arming");
+            .expect("paced wake timer token should exist when arming");
         self.request_timer(
             Timer {
                 token,
@@ -1039,8 +1066,8 @@ impl ApplicationHandle {
         );
     }
 
-    fn cancel_paced_redraw_timer(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
-        if let Some(state) = self.paced_redraw_timers.remove(&window_id)
+    fn cancel_paced_wake_timer(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
+        if let Some(state) = self.paced_wake_timers.remove(&window_id)
             && let Some(token) = state.token
         {
             self.remove_timer(&token, event_loop);
@@ -1095,12 +1122,19 @@ impl ApplicationHandle {
                     }
 
                     if let Some(window_id) = timer.window_id
-                        && let Some(state) = self.paced_redraw_timers.get_mut(&window_id)
+                        && let Some(state) = self.paced_wake_timers.get_mut(&window_id)
                         && state.token == Some(token)
                     {
                         state.token = None;
-                        let presented = self.present_window_frame(window_id);
-                        self.continue_after_present(window_id, presented, event_loop);
+                        match state.kind {
+                            PacedWakeKind::Present => {
+                                let presented = self.present_window_frame(window_id);
+                                self.continue_after_present(window_id, presented, event_loop);
+                            }
+                            PacedWakeKind::Update => {
+                                self.request_update();
+                            }
+                        }
                         any_timer_fired = true;
                         continue;
                     }

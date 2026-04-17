@@ -56,6 +56,16 @@ pub(crate) trait FrameClock {
         presented_at: Instant,
     );
     fn set_active(&mut self, _active: bool) {}
+    fn has_external_frame_signal(&self) -> bool {
+        false
+    }
+    fn should_present_immediately_on_frame_ready(
+        &self,
+        _frame_interval: Duration,
+        _now: Instant,
+    ) -> bool {
+        false
+    }
     #[cfg(all(feature = "subduction", target_os = "macos"))]
     fn receive_frame_tick(&mut self, _tick: FrameTick) {}
 }
@@ -258,6 +268,27 @@ struct SubductionPlanState {
     all(feature = "subduction", target_os = "windows")
 ))]
 impl SubductionPlanState {
+    fn ready_frame_target(&self) -> Option<Instant> {
+        self.latest_hints
+            .and_then(|hints| hints.desired_present)
+            .map(|present| self.host_to_instant(present))
+            .map(|surface_available_at| {
+                #[cfg(all(feature = "subduction", target_os = "macos"))]
+                {
+                    surface_available_at
+                        .checked_add(MACOS_SUBDUCTION_PRESENT_DELAY)
+                        .unwrap_or(surface_available_at)
+                }
+
+                #[cfg(all(feature = "subduction", target_os = "windows"))]
+                {
+                    surface_available_at
+                        .checked_sub(SUBDUCTION_PRESENT_WAKE_SLACK)
+                        .unwrap_or(surface_available_at)
+                }
+            })
+    }
+
     fn new(output: OutputId, scheduler: Scheduler, now: HostTime, timebase: Timebase) -> Self {
         Self {
             heuristic: HeuristicFrameClock::default(),
@@ -331,33 +362,54 @@ impl SubductionPlanState {
             .current_frame_time(frame_interval, now, background_rendering)
     }
 
+    fn roll_present_target_forward(
+        &self,
+        target: Instant,
+        frame_interval: Duration,
+        now: Instant,
+    ) -> Instant {
+        if target > now {
+            return target;
+        }
+
+        let step = self.latest_frame_interval(frame_interval);
+        if step.is_zero() {
+            return now;
+        }
+
+        let behind = now.saturating_duration_since(target);
+        let intervals = behind
+            .as_nanos()
+            .checked_div(step.as_nanos().max(1))
+            .unwrap_or(0)
+            + 1;
+        let advance = step
+            .as_nanos()
+            .saturating_mul(intervals)
+            .min(u64::MAX as u128) as u64;
+
+        target
+            .checked_add(Duration::from_nanos(advance))
+            .unwrap_or(now)
+    }
+
     fn redraw_deadline(
         &self,
-        _frame_interval: Duration,
+        frame_interval: Duration,
         now: Instant,
         has_ready_frame: bool,
     ) -> Instant {
-        let latest_surface_available_at = self
-            .latest_hints
-            .and_then(|hints| hints.desired_present)
-            .map(|present| self.host_to_instant(present));
-
         if let Some(commit_deadline) = self.latest_commit_deadline() {
             if has_ready_frame {
-                if let Some(surface_available_at) = latest_surface_available_at {
+                if let Some(target) = self.ready_frame_target() {
                     #[cfg(all(feature = "subduction", target_os = "macos"))]
                     {
-                        return surface_available_at
-                            .checked_add(MACOS_SUBDUCTION_PRESENT_DELAY)
-                            .unwrap_or(surface_available_at)
-                            .max(now);
+                        return self.roll_present_target_forward(target, frame_interval, now);
                     }
 
                     #[cfg(all(feature = "subduction", target_os = "windows"))]
                     {
-                        return surface_available_at
-                            .checked_sub(SUBDUCTION_PRESENT_WAKE_SLACK)
-                            .unwrap_or(now);
+                        return target.max(now);
                     }
                 }
 
@@ -368,7 +420,7 @@ impl SubductionPlanState {
         }
 
         self.heuristic
-            .redraw_deadline(_frame_interval, now, has_ready_frame)
+            .redraw_deadline(frame_interval, now, has_ready_frame)
     }
 
     fn observe_presented(
@@ -386,6 +438,14 @@ impl SubductionPlanState {
                 submitted_at: self.instant_to_host(presented_at),
             });
         }
+
+        // A subduction plan/hint pair is for one frame opportunity. Once that
+        // frame has actually been presented, do not keep reusing the same
+        // target/commit window for subsequent input-driven frames that happen
+        // before the next tick arrives.
+        self.latest_hints = None;
+        self.latest_plan = None;
+        self.latest_prepare_start = None;
     }
 
     fn observe_new_plan(&mut self, tick: FrameTick, hints: PresentHints, plan: FramePlan) {
@@ -511,6 +571,20 @@ impl FrameClock for SubductionFrameClock {
         } else if let Some(display_link) = self.display_link.take() {
             display_link.stop();
         }
+    }
+
+    fn has_external_frame_signal(&self) -> bool {
+        true
+    }
+
+    fn should_present_immediately_on_frame_ready(
+        &self,
+        _frame_interval: Duration,
+        now: Instant,
+    ) -> bool {
+        self.plan_state
+            .ready_frame_target()
+            .is_some_and(|target| target <= now)
     }
 
     fn receive_frame_tick(&mut self, tick: FrameTick) {

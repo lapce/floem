@@ -848,6 +848,7 @@ fn command_transform_class(scene: &Scene, command: &Command) -> TransformClass {
         Command::Draw(id) => match scene.draw_op(*id) {
             Draw::Fill { .. } | Draw::Stroke { .. } => TransformClass::Affine,
             Draw::GlyphRun(_) | Draw::BlurredRoundedRect(_) => TransformClass::TranslateOnly,
+            Draw::ScenePicture { .. } => TransformClass::Affine,
         },
     }
 }

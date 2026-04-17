@@ -592,14 +592,21 @@ impl CapturedElement {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum InspectorSelection {
     View(ViewId),
-    Element(ElementId),
+    BoxNode(ElementId),
 }
 
 impl InspectorSelection {
     fn owner_view_id(self) -> ViewId {
         match self {
             Self::View(id) => id,
-            Self::Element(id) => id.owning_id(),
+            Self::BoxNode(id) => id.owning_id(),
+        }
+    }
+
+    fn box_node_id(self) -> Option<ElementId> {
+        match self {
+            Self::View(_) => None,
+            Self::BoxNode(id) => Some(id),
         }
     }
 }
@@ -1294,7 +1301,11 @@ fn stats(capture: &Capture) -> impl IntoView + use<> {
     .style(|s| s.width_full().gap(8.0))
 }
 
-fn selected_view(capture: &Rc<Capture>, capture_view: CaptureView) -> impl IntoView + use<> {
+fn selected_view(
+    capture: &Rc<Capture>,
+    capture_view: CaptureView,
+    datas: RwSignal<CapturedDatas>,
+) -> impl IntoView + use<> {
     let capture = capture.clone();
 
     let dyn_view_builder = move |selected_value: Option<InspectorSelection>| {
@@ -1439,7 +1450,7 @@ fn selected_view(capture: &Rc<Capture>, capture_view: CaptureView) -> impl IntoV
                 Stack::vertical((header("Selected View"), selected_view_summary))
                     .style(|s| s.width_full().min_size(0., 0.).flex_grow(1.));
             let owned_elements =
-                selected_box_nodes_by_view(&capture, view.id, capture_view, "Box Nodes");
+                selected_box_nodes_by_view(&capture, view.id, capture_view, datas, "Box Nodes");
             let style_panel = Stack::vertical((
                 header("Style"),
                 style
@@ -1456,14 +1467,11 @@ fn selected_view(capture: &Rc<Capture>, capture_view: CaptureView) -> impl IntoV
             .style(|s| s.width_full().min_size(0., 0.).flex_grow(1.));
 
             let selected_element_panel = match selection {
-                InspectorSelection::Element(element_id) => capture
+                InspectorSelection::BoxNode(element_id) => capture
                     .state
                     .elements_root
                     .find(element_id)
                     .and_then(|element| {
-                        if element.id.is_view() {
-                            return None;
-                        }
                         let info_rows = [
                             info(
                                 "Node",
@@ -1544,19 +1552,21 @@ fn selected_view(capture: &Rc<Capture>, capture_view: CaptureView) -> impl IntoV
                     let child_elements = capture
                         .state
                         .elements_root
-                        .find(match selection {
-                            InspectorSelection::Element(id) => id,
-                            InspectorSelection::View(_) => unreachable!(),
-                        })
+                        .find(
+                            selection
+                                .box_node_id()
+                                .expect("selected element panel implies box-node selection"),
+                        )
                         .map(|element| {
                             selected_box_nodes(
                                 element.children.iter().map(|child| child.id).collect(),
                                 capture_view,
+                                datas,
                                 "Child Box Nodes",
                             )
                         })
                         .unwrap_or_else(|| {
-                            selected_box_nodes(Vec::new(), capture_view, "Child Box Nodes")
+                            selected_box_nodes(Vec::new(), capture_view, datas, "Child Box Nodes")
                         });
                     Stack::vertical((selected_element_panel, child_elements))
                         .style(|s| s.width_full().flex_shrink(0.).gap(10).min_size(0., 0.))
@@ -1621,6 +1631,7 @@ fn selected_box_nodes_by_view(
     capture: &Rc<Capture>,
     view_id: ViewId,
     capture_view: CaptureView,
+    datas: RwSignal<CapturedDatas>,
     title: &'static str,
 ) -> impl IntoView {
     let elements = capture
@@ -1629,12 +1640,13 @@ fn selected_box_nodes_by_view(
         .get(&view_id)
         .cloned()
         .unwrap_or_default();
-    selected_box_nodes(elements, capture_view, title)
+    selected_box_nodes(elements, capture_view, datas, title)
 }
 
 fn selected_box_nodes(
     elements: Vec<ElementId>,
     capture_view: CaptureView,
+    datas: RwSignal<CapturedDatas>,
     title: &'static str,
 ) -> impl IntoView {
     Stack::vertical((
@@ -1647,22 +1659,26 @@ fn selected_box_nodes(
                 format!("{:?}  box node", element_id.0)
             };
             Label::new(label)
+                .container()
                 .style(move |s| {
-                    s.padding(4.0).keyboard_navigable().with_theme(move |s, t| {
-                        s.apply_if(
-                            capture_view.selected.get()
-                                == Some(InspectorSelection::Element(element_id)),
-                            |s| s.background(t.bg_elevated()).color(t.primary()),
-                        )
-                    })
+                    s.padding(4.0)
+                        .width_full()
+                        .keyboard_navigable()
+                        .with_theme(move |s, t| {
+                            s.apply_if(
+                                capture_view.selected.get()
+                                    == Some(InspectorSelection::BoxNode(element_id)),
+                                |s| s.background(t.bg_elevated()).color(t.primary()),
+                            )
+                        })
                 })
                 .on_event_cont(crate::event::listener::PointerEnter, move |_, _| {
                     capture_view
                         .highlighted
-                        .set(Some(InspectorSelection::Element(element_id)));
+                        .set(Some(InspectorSelection::BoxNode(element_id)));
                 })
                 .action(move || {
-                    update_select_element_id(element_id, &capture_view, false, None);
+                    update_select_box_node_id(element_id, &capture_view, true, Some(datas));
                 })
                 .into_any()
         })),
@@ -1746,10 +1762,36 @@ fn update_select_element_id(
     datas: Option<RwSignal<CapturedDatas>>,
 ) {
     let owner_id = id.owning_id();
-    capture.selected.set(Some(InspectorSelection::Element(id)));
+    let selection = if id.is_view() {
+        InspectorSelection::View(owner_id)
+    } else {
+        InspectorSelection::BoxNode(id)
+    };
+    capture.selected.set(Some(selection));
+    capture.highlighted.set(Some(selection));
+    capture
+        .expanding_selection
+        .set(Some((owner_id, request_focus)));
+    if let Some(datas) = datas {
+        Effect::batch(|| {
+            datas.update(|x| {
+                x.focus(owner_id);
+            });
+        });
+    }
+}
+
+fn update_select_box_node_id(
+    id: ElementId,
+    capture: &CaptureView,
+    request_focus: bool,
+    datas: Option<RwSignal<CapturedDatas>>,
+) {
+    let owner_id = id.owning_id();
+    capture.selected.set(Some(InspectorSelection::BoxNode(id)));
     capture
         .highlighted
-        .set(Some(InspectorSelection::Element(id)));
+        .set(Some(InspectorSelection::BoxNode(id)));
     capture
         .expanding_selection
         .set(Some((owner_id, request_focus)));

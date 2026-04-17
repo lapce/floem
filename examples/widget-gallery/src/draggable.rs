@@ -1,7 +1,8 @@
 use floem::{
     easing,
     event::DragConfig,
-    peniko::{Brush, color::Oklab},
+    imaging::Brush,
+    peniko::color::Oklab,
     prelude::{palette::css, *},
     style::{Background, CursorStyle, TextColor},
     style_class,

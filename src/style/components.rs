@@ -4,10 +4,11 @@
 //! CSS properties like borders and padding.
 
 use crate::text::FontWeight;
+use imaging::Brush;
 use parley::style::{OverflowWrap, WordBreakStrength};
 use peniko::color::palette;
 use peniko::kurbo::Stroke;
-use peniko::{Brush, Color};
+use peniko::Color;
 
 use crate::theme::StyleThemeExt;
 use crate::unit::{FontSizeCx, Length, LengthAuto};

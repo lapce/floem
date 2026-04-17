@@ -1512,6 +1512,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
 
 [[package]]
+name = "float_next_after"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bf7cc16383c4b8d58b9905a8509f02926ce3058053c056376248d958c9df1e8"
+
+[[package]]
 name = "floem"
 version = "0.2.0"
 dependencies = [
@@ -1616,16 +1622,17 @@ dependencies = [
  "anyhow",
  "euclid",
  "fontdue",
+ "guillotiere",
  "image 0.25.10",
  "imaging",
  "imaging_wgpu",
  "linebender_resource_handle",
+ "lyon_tessellation",
  "parley",
  "peniko",
- "rect_packer",
  "skrifa 0.40.0",
  "swash",
- "tiny-skia",
+ "tiny-skia 0.11.4",
  "wgpu 28.0.0",
 ]
 
@@ -2665,6 +2672,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hashbrown"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f467dd6dccf739c208452f8014c75c18bb8301b050ad1cfb27153803edb0f51"
+dependencies = [
+ "foldhash 0.2.0",
+]
+
+[[package]]
 name = "hashlink"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2984,7 +3000,7 @@ dependencies = [
  "peniko",
  "rustc-hash 2.1.2",
  "swash",
- "tiny-skia",
+ "tiny-skia 0.12.0",
 ]
 
 [[package]]
@@ -3488,6 +3504,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fae87c125b03c1d2c0150c90365d7d6bcc53fb73a9acaef207d2d065860f062"
 dependencies = [
  "imgref",
+]
+
+[[package]]
+name = "lyon_geom"
+version = "1.0.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4336502e29e32af93cf2dad2214ed6003c17ceb5bd499df77b1de663b9042b92"
+dependencies = [
+ "arrayvec",
+ "euclid",
+ "num-traits",
+]
+
+[[package]]
+name = "lyon_path"
+version = "1.0.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c463f9c428b7fc5ec885dcd39ce4aa61e29111d0e33483f6f98c74e89d8621e"
+dependencies = [
+ "lyon_geom",
+ "num-traits",
+]
+
+[[package]]
+name = "lyon_tessellation"
+version = "1.0.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e43b7e44161571868f5c931d12583592c223c5583eef86b08aa02b7048a3552"
+dependencies = [
+ "float_next_after",
+ "lyon_path",
+ "num-traits",
 ]
 
 [[package]]
@@ -5064,12 +5112,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rect_packer"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8ffb4dfda4b01cc420847665dc480760d596ce186f2772a66ed32fe9acb1c45"
-
-[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5415,7 +5457,7 @@ dependencies = [
  "log",
  "memmap2",
  "smithay-client-toolkit",
- "tiny-skia",
+ "tiny-skia 0.11.4",
 ]
 
 [[package]]
@@ -5949,7 +5991,7 @@ checksum = "0193cc4331cfd2f3d2011ef287590868599a2f33c3e69bc22c1a3d3acf9e02fb"
 name = "svg_imaging"
 version = "0.0.1"
 dependencies = [
- "hashbrown 0.16.1",
+ "hashbrown 0.17.0",
  "image 0.25.10",
  "imaging",
  "kurbo",
@@ -6262,6 +6304,20 @@ dependencies = [
  "cfg-if",
  "log",
  "tiny-skia-path 0.11.4",
+]
+
+[[package]]
+name = "tiny-skia"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47ffee5eaaf5527f630fb0e356b90ebdec84d5d18d937c5e440350f88c5a91ea"
+dependencies = [
+ "arrayref",
+ "arrayvec",
+ "bytemuck",
+ "cfg-if",
+ "log",
+ "tiny-skia-path 0.12.0",
 ]
 
 [[package]]

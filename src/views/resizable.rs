@@ -8,6 +8,7 @@ use crate::{
         DragEvent, DragSourceEvent, Event, EventPropagation, InteractionEvent, Phase,
         listener::UpdatePhaseLayout,
     },
+    imaging::Brush,
     prelude::*,
     prop, prop_extractor,
     style::{
@@ -20,7 +21,6 @@ use crate::{
 };
 use floem_reactive::Effect;
 use peniko::{
-    Brush,
     color::palette::css,
     kurbo::{Axis, Rect},
 };

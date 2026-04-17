@@ -166,6 +166,28 @@ The output target should be acquired only when the frame is actually ready to co
 
 Heuristics based on `last_presented_at` are acceptable only as a fallback. When platform feedback exists, pacing should be driven by predicted present time and actual presentation feedback.
 
+### Invariant 7: external frame signals replace synthetic begin-frame wakeups, not late present pacing
+
+When a backend provides authoritative frame opportunities, Floem must treat those
+signals as the only source of begin-frame/update advancement.
+
+That means:
+
+- do not synthesize timer-driven "update" wakeups between backend frame signals
+- do let backend frame signals trigger scheduling reevaluation
+- do keep late present pacing when a frame is already prepared, if the backend or
+  frame clock provides a meaningful present deadline
+
+Operationally:
+
+- `FrameTick`/display-link style events are for advancing deferred next-frame
+  work and begin-frame callbacks
+- `FrameReady` only changes pipeline readiness state; it does not itself define
+  presentation timing
+- the scheduler may still arm a timed late-present wakeup for a ready frame
+- app-level event plumbing should only feed state changes back into scheduling;
+  it should not invent a separate per-platform presentation policy
+
 ## Proposed Architecture
 
 Introduce a first-class `FrameCoordinator` per window.
