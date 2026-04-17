@@ -26,14 +26,13 @@
 
 use std::hash::{Hash, Hasher};
 
-use super::cx::InheritedInteractionCx;
-use super::selectors::StyleSelectors;
-
 use rustc_hash::{FxHashMap, FxHasher};
 
-use super::Style;
-use crate::layout::responsive::ScreenSizeBp;
-use crate::style::{InteractionState, StyleClassRef};
+use crate::interaction::{InheritedInteractionCx, InteractionState};
+use crate::props::{StyleClassRef, StyleKeyInfo};
+use crate::responsive::ScreenSizeBp;
+use crate::selectors::StyleSelectors;
+use crate::style::Style;
 
 /// Maximum number of hash buckets in the cache.
 const MAX_CACHE_BUCKETS: usize = 256;
@@ -480,23 +479,13 @@ fn hash_classes(classes: &[StyleClassRef]) -> u64 {
     hasher.finish()
 }
 
-/// Extension trait adding cache-related helpers to [`Style`]. These live on a
-/// trait because `Style` is a foreign type (from `floem_style`) and the orphan
-/// rule forbids inherent impls.
-pub(crate) trait StyleCacheExt {
-    fn content_hash(&self) -> u64;
-    fn inherited_equal(&self, other: &Style) -> bool;
-}
-
-impl StyleCacheExt for Style {
+impl Style {
     /// Compute a content hash of this style for cache keying.
     ///
     /// This hash captures the identity of the style's contents using
     /// value-based hashing. Identical style values will produce identical
     /// hashes, enabling effective cache sharing.
-    fn content_hash(&self) -> u64 {
-        use crate::style::props::StyleKeyInfo;
-
+    pub fn content_hash(&self) -> u64 {
         // Use XOR-based order-independent hashing to avoid Vec allocation + sort.
         // Each entry is independently hashed and XOR'd into the accumulator.
         // We mix in the entry count separately to distinguish e.g. {A} from {A, B}
@@ -539,9 +528,7 @@ impl StyleCacheExt for Style {
     /// This is the key comparison for cache validation (Chromium's approach).
     /// Two styles with different inherited values cannot share a cache entry
     /// even if their non-inherited properties are identical.
-    fn inherited_equal(&self, other: &Style) -> bool {
-        use crate::style::props::StyleKeyInfo;
-
+    pub fn inherited_equal(&self, other: &Style) -> bool {
         // Compare only inherited properties
         for (key, value) in self.map.iter() {
             if let StyleKeyInfo::Prop(prop_info) = key.info
@@ -935,7 +922,7 @@ mod tests {
 
     #[test]
     fn test_inherited_equal_with_actual_inherited_props() {
-        use crate::style::TextColor;
+        use crate::TextColor;
 
         let style1 = Style::new().set(TextColor, Some(css::RED));
         let style2 = Style::new().set(TextColor, Some(css::BLUE));

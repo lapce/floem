@@ -8,9 +8,8 @@
 
 use crate::ElementId;
 use crate::layout::responsive::ScreenSizeBp;
-use crate::style::cache::StyleCache;
 use crate::style::recalc::StyleReason;
-use crate::style::{Style, StyleSelector, StyleSelectors};
+use crate::style::{Style, StyleCache, StyleSelector, StyleSelectors};
 use crate::view::ViewId;
 use crate::window::state::WindowState;
 

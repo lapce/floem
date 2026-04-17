@@ -10,11 +10,10 @@ use crate::{
     message::UpdateMessage,
     prop_extractor,
     style::{
-        cache::StyleCacheExt, Background, BorderBottomColor, BorderBottomLeftRadius,
-        BorderBottomRightRadius, BorderLeftColor, BorderRightColor, BorderTopColor,
-        BorderTopLeftRadius, BorderTopRightRadius, BoxShadowProp, CursorStyle,
-        InheritedInteractionCx, Outline, OutlineColor, Style, StyleClassRef, StyleStorage,
-        recalc::StyleReason,
+        Background, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
+        BorderLeftColor, BorderRightColor, BorderTopColor, BorderTopLeftRadius,
+        BorderTopRightRadius, BoxShadowProp, CursorStyle, InheritedInteractionCx, Outline,
+        OutlineColor, Style, StyleClassRef, StyleStorage, recalc::StyleReason,
     },
     view::LayoutTree,
 };

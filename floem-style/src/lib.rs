@@ -8,6 +8,7 @@
 //! traits this crate exposes.
 
 pub mod builtin_props;
+pub mod cache;
 pub mod cascade;
 pub mod components;
 pub mod context_value;
@@ -50,6 +51,7 @@ pub use builtin_props::{
     SelectionCornerRadius, TextAlignProp, TextColor, TextOverflowProp, Transform, TranslateX,
     TranslateY, Width, ZIndex,
 };
+pub use cache::{CacheHit, CacheStats, StyleCache, StyleCacheKey};
 pub use cascade::resolve_nested_maps;
 pub use components::{Border, BorderColor, BorderRadius, BoxShadow, Margin, Padding};
 pub use context_value::ContextValue;

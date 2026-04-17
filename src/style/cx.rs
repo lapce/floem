@@ -234,7 +234,7 @@ impl<'a> StyleCx<'a> {
             self.reason.needs_resolve_nested_maps() || self.reason.needs_animation();
 
         if self.reason.needs_resolve_nested_maps() {
-            use super::cache::StyleCacheKey;
+            use super::StyleCacheKey;
 
             // Get metadata without cloning the full style
             let (style_hash, cacheable) = {

@@ -142,7 +142,6 @@ pub use taffy::style::{
 // Import macros used by the prop_extractor blocks below.
 use crate::prop_extractor;
 
-pub(crate) mod cache;
 mod context_ext;
 mod custom;
 mod cx;
@@ -187,7 +186,7 @@ pub use floem_style::unit::{
 pub use floem_style::{ContextValue, ObjectFit, ObjectPosition, StrokeWrap, StyleMapValue, StyleValue};
 pub use values::StylePropValue;
 
-pub use cache::{StyleCache, StyleCacheKey};
+pub use floem_style::{CacheHit, CacheStats, StyleCache, StyleCacheKey};
 
 pub(crate) use storage::StyleStorage;
 
