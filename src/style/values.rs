@@ -337,9 +337,12 @@ fn style_debug_prop_row(
     let name = short_style_name(&format!("{:?}", prop.key));
     StyleDebugRow {
         render: Rc::new(move |_| {
-            let mut value_view = (prop.info().debug_view)(&*value)
-                .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
-                .unwrap_or_else(|| Label::new((prop.info().debug_any)(&*value)).into_any());
+            let mut value_view = (prop.info().debug_view)(
+                &*value,
+                &crate::style::FloemInspectorRender,
+            )
+            .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+            .unwrap_or_else(|| Label::new((prop.info().debug_any)(&*value)).into_any());
 
             if let Some(transition) = style
                 .map

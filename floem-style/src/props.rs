@@ -139,7 +139,12 @@ pub struct StylePropInfo {
     pub default_as_any: fn() -> Rc<dyn Any>,
     pub interpolate: InterpolateFn,
     pub debug_any: fn(val: &dyn Any) -> String,
-    pub debug_view: fn(val: &dyn Any) -> Option<Box<dyn Any>>,
+    /// Render an inspector preview for this property value.
+    ///
+    /// Takes `&dyn InspectorRender` so the renderer is chosen by the caller,
+    /// keeping this crate free of view-layer dependencies. Floem hosts pass
+    /// their concrete `FloemInspectorRender`; other hosts can pass their own.
+    pub debug_view: fn(val: &dyn Any, r: &dyn crate::InspectorRender) -> Option<Box<dyn Any>>,
     pub transition_key: StyleKey,
     /// Computes a content-based hash for a style value.
     pub hash_any: HashAnyFn,

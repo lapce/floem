@@ -130,25 +130,14 @@ macro_rules! prop {
                             )
                         }
                     },
-                    debug_view: |val| {
+                    debug_view: |val, r| {
                         if let Some(v) = val.downcast_ref::<$crate::style::StyleMapValue<$ty>>() {
                             match v {
                                 $crate::style::StyleMapValue::Val(v) | $crate::style::StyleMapValue::Animated(v) => {
-                                    <$ty as $crate::style::PropDebugView>::debug_view(
-                                        v,
-                                        &$crate::style::FloemInspectorRender,
-                                    )
+                                    <$ty as $crate::style::PropDebugView>::debug_view(v, r)
                                 }
-                                $crate::style::StyleMapValue::Context(_) => Some(Box::new(
-                                    <$crate::views::Label as $crate::view::IntoView>::into_any(
-                                        $crate::views::Label::new("Context(..)")
-                                    )
-                                ) as Box<dyn std::any::Any>),
-                                $crate::style::StyleMapValue::Unset => Some(Box::new(
-                                    <$crate::views::Label as $crate::view::IntoView>::into_any(
-                                        $crate::views::Label::new("Unset")
-                                    )
-                                ) as Box<dyn std::any::Any>),
+                                $crate::style::StyleMapValue::Context(_) => Some(r.text("Context(..)")),
+                                $crate::style::StyleMapValue::Unset => Some(r.text("Unset")),
                             }
                         } else {
                             panic!(
