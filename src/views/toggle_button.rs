@@ -21,7 +21,7 @@ use crate::{
         PointerCaptureEvent, listener::UpdatePhaseLayout,
     },
     prop, prop_extractor,
-    style::{FontSize, Foreground, LineHeight, Style},
+    style::{FontSize, Foreground, LineHeight, Style, StyleCustomExt},
     style_class,
     unit::Length,
     view::View,

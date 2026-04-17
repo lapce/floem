@@ -1895,8 +1895,10 @@ name = "floem_style"
 version = "0.2.0"
 dependencies = [
  "bitflags 2.11.0",
+ "floem_reactive",
  "floem_renderer",
  "parley",
+ "paste",
  "peniko",
  "rustc-hash 2.1.1",
  "smallvec",

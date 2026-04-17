@@ -480,13 +480,21 @@ fn hash_classes(classes: &[StyleClassRef]) -> u64 {
     hasher.finish()
 }
 
-impl Style {
+/// Extension trait adding cache-related helpers to [`Style`]. These live on a
+/// trait because `Style` is a foreign type (from `floem_style`) and the orphan
+/// rule forbids inherent impls.
+pub(crate) trait StyleCacheExt {
+    fn content_hash(&self) -> u64;
+    fn inherited_equal(&self, other: &Style) -> bool;
+}
+
+impl StyleCacheExt for Style {
     /// Compute a content hash of this style for cache keying.
     ///
     /// This hash captures the identity of the style's contents using
     /// value-based hashing. Identical style values will produce identical
     /// hashes, enabling effective cache sharing.
-    pub fn content_hash(&self) -> u64 {
+    fn content_hash(&self) -> u64 {
         use crate::style::props::StyleKeyInfo;
 
         // Use XOR-based order-independent hashing to avoid Vec allocation + sort.
@@ -531,7 +539,7 @@ impl Style {
     /// This is the key comparison for cache validation (Chromium's approach).
     /// Two styles with different inherited values cannot share a cache entry
     /// even if their non-inherited properties are identical.
-    pub fn inherited_equal(&self, other: &Style) -> bool {
+    fn inherited_equal(&self, other: &Style) -> bool {
         use crate::style::props::StyleKeyInfo;
 
         // Compare only inherited properties

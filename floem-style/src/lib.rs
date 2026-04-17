@@ -1,12 +1,14 @@
 //! The Floem style engine.
 //!
 //! This crate holds the view-agnostic parts of Floem's style system: unit
-//! types, pseudo-class selectors, and (in later phases) the cascade, cache,
+//! types, pseudo-class selectors, the cascade, built-in property definitions,
 //! transitions, and per-node style storage. It is consumed by the `floem`
 //! crate, and is designed so a second host (e.g. a native-widget backend)
 //! can run the same engine over its own node type by implementing the
 //! traits this crate exposes.
 
+pub mod builtin_props;
+pub mod cascade;
 pub mod components;
 pub mod context_value;
 pub mod debug_view;
@@ -21,6 +23,8 @@ pub mod props;
 pub mod recalc;
 pub mod responsive;
 pub mod selectors;
+pub mod style;
+pub mod style_macros;
 pub mod style_value;
 pub mod transition;
 pub mod unit;
@@ -28,6 +32,25 @@ pub mod value_impls;
 pub mod values;
 pub mod visibility;
 
+pub use builtin_props::{
+    AlignContent, AlignContentProp, AlignItems, AlignItemsProp, AlignSelf, AspectRatio,
+    Background, BorderBottom, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
+    BorderLeft, BorderLeftColor, BorderProgress, BorderRight, BorderRightColor, BorderTop,
+    BorderTopColor, BorderTopLeftRadius, BorderTopRightRadius, BoxShadowProp, BoxSizing,
+    BoxSizingProp, ColGap, Cursor, CursorColor, Dimension, Disabled, Display, DisplayProp,
+    FlexBasis, FlexDirection, FlexDirectionProp, FlexGrow, FlexShrink, FlexWrap, FlexWrapProp,
+    Focusable, FontFamily, FontSize, FontStyle, FontWeight, Foreground, GridAutoColumns,
+    GridAutoFlow, GridAutoRows, GridColumn, GridRow, GridTemplateColumns, GridTemplateRows, Height,
+    InsetBottom, InsetLeft, InsetRight, InsetTop, IsFixed, JustifyContent, JustifyContentProp,
+    JustifyItems, JustifyItemsProp, JustifySelf, LineHeight, MarginBottom, MarginLeft, MarginRight,
+    MarginTop, MaxHeight, MaxWidth, MinHeight, MinWidth, ObjectFitProp, ObjectPositionProp,
+    Opacity, Outline, OutlineColor, OutlineProgress, OverflowX, OverflowY, PaddingBottom,
+    PaddingLeft, PaddingRight, PaddingTop, PointerEventsProp, Position, PositionProp, RotateAbout,
+    Rotation, RowGap, ScaleAbout, ScaleX, ScaleY, ScrollbarWidth, Selectable, Selected,
+    SelectionCornerRadius, TextAlignProp, TextColor, TextOverflowProp, Transform, TranslateX,
+    TranslateY, Width, ZIndex,
+};
+pub use cascade::resolve_nested_maps;
 pub use components::{Border, BorderColor, BorderRadius, BoxShadow, Margin, Padding};
 pub use context_value::ContextValue;
 pub use debug_view::PropDebugView;
@@ -39,15 +62,16 @@ pub use interaction::{InheritedInteractionCx, InteractionState};
 pub use merge_id::{
     combine_merge_ids, next_style_merge_id, DEFERRED_EFFECTS_INFO, DEFERRED_EFFECTS_KEY,
 };
-pub use selectors::StyleSelectorKey;
 pub use prop_value::StylePropValue;
-pub use style_value::{StyleMapValue, StyleValue};
 pub use props::{
     EqAnyFn, HashAnyFn, InterpolateFn, ResolveInheritedAnyFn, StyleClass, StyleClassInfo,
     StyleClassRef, StyleDebugGroup, StyleDebugGroupInfo, StyleDebugGroupRef, StyleKey,
     StyleKeyInfo, StyleProp, StylePropInfo, StylePropRef, RESPONSIVE_SELECTORS_INFO,
     STRUCTURAL_SELECTORS_INFO,
 };
+pub use selectors::StyleSelectorKey;
+pub use style::{BuiltinStyle, ContextRef, DeferredStyleEffect, ExprStyle, Style};
+pub use style_value::{StyleMapValue, StyleValue};
 pub use transition::{ActiveTransition, DirectTransition, Transition, TransitionState};
 pub use value_impls::AffineLerp;
 pub use values::{

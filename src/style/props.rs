@@ -22,20 +22,7 @@ pub use floem_style::props::{StyleKey, StyleKeyInfo};
 pub use floem_style::props::{StyleProp, StylePropInfo, StylePropRef};
 #[allow(unused_imports)]
 pub use floem_style::props::{EqAnyFn, HashAnyFn, InterpolateFn, ResolveInheritedAnyFn};
-pub use floem_style::props::{RESPONSIVE_SELECTORS_INFO, STRUCTURAL_SELECTORS_INFO};
 
-/// Helper macro used inside the `floem` crate for declaring selector-backed
-/// [`StyleKey`]s as static items.
-macro_rules! style_key_selector {
-    ($v:vis $name:ident, $sel:expr) => {
-        fn $name() -> $crate::style::StyleKey {
-            static INFO: $crate::style::StyleKeyInfo = $crate::style::StyleKeyInfo::Selector($sel);
-            $crate::style::StyleKey { info: &INFO }
-        }
-    };
-}
-
-pub(crate) use style_key_selector;
 
 // ============================================================================
 // StylePropReader
