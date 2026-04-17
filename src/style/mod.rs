@@ -182,10 +182,8 @@ mod values;
 // API surface remains stable for downstream users.
 pub use floem_style::{recalc, selectors, unit};
 
-pub use components::{
-    Border, BorderColor, BorderRadius, BoxShadow, CursorStyle, Margin, NoWrapOverflow, Padding,
-    PointerEvents, TextOverflow,
-};
+pub use components::{CursorStyle, NoWrapOverflow, PointerEvents, TextOverflow};
+pub use floem_style::{Border, BorderColor, BorderRadius, BoxShadow, Margin, Padding};
 pub use custom::{CustomStylable, CustomStyle};
 pub use cx::{InheritedInteractionCx, InteractionState, StyleCx};
 pub use debug_view::{InspectorRender, PropDebugView};

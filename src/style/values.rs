@@ -80,8 +80,6 @@ pub use floem_style::prop_value::{hash_f32, hash_f64, hash_value};
 // (Option, Vec, SmallVec, MinMax, Line, FontWeight, FontStyle, primitives via
 // `no_debug_view!`) likewise live in `floem_style::value_impls`.
 
-pub use floem_style::StrokeWrap;
-
 pub(crate) fn views(views: impl ViewTuple) -> Vec<AnyView> {
     views.into_views()
 }

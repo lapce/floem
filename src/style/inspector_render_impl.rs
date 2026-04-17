@@ -6,11 +6,15 @@
 //! previously lived inline on each `PropDebugView` impl.
 
 use std::any::Any;
+use std::time::Duration;
 
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
 use floem_renderer::Renderer;
 use floem_renderer::text::FontWeight;
-use floem_style::{AffineLerp, InspectorRender, Transition};
+use floem_style::{
+    AffineLerp, Border, BorderColor, BorderRadius, BoxShadow, DesignSystem, InspectorRender,
+    Margin, Padding, PropDebugView, Transition,
+};
 use parley::FontStyle;
 use peniko::color::palette;
 use peniko::kurbo::{self, Affine, Point, Rect, Stroke};
@@ -19,7 +23,7 @@ use taffy::prelude::{auto, fr};
 
 use crate::prelude::ViewTuple;
 use crate::style::values::views;
-use crate::style::{FontSizeCx, ObjectFit, ObjectPosition};
+use crate::style::{CursorStyle, FontSizeCx, ObjectFit, ObjectPosition};
 use crate::theme::{StyleThemeExt, Theme};
 use crate::view::{IntoView, View};
 use crate::views::{ContainerExt, Decorators, Empty, Label, Stack, StackExt, TooltipExt, canvas};
@@ -959,6 +963,328 @@ impl InspectorRender for FloemInspectorRender {
     fn font_style(&self, style: FontStyle, label: &str) -> Box<dyn Any> {
         let fs = style;
         erase_view(Label::new(label.to_string()).style(move |s| s.font_style(fs)))
+    }
+
+    fn border(&self, b: &Border) -> Box<dyn Any> {
+        let border = b.clone();
+        let sides = [
+            ("Left:", border.left),
+            ("Top:", border.top),
+            ("Right:", border.right),
+            ("Bottom:", border.bottom),
+        ];
+
+        let rows: Vec<Box<dyn View>> = sides
+            .into_iter()
+            .filter_map(|(l, v)| v.map(|v| (l, v)))
+            .map(|(label, value)| {
+                let child: Box<dyn View> = value
+                    .debug_view(self)
+                    .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+                    .unwrap();
+                Stack::horizontal((
+                    label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
+                    child,
+                ))
+                .style(|s| s.items_center().gap(4.0))
+                .into_any()
+            })
+            .collect();
+
+        let view: Box<dyn View> = Stack::vertical_from_iter(rows)
+            .style(|s| s.gap(4.0).padding(8.0))
+            .into_any();
+        Box::new(view)
+    }
+
+    fn border_color(&self, bc: &BorderColor) -> Box<dyn Any> {
+        let border_color = bc.clone();
+        let sides = [
+            ("Left:", border_color.left),
+            ("Top:", border_color.top),
+            ("Right:", border_color.right),
+            ("Bottom:", border_color.bottom),
+        ];
+
+        let rows: Vec<Box<dyn View>> = sides
+            .into_iter()
+            .filter_map(|(l, v)| v.map(|v| (l, v)))
+            .map(|(label, color)| {
+                let child: Box<dyn View> = color
+                    .debug_view(self)
+                    .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+                    .unwrap();
+                Stack::horizontal((
+                    label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
+                    child,
+                ))
+                .style(|s| s.items_center().gap(4.0))
+                .into_any()
+            })
+            .collect();
+
+        let view: Box<dyn View> = Stack::vertical_from_iter(rows)
+            .style(|s| s.gap(4.0).padding(8.0))
+            .into_any();
+        Box::new(view)
+    }
+
+    fn border_radius(&self, br: &BorderRadius) -> Box<dyn Any> {
+        let border_radius = *br;
+        let corners = [
+            ("Top Left:", border_radius.top_left),
+            ("Top Right:", border_radius.top_right),
+            ("Bottom Left:", border_radius.bottom_left),
+            ("Bottom Right:", border_radius.bottom_right),
+        ];
+
+        let rows: Vec<Box<dyn View>> = corners
+            .into_iter()
+            .filter_map(|(l, v)| v.map(|v| (l, v)))
+            .map(|(label, radius)| {
+                let child: Box<dyn View> = radius
+                    .debug_view(self)
+                    .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+                    .unwrap();
+                Stack::horizontal((
+                    label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
+                    child,
+                ))
+                .style(|s| s.items_center().gap(4.0))
+                .into_any()
+            })
+            .collect();
+
+        let view: Box<dyn View> = Stack::vertical_from_iter(rows)
+            .style(|s| s.gap(4.0).padding(8.0))
+            .into_any();
+        Box::new(view)
+    }
+
+    fn padding(&self, p: &Padding) -> Box<dyn Any> {
+        let padding = *p;
+        let sides = [
+            ("Left:", padding.left),
+            ("Top:", padding.top),
+            ("Right:", padding.right),
+            ("Bottom:", padding.bottom),
+        ];
+
+        let rows: Vec<Box<dyn View>> = sides
+            .into_iter()
+            .filter_map(|(l, v)| v.map(|v| (l, v)))
+            .map(|(label, padding)| {
+                let child: Box<dyn View> = padding
+                    .debug_view(self)
+                    .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+                    .unwrap();
+                Stack::horizontal((
+                    label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
+                    child,
+                ))
+                .style(|s| s.items_center().gap(4.0))
+                .into_any()
+            })
+            .collect();
+
+        let view: Box<dyn View> = Stack::vertical_from_iter(rows)
+            .style(|s| s.gap(4.0).padding(8.0))
+            .into_any();
+        Box::new(view)
+    }
+
+    fn margin(&self, m: &Margin) -> Box<dyn Any> {
+        let margin = *m;
+        let sides = [
+            ("Left:", margin.left),
+            ("Top:", margin.top),
+            ("Right:", margin.right),
+            ("Bottom:", margin.bottom),
+        ];
+
+        let rows: Vec<Box<dyn View>> = sides
+            .into_iter()
+            .filter_map(|(l, v)| v.map(|v| (l, v)))
+            .map(|(label, margin)| {
+                let child: Box<dyn View> = margin
+                    .debug_view(self)
+                    .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+                    .unwrap();
+                Stack::horizontal((
+                    label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
+                    child,
+                ))
+                .style(|s| s.items_center().gap(4.0))
+                .into_any()
+            })
+            .collect();
+
+        let view: Box<dyn View> = Stack::vertical_from_iter(rows)
+            .style(|s| s.gap(4.0).padding(8.0))
+            .into_any();
+        Box::new(view)
+    }
+
+    fn box_shadow(&self, s: &BoxShadow) -> Box<dyn Any> {
+        // Create a preview container that shows a visual representation of the shadow
+        let shadow = *s;
+
+        // Shadow preview box
+        let shadow_preview =
+            ().style(move |s| s.width(50.0).height(50.0))
+                .container()
+                .style(move |s| {
+                    s.background(Color::TRANSPARENT)
+                        .border(1.)
+                        .apply_box_shadows(vec![shadow])
+                        .margin(10.0)
+                        .with_theme(|s, t| {
+                            s.border_color(t.border()).border_radius(t.border_radius())
+                        })
+                });
+
+        // Rebuild the color preview each time the tooltip is shown. We
+        // can't hold `&dyn InspectorRender` inside a 'static closure, so
+        // reach for the concrete floem renderer.
+        let details_view = move || {
+            let color_view: Box<dyn View> = shadow
+                .color
+                .debug_view(&FloemInspectorRender)
+                .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+                .unwrap();
+            Stack::vertical((
+                Stack::horizontal((
+                    "Color:".style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
+                    color_view,
+                ))
+                .style(|s| s.items_center().gap(4.0)),
+                Stack::horizontal((
+                    "Blur:".style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
+                    format!("{:?}", shadow.blur_radius),
+                ))
+                .style(|s| s.items_center().gap(4.0)),
+                Stack::horizontal((
+                    "Spread:".style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
+                    format!("{:?}", shadow.spread),
+                ))
+                .style(|s| s.items_center().gap(4.0)),
+                Stack::horizontal((
+                    "Offset:".style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
+                    format!(
+                        "L: {:?}, R: {:?}, T: {:?}, B: {:?}",
+                        shadow.left_offset,
+                        shadow.right_offset,
+                        shadow.top_offset,
+                        shadow.bottom_offset
+                    ),
+                ))
+                .style(|s| s.items_center().gap(4.0)),
+            ))
+            .style(|s| s.gap(4.0).padding(8.0))
+        };
+
+        // Combine preview and details
+        let view: Box<dyn View> = shadow_preview.tooltip(details_view).into_any();
+
+        Box::new(view)
+    }
+
+    fn design_system(&self, ds: &DesignSystem) -> Box<dyn Any> {
+        use crate::prelude::*;
+        use crate::views::Stack;
+
+        let design_system = ds.clone();
+        let is_expanded = RwSignal::new(false);
+
+        let color_swatch = |label: &str, color: Color| {
+            let swatch: Box<dyn View> = color
+                .debug_view(self)
+                .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+                .unwrap();
+            Stack::new((
+                label.to_string().style(|s| s.width(120.0).font_size(12.0)),
+                swatch,
+            ))
+            .style(|s| s.flex_row().items_center().gap(8.0).padding_vert(2.0))
+        };
+
+        let scalar_field = |label: &str, value: f64| {
+            Stack::new((
+                label.to_string().style(|s| s.width(120.0).font_size(12.0)),
+                format!("{:.2}", value).style(|s| s.font_size(12.0)),
+            ))
+            .style(|s| s.flex_row().items_center().gap(8.0).padding_vert(2.0))
+        };
+
+        let chevron = move || {
+            if is_expanded.get() {
+                svg(
+                    r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z"/></svg>"#,
+                )
+            } else {
+                svg(
+                    r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6.427 4.427l3.396 3.396a.25.25 0 010 .354l-3.396 3.396A.25.25 0 016 11.396V4.604a.25.25 0 01.427-.177z"/></svg>"#,
+                )
+            }.style(|s| s.size_full().with_theme(|s, t| s.color(t.text())))
+        };
+
+        let header = Stack::new((
+            dyn_view(chevron)
+                .class(ButtonClass)
+                .style(|s| s.size(16.0, 16.0).padding(0.)),
+            "Design System"
+                .to_string()
+                .style(|s| s.font_size(14.0).font_weight(FontWeight::SEMI_BOLD)),
+        ))
+        .action(move || {
+            is_expanded.update(|v| *v = !*v);
+        })
+        .style(|s| {
+            s.flex_row()
+                .items_center()
+                .gap(8.0)
+                .cursor(CursorStyle::Pointer)
+        });
+
+        let content = Stack::new((
+            header,
+            Stack::new((
+                color_swatch("bg_base", design_system.bg_base),
+                color_swatch("text_base", design_system.text_base),
+                color_swatch("primary_base", design_system.primary_base),
+                color_swatch("success_base", design_system.success_base),
+                color_swatch("warning_base", design_system.warning_base),
+                color_swatch("danger_base", design_system.danger_base),
+                scalar_field("text_lightness", f64::from(design_system.text_lightness)),
+                scalar_field("padding", f64::from(design_system.padding)),
+                scalar_field("border_radius", f64::from(design_system.border_radius)),
+                scalar_field("font_size", design_system.font_size),
+                format!("is_dark: {}", design_system.is_dark).style(|s| s.font_size(12.0)),
+            ))
+            .style(move |s| s.flex_col().gap(4.0))
+            .clip()
+            .style(move |s| {
+                s.height_pct(100.)
+                    .apply_if(!is_expanded.get(), |s| s.height_pct(0.))
+                    .transition_height(Transition::ease_in_out(Duration::from_millis(200)))
+            }),
+        ))
+        .style(|s| {
+            // this view here should be getting set to have a height of just the two children combined
+            // I think this is a bug in taffy
+            s.flex_col()
+                .padding(8.0)
+                .border(1.)
+                .border_color(palette::css::WHITE.with_alpha(0.3))
+                .border_radius(6.0)
+                .min_width(280.0)
+                .min_height_pct(0.)
+                .flex_grow(0.)
+                .flex_shrink(1.)
+        });
+
+        let view: Box<dyn View> = content.into_any();
+        Box::new(view)
     }
 }
 

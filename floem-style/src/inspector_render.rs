@@ -20,6 +20,8 @@ use parley::FontStyle;
 use peniko::kurbo::{Affine, Rect, Stroke};
 use peniko::{Brush, Color, Gradient};
 
+use crate::components::{Border, BorderColor, BorderRadius, BoxShadow, Margin, Padding};
+use crate::design_system::DesignSystem;
 use crate::transition::Transition;
 use crate::values::{ObjectFit, ObjectPosition};
 
@@ -80,4 +82,25 @@ pub trait InspectorRender {
 
     /// Text rendered using a concrete `FontStyle` (for italic previews).
     fn font_style(&self, style: FontStyle, label: &str) -> Box<dyn Any>;
+
+    /// Preview for a [`Border`]: one row per side with its stroke preview.
+    fn border(&self, b: &Border) -> Box<dyn Any>;
+
+    /// Preview for a [`BorderColor`]: one row per side with its brush preview.
+    fn border_color(&self, bc: &BorderColor) -> Box<dyn Any>;
+
+    /// Preview for a [`BorderRadius`]: one row per corner with its length preview.
+    fn border_radius(&self, br: &BorderRadius) -> Box<dyn Any>;
+
+    /// Preview for a [`Padding`]: one row per side with its length preview.
+    fn padding(&self, p: &Padding) -> Box<dyn Any>;
+
+    /// Preview for a [`Margin`]: one row per side with its length preview.
+    fn margin(&self, m: &Margin) -> Box<dyn Any>;
+
+    /// Preview for a [`BoxShadow`]: a shadowed rectangle with a details tooltip.
+    fn box_shadow(&self, s: &BoxShadow) -> Box<dyn Any>;
+
+    /// Preview for a [`DesignSystem`]: expandable panel listing colors and spacing.
+    fn design_system(&self, ds: &DesignSystem) -> Box<dyn Any>;
 }
