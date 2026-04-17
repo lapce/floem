@@ -24,10 +24,6 @@ use super::{
     StyleKeyInfo, StylePropRef, Transition, TransitionDebugViewExt,
 };
 
-pub use floem_style::prop_value::StylePropValue;
-#[allow(unused_imports)]
-pub use floem_style::prop_value::{hash_f32, hash_f64, hash_value};
-
 // Primitive, taffy, collection, peniko, text, and unit `StylePropValue` impls
 // live in `floem_style::value_impls` (moved there to satisfy the orphan rule).
 // `PropDebugView` impls for types owned by external crates

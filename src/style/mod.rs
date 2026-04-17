@@ -178,8 +178,9 @@ pub use floem_style::unit::{
     AnchorAbout, Angle, Auto, DurationUnitExt, Em, FontSizeCx, Length, LengthAuto, Lh,
     LineHeightValue, Pct, Pt, UnitExt,
 };
-pub use floem_style::{ContextValue, ObjectFit, ObjectPosition, StrokeWrap, StyleMapValue, StyleValue};
-pub use values::StylePropValue;
+pub use floem_style::{
+    ContextValue, ObjectFit, ObjectPosition, StrokeWrap, StyleMapValue, StylePropValue, StyleValue,
+};
 
 pub use floem_style::{CacheHit, CacheStats, StyleCache, StyleCacheKey};
 
