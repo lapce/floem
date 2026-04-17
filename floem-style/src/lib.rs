@@ -19,6 +19,7 @@ pub mod element_id;
 pub mod inspector_render;
 pub mod interaction;
 pub mod merge_id;
+pub mod prop_reader;
 pub mod prop_value;
 pub mod props;
 pub mod recalc;
@@ -65,6 +66,7 @@ pub use interaction::{InheritedInteractionCx, InteractionState};
 pub use merge_id::{
     combine_merge_ids, next_style_merge_id, DEFERRED_EFFECTS_INFO, DEFERRED_EFFECTS_KEY,
 };
+pub use prop_reader::{ExtractorField, StylePropReader};
 pub use prop_value::StylePropValue;
 pub use props::{
     EqAnyFn, HashAnyFn, InterpolateFn, ResolveInheritedAnyFn, StyleClass, StyleClassInfo,

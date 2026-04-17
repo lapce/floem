@@ -146,7 +146,6 @@ mod custom;
 mod cx;
 mod inspector_render_impl;
 mod macros;
-mod props;
 mod sink;
 mod storage;
 mod style_debug_ext;
@@ -164,7 +163,7 @@ pub use custom::{CustomStylable, CustomStyle, StyleCustomExt};
 pub use cx::{InheritedInteractionCx, InteractionState, StyleCx};
 pub use floem_style::{InspectorRender, PropDebugView};
 pub use inspector_render_impl::FloemInspectorRender;
-pub use props::{
+pub use floem_style::{
     ExtractorField, StyleClass, StyleClassInfo, StyleClassRef, StyleDebugGroup,
     StyleDebugGroupInfo, StyleDebugGroupRef, StyleKey, StyleKeyInfo, StyleProp, StylePropInfo,
     StylePropReader, StylePropRef,

@@ -1,9 +1,13 @@
-//! Floem-side property reader infrastructure.
+//! Property-reading abstractions used by `prop_extractor!`-generated structs.
 //!
-//! The core style-key types (`StyleKey`, `StyleProp`, `StyleClass`, etc.) now
-//! live in the `floem-style` crate. What remains here is the
-//! [`StylePropReader`] trait and [`ExtractorField`] helper, which reference
-//! the `Style` type directly and so must stay in `floem`.
+//! [`StylePropReader`] is the trait that lets a prop extractor pull a value
+//! (with transition state) out of a [`Style`]. Every [`StyleProp`] gets a
+//! blanket impl. [`ExtractorField`] is the per-prop state slot the
+//! `prop_extractor!` macro embeds in each generated struct.
+//!
+//! Both live here (rather than in `floem` proper) because they only depend on
+//! [`Style`], [`StyleValue`], [`TransitionState`], and [`StyleProp`] — all of
+//! which live in this crate.
 
 use std::fmt::{self, Debug};
 use std::hash::Hasher;
@@ -13,16 +17,10 @@ use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
-use super::Style;
-use floem_style::{StyleValue, TransitionState};
-
-pub use floem_style::props::{StyleClass, StyleClassInfo, StyleClassRef};
-pub use floem_style::props::{StyleDebugGroup, StyleDebugGroupInfo, StyleDebugGroupRef};
-pub use floem_style::props::{StyleKey, StyleKeyInfo};
-pub use floem_style::props::{StyleProp, StylePropInfo, StylePropRef};
-#[allow(unused_imports)]
-pub use floem_style::props::{EqAnyFn, HashAnyFn, InterpolateFn, ResolveInheritedAnyFn};
-
+use crate::props::StyleProp;
+use crate::style::Style;
+use crate::style_value::StyleValue;
+use crate::transition::TransitionState;
 
 // ============================================================================
 // StylePropReader
