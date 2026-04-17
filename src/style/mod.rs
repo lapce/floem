@@ -172,6 +172,7 @@ mod macros;
 mod props;
 mod sink;
 mod storage;
+mod style_debug_ext;
 #[cfg(test)]
 mod tests;
 pub mod theme;
@@ -196,6 +197,7 @@ pub use props::{
 pub use floem_style::selectors::{NthChild, StructuralSelector, StyleSelector, StyleSelectors};
 pub use theme::{DesignSystem, StyleThemeExt};
 pub use floem_style::{DirectTransition, Transition, TransitionState};
+pub use style_debug_ext::StyleDebugViewExt;
 pub use transition_ext::TransitionDebugViewExt;
 pub use floem_style::unit::{
     AnchorAbout, Angle, Auto, DurationUnitExt, Em, FontSizeCx, Length, LengthAuto, Lh,

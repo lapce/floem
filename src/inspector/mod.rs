@@ -19,7 +19,7 @@ use crate::{
     prelude::*,
     style::{
         BorderRadius, FontSizeCx, Length, LengthAuto, OverflowX, OverflowY, StrokeWrap, Style,
-        StyleCx, StyleThemeExt, TextColor,
+        StyleCx, StyleDebugViewExt, StyleThemeExt, TextColor,
     },
 };
 

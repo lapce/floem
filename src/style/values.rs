@@ -694,8 +694,8 @@ fn style_debug_rows(rows: &[StyleDebugRow], start_with_base: bool) -> AnyView {
     .into_any()
 }
 
-impl Style {
-    pub fn debug_view(&self, direct_style: Option<&Style>) -> Box<dyn View> {
+impl super::StyleDebugViewExt for Style {
+    fn debug_view(&self, direct_style: Option<&Style>) -> Box<dyn View> {
         let direct_keys =
             direct_style.map(|style| style.map.keys().copied().collect::<HashSet<_>>());
         let style = self.clone();
