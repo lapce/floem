@@ -1395,7 +1395,7 @@ impl WindowState {
             vs.style_storage.computed_style = computed;
             vs.style_storage.style_cx = inherited_cx;
             vs.style_storage.class_cx = class_cx;
-            vs.style_storage.post_compute_combined_interaction = post_interact;
+            vs.style_storage.style_interaction_cx = post_interact;
             vs.style_storage.has_style_selectors = has_selectors;
         }
     }

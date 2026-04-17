@@ -234,10 +234,7 @@ impl<'a> StyleCx<'a> {
         let did_refresh_style =
             self.reason.needs_resolve_nested_maps() || self.reason.needs_animation();
 
-        let cached = view_state
-            .borrow()
-            .style_storage
-            .post_compute_combined_interaction;
+        let cached = view_state.borrow().style_storage.style_interaction_cx;
         self.view_interact_state.is_hidden |= cached.hidden;
         self.view_interact_state.is_selected |= cached.selected;
         self.view_interact_state.is_disabled |= cached.disabled;
@@ -248,11 +245,6 @@ impl<'a> StyleCx<'a> {
                 view_state.borrow().style_storage.has_style_selectors,
             );
 
-        let old_interact_state = {
-            let vs = view_state.borrow();
-            vs.style_storage.style_interaction_cx
-        };
-
         let mut need_paint = false;
         // ─────────────────────────────────────────────────────────────────────
         // Phase 5: Absorb tree outputs
@@ -260,23 +252,17 @@ impl<'a> StyleCx<'a> {
         // The `StyleTree` cascade already computed combined_style,
         // computed_style, inherited_context, and class_context for this
         // node (see `WindowState::run_style_cascade`), propagated dirty
-        // flags to children whose inherited/class context changed, and
-        // updated the fixed-element registry. Here we just plumb the
-        // fresh storage into StyleCx so `view.style_pass` callbacks see
-        // the right values, and record the new `style_interaction_cx`
-        // for next pass's change-detection.
+        // flags to children whose inherited/class context changed, updated
+        // the fixed-element registry, and dirtied descendants when this
+        // view's hidden/selected/disabled flipped. Here we just plumb
+        // fresh storage values into StyleCx so `view.style_pass`
+        // callbacks see the right values.
         // ─────────────────────────────────────────────────────────────────────
         {
-            let mut vs = view_state.borrow_mut();
+            let vs = view_state.borrow();
             self.direct = vs.style_storage.combined_style.clone();
             self.inherited = vs.style_storage.style_cx.clone();
             self.class_context = vs.style_storage.class_cx.clone();
-
-            vs.style_storage.style_interaction_cx = InheritedInteractionCx {
-                disabled: self.view_interact_state.is_disabled,
-                selected: self.view_interact_state.is_selected,
-                hidden: self.view_interact_state.is_hidden,
-            };
         }
 
         if self.reason.needs_property_extraction() {
@@ -322,36 +308,6 @@ impl<'a> StyleCx<'a> {
                 self.window_state
                     .schedule_style(view_id.get_element_id(), StyleReason::transition());
             }
-        }
-
-        if old_interact_state.hidden != self.view_interact_state.is_hidden {
-            for child in view_id.children() {
-                self.window_state
-                    .mark_style_dirty_with(child.get_element_id(), StyleReason::visibility());
-            }
-            view_id.request_layout();
-        }
-        if old_interact_state.selected != self.view_interact_state.is_selected
-            && !self
-                .reason
-                .selectors
-                .is_some_and(|s| s.has(super::StyleSelector::Selected))
-        {
-            self.window_state.mark_descendants_with_selector_dirty(
-                view_id.get_element_id(),
-                super::StyleSelector::Selected,
-            );
-        }
-        if old_interact_state.disabled != self.view_interact_state.is_disabled
-            && !self
-                .reason
-                .selectors
-                .is_some_and(|s| s.has(super::StyleSelector::Disabled))
-        {
-            self.window_state.mark_descendants_with_selector_dirty(
-                view_id.get_element_id(),
-                super::StyleSelector::Disabled,
-            );
         }
 
         CaptureState::capture_style(view_id, self, view_state.borrow().style_storage.computed_style.clone());

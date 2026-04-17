@@ -51,16 +51,16 @@ pub(crate) struct StyleStorage {
     /// Children will use this to resolve their class references when computing their
     /// combined_style.
     pub class_cx: Style,
-    /// Interaction cx saved after computing the final style; becomes the
-    /// inherited interaction for this view's children.
-    pub style_interaction_cx: InheritedInteractionCx,
-    /// View-local interaction flags derived from this view's resolved combined style.
+    /// Full post-cascade interaction state (ancestor-inherited OR'd with
+    /// this view's own direct/selector/animated bits), mirrored from the
+    /// [`floem_style::StyleTree`] cascade each pass by
+    /// [`WindowState::run_style_cascade`](crate::window::state::WindowState::run_style_cascade).
     ///
-    /// This excludes inherited parent interaction and is OR'ed onto StyleCx interaction
-    /// state in `style_view`. Populated by
-    /// [`WindowState::run_style_cascade`](crate::window::state::WindowState::run_style_cascade)
-    /// each pass from the [`floem_style::StyleTree`] cascade outputs.
-    pub post_compute_combined_interaction: InheritedInteractionCx,
+    /// Used by `style_view` to seed `view_interact_state`, by the public
+    /// [`ViewId::is_disabled`](crate::view::ViewId::is_disabled) query, and
+    /// as this view's inherited interaction when resolving a descendant's
+    /// style cx.
+    pub style_interaction_cx: InheritedInteractionCx,
     /// Interaction cx set by a parent on this view; consumed when building the
     /// StyleCx for this view.
     pub parent_set_style_interaction: InheritedInteractionCx,

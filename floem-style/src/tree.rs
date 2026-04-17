@@ -575,6 +575,13 @@ impl StyleTree {
         };
         let _ = post_interact;
 
+        // Snapshot the previous interaction cx + the dirty reason that
+        // drove this compute before we overwrite them below. We use
+        // these for descendant-dirtying side-effects so that e.g. a
+        // view flipping to hidden re-lays out and its kids restyle.
+        let old_interaction_cx = self.nodes[id].style_interaction_cx;
+        let old_dirty_selectors = self.nodes[id].dirty.selectors;
+
         {
             let node = &mut self.nodes[id];
             node.combined_style = combined_style;
@@ -606,6 +613,41 @@ impl StyleTree {
                     sink.mark_style_dirty_with(child_element_id, reason.clone());
                 }
             }
+        }
+
+        // Propagate hidden/selected/disabled flips to descendants.
+        // `mark_descendants_with_selector_dirty` is skipped when the
+        // caller's `dirty` already carried the matching selector — the
+        // descendant walk has already been scheduled in that case.
+        if old_interaction_cx.hidden != new_interaction_cx.hidden {
+            let children: Vec<ElementId> = self
+                .nodes[id]
+                .children
+                .iter()
+                .filter_map(|c| self.nodes.get(*c).map(|n| n.element_id))
+                .collect();
+            for child_element_id in children {
+                sink.mark_style_dirty_with(child_element_id, StyleReason::visibility());
+            }
+            sink.mark_needs_layout();
+        }
+        if old_interaction_cx.selected != new_interaction_cx.selected
+            && !old_dirty_selectors
+                .is_some_and(|s| s.has(crate::selectors::StyleSelector::Selected))
+        {
+            sink.mark_descendants_with_selector_dirty(
+                element_id,
+                crate::selectors::StyleSelector::Selected,
+            );
+        }
+        if old_interaction_cx.disabled != new_interaction_cx.disabled
+            && !old_dirty_selectors
+                .is_some_and(|s| s.has(crate::selectors::StyleSelector::Disabled))
+        {
+            sink.mark_descendants_with_selector_dirty(
+                element_id,
+                crate::selectors::StyleSelector::Disabled,
+            );
         }
 
         // Let the host snapshot the computed style (inspector, tests, etc.).
