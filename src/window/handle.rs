@@ -613,10 +613,29 @@ impl WindowHandle {
                 // the cascade for this view. Traversal is top-down so the
                 // parent's style-node is already present by the time we get
                 // here and the parent edge can be wired immediately.
-                self.window_state.ensure_style_node(view_id);
+                let style_node = self.window_state.ensure_style_node(view_id);
 
                 let cx = &mut StyleCx::new(&mut self.window_state, view_id, traversal_reason);
                 cx.style_view();
+
+                // Phase 2b: mirror the view's merged direct style + class
+                // list into the engine's StyleTree so it stays in sync with
+                // ViewState. Phase 2c will flip the cascade to read from
+                // here instead of `style_view` computing it inline.
+                let view_class = view_id.view().borrow().view_class();
+                let state = view_id.state();
+                let direct = state.borrow_mut().style();
+                let mut all_classes: smallvec::SmallVec<[floem_style::StyleClassRef; 4]> =
+                    state.borrow().classes.clone();
+                if let Some(vc) = view_class {
+                    all_classes.push(vc);
+                }
+                self.window_state
+                    .style_tree
+                    .set_direct_style(style_node, direct);
+                self.window_state
+                    .style_tree
+                    .set_classes(style_node, &all_classes);
             }
             if self.window_state.capture.is_some() {
                 self.window_state.style_dirty.clear();
