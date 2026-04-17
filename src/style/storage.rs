@@ -18,9 +18,6 @@ pub(crate) struct StyleStorage {
     pub layout_props: LayoutProps,
     pub view_style_props: ViewStyleProps,
     pub view_transform_props: TransformProps,
-    /// Pre-animation snapshot of `combined_style`; animations re-derive
-    /// `combined_style` from this each frame so animated values don't feed back.
-    pub combined_pre_animation_style: Style,
     /// The resolved style for this view (base + selectors + classes).
     /// Does NOT include inherited properties from ancestors.
     ///

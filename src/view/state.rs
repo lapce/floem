@@ -337,7 +337,10 @@ impl ViewState {
         &mut self,
         interact_state: &mut crate::style::InteractionState,
     ) -> bool {
-        let mut combined = self.style_storage.combined_pre_animation_style.clone();
+        // `run_style_cascade` resets `combined_style` from the tree each
+        // pass (the tree is unaffected by animations), so it's always the
+        // pre-animation baseline at this point.
+        let mut combined = self.style_storage.combined_style.clone();
         // ─────────────────────────────────────────────────────────────────────
         // Process animations
         // ─────────────────────────────────────────────────────────────────────

@@ -1385,7 +1385,6 @@ impl WindowState {
 
             let state = view_id.state();
             let mut vs = state.borrow_mut();
-            vs.style_storage.combined_pre_animation_style = combined.clone();
             vs.style_storage.combined_style = combined;
             vs.style_storage.style_cx = inherited_cx;
             vs.style_storage.class_cx = class_cx;
