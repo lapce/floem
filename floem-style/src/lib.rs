@@ -24,6 +24,7 @@ pub mod props;
 pub mod recalc;
 pub mod responsive;
 pub mod selectors;
+pub mod sink;
 pub mod style;
 pub mod style_macros;
 pub mod style_value;
@@ -72,6 +73,7 @@ pub use props::{
     STRUCTURAL_SELECTORS_INFO,
 };
 pub use selectors::StyleSelectorKey;
+pub use sink::StyleSink;
 pub use style::{BuiltinStyle, ContextRef, DeferredStyleEffect, ExprStyle, Style};
 pub use style_value::{StyleMapValue, StyleValue};
 pub use transition::{ActiveTransition, DirectTransition, Transition, TransitionState};

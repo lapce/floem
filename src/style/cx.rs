@@ -22,12 +22,12 @@ use crate::{
         StyleClassRef,
         recalc::{StyleReason, StyleReasonFlags},
         resolve_nested_maps,
-        sink::StyleSink,
     },
     view::ViewId,
     window::state::WindowState,
 };
 use crate::ElementIdExt;
+use floem_style::StyleSink;
 
 use super::{Style, StyleProp};
 
