@@ -1221,11 +1221,17 @@ impl WindowState {
 
     /// Ensure `view_id` has a companion [`floem_style::StyleNodeId`] in
     /// [`Self::style_tree`] and that its parent edge matches the current
-    /// view-tree parent. Allocates the node on first call.
+    /// style-cx parent. Allocates the node on first call.
+    ///
+    /// The tree parent follows floem's `style_cx_parent` override when
+    /// set (e.g. list items re-parent their row under the list) so
+    /// inherited-prop / class-context propagation matches the old
+    /// cascade. Structural `:nth-child` position is computed separately
+    /// via [`Self::structural_position_for`] and pushed to the tree.
     ///
     /// Relies on top-down style traversal: when a child calls this, the
-    /// parent's style-node has already been allocated in the same or an
-    /// earlier pass, so the parent edge can be wired immediately.
+    /// style-parent's style-node has already been allocated in the same
+    /// or an earlier pass, so the parent edge can be wired immediately.
     pub(crate) fn ensure_style_node(&mut self, view_id: ViewId) -> floem_style::StyleNodeId {
         let element_id = view_id.state().borrow().element_id;
         let existing = view_id.state().borrow().style_node;
@@ -1238,8 +1244,12 @@ impl WindowState {
             }
         };
 
-        let parent_node = view_id
-            .parent()
+        let style_parent_view = view_id
+            .state()
+            .borrow()
+            .style_cx_parent
+            .or_else(|| view_id.parent());
+        let parent_node = style_parent_view
             .and_then(|p| p.state().borrow().style_node)
             .filter(|p| self.style_tree.contains(*p));
         let current_parent = self.style_tree.get(node).and_then(|n| n.parent());
@@ -1247,6 +1257,46 @@ impl WindowState {
             self.style_tree.set_parent(node, parent_node);
         }
         node
+    }
+
+    /// Compute the structural position (1-based `:nth-child` index and
+    /// sibling count) for `view_id` relative to its style-cx parent. When
+    /// a view (e.g. a row inside a list item) has a custom `style_cx_parent`,
+    /// we walk up the DOM tree to find the ancestor that's a direct child
+    /// of the style parent and use that ancestor's position. This matches
+    /// the behavior `StyleCx::get_interact_state` had before the tree
+    /// cascade took over.
+    pub(crate) fn structural_position_for(&self, view_id: ViewId) -> (Option<usize>, usize) {
+        let style_parent = view_id
+            .state()
+            .borrow()
+            .style_cx_parent
+            .or_else(|| view_id.parent());
+        let Some(parent) = style_parent else {
+            return (None, 0);
+        };
+        let indexed_child = parent.with_children(|siblings| {
+            if siblings.contains(&view_id) {
+                Some(view_id)
+            } else {
+                let mut cursor = view_id.parent();
+                while let Some(ancestor) = cursor {
+                    if ancestor.parent() == Some(parent) {
+                        return Some(ancestor);
+                    }
+                    cursor = ancestor.parent();
+                }
+                None
+            }
+        });
+        parent.with_children(|siblings| {
+            (
+                indexed_child
+                    .and_then(|id| siblings.iter().position(|child| *child == id))
+                    .map(|i| i + 1),
+                siblings.len(),
+            )
+        })
     }
 
     /// Requests that the style pass will run for a specific element target on the next frame.

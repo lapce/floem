@@ -329,77 +329,8 @@ impl ViewState {
         self.style.style()
     }
 
-    /// Get the content hash of the current style without cloning.
-    /// O(1) after the style stack is clean (hash is cached during recomputation).
-    pub(crate) fn style_content_hash(&mut self) -> u64 {
-        self.style.ensure_clean();
-        self.style.content_hash()
-    }
-
-    /// Check if the current style is cacheable without cloning.
-    pub(crate) fn style_is_cacheable(&mut self) -> bool {
-        self.style.ensure_clean();
-        self.style.is_cacheable()
-    }
-
     pub fn cursor(&self) -> Option<CursorStyle> {
         self.style_storage.style_cursor.or(self.user_cursor)
-    }
-
-    /// Compute the combined style by applying selectors, responsive styles, and classes.
-    /// Returns the combined style and a flag indicating if new classes were applied.
-    ///
-    /// Takes two separate contexts:
-    /// - `inherited_context`: Contains inherited properties (font-size, color, etc.)
-    ///   Used for `with_context` evaluation and inherited prop resolution.
-    /// - `class_context`: Contains class nested maps (`.class(SomeClass, ...)`)
-    ///   Used for class styling that flows from ancestors.
-    pub(crate) fn compute_combined(
-        &mut self,
-        interact_state: &mut crate::style::InteractionState,
-        screen_size_bp: crate::layout::responsive::ScreenSizeBp,
-        view_class: Option<crate::style::StyleClassRef>,
-        inherited_context: &Style,
-        class_context: &Style,
-    ) {
-        // Start with the combined stacked styles
-        let base_style = self.style().with_inherited_context(inherited_context);
-        interact_state.is_disabled |= base_style.builtin().set_disabled();
-        interact_state.is_selected |= base_style.builtin().set_selected();
-        interact_state.is_hidden |= base_style.builtin().display() == taffy::Display::None;
-        let base_selectors = base_style.selectors() | class_context.selectors();
-
-        // Build the full class list: view's classes + view type class
-        let mut all_classes =
-            Vec::with_capacity(self.classes.len() + usize::from(view_class.is_some()));
-        all_classes.extend(self.classes.iter().copied());
-        if let Some(vc) = view_class {
-            all_classes.push(vc);
-        }
-
-        // Create mutable contexts - inherited for with_context evaluation
-        // Resolve all nested maps: selectors, responsive styles, and classes
-        let (combined, selectors) = crate::style::resolve_nested_maps(
-            base_style,
-            interact_state,
-            screen_size_bp,
-            &all_classes,
-            inherited_context,
-            class_context,
-        );
-
-        interact_state.is_hidden |= combined.builtin().display() == taffy::Display::None;
-        interact_state.is_selected |= combined.builtin().set_selected();
-        interact_state.is_disabled |= combined.builtin().set_disabled();
-        self.style_storage.post_compute_combined_interaction = InheritedInteractionCx {
-            hidden: combined.builtin().display() == taffy::Display::None,
-            selected: combined.builtin().set_selected(),
-            disabled: combined.builtin().set_disabled(),
-        };
-
-        self.style_storage.has_style_selectors = Some(selectors | base_selectors);
-        self.style_storage.combined_pre_animation_style = combined.clone();
-        self.style_storage.combined_style = combined.clone();
     }
 
     pub fn apply_animations(

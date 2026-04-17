@@ -107,9 +107,6 @@ impl<'a> StyleCx<'a> {
             )
         };
 
-        let view = view_id.view();
-        let view_state = view_id.state();
-
         let mut reason_for_children = reason.for_children();
         if let Some(selectors) = reason_for_children.selectors {
             if selectors.has_responsive() {
@@ -151,18 +148,12 @@ impl<'a> StyleCx<'a> {
             .collect();
 
         // ─────────────────────────────────────────────────────────────────────
-        // Phase 1: Clear dirty flags, update view style, propagate to children
+        // Phase 1: Clear dirty flags, propagate to children
+        //
+        // `view_style()` is applied before this by the window's style loop
+        // (see `WindowHandle::style`) so the engine's `StyleTree` cascade
+        // sees the freshest view_style.
         // ─────────────────────────────────────────────────────────────────────
-
-        {
-            if reason.flags.contains(StyleReasonFlags::VIEW_STYLE)
-                && let Some(view_style) = view.borrow().view_style()
-            {
-                let mut vs = view_state.borrow_mut();
-                let offset = vs.view_style_offset;
-                vs.style.set(offset, view_style);
-            }
-        }
 
         // ─────────────────────────────────────────────────────────────────────
         // Phase 2: Build interaction state for selector matching
@@ -232,79 +223,23 @@ impl<'a> StyleCx<'a> {
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // Phase 4: Resolve combined style
+        // Phase 4: Absorb cascade outputs
         // ─────────────────────────────────────────────────────────────────────
+        // `WindowHandle::style` ran `StyleTree::compute_style` and copied
+        // the tree's outputs into this view's `style_storage` already. We
+        // just need to OR the view-local interaction flags (disabled /
+        // selected / hidden) into `self.view_interact_state` so the rest
+        // of `style_view` observes them.
         let did_refresh_style =
             self.reason.needs_resolve_nested_maps() || self.reason.needs_animation();
 
-        if self.reason.needs_resolve_nested_maps() {
-            use super::StyleCacheKey;
-
-            // Get metadata without cloning the full style
-            let (style_hash, cacheable) = {
-                let mut vs = view_state.borrow_mut();
-                let style_hash = vs.style_content_hash();
-                let cacheable =
-                    vs.style_is_cacheable() && !self.class_context.has_structural_selectors();
-                (style_hash, cacheable)
-            };
-
-            let cache_key = if cacheable {
-                Some(StyleCacheKey::new_from_hash(
-                    style_hash,
-                    &self.view_interact_state,
-                    self.window_state.screen_size_bp(),
-                    &classes,
-                    &self.class_context,
-                ))
-            } else {
-                None
-            };
-
-            let cache_hit = cache_key
-                .as_ref()
-                .and_then(|key| self.window_state.style_cache_mut().get(key, &self.inherited));
-
-            if let Some(hit) = cache_hit {
-                // Cache hit — restore all compute_combined() outputs, no Style clone needed
-                let mut vs = view_state.borrow_mut();
-                vs.style_storage.combined_pre_animation_style = hit.combined_style.clone();
-                vs.style_storage.combined_style = hit.combined_style;
-                vs.style_storage.has_style_selectors = hit.has_style_selectors;
-                vs.style_storage.post_compute_combined_interaction = hit.post_interact;
-                self.view_interact_state.is_hidden |= hit.post_interact.hidden;
-                self.view_interact_state.is_selected |= hit.post_interact.selected;
-                self.view_interact_state.is_disabled |= hit.post_interact.disabled;
-            } else {
-                // Cache miss — compute normally (style() clone happens inside compute_combined)
-                view_state.borrow_mut().compute_combined(
-                    &mut self.view_interact_state,
-                    self.window_state.screen_size_bp(),
-                    view_class,
-                    &self.inherited,
-                    &self.class_context,
-                );
-
-                // Insert into cache
-                if let Some(key) = cache_key {
-                    let vs = view_state.borrow();
-                    self.window_state.style_cache_mut().insert(
-                        key,
-                        &vs.style_storage.combined_style,
-                        vs.style_storage.has_style_selectors,
-                        vs.style_storage.post_compute_combined_interaction,
-                        &self.inherited,
-                    );
-                }
-            }
-        } else {
-            // Fast path: nested-map resolution was skipped, so reapply the view-local
-            // interaction state saved from the last combined-style computation.
-            let cached = view_state.borrow().style_storage.post_compute_combined_interaction;
-            self.view_interact_state.is_hidden |= cached.hidden;
-            self.view_interact_state.is_selected |= cached.selected;
-            self.view_interact_state.is_disabled |= cached.disabled;
-        }
+        let cached = view_state
+            .borrow()
+            .style_storage
+            .post_compute_combined_interaction;
+        self.view_interact_state.is_hidden |= cached.hidden;
+        self.view_interact_state.is_selected |= cached.selected;
+        self.view_interact_state.is_disabled |= cached.disabled;
 
         if self.reason.needs_animation() {
             let has_active_animation = view_state

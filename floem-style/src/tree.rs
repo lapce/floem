@@ -66,6 +66,12 @@ pub struct StyleNode {
     /// Interaction overrides pushed by a parent (e.g. "force-disable
     /// descendants"). OR'd with inherited parent state during cascade.
     pub parent_set_style_interaction: InheritedInteractionCx,
+    /// Optional override of the `(child_index, sibling_count)` used for
+    /// `:nth-child` / `:first-child` / `:last-child`. Hosts that use a
+    /// separate DOM tree (e.g. floem's `style_cx_parent` split) push the
+    /// structural position computed from their own tree here. `None`
+    /// means "use the tree's own parent/children edges".
+    pub structural_position_override: Option<(Option<usize>, usize)>,
 
     // ── Cascade outputs (populated by compute_style — Phase 1b) ────────
     /// Resolved style after class + selector merging, without inherited
@@ -76,14 +82,10 @@ pub struct StyleNode {
     /// extractors read.
     pub(crate) computed_style: Style,
     /// Inherited-only slice of this node's computed style. Passed to
-    /// children as their inherited context. Populated by Phase 1b cascade;
-    /// unused in Phase 1a.
-    #[allow(dead_code)]
+    /// children as their inherited context.
     pub(crate) inherited_context: Style,
     /// Class-map-only slice of this node's direct style. Passed to
-    /// children as their class context. Populated by Phase 1b cascade;
-    /// unused in Phase 1a.
-    #[allow(dead_code)]
+    /// children as their class context.
     pub(crate) class_context: Style,
     /// Interaction cx after resolving — becomes the inherited cx for
     /// children.
@@ -107,6 +109,7 @@ impl StyleNode {
             direct_style: Style::new(),
             classes: SmallVec::new(),
             parent_set_style_interaction: InheritedInteractionCx::default(),
+            structural_position_override: None,
             combined_style: Style::new(),
             computed_style: Style::new(),
             inherited_context: Style::new(),
@@ -290,6 +293,24 @@ impl StyleTree {
         }
     }
 
+    /// Override the structural position used for `:nth-child` et al. Hosts
+    /// whose structural-position notion differs from the tree's own
+    /// parent/children edges (e.g. floem's list-item re-parenting) push
+    /// the host-computed `(child_index, sibling_count)` here. Pass `None`
+    /// to defer to the tree's own edges.
+    pub fn set_structural_position_override(
+        &mut self,
+        id: StyleNodeId,
+        pos: Option<(Option<usize>, usize)>,
+    ) {
+        if let Some(node) = self.nodes.get_mut(id) {
+            if node.structural_position_override != pos {
+                node.dirty.merge(StyleReason::style_pass());
+            }
+            node.structural_position_override = pos;
+        }
+    }
+
     pub fn mark_dirty(&mut self, id: StyleNodeId, reason: StyleReason) {
         if let Some(node) = self.nodes.get_mut(id) {
             node.dirty.merge(reason);
@@ -324,6 +345,19 @@ impl StyleTree {
 
     pub fn style_interaction_cx(&self, id: StyleNodeId) -> Option<InheritedInteractionCx> {
         self.nodes.get(id).map(|n| n.style_interaction_cx)
+    }
+
+    /// Inherited-only slice of the computed style. Hosts copy this to
+    /// their per-view inherited context so children see it on their
+    /// next cascade.
+    pub fn inherited_context(&self, id: StyleNodeId) -> Option<&Style> {
+        self.nodes.get(id).map(|n| &n.inherited_context)
+    }
+
+    /// Class-map-only slice of the direct style, propagated to
+    /// descendants for class resolution.
+    pub fn class_context(&self, id: StyleNodeId) -> Option<&Style> {
+        self.nodes.get(id).map(|n| &n.class_context)
     }
 
     // ── Cascade ─────────────────────────────────────────────────────────
@@ -380,7 +414,13 @@ impl StyleTree {
         };
 
         // Structural position among siblings (1-based; None if orphan).
-        let (child_index, sibling_count) = self.structural_position(id);
+        // Honor a host-pushed override if set (floem uses this for list
+        // items whose style-cx parent differs from their DOM parent).
+        let (child_index, sibling_count) = self
+            .nodes
+            .get(id)
+            .and_then(|n| n.structural_position_override)
+            .unwrap_or_else(|| self.structural_position(id));
 
         // Snapshot node inputs while borrowed immutably.
         let (element_id, direct_style, classes, parent_overrides) = {
@@ -410,6 +450,17 @@ impl StyleTree {
             window_width: sink.root_size_width(),
         };
 
+        // Pull the direct style's own disabled/selected/hidden bits into
+        // `interact_state` BEFORE cascading so `:disabled` / `:selected`
+        // selectors activate based on the style itself, not just sink
+        // state inherited from the parent.
+        {
+            let builtin = direct_style.builtin();
+            interact_state.is_disabled |= builtin.set_disabled();
+            interact_state.is_selected |= builtin.set_selected();
+            interact_state.is_hidden |= builtin.display() == taffy::style::Display::None;
+        }
+
         // Resolve classes + selectors against parent contexts.
         let (combined_style, selectors) = resolve_nested_maps(
             direct_style,
@@ -419,6 +470,16 @@ impl StyleTree {
             &parent_inherited,
             &parent_class_cx,
         );
+
+        // After cascade, the combined style may have set_disabled /
+        // set_selected / display:None explicitly (e.g. via a selector
+        // branch). OR those into the interaction cx we store & propagate.
+        {
+            let builtin = combined_style.builtin();
+            interact_state.is_disabled |= builtin.set_disabled();
+            interact_state.is_selected |= builtin.set_selected();
+            interact_state.is_hidden |= builtin.display() == taffy::style::Display::None;
+        }
 
         // Merge inherited + combined → computed style for this node.
         let mut computed_style = parent_inherited.clone();
