@@ -1381,11 +1381,17 @@ impl WindowState {
                 .style_tree
                 .style_interaction_cx(style_node)
                 .unwrap_or_default();
+            let computed = self
+                .style_tree
+                .computed_style(style_node)
+                .cloned()
+                .unwrap_or_default();
             let has_selectors = self.style_tree.has_style_selectors(style_node);
 
             let state = view_id.state();
             let mut vs = state.borrow_mut();
             vs.style_storage.combined_style = combined;
+            vs.style_storage.computed_style = computed;
             vs.style_storage.style_cx = inherited_cx;
             vs.style_storage.class_cx = class_cx;
             vs.style_storage.post_compute_combined_interaction = post_interact;

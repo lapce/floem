@@ -264,83 +264,44 @@ impl<'a> StyleCx<'a> {
 
         let mut need_paint = false;
         // ─────────────────────────────────────────────────────────────────────
-        // Phase 5: Compute final style and propagate contexts to children
+        // Phase 5: Absorb tree outputs
+        //
+        // The `StyleTree` cascade already computed combined_style,
+        // computed_style, inherited_context, and class_context for this
+        // node (see `WindowState::run_style_cascade`), and propagated
+        // dirty flags to children whose inherited/class context
+        // changed. Here we just plumb the fresh storage into StyleCx so
+        // `view.style_pass` callbacks see the right values, and fix up
+        // the window-level `fixed_element` registry + record the new
+        // `style_interaction_cx` for next pass's change-detection.
         // ─────────────────────────────────────────────────────────────────────
+        {
+            let mut vs = view_state.borrow_mut();
+            self.direct = vs.style_storage.combined_style.clone();
+            self.inherited = vs.style_storage.style_cx.clone();
+            self.class_context = vs.style_storage.class_cx.clone();
+
+            vs.style_storage.style_interaction_cx = InheritedInteractionCx {
+                disabled: self.view_interact_state.is_disabled,
+                selected: self.view_interact_state.is_selected,
+                hidden: self.view_interact_state.is_hidden,
+            };
+        }
+
         if did_refresh_style {
-            self.direct = view_state.borrow().style_storage.combined_style.clone();
-
-            // Capture the inner map pointer before updating so we can detect whether
-            // inherited properties actually changed.
-            let old_inherited_map = view_state.borrow().style_storage.style_cx.clone();
-            // Propagate inherited properties to children (separate from class context)
-            Style::apply_only_inherited(&mut self.inherited, &self.direct);
-            let inherited_changed = self.inherited.merge_id() != old_inherited_map.merge_id();
-
-            let old_class_context = view_state.borrow().style_storage.class_cx.clone();
-            Style::apply_only_class_maps(&mut self.class_context, &self.direct);
-            let changed_classes = self.class_context.class_maps_eq(&old_class_context);
-            let class_context_changed = !changed_classes.is_empty();
-
-            // ─────────────────────────────────────────────────────────────────────
-            // Phase 5.5: Propagate changes to children if needed
-            // ─────────────────────────────────────────────────────────────────────
-            if inherited_changed || class_context_changed {
-                for child in view_id.children() {
-                    let element_id = child.get_element_id();
-                    if inherited_changed {
-                        self.window_state
-                            .mark_style_dirty_with(element_id, StyleReason::inherited());
-                    }
-                    if class_context_changed {
-                        self.window_state.mark_style_dirty_with(
-                            element_id,
-                            StyleReason::class_cx(changed_classes.clone()),
-                        );
-                    }
-                }
-            }
-
-            // Compute the final style by merging inherited context with direct style
-            let mut computed_style = self.inherited.clone();
-            computed_style.apply_mut(&self.direct);
-            computed_style = computed_style.with_inherited_context(&self.inherited);
-
-            // ─────────────────────────────────────────────────────────────────────
-            // Phase 6: Update window and view state.
-            // ─────────────────────────────────────────────────────────────────────
-
-            let new_is_fixed = computed_style.builtin().is_fixed();
-            if new_is_fixed {
+            let is_fixed = view_state
+                .borrow()
+                .style_storage
+                .computed_style
+                .builtin()
+                .is_fixed();
+            if is_fixed {
                 self.window_state
                     .register_fixed_element(view_id.get_element_id());
             } else {
                 self.window_state
                     .unregister_fixed_element(view_id.get_element_id());
             }
-
-            {
-                let mut vs = view_state.borrow_mut();
-
-                vs.style_storage.style_cx = self.inherited.clone();
-                vs.style_storage.class_cx = self.class_context.clone();
-                vs.style_storage.computed_style = computed_style;
-
-                vs.style_storage.style_interaction_cx = InheritedInteractionCx {
-                    disabled: self.view_interact_state.is_disabled,
-                    selected: self.view_interact_state.is_selected,
-                    hidden: self.view_interact_state.is_hidden,
-                };
-            }
-        } else {
-            let mut vs = view_state.borrow_mut();
-            self.direct = vs.style_storage.combined_style.clone();
-            self.inherited = vs.style_storage.style_cx.clone();
-            self.class_context = vs.style_storage.class_cx.clone();
-            vs.style_storage.style_interaction_cx = InheritedInteractionCx {
-                disabled: self.view_interact_state.is_disabled,
-                selected: self.view_interact_state.is_selected,
-                hidden: self.view_interact_state.is_hidden,
-            };
         }
 
         if self.reason.needs_property_extraction() {
