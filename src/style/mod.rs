@@ -142,7 +142,6 @@ pub use taffy::style::{
 // Import macros used by the prop_extractor blocks below.
 use crate::prop_extractor;
 
-mod context_ext;
 mod custom;
 mod cx;
 mod debug_view;
@@ -162,7 +161,6 @@ pub use floem_style::{recalc, selectors, unit};
 
 pub use floem_style::{CursorStyle, Focus, NoWrapOverflow, PointerEvents, TextOverflow};
 pub use floem_style::{Border, BorderColor, BorderRadius, BoxShadow, Margin, Padding};
-pub use context_ext::ContextValueExt;
 pub use custom::{CustomStylable, CustomStyle, StyleCustomExt};
 pub use cx::{InheritedInteractionCx, InteractionState, StyleCx};
 pub use debug_view::{InspectorRender, PropDebugView};
