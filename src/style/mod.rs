@@ -153,7 +153,6 @@ mod props;
 mod sink;
 mod storage;
 mod style_debug_ext;
-mod taffy_ext;
 #[cfg(test)]
 mod tests;
 pub mod theme;
@@ -177,7 +176,6 @@ pub use props::{
     StylePropReader, StylePropRef,
 };
 pub use floem_style::selectors::{NthChild, StructuralSelector, StyleSelector, StyleSelectors};
-pub use taffy_ext::StyleTaffyExt;
 pub use theme::{DesignSystem, StyleThemeExt};
 pub use floem_style::{DirectTransition, Transition, TransitionState};
 pub use style_debug_ext::StyleDebugViewExt;

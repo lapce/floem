@@ -4,7 +4,7 @@ use crate::{
     action::exec_after_animation_frame,
     inspector::CaptureState,
     platform::menu_types::MenuId,
-    style::{StyleCache, StyleSelectors, StyleTaffyExt, recalc::StyleReason},
+    style::{StyleCache, StyleSelectors, recalc::StyleReason},
     view::ViewStorage,
 };
 use crate::ElementIdExt;

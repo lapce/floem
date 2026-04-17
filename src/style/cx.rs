@@ -29,7 +29,7 @@ use crate::{
 };
 use crate::ElementIdExt;
 
-use super::{Style, StyleProp, StyleTaffyExt};
+use super::{Style, StyleProp};
 
 pub use floem_style::{InheritedInteractionCx, InteractionState};
 

@@ -12,7 +12,7 @@ use crate::{
     peniko::Color,
     prelude::EventListenerTrait,
     reactive::{Effect, Memo, RwSignal, Scope},
-    style::{CursorStyle, Style, StyleTaffyExt},
+    style::{CursorStyle, Style},
     style_class,
     taffy::tree::NodeId,
     text::{Affinity, Attrs, AttrsList, TextLayout},
