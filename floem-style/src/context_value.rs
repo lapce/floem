@@ -1,14 +1,13 @@
 //! Deferred, context-resolved style values.
 //!
 //! [`ContextValue<T>`] packages a closure that computes a value of type `T`
-//! from a host-specific style type (typically `floem::style::Style`). The
-//! eval closure is stored with the host type erased behind `&dyn Any`, so
-//! this type can live in `floem_style` without depending on `floem::style`.
+//! from a host-specific style type (typically [`crate::Style`]). The eval
+//! closure is stored with the host type erased behind `&dyn Any`, so this
+//! type does not require a concrete `Style` at construction.
 //!
-//! Callers running under floem should prefer
-//! `floem::style::ContextValueExt::resolve`, which wraps the call in the
-//! reactive `with_effect` context. For raw resolution use
-//! [`ContextValue::resolve_erased`].
+//! For resolution against the built-in [`crate::Style`] with reactive
+//! tracking, use [`crate::Style::resolve_context`]. For raw resolution
+//! against an arbitrary host type, use [`ContextValue::resolve_erased`].
 
 use std::any::Any;
 use std::rc::Rc;
@@ -46,8 +45,8 @@ impl<T> Eq for ContextValue<T> {}
 
 impl<T: 'static> ContextValue<T> {
     /// Build a `ContextValue` from a closure that reads the host style type
-    /// `S`. The concrete `S` is usually `floem::style::Style`, but any
-    /// `'static` type works; the eval closure is stored type-erased and
+    /// `S`. The concrete `S` is usually [`crate::Style`], but any `'static`
+    /// type works; the eval closure is stored type-erased and
     /// `resolve_erased` downcasts back to `&S` at call time.
     pub fn new<S: 'static>(eval: impl Fn(&S) -> T + 'static) -> Self {
         Self {
@@ -60,9 +59,9 @@ impl<T: 'static> ContextValue<T> {
         }
     }
 
-    /// Low-level resolve. Prefer `floem::style::ContextValueExt::resolve`
-    /// when running under floem, which additionally wraps the call in the
-    /// reactive `with_effect` context.
+    /// Low-level resolve. Prefer [`crate::Style::resolve_context`] when
+    /// resolving against the built-in `Style`, which additionally wraps
+    /// the call in the reactive `with_effect` context for signal tracking.
     pub fn resolve_erased(&self, style: &dyn Any) -> T {
         (self.eval)(style)
     }

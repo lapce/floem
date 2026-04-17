@@ -147,8 +147,9 @@ pub type HashAnyFn = fn(val: &dyn Any) -> u64;
 pub type EqAnyFn = fn(val1: &dyn Any, val2: &dyn Any) -> bool;
 
 /// Function pointer type for resolving a stored inherited property into a
-/// concrete value. `style` is passed type-erased as `&dyn Any` because the
-/// concrete `Style` type lives in `floem`.
+/// concrete value. `style` is passed type-erased as `&dyn Any` so this
+/// function pointer type does not need to name a concrete `Style`; the
+/// `prop!` macro's expansion downcasts it back to [`crate::Style`].
 pub type ResolveInheritedAnyFn = fn(val: &dyn Any, style: &dyn Any) -> Rc<dyn Any>;
 
 /// Function pointer type for rendering a property's inspector preview. The

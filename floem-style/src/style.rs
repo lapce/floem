@@ -817,13 +817,9 @@ impl Style {
     ///
     /// Wraps the resolution in the effect context that was active when this
     /// style was created, so signals read by the context closure establish
-    /// dependencies on the current reactive scope.
-    ///
-    /// This is the inherent-method counterpart to `floem::style::ContextValueExt::resolve`
-    /// and exists so macro expansions (notably `prop!`) don't need to name the
-    /// extension trait — letting the macro live in `floem_style` even while
-    /// `ContextValueExt` stays in `floem`. Must be `pub` because `prop!`
-    /// expansions in downstream crates call it from their generated code.
+    /// dependencies on the current reactive scope. Must be `pub` because
+    /// `prop!` expansions in downstream crates call it from their generated
+    /// code.
     #[doc(hidden)]
     pub fn resolve_context<T: 'static>(&self, cv: &ContextValue<T>) -> T {
         floem_reactive::Runtime::with_effect(self.effect_context.clone(), || {
