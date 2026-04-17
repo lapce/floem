@@ -107,8 +107,6 @@ pub fn resolve_nested_maps(
 
     let mut selectors = StyleSelectors::empty();
 
-    let effect_context = style.effect_context.clone();
-
     let class_style = resolve_classes(
         classes,
         interact_state,
@@ -122,7 +120,6 @@ pub fn resolve_nested_maps(
         .apply(view_style)
         .with_inherited_context(inherited_context);
     result.run_deferred_effects();
-    let _ = effect_context;
     (result, selectors)
 }
 

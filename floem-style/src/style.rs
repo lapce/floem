@@ -255,11 +255,6 @@ pub struct Style {
     /// is constant (all context values hash to 1), so different context values produce
     /// the same cache key despite resolving to different output.
     has_context_values: bool,
-    /// The effect context that was active when this style was created.
-    /// This is restored when evaluating context mappings and selectors to ensure
-    /// reactive dependencies are tracked correctly.
-    #[doc(hidden)]
-    pub effect_context: Option<Rc<dyn floem_reactive::EffectTrait>>,
 }
 
 impl Default for Style {
@@ -271,7 +266,6 @@ impl Default for Style {
 impl Style {
     #[doc(hidden)]
     pub fn with_capacity(capacity: usize) -> Self {
-        let effect_context = floem_reactive::Runtime::get_current_effect();
         let map = Rc::new(fx_hash_map_with_capacity(capacity));
         Self {
             merge_id: next_style_merge_id(),
@@ -281,7 +275,6 @@ impl Style {
             has_inherited: false,
             cached_selectors: StyleSelectors::empty(),
             has_context_values: false,
-            effect_context,
         }
     }
 
@@ -354,7 +347,7 @@ impl Style {
                     .map
                     .iter()
                     .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)));
-                new_style.apply_iter(class_maps, None);
+                new_style.apply_iter(class_maps);
                 new_style.merge_id = combine_merge_ids(new_style.merge_id, from.merge_id);
             }
 
@@ -374,7 +367,7 @@ impl Style {
             .map
             .iter()
             .filter(|(k, _)| matches!(k.info, StyleKeyInfo::Class(..)));
-        to.apply_iter(class_maps, None);
+        to.apply_iter(class_maps);
         to.merge_id = combine_merge_ids(to.merge_id, from.merge_id);
     }
 
@@ -622,7 +615,7 @@ impl Style {
         if self.any_inherited() {
             let inherited = self.map.iter().filter(|(p, _)| p.inherited());
 
-            new.apply_iter(inherited, None);
+            new.apply_iter(inherited);
             new.merge_id = combine_merge_ids(new.merge_id, self.merge_id);
         }
         new
@@ -704,11 +697,7 @@ impl Style {
     pub fn apply_iter<'a>(
         &mut self,
         iter: impl Iterator<Item = (&'a StyleKey, &'a Rc<dyn Any>)>,
-        source_effect_context: Option<Rc<dyn floem_reactive::EffectTrait>>,
     ) {
-        if self.effect_context.is_none() && source_effect_context.is_some() {
-            self.effect_context = source_effect_context;
-        }
         for (k, v) in iter {
             match k.info {
                 StyleKeyInfo::Class(..) | StyleKeyInfo::Selector(..) => {
@@ -807,24 +796,24 @@ impl Style {
             return;
         }
         let over_merge_id = over.merge_id;
-        let effect_context = over.effect_context.clone();
-        self.apply_iter(over.map.iter(), effect_context);
+        self.apply_iter(over.map.iter());
         self.has_context_values |= over.has_context_values;
         self.merge_id = combine_merge_ids(self.merge_id, over_merge_id);
     }
 
-    /// Resolve a [`ContextValue`] against this style, with reactive tracking.
+    /// Resolve a [`ContextValue`] against this style.
     ///
-    /// Wraps the resolution in the effect context that was active when this
-    /// style was created, so signals read by the context closure establish
-    /// dependencies on the current reactive scope. Must be `pub` because
-    /// `prop!` expansions in downstream crates call it from their generated
-    /// code.
+    /// The closure receives this style type-erased and returns the resolved
+    /// value. Closures are expected to be pure functions of the cascaded
+    /// style they receive — if a closure reads external signals, the host
+    /// is responsible for wrapping the closure in its own reactive-scope
+    /// machinery before handing it to [`ContextValue::new`].
+    ///
+    /// `pub` because `prop!` expansions in downstream crates call it from
+    /// their generated code.
     #[doc(hidden)]
     pub fn resolve_context<T: 'static>(&self, cv: &ContextValue<T>) -> T {
-        floem_reactive::Runtime::with_effect(self.effect_context.clone(), || {
-            cv.resolve_erased(self as &dyn Any)
-        })
+        cv.resolve_erased(self as &dyn Any)
     }
 
     /// Apply another `Style` to this style, returning a new `Style` with the overrides
