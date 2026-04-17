@@ -1411,6 +1411,24 @@ impl Style {
         self.merge_id = combine_merge_ids(self.merge_id, over_merge_id);
     }
 
+    /// Resolve a [`ContextValue`] against this style, with reactive tracking.
+    ///
+    /// Wraps the resolution in the effect context that was active when this
+    /// style was created, so signals read by the context closure establish
+    /// dependencies on the current reactive scope.
+    ///
+    /// This is the inherent-method counterpart to [`ContextValueExt::resolve`]
+    /// and exists so macro expansions (notably `prop!`) don't need to name the
+    /// extension trait — letting the macro move to `floem_style` even while
+    /// `ContextValueExt` stays in `floem`. Must be `pub` because `prop!`
+    /// expansions in downstream crates call it from their generated code.
+    #[doc(hidden)]
+    pub fn resolve_context<T: 'static>(&self, cv: &ContextValue<T>) -> T {
+        floem_reactive::Runtime::with_effect(self.effect_context.clone(), || {
+            cv.resolve_erased(self as &dyn Any)
+        })
+    }
+
     /// Apply another `Style` to this style, returning a new `Style` with the overrides
     ///
     /// `StyleValue::Val` will override the value with the given value
