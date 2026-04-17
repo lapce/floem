@@ -360,8 +360,8 @@ impl WindowHandle {
 
         // Run initial style and layout passes
         window_handle.process_update_messages();
-        // Mark root view as needing style so initial style pass runs compute_combined
-        // and populates has_style_selectors for selector detection
+        // Mark root view as needing style so the initial style pass drives the
+        // StyleTree cascade and populates has_style_selectors for selector detection
         window_handle.id.request_style(StyleReason::full_recalc());
         window_handle.process_update_messages();
         window_handle.style();

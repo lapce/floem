@@ -132,7 +132,8 @@ impl Hash for StyleCacheKey {
     }
 }
 
-/// The result of a cache hit, containing all outputs of `compute_combined()`.
+/// The result of a cache hit, carrying the cascade outputs that would
+/// otherwise be recomputed via [`resolve_nested_maps`](crate::resolve_nested_maps).
 pub struct CacheHit {
     /// The resolved combined style.
     pub combined_style: Style,

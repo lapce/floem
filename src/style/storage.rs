@@ -60,7 +60,9 @@ pub(crate) struct StyleStorage {
     /// View-local interaction flags derived from this view's resolved combined style.
     ///
     /// This excludes inherited parent interaction and is OR'ed onto StyleCx interaction
-    /// state during fast-path style passes that skip `compute_combined`.
+    /// state in `style_view`. Populated by
+    /// [`WindowState::run_style_cascade`](crate::window::state::WindowState::run_style_cascade)
+    /// each pass from the [`floem_style::StyleTree`] cascade outputs.
     pub post_compute_combined_interaction: InheritedInteractionCx,
     /// Interaction cx set by a parent on this view; consumed when building the
     /// StyleCx for this view.
