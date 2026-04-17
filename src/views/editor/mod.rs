@@ -94,14 +94,6 @@ impl PropDebugView for RenderWhitespace {
     }
 }
 prop!(pub IndentStyleProp: IndentStyle {} = IndentStyle::Spaces(4));
-impl PropDebugView for IndentStyle {
-    fn debug_view(
-        &self,
-        r: &dyn crate::style::InspectorRender,
-    ) -> Option<Box<dyn std::any::Any>> {
-        Some(r.text(&self.to_string()))
-    }
-}
 prop!(pub DropdownShadow: Option<Color> {} = None);
 prop!(pub Foreground: Color { inherited } = Color::from_rgb8(0x38, 0x3A, 0x42));
 prop!(pub Focus: Option<Color> {} = None);

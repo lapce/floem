@@ -9,7 +9,9 @@ use std::any::Any;
 
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
 use floem_renderer::Renderer;
+use floem_renderer::text::FontWeight;
 use floem_style::{AffineLerp, InspectorRender, Transition};
+use parley::FontStyle;
 use peniko::color::palette;
 use peniko::kurbo::{self, Affine, Point, Rect, Stroke};
 use peniko::{Brush, Color, Gradient, GradientKind, LinearGradientPosition};
@@ -30,6 +32,13 @@ pub struct FloemInspectorRender;
 fn erase_view(view: impl View + 'static) -> Box<dyn Any> {
     let view: Box<dyn View> = view.into_any();
     Box::new(view)
+}
+
+fn view_from_any(any: Box<dyn Any>) -> Box<dyn View> {
+    any.downcast::<Box<dyn View>>()
+        .ok()
+        .map(|b| *b)
+        .unwrap_or_else(|| Empty::new().into_any())
 }
 
 impl InspectorRender for FloemInspectorRender {
@@ -913,6 +922,43 @@ impl InspectorRender for FloemInspectorRender {
                 .tooltip(tooltip_view)
                 .style(|s| s.items_center()),
         )
+    }
+
+    fn muted_text(&self, s: &str) -> Box<dyn Any> {
+        erase_view(
+            Label::new(s.to_string()).style(|s| s.with_theme(|s, t| s.color(t.text_muted()))),
+        )
+    }
+
+    fn labelled(&self, label: &str, content: Box<dyn Any>) -> Box<dyn Any> {
+        let index_label = Label::new(label.to_string())
+            .style(|s| s.with_theme(|s, t| s.color(t.text_muted())));
+        let content_view = view_from_any(content);
+        erase_view(
+            Stack::new((index_label, content_view))
+                .style(|s| s.items_center().gap(8.0).padding(4.0)),
+        )
+    }
+
+    fn vertical_list(&self, items: Vec<Box<dyn Any>>) -> Box<dyn Any> {
+        let views: Vec<Box<dyn View>> = items.into_iter().map(view_from_any).collect();
+        erase_view(Stack::vertical_from_iter(views).style(|s| s.gap(4.0)))
+    }
+
+    fn horizontal_pair(&self, first: Box<dyn Any>, second: Box<dyn Any>) -> Box<dyn Any> {
+        let first = view_from_any(first);
+        let second = view_from_any(second);
+        erase_view(Stack::new((first, second)).style(|s| s.gap(8.0)))
+    }
+
+    fn font_weight(&self, weight: FontWeight, label: &str) -> Box<dyn Any> {
+        let w = weight;
+        erase_view(Label::new(label.to_string()).style(move |s| s.font_weight(w)))
+    }
+
+    fn font_style(&self, style: FontStyle, label: &str) -> Box<dyn Any> {
+        let fs = style;
+        erase_view(Label::new(label.to_string()).style(move |s| s.font_style(fs)))
     }
 }
 

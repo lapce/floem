@@ -101,18 +101,10 @@ impl PropDebugView for LocaleMap {
     }
 }
 
-// `impl StylePropValue for LanguageIdentifier` lives in
+// `impl StylePropValue for LanguageIdentifier` and
+// `impl PropDebugView for LanguageIdentifier` both live in
 // `floem_style::value_impls::localization` (behind the `localization` feature)
 // to satisfy the orphan rule.
-
-impl PropDebugView for LanguageIdentifier {
-    fn debug_view(
-        &self,
-        r: &dyn crate::style::InspectorRender,
-    ) -> Option<Box<dyn std::any::Any>> {
-        Some(r.text(&format!("{self:?}")))
-    }
-}
 
 impl LocaleMap {
     /// Accepts list of the language resources in a form of a list implementing [IntoIterator]

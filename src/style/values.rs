@@ -1,34 +1,15 @@
 //! Core style property value trait and implementations.
 
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
-use floem_renderer::text::{FontWeight, LineHeightValue};
-use peniko::kurbo::{self, Affine, Stroke};
-use peniko::{Brush, Color, Gradient};
-use smallvec::SmallVec;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::rc::Rc;
-use taffy::GridTemplateComponent;
-
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::Duration;
-#[cfg(target_arch = "wasm32")]
-use web_time::Duration;
-
-use taffy::style::{
-    AlignContent, AlignItems, BoxSizing, Display, FlexDirection, FlexWrap, Overflow, Position,
-};
-use taffy::{
-    geometry::{MinMax, Size},
-    prelude::{GridPlacement, Line},
-    style::{LengthPercentage, MaxTrackSizingFunction, MinTrackSizingFunction},
-};
+use taffy::style::FlexDirection;
 
 use crate::AnyView;
 use crate::prelude::ViewTuple;
 use crate::style::CursorStyle;
 use crate::theme::StyleThemeExt;
-use crate::unit::{Length, LengthAuto, Pct, Pt};
 use crate::view::{IntoView, View};
 use crate::views::{
     ButtonClass, ContainerExt, Decorators, Empty, Label, Stack, TabSelectorClass, dyn_view, svg,
@@ -36,40 +17,9 @@ use crate::views::{
 };
 
 use super::{
-    FontSize, InspectorRender, PropDebugView, ResponsiveSelectors, StructuralSelectors, Style,
-    StyleDebugGroupInfo, StyleKey, StyleKeyInfo, StylePropRef, Transition, TransitionDebugViewExt,
+    FontSize, ResponsiveSelectors, StructuralSelectors, Style, StyleDebugGroupInfo, StyleKey,
+    StyleKeyInfo, StylePropRef, Transition, TransitionDebugViewExt,
 };
-use std::any::Any;
-
-use crate::no_debug_view;
-
-no_debug_view!(
-    i32,
-    bool,
-    f32,
-    u16,
-    usize,
-    f64,
-    Overflow,
-    Display,
-    Position,
-    FlexDirection,
-    FlexWrap,
-    AlignItems,
-    BoxSizing,
-    AlignContent,
-    GridTemplateComponent<String>,
-    MinTrackSizingFunction,
-    MaxTrackSizingFunction,
-    taffy::GridAutoFlow,
-    GridPlacement,
-    String,
-    crate::text::Alignment,
-    LineHeightValue,
-    Size<LengthPercentage>,
-    super::Angle,
-    super::AnchorAbout,
-);
 
 pub struct ContextValue<T> {
     pub(crate) eval: Rc<dyn Fn(&Style) -> T>,
@@ -126,248 +76,14 @@ pub use floem_style::prop_value::{hash_f32, hash_f64, hash_value};
 
 // Primitive, taffy, collection, peniko, text, and unit `StylePropValue` impls
 // live in `floem_style::value_impls` (moved there to satisfy the orphan rule).
-
-impl<T, M> PropDebugView for MinMax<T, M> {}
-impl<T> PropDebugView for Line<T> {}
-
-pub use floem_style::{ObjectFit, ObjectPosition};
-
-impl PropDebugView for ObjectFit {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        Some(r.object_fit(*self))
-    }
-}
-
-impl PropDebugView for ObjectPosition {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        Some(r.object_position(self))
-    }
-}
-
-impl<A: smallvec::Array> PropDebugView for SmallVec<A>
-where
-    <A as smallvec::Array>::Item: StylePropValue + PropDebugView,
-{
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        if self.is_empty() {
-            return Some(r.text("smallvec\n[]"));
-        }
-
-        let count = self.len();
-        let is_spilled = self.spilled();
-
-        // Create a preview that shows count and whether it has spilled to heap
-        let preview = Label::derived(move || {
-            if is_spilled {
-                format!("smallvec\n[{}] (heap)", count)
-            } else {
-                format!("smallvec\n[{}] (inline)", count)
-            }
-        })
-        .style(|s| {
-            s.padding(2.0)
-                .padding_horiz(6.0)
-                .items_center()
-                .justify_center()
-                .text_align(parley::Alignment::Center)
-                .border(1.)
-                .border_radius(5.0)
-                .margin_left(6.0)
-                .with_theme(|s, t| s.color(t.text()).border_color(t.border()))
-                .with::<FontSize>(|s, fs| s.font_size(fs.def(|fs| fs * 0.85)))
-        });
-
-        // Render each item via the renderer; downcast back to concrete
-        // view type so the tooltip closure can own them.
-        let item_views: Vec<Box<dyn View>> = self
-            .iter()
-            .enumerate()
-            .map(|(i, item)| {
-                let index_label = Label::new(format!("[{}]", i))
-                    .style(|s| s.with_theme(|s, t| s.color(t.text_muted())));
-
-                let item_view: Box<dyn View> = item
-                    .debug_view(r)
-                    .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
-                    .unwrap_or_else(|| {
-                        Label::new(format!("{:?}", item))
-                            .style(|s| s.flex_grow(1.0))
-                            .into_any()
-                    });
-
-                Stack::new((index_label, item_view))
-                    .style(|s| s.items_center().gap(8.0).padding(4.0))
-                    .into_any()
-            })
-            .collect();
-
-        let tooltip = Stack::vertical_from_iter(item_views).style(|s| s.gap(4.0));
-
-        let view: Box<dyn View> = Stack::new((preview, tooltip))
-            .style(|s| s.gap(8.0))
-            .into_any();
-        Some(Box::new(view))
-    }
-}
-impl PropDebugView for FontWeight {
-    fn debug_view(&self, _r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        let clone = *self;
-        let view: Box<dyn View> = format!("{clone:?}")
-            .style(move |s| s.font_weight(clone))
-            .into_any();
-        Some(Box::new(view))
-    }
-}
-impl PropDebugView for crate::text::FontStyle {
-    fn debug_view(&self, _r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        let clone = *self;
-        let view: Box<dyn View> = format!("{clone:?}")
-            .style(move |s| s.font_style(clone))
-            .into_any();
-        Some(Box::new(view))
-    }
-}
-impl<T: PropDebugView> PropDebugView for Option<T> {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        self.as_ref().and_then(|v| v.debug_view(r))
-    }
-}
-impl<T: StylePropValue + PropDebugView + 'static> PropDebugView for Vec<T> {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        if self.is_empty() {
-            let view: Box<dyn View> = Label::new("[]")
-                .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
-                .into_any();
-            return Some(Box::new(view));
-        }
-
-        let item_views: Vec<Box<dyn View>> = self
-            .iter()
-            .enumerate()
-            .map(|(i, item)| {
-                let index_label = Label::new(format!("[{}]", i))
-                    .style(|s| s.with_theme(|s, t| s.color(t.text_muted())));
-
-                let item_view: Box<dyn View> = item
-                    .debug_view(r)
-                    .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
-                    .unwrap_or_else(|| {
-                        Label::new(format!("{:?}", item))
-                            .style(|s| s.flex_grow(1.0))
-                            .into_any()
-                    });
-
-                Stack::new((index_label, item_view))
-                    .style(|s| s.items_center().gap(8.0).padding(4.0))
-                    .into_any()
-            })
-            .collect();
-
-        let view: Box<dyn View> = Stack::vertical_from_iter(item_views)
-            .style(|s| s.gap(4.0))
-            .into_any();
-        Some(Box::new(view))
-    }
-}
-impl PropDebugView for Pt {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        Some(r.text(&format!("{} pt", self.0)))
-    }
-}
-#[allow(deprecated)]
-impl PropDebugView for super::unit::Px {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        Pt(self.0).debug_view(r)
-    }
-}
-impl PropDebugView for Pct {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        Some(r.text(&format!("{}%", self.0)))
-    }
-}
-impl PropDebugView for LengthAuto {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        let label = match self {
-            Self::Pt(v) => format!("{v} pt"),
-            Self::Pct(v) => format!("{v}%"),
-            Self::Em(v) => format!("{v} em"),
-            Self::Lh(v) => format!("{v} lh"),
-            Self::Auto => "auto".to_string(),
-        };
-        Some(r.text(&label))
-    }
-}
-#[allow(deprecated)]
-impl PropDebugView for super::unit::PxPctAuto {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        LengthAuto::from(*self).debug_view(r)
-    }
-}
-impl PropDebugView for Length {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        let label = match self {
-            Self::Pt(v) => format!("{v} pt"),
-            Self::Pct(v) => format!("{v}%"),
-            Self::Em(v) => format!("{v} em"),
-            Self::Lh(v) => format!("{v} lh"),
-        };
-        Some(r.text(&label))
-    }
-}
-#[allow(deprecated)]
-impl PropDebugView for super::unit::PxPct {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        Length::from(*self).debug_view(r)
-    }
-}
-
-pub(crate) fn views(views: impl ViewTuple) -> Vec<AnyView> {
-    views.into_views()
-}
-
-impl PropDebugView for Color {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        Some(r.color(*self))
-    }
-}
-
-impl PropDebugView for Gradient {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        Some(r.gradient(self))
-    }
-}
+// `PropDebugView` impls for types owned by external crates
+// (Option, Vec, SmallVec, MinMax, Line, FontWeight, FontStyle, primitives via
+// `no_debug_view!`) likewise live in `floem_style::value_impls`.
 
 pub use floem_style::StrokeWrap;
 
-impl PropDebugView for Stroke {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        Some(r.stroke(self))
-    }
-}
-impl PropDebugView for Brush {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        match self {
-            Brush::Solid(_) | Brush::Gradient(_) => Some(r.brush(self)),
-            Brush::Image(_) => None,
-        }
-    }
-}
-impl PropDebugView for Duration {
-    fn debug_view(&self, _r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        None
-    }
-}
-
-impl PropDebugView for kurbo::Rect {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        Some(r.rect(self))
-    }
-}
-
-impl PropDebugView for Affine {
-    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
-        Some(r.affine(self))
-    }
+pub(crate) fn views(views: impl ViewTuple) -> Vec<AnyView> {
+    views.into_views()
 }
 
 /// Internal storage for style property values in the style map.

@@ -15,6 +15,8 @@
 
 use std::any::Any;
 
+use floem_renderer::text::FontWeight;
+use parley::FontStyle;
 use peniko::kurbo::{Affine, Rect, Stroke};
 use peniko::{Brush, Color, Gradient};
 
@@ -60,4 +62,22 @@ pub trait InspectorRender {
 
     /// Transition easing-curve preview with duration/easing tooltip.
     fn transition(&self, t: &Transition) -> Box<dyn Any>;
+
+    /// Text styled with muted/deemphasized color, for placeholders like "[]".
+    fn muted_text(&self, s: &str) -> Box<dyn Any>;
+
+    /// A row of `[label] content`, typically for numbered list items.
+    fn labelled(&self, label: &str, content: Box<dyn Any>) -> Box<dyn Any>;
+
+    /// Vertical list of pre-rendered child items with a small gap.
+    fn vertical_list(&self, items: Vec<Box<dyn Any>>) -> Box<dyn Any>;
+
+    /// Two debug views side by side (summary + details).
+    fn horizontal_pair(&self, first: Box<dyn Any>, second: Box<dyn Any>) -> Box<dyn Any>;
+
+    /// Text rendered using a concrete `FontWeight` (for weight previews).
+    fn font_weight(&self, weight: FontWeight, label: &str) -> Box<dyn Any>;
+
+    /// Text rendered using a concrete `FontStyle` (for italic previews).
+    fn font_style(&self, style: FontStyle, label: &str) -> Box<dyn Any>;
 }

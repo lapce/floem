@@ -7,6 +7,7 @@
 //! can run the same engine over its own node type by implementing the
 //! traits this crate exposes.
 
+pub mod debug_view;
 pub mod easing;
 pub mod element_id;
 pub mod inspector_render;
@@ -22,6 +23,7 @@ pub mod value_impls;
 pub mod values;
 pub mod visibility;
 
+pub use debug_view::PropDebugView;
 pub use easing::{Bezier, Easing, Linear, Spring, Step, StepPosition};
 pub use element_id::ElementId;
 pub use inspector_render::InspectorRender;
