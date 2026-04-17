@@ -169,7 +169,6 @@ mod cx;
 mod debug_view;
 mod macros;
 mod props;
-pub mod recalc;
 mod sink;
 mod storage;
 #[cfg(test)]
@@ -180,7 +179,7 @@ mod values;
 
 // Re-export modules moved to the `floem_style` crate so the `floem::style::*`
 // API surface remains stable for downstream users.
-pub use floem_style::{selectors, unit};
+pub use floem_style::{recalc, selectors, unit};
 
 pub use components::{
     Border, BorderColor, BorderRadius, BoxShadow, CursorStyle, Margin, NoWrapOverflow, Padding,

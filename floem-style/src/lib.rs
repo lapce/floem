@@ -12,12 +12,14 @@ pub mod element_id;
 pub mod interaction;
 pub mod prop_value;
 pub mod props;
+pub mod recalc;
 pub mod responsive;
 pub mod selectors;
 pub mod transition;
 pub mod unit;
 pub mod value_impls;
 pub mod values;
+pub mod visibility;
 
 pub use easing::{Bezier, Easing, Linear, Spring, Step, StepPosition};
 pub use element_id::ElementId;
@@ -32,3 +34,4 @@ pub use props::{
 pub use transition::{ActiveTransition, DirectTransition, Transition, TransitionState};
 pub use value_impls::AffineLerp;
 pub use values::{ObjectFit, ObjectPosition, StrokeWrap};
+pub use visibility::{Visibility, VisibilityPhase};
