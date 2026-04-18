@@ -129,6 +129,7 @@ pub use style::{BuiltinStyle, ContextRef, DeferredStyleEffect, ExprStyle, Style}
 pub use style_value::{StyleMapValue, StyleValue};
 pub use transition::{ActiveTransition, DirectTransition, Transition, TransitionState};
 pub use tree::{StyleNode, StyleNodeId, StyleTree};
+pub use unit::LineHeightValue;
 pub use value_impls::AffineLerp;
 pub use values::{
     CursorStyle, Focus, NoWrapOverflow, ObjectFit, ObjectPosition, PointerEvents, StrokeWrap,

@@ -7,8 +7,9 @@
 
 use std::any::Any;
 
-use floem_renderer::text::{FontWeight, LineHeightValue};
-use parley::{Alignment, FontStyle};
+use parley::{Alignment, FontStyle, FontWeight};
+
+use crate::unit::LineHeightValue;
 use peniko::kurbo::{self, Affine, Stroke};
 use peniko::{Brush, Color, Gradient};
 use smallvec::SmallVec;

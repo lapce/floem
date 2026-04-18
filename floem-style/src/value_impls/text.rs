@@ -1,12 +1,12 @@
 //! `StylePropValue` impls for text-related types (font weight, line height,
-//! font style, alignment). These types originate in external crates
-//! (`fontique`/`parley`) and are re-exported by `floem_renderer::text` or
-//! accessed directly via `parley`.
+//! font style, alignment). Font types originate in `fontique` and are
+//! re-exported by `parley`; `LineHeightValue` is defined in this crate
+//! (see [`crate::unit::LineHeightValue`]).
 
-use floem_renderer::text::{FontStyle, FontWeight, LineHeightValue};
-use parley::Alignment;
+use parley::{Alignment, FontStyle, FontWeight};
 
 use crate::prop_value::{StylePropValue, hash_f32, hash_value};
+use crate::unit::LineHeightValue;
 
 impl StylePropValue for FontWeight {
     fn content_hash(&self) -> u64 {

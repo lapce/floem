@@ -1864,6 +1864,7 @@ version = "0.2.0"
 dependencies = [
  "crossbeam",
  "floem-winit",
+ "floem_style",
  "fontique",
  "futures",
  "parking_lot",
@@ -1895,7 +1896,6 @@ name = "floem_style"
 version = "0.2.0"
 dependencies = [
  "bitflags 2.11.0",
- "floem_renderer",
  "parley",
  "paste",
  "peniko",

@@ -15,8 +15,7 @@
 
 use std::any::Any;
 
-use floem_renderer::text::FontWeight;
-use parley::FontStyle;
+use parley::{FontStyle, FontWeight};
 use peniko::kurbo::{Affine, Rect, Stroke};
 use peniko::{Brush, Color, Gradient};
 

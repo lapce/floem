@@ -15,7 +15,7 @@
 //! `taffy::style` so downstream users can keep writing
 //! `floem::style::FlexDirection::Row` after the extraction.
 
-use floem_renderer::text::{FontStyle as FontStyleProp, FontWeight as FontWeightProp};
+use parley::{FontStyle as FontStyleProp, FontWeight as FontWeightProp};
 use peniko::color::palette;
 use peniko::kurbo::{Affine, Stroke};
 use peniko::{Brush, Color};
