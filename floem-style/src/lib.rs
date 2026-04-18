@@ -54,6 +54,7 @@ pub mod debug_view;
 pub mod design_system;
 pub mod easing;
 pub mod element_id;
+pub mod extractors;
 pub mod inspector_render;
 pub mod interaction;
 pub mod merge_id;
@@ -108,6 +109,7 @@ pub use debug_view::PropDebugView;
 pub use design_system::DesignSystem;
 pub use easing::{Bezier, Easing, Linear, Spring, Step, StepPosition};
 pub use element_id::ElementId;
+pub use extractors::{LayoutProps, TransformProps, ViewStyleProps};
 pub use inspector_render::InspectorRender;
 pub use interaction::{InheritedInteractionCx, InteractionState};
 pub use merge_id::{

@@ -8,13 +8,7 @@ use crate::{
     },
     event::listener::{self, EventListenerKey},
     message::UpdateMessage,
-    prop_extractor,
-    style::{
-        Background, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
-        BorderLeftColor, BorderRightColor, BorderTopColor, BorderTopLeftRadius,
-        BorderTopRightRadius, BoxShadowProp, CursorStyle, Outline,
-        OutlineColor, Style, StyleClassRef, StyleStorage, recalc::StyleReason,
-    },
+    style::{CursorStyle, Style, StyleClassRef, StyleStorage, recalc::StyleReason},
     view::LayoutTree,
 };
 use floem_reactive::Scope;
@@ -76,47 +70,7 @@ impl<T> Stack<T> {
     }
 }
 
-prop_extractor! {
-    pub(crate) ViewStyleProps {
-        pub border_top_left_radius: BorderTopLeftRadius,
-        pub border_top_right_radius: BorderTopRightRadius,
-        pub border_bottom_left_radius: BorderBottomLeftRadius,
-        pub border_bottom_right_radius: BorderBottomRightRadius,
-        pub border_progress: crate::style::BorderProgress,
-
-        pub outline: Outline,
-        pub outline_color: OutlineColor,
-        pub outline_progress: crate::style::OutlineProgress,
-        pub border_left_color: BorderLeftColor,
-        pub border_top_color: BorderTopColor,
-        pub border_right_color: BorderRightColor,
-        pub border_bottom_color: BorderBottomColor,
-        pub background: Background,
-        pub shadow: BoxShadowProp,
-    }
-}
-
-pub use floem_style::{Visibility, VisibilityPhase};
-
-impl ViewStyleProps {
-    pub fn border_radius(&self) -> crate::style::BorderRadius {
-        crate::style::BorderRadius {
-            top_left: Some(self.border_top_left_radius()),
-            top_right: Some(self.border_top_right_radius()),
-            bottom_left: Some(self.border_bottom_left_radius()),
-            bottom_right: Some(self.border_bottom_right_radius()),
-        }
-    }
-
-    pub fn border_color(&self) -> crate::style::BorderColor {
-        crate::style::BorderColor {
-            left: self.border_left_color(),
-            top: self.border_top_color(),
-            right: self.border_right_color(),
-            bottom: self.border_bottom_color(),
-        }
-    }
-}
+pub use floem_style::{ViewStyleProps, Visibility, VisibilityPhase};
 
 /// Cached prefix-sum style stack with dirty tracking.
 pub struct StyleStack {
