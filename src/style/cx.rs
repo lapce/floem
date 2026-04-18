@@ -558,6 +558,21 @@ impl<'a> StyleCx<'a> {
     }
 }
 
+impl floem_style::PropExtractorCx for StyleCx<'_> {
+    fn now(&self) -> Instant {
+        self.now
+    }
+    fn direct_style(&self) -> &Style {
+        &self.direct
+    }
+    fn current_element(&self) -> ElementId {
+        self.current_view.get_element_id()
+    }
+    fn request_transition_for(&mut self, target: ElementId) {
+        StyleCx::request_transition_for(self, target)
+    }
+}
+
 // Animation helper functions used by StyleCx::style_view
 
 fn animations_on_remove(id: ViewId, scope: Scope) -> u16 {

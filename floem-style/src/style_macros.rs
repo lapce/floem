@@ -3,10 +3,16 @@
 //! [`prop!`] expands to define a zero-sized prop type and a [`StyleProp`]
 //! impl that installs a static [`StyleKeyInfo::Prop`].
 //! [`style_debug_group!`] expands to a similar zero-sized group marker.
+//! [`prop_extractor!`] expands to a struct that collects a set of
+//! [`StyleProp`]s and reads them off a [`Style`] with transition
+//! bookkeeping; the generated convenience methods drive transitions
+//! through the [`PropExtractorCx`](crate::PropExtractorCx) trait so the
+//! macro is host-neutral.
 //!
-//! Both macros live in this crate (rather than `floem`) because their
+//! All three macros live in this crate (rather than `floem`) because their
 //! expansions reference types in `floem_style` — `Style`, `StyleMapValue`,
-//! `StyleValue`, `PropDebugView`, and `StyleProp`.
+//! `StyleValue`, `PropDebugView`, `StyleProp`, `ExtractorField`,
+//! `StylePropReader`, and `PropExtractorCx`.
 
 #[macro_export]
 macro_rules! style_debug_group {
@@ -208,6 +214,106 @@ macro_rules! prop {
     };
     ([impl inherited][]) => {
         false
+    };
+}
+
+#[macro_export]
+macro_rules! prop_extractor {
+    (
+        $(#[$attrs:meta])* $vis:vis $name:ident {
+            $($prop_vis:vis $prop:ident: $reader:ty),*
+            $(,)?
+        }
+    ) => {
+        #[derive(Debug, Clone)]
+        $(#[$attrs])?
+        $vis struct $name {
+            $(
+                $prop_vis $prop: $crate::ExtractorField<$reader>,
+            )*
+        }
+
+        impl $name {
+            #[allow(dead_code)]
+            $vis fn read_style(
+                &mut self,
+                cx: &mut dyn $crate::PropExtractorCx,
+                style: &$crate::Style,
+            ) -> bool {
+                let target = $crate::PropExtractorCx::current_element(cx);
+                self.read_style_for(cx, style, target)
+            }
+
+            #[allow(dead_code)]
+            $vis fn read_style_for(
+                &mut self,
+                cx: &mut dyn $crate::PropExtractorCx,
+                style: &$crate::Style,
+                target: impl Into<$crate::ElementId>,
+            ) -> bool {
+                let now = $crate::PropExtractorCx::now(cx);
+                let mut transition = false;
+                let changed = false $(
+                    | self.$prop.read(style, &now, &mut transition)
+                )*;
+                if transition {
+                    $crate::PropExtractorCx::request_transition_for(cx, target.into());
+                }
+                changed
+            }
+
+            #[allow(dead_code)]
+            $vis fn read(&mut self, cx: &mut dyn $crate::PropExtractorCx) -> bool {
+                let target = $crate::PropExtractorCx::current_element(cx);
+                self.read_for(cx, target)
+            }
+
+            #[allow(dead_code)]
+            $vis fn read_for(
+                &mut self,
+                cx: &mut dyn $crate::PropExtractorCx,
+                target: impl Into<$crate::ElementId>,
+            ) -> bool {
+                let mut transition = false;
+                let changed = self.read_explicit(
+                    $crate::PropExtractorCx::direct_style(cx),
+                    &$crate::PropExtractorCx::now(cx),
+                    &mut transition,
+                );
+                if transition {
+                    $crate::PropExtractorCx::request_transition_for(cx, target.into());
+                }
+                changed
+            }
+
+            #[allow(dead_code)]
+            $vis fn read_explicit(
+                &mut self,
+                style: &$crate::Style,
+                #[cfg(not(target_arch = "wasm32"))]
+                now: &std::time::Instant,
+                #[cfg(target_arch = "wasm32")]
+                now: &web_time::Instant,
+                request_transition: &mut bool,
+            ) -> bool {
+                false $(| self.$prop.read(style, now, request_transition))*
+            }
+
+            $($prop_vis fn $prop(&self) -> <$reader as $crate::StylePropReader>::Type
+            {
+                self.$prop.get()
+            })*
+        }
+
+        impl Default for $name {
+            fn default() -> Self {
+                Self {
+                    $(
+                        $prop: $crate::ExtractorField::new(),
+                    )*
+                }
+            }
+        }
     };
 }
 

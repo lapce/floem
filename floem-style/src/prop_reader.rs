@@ -4,10 +4,10 @@
 //! (with transition state) out of a [`Style`]. Every [`StyleProp`] gets a
 //! blanket impl. [`ExtractorField`] is the per-prop state slot the
 //! `prop_extractor!` macro embeds in each generated struct.
-//!
-//! Both live here (rather than in `floem` proper) because they only depend on
-//! [`Style`], [`StyleValue`], [`TransitionState`], and [`StyleProp`] — all of
-//! which live in this crate.
+//! [`PropExtractorCx`] is the narrow host interface the
+//! convenience methods on extractor structs need — hosts
+//! implement it on whatever per-view context they hand to
+//! `.read(cx)` / `.read_style(cx, ..)`.
 
 use std::fmt::{self, Debug};
 use std::hash::Hasher;
@@ -17,6 +17,7 @@ use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
+use crate::element_id::ElementId;
 use crate::props::StyleProp;
 use crate::style::Style;
 use crate::style_value::StyleValue;
@@ -139,4 +140,38 @@ where
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.get().hash(state)
     }
+}
+
+// ============================================================================
+// PropExtractorCx
+// ============================================================================
+
+/// Narrow host interface the `prop_extractor!`-generated convenience
+/// methods (`read`, `read_for`, `read_style`, `read_style_for`) need.
+///
+/// Hosts implement this on their per-view style context type (e.g.
+/// floem's `StyleCx`). A second host's context needs only to answer:
+///
+/// - "what time is it?" for transition ticks ([`Self::now`]),
+/// - "what style am I extracting from?" for the no-arg `read`
+///   convenience ([`Self::direct_style`]),
+/// - "what element am I styling?" so callers that don't pass a
+///   `target` default to the current one ([`Self::current_element`]),
+/// - "a transition is active, please restyle this element next
+///   frame" ([`Self::request_transition_for`]).
+///
+/// Keeps the `prop_extractor!` macro fully engine-defined — the
+/// macro's expansion references only this trait, never a host type.
+pub trait PropExtractorCx {
+    /// Frame timestamp used to advance in-flight transitions.
+    fn now(&self) -> Instant;
+    /// The merged direct style the extractor reads from when no
+    /// explicit style is passed.
+    fn direct_style(&self) -> &Style;
+    /// Element currently being styled; used as the default `target`
+    /// of transition re-style requests.
+    fn current_element(&self) -> ElementId;
+    /// Request that `target` be re-styled on the next frame because
+    /// at least one transition on this pass is still animating.
+    fn request_transition_for(&mut self, target: ElementId);
 }

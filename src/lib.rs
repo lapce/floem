@@ -222,7 +222,7 @@ pub mod receiver_signal {
 
 pub use box_tree::{BoxTree, ElementId, ElementIdExt, ElementMeta, FocusNavMeta};
 #[doc(inline)]
-pub use floem_style::{no_debug_view, prop, style_class, style_debug_group};
+pub use floem_style::{no_debug_view, prop, prop_extractor, style_class, style_debug_group};
 pub(crate) use box_tree::{bump_focus_nav_meta_revision, focus_nav_meta_revision};
 
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};

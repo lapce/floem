@@ -145,7 +145,6 @@ use crate::prop_extractor;
 mod custom;
 mod cx;
 mod inspector_render_impl;
-mod macros;
 mod sink;
 mod storage;
 mod style_debug_ext;
