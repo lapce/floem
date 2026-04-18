@@ -11,8 +11,8 @@
 //!
 //! All three macros live in this crate (rather than `floem`) because their
 //! expansions reference types in `floem_style` — `Style`, `StyleMapValue`,
-//! `StyleValue`, `PropDebugView`, `StyleProp`, `ExtractorField`,
-//! `StylePropReader`, and `PropExtractorCx`.
+//! `StyleValue`, `PropDebugView`, `StyleProp`, `ExtractorField`, and
+//! `PropExtractorCx`.
 
 #[macro_export]
 macro_rules! style_debug_group {
@@ -221,7 +221,7 @@ macro_rules! prop {
 macro_rules! prop_extractor {
     (
         $(#[$attrs:meta])* $vis:vis $name:ident {
-            $($prop_vis:vis $prop:ident: $reader:ty),*
+            $($prop_vis:vis $field:ident: $prop:ty),*
             $(,)?
         }
     ) => {
@@ -229,7 +229,7 @@ macro_rules! prop_extractor {
         $(#[$attrs])?
         $vis struct $name {
             $(
-                $prop_vis $prop: $crate::ExtractorField<$reader>,
+                $prop_vis $field: $crate::ExtractorField<$prop>,
             )*
         }
 
@@ -254,7 +254,7 @@ macro_rules! prop_extractor {
                 let now = $crate::PropExtractorCx::now(cx);
                 let mut transition = false;
                 let changed = false $(
-                    | self.$prop.read(style, &now, &mut transition)
+                    | self.$field.read(style, &now, &mut transition)
                 )*;
                 if transition {
                     $crate::PropExtractorCx::request_transition_for(cx, target.into());
@@ -296,12 +296,12 @@ macro_rules! prop_extractor {
                 now: &web_time::Instant,
                 request_transition: &mut bool,
             ) -> bool {
-                false $(| self.$prop.read(style, now, request_transition))*
+                false $(| self.$field.read(style, now, request_transition))*
             }
 
-            $($prop_vis fn $prop(&self) -> <$reader as $crate::StylePropReader>::Type
+            $($prop_vis fn $field(&self) -> <$prop as $crate::StyleProp>::Type
             {
-                self.$prop.get()
+                self.$field.get()
             })*
         }
 
@@ -309,7 +309,7 @@ macro_rules! prop_extractor {
             fn default() -> Self {
                 Self {
                     $(
-                        $prop: $crate::ExtractorField::new(),
+                        $field: $crate::ExtractorField::new(),
                     )*
                 }
             }

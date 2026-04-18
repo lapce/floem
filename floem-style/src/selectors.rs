@@ -264,15 +264,8 @@ style_key_selector!(
     StyleSelectors::empty().set_selector(StyleSelector::DarkMode, true)
 );
 
-/// Extension trait adding `to_key()` to [`StyleSelector`]. Lives here rather
-/// than as an inherent method so hosts can add their own selector-key mapping
-/// traits without conflicting.
-pub trait StyleSelectorKey {
-    fn to_key(self) -> StyleKey;
-}
-
-impl StyleSelectorKey for StyleSelector {
-    fn to_key(self) -> StyleKey {
+impl StyleSelector {
+    pub fn to_key(self) -> StyleKey {
         match self {
             StyleSelector::Hover => hover(),
             StyleSelector::Focus => focus(),

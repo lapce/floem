@@ -14,7 +14,7 @@ use smallvec::SmallVec;
 use crate::interaction::InteractionState;
 use crate::props::{StyleClassRef, StyleKey, RESPONSIVE_SELECTORS_INFO, STRUCTURAL_SELECTORS_INFO};
 use crate::responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp};
-use crate::selectors::{StructuralSelector, StyleSelector, StyleSelectorKey, StyleSelectors};
+use crate::selectors::{StructuralSelector, StyleSelector, StyleSelectors};
 use crate::style::Style;
 use crate::style_key_selector;
 use crate::unit::Pt;

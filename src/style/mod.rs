@@ -158,7 +158,7 @@ pub use inspector_render_impl::FloemInspectorRender;
 pub use floem_style::{
     ExtractorField, StyleClass, StyleClassInfo, StyleClassRef, StyleDebugGroup,
     StyleDebugGroupInfo, StyleDebugGroupRef, StyleKey, StyleKeyInfo, StyleProp, StylePropInfo,
-    StylePropReader, StylePropRef,
+    StylePropRef,
 };
 pub use floem_style::selectors::{NthChild, StructuralSelector, StyleSelector, StyleSelectors};
 pub use theme::{DesignSystem, StyleThemeExt};

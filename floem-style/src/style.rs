@@ -552,7 +552,6 @@ impl Style {
     }
 
     pub fn apply_selectors(mut self, selectors: &[StyleSelector]) -> Style {
-        use crate::selectors::StyleSelectorKey;
         for selector in selectors {
             if let Some(map) = self.get_nested_map(selector.to_key()) {
                 let resolved = map.apply_selectors(selectors);
@@ -622,7 +621,6 @@ impl Style {
     }
 
     fn set_selector(&mut self, selector: StyleSelector, map: Style) {
-        use crate::selectors::StyleSelectorKey;
         self.set_map_selector(selector.to_key(), map)
     }
 
