@@ -175,7 +175,12 @@ fn app_view(window_id: WindowId) -> impl IntoView {
     let tab = tab.scroll().style(|s| s.size_full());
 
     let floem_logo = svg(include_str!("../assets/floem.svg"))
-        .style(|s| s.unset_color().size_full().size(50, 50))
+        .style(|s| {
+            s.unset_color()
+                .size_full()
+                .size(50, 50)
+                .set(SvgCache, false)
+        })
         .overlay()
         .style(|s| {
             s.absolute()

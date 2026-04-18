@@ -2,6 +2,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Duration, time::Ins
 
 use floem::imaging::record::Scene;
 use floem::imaging::{ImageBrush, Painter, SceneImage};
+use floem::kurbo::Affine;
 use floem::peniko::color::Oklch;
 use floem::{
     ViewId,
@@ -31,9 +32,15 @@ use crate::form::{form, form_item};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct CheckerboardCacheKey {
-    cell_size_bits: u64,
     light_color_bits: [u32; 4],
     dark_color_bits: [u32; 4],
+}
+
+fn checkerboard_cache_key(light_color: Color, dark_color: Color) -> CheckerboardCacheKey {
+    CheckerboardCacheKey {
+        light_color_bits: light_color.components.map(f32::to_bits),
+        dark_color_bits: dark_color.components.map(f32::to_bits),
+    }
 }
 
 thread_local! {
@@ -146,74 +153,53 @@ fn draw_checkerboard(
     dark_color: Color,
 ) {
     cx.painter.with_fill_clip(clip_path.to_path(0.1), |p| {
-        let brush = checkerboard_tile_brush(cell_size, light_color, dark_color);
-        p.fill(Rect::ZERO.with_size(size), &brush).draw();
+        let brush = checkerboard_tile_brush(light_color, dark_color);
+        p.fill(Rect::ZERO.with_size(size), &brush)
+            .brush_transform(
+                Some(Affine::scale(cell_size)), // scale the 2x2 tile to cell_size px per square
+            )
+            .draw();
     });
 }
 
-fn checkerboard_cache_key(
-    cell_size: f64,
-    light_color: Color,
-    dark_color: Color,
-) -> CheckerboardCacheKey {
-    CheckerboardCacheKey {
-        cell_size_bits: cell_size.to_bits(),
-        light_color_bits: light_color.components.map(f32::to_bits),
-        dark_color_bits: dark_color.components.map(f32::to_bits),
-    }
-}
-
-fn checkerboard_tile_brush(
-    cell_size: f64,
-    light_color: Color,
-    dark_color: Color,
-) -> ImageBrush {
-    let image = cached_checkerboard_tile_image(cell_size, light_color, dark_color);
+fn checkerboard_tile_brush(light_color: Color, dark_color: Color) -> ImageBrush {
+    let image = cached_checkerboard_tile_image(light_color, dark_color);
     ImageBrush::new(image)
         .with_extend(Extend::Repeat)
         .with_quality(ImageQuality::Low)
 }
 
-fn cached_checkerboard_tile_image(
-    cell_size: f64,
-    light_color: Color,
-    dark_color: Color,
-) -> SceneImage {
-    let key = checkerboard_cache_key(cell_size, light_color, dark_color);
+fn cached_checkerboard_tile_image(light_color: Color, dark_color: Color) -> SceneImage {
+    let key = checkerboard_cache_key(light_color, dark_color);
     CHECKERBOARD_TILE_IMAGE_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
         cache
             .entry(key)
-            .or_insert_with(|| build_checkerboard_tile_image(cell_size, light_color, dark_color))
+            .or_insert_with(|| build_checkerboard_tile_image(light_color, dark_color))
             .clone()
     })
 }
 
-fn build_checkerboard_tile_image(
-    cell_size: f64,
-    light_color: Color,
-    dark_color: Color,
-) -> SceneImage {
-    let tile_size = (cell_size * 2.0).max(1.0).round();
+fn build_checkerboard_tile_image(light_color: Color, dark_color: Color) -> SceneImage {
     let mut scene = Scene::new();
     let mut painter = Painter::new(&mut scene);
     let dark_brush = Brush::Solid(dark_color);
     let light_brush = Brush::Solid(light_color);
 
+    // Fill whole 2x2 with light
     painter
-        .fill(Rect::new(0.0, 0.0, tile_size, tile_size), &light_brush)
+        .fill(Rect::new(0.0, 0.0, 2.0, 2.0), &light_brush)
         .draw();
+    // Top-left dark
     painter
-        .fill(Rect::new(0.0, 0.0, cell_size, cell_size), &dark_brush)
+        .fill(Rect::new(0.0, 0.0, 1.0, 1.0), &dark_brush)
         .draw();
+    // Bottom-right dark
     painter
-        .fill(
-            Rect::new(cell_size, cell_size, tile_size, tile_size),
-            &dark_brush,
-        )
+        .fill(Rect::new(1.0, 1.0, 2.0, 2.0), &dark_brush)
         .draw();
 
-    SceneImage::new(scene, tile_size as u32, tile_size as u32)
+    SceneImage::new(scene, 2, 2)
 }
 
 fn build_sat_value_field(size: Size, hue: f32) -> Rc<Scene> {

@@ -252,3 +252,4 @@ harness = false
 [[bench]]
 name = "view_creation"
 harness = false
+

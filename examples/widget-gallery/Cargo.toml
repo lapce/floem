@@ -15,7 +15,7 @@ files = { path = "../files/", optional = true, default-features = false }
 
 
 [features]
-default = ["full", "vger" ]
+default = ["full", "vello-hybrid" ]
 vello = ["floem/vello", "files?/vello"]
 vger = ["floem/vger"]
 skia = ["floem/skia"]
@@ -24,3 +24,4 @@ vello-cpu = ["floem/vello-cpu"]
 tiny-skia = ["floem/tiny-skia"]
 vello-hybrid = ["floem/vello-hybrid", "files?/vello-hybrid"]
 full = ["dep:files"]
+

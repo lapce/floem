@@ -1,3 +1,5 @@
+use std::fs::read_to_string;
+
 use floem::{
     prelude::*,
     text::{Alignment, FontStyle, FontWeight},
