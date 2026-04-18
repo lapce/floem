@@ -206,16 +206,8 @@ pub use floem_style::{
 };
 
 use crate::views::editor::SelectionColor;
-prop_extractor! {
-    pub FontProps {
-        pub size: FontSize,
-        pub family: FontFamily,
-        pub weight: FontWeight,
-        pub style: FontStyle,
-    }
-}
 
-pub use floem_style::{LayoutProps, TransformProps};
+pub use floem_style::{FontProps, LayoutProps, TransformProps};
 
 prop_extractor! {
     pub SelectionStyle {

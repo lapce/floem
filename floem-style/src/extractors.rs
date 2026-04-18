@@ -20,15 +20,24 @@ use crate::builtin_props::{
     Background, BorderBottom, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
     BorderLeft, BorderLeftColor, BorderProgress, BorderRight, BorderRightColor, BorderTop,
     BorderTopColor, BorderTopLeftRadius, BorderTopRightRadius, BoxShadowProp, ColGap, FlexBasis,
-    FlexGrow, FlexShrink, FontSize, Height, InsetBottom, InsetLeft, InsetRight, InsetTop,
-    LineHeight, MarginBottom, MarginLeft, MarginRight, MarginTop, MaxHeight, MaxWidth, MinHeight,
-    MinWidth, Outline, OutlineColor, OutlineProgress, OverflowX, OverflowY, PaddingBottom,
-    PaddingLeft, PaddingRight, PaddingTop, RotateAbout, Rotation, RowGap, ScaleAbout, ScaleX,
-    ScaleY, Transform, TranslateX, TranslateY, Width,
+    FlexGrow, FlexShrink, FontFamily, FontSize, FontStyle, FontWeight, Height, InsetBottom,
+    InsetLeft, InsetRight, InsetTop, LineHeight, MarginBottom, MarginLeft, MarginRight, MarginTop,
+    MaxHeight, MaxWidth, MinHeight, MinWidth, Outline, OutlineColor, OutlineProgress, OverflowX,
+    OverflowY, PaddingBottom, PaddingLeft, PaddingRight, PaddingTop, RotateAbout, Rotation, RowGap,
+    ScaleAbout, ScaleX, ScaleY, Transform, TranslateX, TranslateY, Width,
 };
 use crate::components::{Border, BorderColor, BorderRadius};
 use crate::prop_extractor;
 use crate::unit::FontSizeCx;
+
+prop_extractor! {
+    pub FontProps {
+        pub size: FontSize,
+        pub family: FontFamily,
+        pub weight: FontWeight,
+        pub style: FontStyle,
+    }
+}
 
 prop_extractor! {
     pub LayoutProps {

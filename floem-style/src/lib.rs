@@ -109,7 +109,7 @@ pub use debug_view::PropDebugView;
 pub use design_system::DesignSystem;
 pub use easing::{Bezier, Easing, Linear, Spring, Step, StepPosition};
 pub use element_id::ElementId;
-pub use extractors::{LayoutProps, TransformProps, ViewStyleProps};
+pub use extractors::{FontProps, LayoutProps, TransformProps, ViewStyleProps};
 pub use inspector_render::InspectorRender;
 pub use interaction::{InheritedInteractionCx, InteractionState};
 pub use merge_id::{
