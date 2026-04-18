@@ -12,10 +12,8 @@
 //! resolves, and their resolved values are the input to a layout solver.
 //! This crate embraces that by bundling [`taffy`] as the layout-input
 //! contract: style types in `floem_style` include taffy's enums
-//! ([`Display`](taffy::style::Display),
-//! [`FlexDirection`](taffy::style::FlexDirection),
-//! [`AlignItems`](taffy::style::AlignItems), etc.) as first-class values,
-//! and [`Style::to_taffy_style`] is the public bridge.
+//! ([`Display`], [`FlexDirection`], [`AlignItems`], etc.) as first-class
+//! values, and [`Style::to_taffy_style`] is the public bridge.
 //!
 //! The whole `taffy` crate is re-exported as [`crate::taffy`] so consumers
 //! don't need a separate dependency.

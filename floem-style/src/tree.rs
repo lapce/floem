@@ -363,15 +363,55 @@ impl StyleTree {
 
     /// Run the style cascade over the subtree rooted at `root`.
     ///
-    /// For each dirty node in the subtree: resolves classes + selectors +
-    /// inherited context into `combined_style` / `computed_style`, updates
-    /// the child-facing `inherited_context` and `class_context`, and
-    /// forwards host side-effects (inspector capture) through `sink`.
-    /// Marks descendants dirty when inherited or class context changes so
-    /// their caches are refreshed on the same walk.
+    /// For each dirty node in the subtree this resolves classes + selectors
+    /// + inherited context into `combined_style` / `computed_style`,
+    /// derives the child-facing `inherited_context` and `class_context`,
+    /// applies host-owned animations via [`StyleSink::apply_animations`],
+    /// and emits per-element side-effects through the sink:
+    ///
+    /// - `register_fixed_element` / `unregister_fixed_element` when the
+    ///   resolved `Position::Fixed` flag flips
+    /// - `update_selector_interest` with the node's live selector set
+    /// - `mark_style_dirty_with` / `mark_descendants_with_selector_dirty`
+    ///   when inherited context, class context, or the cascaded
+    ///   `hidden` / `selected` / `disabled` bits flip
+    /// - `mark_needs_layout` when a visibility flip needs a relayout
+    /// - `inspector_capture_style` so hosts can snapshot computed styles
+    /// - `schedule_style` when animation is still in flight
     ///
     /// Clean nodes are traversed (so dirty descendants are visited) but
     /// their own computed state is not recomputed.
+    ///
+    /// # Integration
+    ///
+    /// ```ignore
+    /// use floem_style::{ElementId, Style, StyleSink, StyleTree};
+    /// # struct Host;
+    /// # impl StyleSink for Host { /* …required methods… */ }
+    ///
+    /// let mut tree = StyleTree::new();
+    /// let mut host: Host = /* host state implementing StyleSink */ ;
+    ///
+    /// // Allocate engine nodes and wire edges.
+    /// let root = tree.new_node(ElementId::from(0));
+    /// let child = tree.new_node(ElementId::from(1));
+    /// tree.set_parent(child, Some(root));
+    ///
+    /// // Push style inputs (direct style, classes, parent interaction).
+    /// tree.set_direct_style(root, Style::new());
+    /// tree.set_direct_style(child, Style::new());
+    ///
+    /// // Drive the cascade. Emits side-effects through `host`.
+    /// tree.compute_style(root, &mut host);
+    ///
+    /// // Read outputs.
+    /// let _computed = tree.computed_style(child);
+    /// let _inherited = tree.inherited_context(child);
+    /// ```
+    ///
+    /// See `tests/mock_sink.rs` and `tests/style_tree_cascade.rs` in this
+    /// crate for complete, executable examples with a real [`StyleSink`]
+    /// implementation.
     pub fn compute_style(&mut self, root: StyleNodeId, sink: &mut dyn StyleSink) {
         if !self.contains(root) {
             return;
