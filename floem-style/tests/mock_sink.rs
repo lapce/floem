@@ -48,7 +48,6 @@ struct MockHost {
     frame_start: Instant,
     default_inherited: Style,
     default_classes: Style,
-    cache: StyleCache,
     calls: Calls,
     hovered: std::collections::HashSet<ElementId>,
     cursors: std::collections::HashMap<ElementId, CursorStyle>,
@@ -60,7 +59,6 @@ impl MockHost {
             frame_start: Instant::now(),
             default_inherited: Style::new(),
             default_classes: Style::new(),
-            cache: StyleCache::new(),
             calls: Calls::default(),
             hovered: Default::default(),
             cursors: Default::default(),
@@ -90,10 +88,6 @@ impl StyleSink for MockHost {
     }
     fn default_theme_inherited(&self) -> &Style {
         &self.default_inherited
-    }
-
-    fn style_cache_mut(&mut self) -> &mut StyleCache {
-        &mut self.cache
     }
 
     fn is_hovered(&self, id: ElementId) -> bool {
@@ -226,37 +220,33 @@ fn cascade_runs_with_interaction_state_derived_from_sink() {
 }
 
 #[test]
-fn style_cache_is_reachable_through_sink() {
-    let mut tree = Tree::new();
-    let elem = fresh_element(&mut tree, 42);
-    let mut host = MockHost::new();
+fn style_cache_round_trips_values() {
+    // The engine's style cache lives inside `StyleTree`, but the cache
+    // itself is also usable standalone (e.g. by tests). This exercises
+    // the cache API directly.
     let parent = Style::new();
     let style = Style::new().background(css::RED);
     let state = InteractionState::default();
+    let mut cache = StyleCache::new();
 
-    let key = StyleCacheKey::new(&style, &state, host.screen_size_bp(), &[], &Style::new());
+    let key = StyleCacheKey::new(&style, &state, ScreenSizeBp::Md, &[], &Style::new());
 
-    // Miss the first time.
-    assert!(host.style_cache_mut().get(&key, &parent).is_none());
+    assert!(cache.get(&key, &parent).is_none());
 
-    // Insert via the sink handle and confirm the next lookup hits.
-    host.style_cache_mut().insert(
+    cache.insert(
         key.clone(),
         &style,
         None,
         InheritedInteractionCx::default(),
         &parent,
     );
-    let hit: CacheHit = host.style_cache_mut().get(&key, &parent).unwrap();
+    let hit: CacheHit = cache.get(&key, &parent).unwrap();
     assert_eq!(hit.combined_style.get(Background), Some(css::RED.into()));
 
-    // Cache stats reflect the hit + miss.
-    let stats = host.cache.stats();
+    let stats = cache.stats();
     assert_eq!(stats.hits, 1);
     assert_eq!(stats.misses, 1);
     assert_eq!(stats.insertions, 1);
-
-    let _ = elem; // keep the tree node alive for Miri-like scrutiny
 }
 
 #[test]

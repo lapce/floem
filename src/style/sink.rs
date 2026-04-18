@@ -10,7 +10,7 @@ use floem_style::StyleSink;
 use crate::{ElementId, ElementIdExt};
 use crate::layout::responsive::ScreenSizeBp;
 use crate::style::recalc::StyleReason;
-use crate::style::{Style, StyleCache, StyleSelector, StyleSelectors};
+use crate::style::{Style, StyleSelector, StyleSelectors};
 use crate::window::state::WindowState;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -40,10 +40,6 @@ impl StyleSink for WindowState {
     }
     fn default_theme_inherited(&self) -> &Style {
         &self.default_theme_inherited
-    }
-
-    fn style_cache_mut(&mut self) -> &mut StyleCache {
-        &mut self.style_cache
     }
 
     fn is_hovered(&self, id: ElementId) -> bool {

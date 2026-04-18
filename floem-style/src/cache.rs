@@ -134,6 +134,7 @@ impl Hash for StyleCacheKey {
 
 /// The result of a cache hit, carrying the cascade outputs that would
 /// otherwise be recomputed via [`resolve_nested_maps`](crate::resolve_nested_maps).
+#[derive(Debug)]
 pub struct CacheHit {
     /// The resolved combined style.
     pub combined_style: Style,
@@ -144,6 +145,7 @@ pub struct CacheHit {
 }
 
 /// A single cached entry with parent context for validation.
+#[derive(Debug)]
 struct CacheEntry {
     /// The resolved combined style.
     combined_style: Style,
@@ -163,6 +165,7 @@ struct CacheEntry {
 }
 
 /// A bucket that can hold multiple entries (handles hash collisions).
+#[derive(Debug)]
 struct CacheBucket {
     entries: Vec<CacheEntry>,
 }
@@ -259,6 +262,7 @@ impl CacheBucket {
 ///
 /// Unlike a simple hash cache, this validates parent inherited properties
 /// on lookup to ensure correctness (matching Chromium's MatchedPropertiesCache).
+#[derive(Debug)]
 pub struct StyleCache {
     /// The cached style buckets, keyed by style hash.
     cache: FxHashMap<StyleCacheKey, CacheBucket>,
@@ -270,7 +274,7 @@ pub struct StyleCache {
     stats: CacheStatsMut,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct CacheStatsMut {
     hits: u64,
     misses: u64,

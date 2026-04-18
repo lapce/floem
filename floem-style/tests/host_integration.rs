@@ -36,7 +36,7 @@ use floem_style::responsive::ScreenSizeBp;
 use floem_style::selectors::{StyleSelector, StyleSelectors};
 use floem_style::unit::{Angle, Pt};
 use floem_style::{
-    CursorStyle, ElementId, LayoutProps, PropExtractorCx, Style, StyleCache, StyleSink, StyleTree,
+    CursorStyle, ElementId, LayoutProps, PropExtractorCx, Style, StyleSink, StyleTree,
     TransformProps, ViewStyleProps, recalc::StyleReason,
 };
 use peniko::color::palette::css;
@@ -55,7 +55,6 @@ struct MockHost {
     frame_start: Option<Instant>,
     default_inherited: Style,
     default_classes: Style,
-    cache: StyleCache,
 
     // Recordings tests assert on.
     paints: Vec<ElementId>,
@@ -99,9 +98,6 @@ impl StyleSink for MockHost {
     }
     fn default_theme_inherited(&self) -> &Style {
         &self.default_inherited
-    }
-    fn style_cache_mut(&mut self) -> &mut StyleCache {
-        &mut self.cache
     }
     fn is_hovered(&self, id: ElementId) -> bool {
         self.hovered.contains(&id)
@@ -422,9 +418,6 @@ fn sink_apply_animations_hook_is_invoked() {
         }
         fn default_theme_inherited(&self) -> &Style {
             self.inner.default_theme_inherited()
-        }
-        fn style_cache_mut(&mut self) -> &mut StyleCache {
-            self.inner.style_cache_mut()
         }
         fn is_hovered(&self, id: ElementId) -> bool {
             self.inner.is_hovered(id)

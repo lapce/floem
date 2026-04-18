@@ -4,7 +4,7 @@ use crate::{
     action::exec_after_animation_frame,
     inspector::CaptureState,
     platform::menu_types::MenuId,
-    style::{StyleCache, StyleSelectors, recalc::StyleReason},
+    style::{StyleSelectors, recalc::StyleReason},
     view::ViewStorage,
 };
 use crate::ElementIdExt;
@@ -169,10 +169,6 @@ pub struct WindowState {
     /// This is set if we're currently capturing the window for the inspector.
     pub(crate) capture: Option<CaptureState>,
 
-    /// Cache for style resolution results.
-    /// Views with identical styles and interaction states can share resolved styles.
-    pub(crate) style_cache: StyleCache,
-
     /// Engine-owned style tree. One [`StyleNodeId`](floem_style::StyleNodeId)
     /// per styled view — kept in sync with the view hierarchy by this crate,
     /// then walked by [`StyleTree::compute_style`] during the style pass.
@@ -258,7 +254,6 @@ impl WindowState {
             grid_bps: GridBreakpoints::default(),
             context_menu: HashMap::new(),
             capture: None,
-            style_cache: StyleCache::new(),
             style_tree: floem_style::StyleTree::new(),
             default_theme: theme,
             default_theme_inherited: inherited,
@@ -335,7 +330,7 @@ impl WindowState {
         let inherited = Self::extract_inherited_props(&new_theme);
         self.default_theme = new_theme;
         self.default_theme_inherited = inherited;
-        self.style_cache.clear();
+        self.style_tree.clear_cache();
     }
 
     /// This removes a view from the app state.
@@ -1443,7 +1438,7 @@ impl WindowState {
         let bp = self.grid_bps.get_width_bp(size.width);
         if bp != self.screen_size_bp {
             self.screen_size_bp = bp;
-            self.style_cache.clear();
+            self.style_tree.clear_cache();
             self.root_view_id.request_style(StyleReason::with_selectors(
                 StyleSelectors::empty().responsive(),
             ));

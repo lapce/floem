@@ -134,13 +134,27 @@ impl StyleNode {
 #[derive(Default, Debug)]
 pub struct StyleTree {
     nodes: SlotMap<StyleNodeId, StyleNode>,
+    cache: StyleCache,
 }
 
 impl StyleTree {
     pub fn new() -> Self {
         Self {
             nodes: SlotMap::with_key(),
+            cache: StyleCache::new(),
         }
+    }
+
+    /// Drop every cached cascade result. The host should call this when a
+    /// global input changes such that the cache keys are no longer
+    /// meaningful (OS theme flip, responsive breakpoint change, etc.).
+    pub fn clear_cache(&mut self) {
+        self.cache.clear();
+    }
+
+    /// Read-only view into the cache stats. Primarily for tests/debug.
+    pub fn cache_stats(&self) -> crate::cache::CacheStats {
+        self.cache.stats()
     }
 
     /// Allocate a new orphan node tied to `element_id`. The node has no
@@ -500,9 +514,9 @@ impl StyleTree {
             interact_state.is_hidden |= builtin.display() == Display::None;
         }
 
-        // Check the sink's style cache. A hit lets us skip the cascade
-        // entirely — it stores `combined_style`, `has_style_selectors`,
-        // and the post-cascade interaction flags.
+        // Consult the engine-owned style cache. A hit lets us skip the
+        // cascade entirely — it stores `combined_style`,
+        // `has_style_selectors`, and the post-cascade interaction flags.
         let cacheable = StyleCache::is_cacheable(&direct_style)
             && !parent_class_cx.has_structural_selectors();
         let cache_key = cacheable.then(|| {
@@ -517,7 +531,7 @@ impl StyleTree {
 
         let cache_hit = cache_key
             .as_ref()
-            .and_then(|k| sink.style_cache_mut().get(k, &parent_inherited));
+            .and_then(|k| self.cache.get(k, &parent_inherited));
 
         let (mut combined_style, selectors, post_interact) = if let Some(hit) = cache_hit {
             let sels = hit.has_style_selectors.unwrap_or_default();
@@ -552,7 +566,7 @@ impl StyleTree {
                 disabled: combined_style.builtin().set_disabled(),
             };
             if let Some(key) = cache_key {
-                sink.style_cache_mut().insert(
+                self.cache.insert(
                     key,
                     &combined_style,
                     Some(selectors),

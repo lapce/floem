@@ -16,7 +16,7 @@ use floem_style::props::StyleClass;
 use floem_style::responsive::ScreenSizeBp;
 use floem_style::selectors::{StyleSelector, StyleSelectors};
 use floem_style::{
-    CursorStyle, ElementId, Style, StyleCache, StyleSink, StyleTree, recalc::StyleReason,
+    CursorStyle, ElementId, Style, StyleSink, StyleTree, recalc::StyleReason,
     style_class,
 };
 use peniko::color::palette::css;
@@ -33,7 +33,6 @@ struct MockHost {
     captured: Vec<(ElementId, Style)>,
     default_inherited: Style,
     default_classes: Style,
-    cache: StyleCache,
 }
 
 impl StyleSink for MockHost {
@@ -57,9 +56,6 @@ impl StyleSink for MockHost {
     }
     fn default_theme_inherited(&self) -> &Style {
         &self.default_inherited
-    }
-    fn style_cache_mut(&mut self) -> &mut StyleCache {
-        &mut self.cache
     }
     fn is_hovered(&self, id: ElementId) -> bool {
         self.hovered.contains(&id)

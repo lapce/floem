@@ -16,7 +16,6 @@
 //! "unused method" warnings for trait items that floem itself doesn't
 //! route through the trait yet.
 
-use crate::cache::StyleCache;
 use crate::element_id::ElementId;
 use crate::interaction::InteractionState;
 use crate::recalc::StyleReason;
@@ -42,9 +41,6 @@ pub trait StyleSink {
     // --- Theme defaults ---
     fn default_theme_classes(&self) -> &Style;
     fn default_theme_inherited(&self) -> &Style;
-
-    // --- Style cache ---
-    fn style_cache_mut(&mut self) -> &mut StyleCache;
 
     // --- Per-element interaction reads ---
     fn is_hovered(&self, id: ElementId) -> bool;
