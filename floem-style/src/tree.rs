@@ -19,7 +19,7 @@
 //! host reads result   → tree.computed_style(node)
 //! ```
 
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use slotmap::{SlotMap, new_key_type};
 
@@ -143,6 +143,11 @@ pub struct StyleTree {
     responsive_interest: FxHashSet<StyleNodeId>,
     disabled_interest: FxHashSet<StyleNodeId>,
     selected_interest: FxHashSet<StyleNodeId>,
+    // Elements the engine needs a future cascade pass for (animations in
+    // flight, transitions still interpolating). Populated by the cascade
+    // and by `schedule`; drained by the host via [`take_scheduled`] after
+    // each `compute_style` to feed the host's own per-frame work queue.
+    scheduled: FxHashMap<ElementId, StyleReason>,
 }
 
 impl StyleTree {
@@ -153,7 +158,26 @@ impl StyleTree {
             responsive_interest: FxHashSet::default(),
             disabled_interest: FxHashSet::default(),
             selected_interest: FxHashSet::default(),
+            scheduled: FxHashMap::default(),
         }
+    }
+
+    /// Record that `element_id` needs a restyle on the next frame.
+    /// Called by the cascade for animation-driven elements and by
+    /// prop-extractor transition hooks.
+    pub fn schedule(&mut self, element_id: ElementId, reason: StyleReason) {
+        self.scheduled
+            .entry(element_id)
+            .and_modify(|existing| existing.merge(reason.clone()))
+            .or_insert(reason);
+    }
+
+    /// Drain every pending engine-originated schedule request. Hosts
+    /// should call this once per cascade pass, immediately after
+    /// `compute_style` returns, and funnel each entry into their own
+    /// per-frame scheduling.
+    pub fn take_scheduled(&mut self) -> impl Iterator<Item = (ElementId, StyleReason)> {
+        std::mem::take(&mut self.scheduled).into_iter()
     }
 
     /// Drop every cached cascade result. The host should call this when a
@@ -666,7 +690,7 @@ impl StyleTree {
         let has_active_animation =
             sink.apply_animations(element_id, &mut combined_style, &mut interact_state);
         if has_active_animation {
-            sink.schedule_style(element_id, StyleReason::animation());
+            self.schedule(element_id, StyleReason::animation());
         }
 
         // Merge inherited + combined → computed style for this node.

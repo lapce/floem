@@ -35,7 +35,6 @@ use understory_box_tree::{LocalNode, Tree};
 #[derive(Default, Debug)]
 struct Calls {
     marked_dirty: Vec<ElementId>,
-    scheduled: Vec<ElementId>,
     paints: Vec<ElementId>,
     cursor_sets: Vec<(ElementId, CursorStyle)>,
     cursor_clears: Vec<ElementId>,
@@ -115,12 +114,6 @@ impl StyleSink for MockHost {
     fn mark_style_dirty_with(&mut self, id: ElementId, _reason: StyleReason) {
         self.calls.marked_dirty.push(id);
     }
-    fn schedule_style(&mut self, id: ElementId, _reason: StyleReason) {
-        self.calls.scheduled.push(id);
-    }
-    fn schedule_style_with_target(&mut self, target: ElementId, _reason: StyleReason) {
-        self.calls.scheduled.push(target);
-    }
 
     fn register_fixed_element(&mut self, _id: ElementId) {}
     fn unregister_fixed_element(&mut self, _id: ElementId) {}
@@ -163,14 +156,12 @@ fn mock_host_can_implement_sink_and_record_calls() {
     let mut host = MockHost::new();
 
     host.mark_style_dirty_with(elem, StyleReason::inherited());
-    host.schedule_style(elem, StyleReason::animation());
     host.request_paint(elem);
     host.mark_needs_layout();
     host.mark_needs_cursor_resolution();
     host.set_cursor(elem, CursorStyle::Pointer);
 
     assert_eq!(host.calls.marked_dirty, vec![elem]);
-    assert_eq!(host.calls.scheduled, vec![elem]);
     assert_eq!(host.calls.paints, vec![elem]);
     assert!(host.calls.needs_layout);
     assert!(host.calls.needs_cursor_resolution);

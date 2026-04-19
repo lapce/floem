@@ -1343,7 +1343,14 @@ impl WindowState {
         if let Some(root_style_node) = root_style_node {
             let mut tree = std::mem::take(&mut self.style_tree);
             tree.compute_style(root_style_node, self);
+            // Engine-originated next-frame schedule (animations mid-flight,
+            // transitions still interpolating). Route each into floem's
+            // per-frame update queue.
+            let engine_scheduled: Vec<_> = tree.take_scheduled().collect();
             self.style_tree = tree;
+            for (element_id, reason) in engine_scheduled {
+                self.schedule_style_with_target(element_id, reason);
+            }
         }
 
         // Pass 3: copy outputs back into per-view `style_storage`.

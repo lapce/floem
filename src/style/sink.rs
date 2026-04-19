@@ -61,12 +61,6 @@ impl StyleSink for WindowState {
     fn mark_style_dirty_with(&mut self, id: ElementId, reason: StyleReason) {
         WindowState::mark_style_dirty_with(self, id, reason)
     }
-    fn schedule_style(&mut self, id: ElementId, reason: StyleReason) {
-        WindowState::schedule_style(self, id.owning_id(), reason)
-    }
-    fn schedule_style_with_target(&mut self, target: ElementId, reason: StyleReason) {
-        WindowState::schedule_style_with_target(self, target, reason)
-    }
 
     fn register_fixed_element(&mut self, id: ElementId) {
         WindowState::register_fixed_element(self, id.owning_id())

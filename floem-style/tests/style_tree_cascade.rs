@@ -73,8 +73,6 @@ impl StyleSink for MockHost {
         false
     }
     fn mark_style_dirty_with(&mut self, _id: ElementId, _reason: StyleReason) {}
-    fn schedule_style(&mut self, _id: ElementId, _reason: StyleReason) {}
-    fn schedule_style_with_target(&mut self, _target: ElementId, _reason: StyleReason) {}
     fn register_fixed_element(&mut self, _id: ElementId) {}
     fn unregister_fixed_element(&mut self, _id: ElementId) {}
     fn invalidate_focus_nav_cache(&mut self) {}

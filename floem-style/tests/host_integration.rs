@@ -115,8 +115,6 @@ impl StyleSink for MockHost {
         false
     }
     fn mark_style_dirty_with(&mut self, _id: ElementId, _reason: StyleReason) {}
-    fn schedule_style(&mut self, _id: ElementId, _reason: StyleReason) {}
-    fn schedule_style_with_target(&mut self, _target: ElementId, _reason: StyleReason) {}
     fn register_fixed_element(&mut self, _id: ElementId) {}
     fn unregister_fixed_element(&mut self, _id: ElementId) {}
     fn invalidate_focus_nav_cache(&mut self) {}
@@ -425,12 +423,6 @@ fn sink_apply_animations_hook_is_invoked() {
         }
         fn mark_style_dirty_with(&mut self, id: ElementId, reason: StyleReason) {
             self.inner.mark_style_dirty_with(id, reason)
-        }
-        fn schedule_style(&mut self, id: ElementId, reason: StyleReason) {
-            self.inner.schedule_style(id, reason)
-        }
-        fn schedule_style_with_target(&mut self, target: ElementId, reason: StyleReason) {
-            self.inner.schedule_style_with_target(target, reason)
         }
         fn register_fixed_element(&mut self, id: ElementId) {
             self.inner.register_fixed_element(id)

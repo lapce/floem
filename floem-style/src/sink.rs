@@ -50,8 +50,6 @@ pub trait StyleSink {
 
     // --- Dirty / schedule / invalidate ---
     fn mark_style_dirty_with(&mut self, id: ElementId, reason: StyleReason);
-    fn schedule_style(&mut self, id: ElementId, reason: StyleReason);
-    fn schedule_style_with_target(&mut self, target: ElementId, reason: StyleReason);
 
     // --- Host side-effects ---
     fn register_fixed_element(&mut self, id: ElementId);

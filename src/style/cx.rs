@@ -485,7 +485,8 @@ impl<'a> StyleCx<'a> {
     pub fn request_transition_for(&mut self, target: impl Into<ElementId>) {
         if !self.view_interact_state.is_hidden {
             self.window_state
-                .schedule_style_with_target(target.into(), StyleReason::transition());
+                .style_tree
+                .schedule(target.into(), StyleReason::transition());
         }
     }
 
