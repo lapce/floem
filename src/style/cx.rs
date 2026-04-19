@@ -584,7 +584,7 @@ fn animations_on_remove(id: ViewId, scope: Scope) -> u16 {
     let animations = &mut state.animations.stack;
     let mut request_style = false;
     for anim in animations {
-        if anim.run_on_remove && !matches!(anim.repeat_mode, RepeatMode::LoopForever) {
+        if anim.runs_on_remove() && !matches!(anim.repeat_mode(), RepeatMode::LoopForever) {
             anim.reverse_mut();
             request_style = true;
             wait_for += 1;
@@ -613,9 +613,9 @@ fn stop_reset_remove_animations(id: ViewId) {
     let animations = &mut state.animations.stack;
     let mut request_style = false;
     for anim in animations {
-        if anim.run_on_remove
+        if anim.runs_on_remove()
             && anim.state_kind() == AnimStateKind::PassInProgress
-            && !matches!(anim.repeat_mode, RepeatMode::LoopForever)
+            && !matches!(anim.repeat_mode(), RepeatMode::LoopForever)
         {
             anim.start_mut();
             request_style = true;
@@ -638,7 +638,7 @@ fn animations_on_create(id: ViewId) {
     let animations = &mut state.animations.stack;
     let mut request_style = false;
     for anim in animations {
-        if anim.run_on_create && !matches!(anim.repeat_mode, RepeatMode::LoopForever) {
+        if anim.runs_on_create() && !matches!(anim.repeat_mode(), RepeatMode::LoopForever) {
             anim.start_mut();
             request_style = true;
         }

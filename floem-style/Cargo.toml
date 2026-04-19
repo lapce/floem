@@ -15,6 +15,7 @@ parley = { workspace = true }
 smallvec = "1.15"
 paste = "1.0"
 slotmap = "1.0"
+imbl = { workspace = true }
 understory_box_tree = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_box_tree" }
 unic-langid = { version = "0.9", optional = true }
 

@@ -45,6 +45,7 @@
 //! See `tests/mock_sink.rs` and `tests/style_tree_cascade.rs` for
 //! end-to-end examples without floem.
 
+pub mod animation;
 pub mod builtin_props;
 pub mod cache;
 pub mod cascade;
@@ -100,6 +101,10 @@ pub use builtin_props::{
     Rotation, RowGap, ScaleAbout, ScaleX, ScaleY, ScrollbarWidth, Selectable, Selected,
     SelectionCornerRadius, TextAlignProp, TextColor, TextOverflowProp, Transform, TranslateX,
     TranslateY, Width, ZIndex,
+};
+pub use animation::{
+    AnimStateCommand, AnimStateKind, Animation, AnimationEvents, KeyFrame, KeyFrameStyle,
+    PropCache, RepeatMode, ReverseOnce,
 };
 pub use cache::{CacheHit, CacheStats, StyleCache, StyleCacheKey};
 pub use cascade::resolve_nested_maps;
