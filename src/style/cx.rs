@@ -335,7 +335,7 @@ impl<'a> StyleCx<'a> {
                         .set_style(taffy_node, taffy_style.clone())
                         .unwrap();
                     if !is_hidden_final {
-                        self.window_state.mark_needs_layout();
+                        self.window_state.needs_layout = true;
                     }
                 }
                 // ─────────────────────────────────────────────────────────────────────

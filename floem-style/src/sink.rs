@@ -18,7 +18,6 @@
 
 use crate::element_id::ElementId;
 use crate::interaction::InteractionState;
-use crate::recalc::StyleReason;
 use crate::responsive::ScreenSizeBp;
 use crate::style::Style;
 
@@ -45,18 +44,6 @@ pub trait StyleSink {
     fn is_focus_within(&self, id: ElementId) -> bool;
     fn is_active(&self, id: ElementId) -> bool;
     fn is_file_hover(&self, id: ElementId) -> bool;
-
-    // --- Dirty / schedule / invalidate ---
-    fn mark_style_dirty_with(&mut self, id: ElementId, reason: StyleReason);
-
-    // --- Host side-effects ---
-    fn mark_needs_layout(&mut self);
-
-    /// Called at the end of a style resolution pass so hosts running under
-    /// a debugger/inspector can snapshot the computed style. Default no-op;
-    /// floem's `WindowState` overrides this to route into the inspector
-    /// capture map when one is active.
-    fn inspector_capture_style(&mut self, _id: ElementId, _computed_style: &Style) {}
 
     /// Apply any host-owned animations for `id` on top of the resolved
     /// `combined` style. Called by the tree cascade after classes +

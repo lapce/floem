@@ -112,8 +112,6 @@ impl StyleSink for MockHost {
     fn is_file_hover(&self, _id: ElementId) -> bool {
         false
     }
-    fn mark_style_dirty_with(&mut self, _id: ElementId, _reason: StyleReason) {}
-    fn mark_needs_layout(&mut self) {}
 }
 
 impl PropExtractorCx for MockHost {
@@ -408,12 +406,6 @@ fn sink_apply_animations_hook_is_invoked() {
         }
         fn is_file_hover(&self, id: ElementId) -> bool {
             self.inner.is_file_hover(id)
-        }
-        fn mark_style_dirty_with(&mut self, id: ElementId, reason: StyleReason) {
-            self.inner.mark_style_dirty_with(id, reason)
-        }
-        fn mark_needs_layout(&mut self) {
-            self.inner.mark_needs_layout()
         }
         fn apply_animations(
             &mut self,

@@ -17,12 +17,12 @@ use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
-use floem_style::builtin_props::{Background, Disabled, TextColor};
+use floem_style::builtin_props::Background;
 use floem_style::responsive::ScreenSizeBp;
 use floem_style::selectors::StyleSelector;
 use floem_style::{
     CacheHit, CursorStyle, ElementId, InheritedInteractionCx, InteractionState, Style, StyleCache,
-    StyleCacheKey, StyleSink, recalc::StyleReason, resolve_nested_maps,
+    StyleCacheKey, StyleSink, resolve_nested_maps,
 };
 use peniko::color::palette::css;
 use understory_box_tree::{LocalNode, Tree};
@@ -34,11 +34,9 @@ use understory_box_tree::{LocalNode, Tree};
 /// Recorded calls, so tests can assert on behavior rather than side effects.
 #[derive(Default, Debug)]
 struct Calls {
-    marked_dirty: Vec<ElementId>,
     paints: Vec<ElementId>,
     cursor_sets: Vec<(ElementId, CursorStyle)>,
     cursor_clears: Vec<ElementId>,
-    captured_styles: Vec<ElementId>,
     needs_layout: bool,
     needs_cursor_resolution: bool,
 }
@@ -111,17 +109,6 @@ impl StyleSink for MockHost {
         false
     }
 
-    fn mark_style_dirty_with(&mut self, id: ElementId, _reason: StyleReason) {
-        self.calls.marked_dirty.push(id);
-    }
-
-    fn mark_needs_layout(&mut self) {
-        self.calls.needs_layout = true;
-    }
-
-    fn inspector_capture_style(&mut self, id: ElementId, _computed_style: &Style) {
-        self.calls.captured_styles.push(id);
-    }
 }
 
 // Cursor overrides and cursor-resolution flags are host-only — they're
@@ -131,6 +118,10 @@ impl StyleSink for MockHost {
 impl MockHost {
     fn mark_needs_cursor_resolution(&mut self) {
         self.calls.needs_cursor_resolution = true;
+    }
+
+    fn mark_needs_layout(&mut self) {
+        self.calls.needs_layout = true;
     }
 
     fn set_cursor(&mut self, id: ElementId, cursor: CursorStyle) -> Option<CursorStyle> {
@@ -160,13 +151,11 @@ fn mock_host_can_implement_sink_and_record_calls() {
     let elem = fresh_element(&mut tree, 1);
     let mut host = MockHost::new();
 
-    host.mark_style_dirty_with(elem, StyleReason::inherited());
     host.request_paint(elem);
     host.mark_needs_layout();
     host.mark_needs_cursor_resolution();
     host.set_cursor(elem, CursorStyle::Pointer);
 
-    assert_eq!(host.calls.marked_dirty, vec![elem]);
     assert_eq!(host.calls.paints, vec![elem]);
     assert!(host.calls.needs_layout);
     assert!(host.calls.needs_cursor_resolution);
@@ -241,34 +230,18 @@ fn style_cache_round_trips_values() {
 }
 
 #[test]
-fn inspector_capture_routes_through_default_impl() {
-    let mut tree = Tree::new();
-    let elem = fresh_element(&mut tree, 99);
-    let mut host = MockHost::new();
-    let style = Style::new()
-        .set(TextColor, Some(css::RED))
-        .set(Disabled, true);
-
-    // This method has a default `{}` impl on the trait; MockHost overrides it
-    // to record. Either behavior is fine for floem-native hosts that don't
-    // run an inspector.
-    host.inspector_capture_style(elem, &style);
-    assert_eq!(host.calls.captured_styles, vec![elem]);
-}
-
-#[test]
 fn trait_object_dispatch_works() {
     // Exercises `&mut dyn StyleSink` — the shape an engine consumer
-    // hands to the cascade.
-    fn touch_sink(sink: &mut dyn StyleSink) {
-        sink.mark_needs_layout();
+    // hands to the cascade. Reads and the `apply_animations` hook are
+    // what the cascade actually dispatches through the trait.
+    fn peek_hover(sink: &dyn StyleSink, id: ElementId) -> bool {
+        sink.is_hovered(id)
     }
 
     let mut tree = Tree::new();
     let elem = fresh_element(&mut tree, 3);
     let mut host = MockHost::new();
-    touch_sink(&mut host);
-    let _ = elem;
+    host.hovered.insert(elem);
 
-    assert!(host.calls.needs_layout);
+    assert!(peek_hover(&host, elem));
 }

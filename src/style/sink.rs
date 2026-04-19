@@ -9,7 +9,6 @@ use floem_style::StyleSink;
 
 use crate::{ElementId, ElementIdExt};
 use crate::layout::responsive::ScreenSizeBp;
-use crate::style::recalc::StyleReason;
 use crate::style::Style;
 use crate::window::state::WindowState;
 
@@ -56,20 +55,6 @@ impl StyleSink for WindowState {
     }
     fn is_file_hover(&self, id: ElementId) -> bool {
         WindowState::is_file_hover(self, id)
-    }
-
-    fn mark_style_dirty_with(&mut self, id: ElementId, reason: StyleReason) {
-        WindowState::mark_style_dirty_with(self, id, reason)
-    }
-
-    fn mark_needs_layout(&mut self) {
-        self.needs_layout = true;
-    }
-
-    fn inspector_capture_style(&mut self, id: ElementId, computed_style: &Style) {
-        if let Some(capture) = self.capture.as_mut() {
-            capture.record_computed_style(id.owning_id(), computed_style.clone());
-        }
     }
 
     fn apply_animations(

@@ -29,7 +29,6 @@ use understory_box_tree::{LocalNode, Tree};
 #[derive(Default)]
 struct MockHost {
     hovered: std::collections::HashSet<ElementId>,
-    captured: Vec<(ElementId, Style)>,
     default_inherited: Style,
     default_classes: Style,
 }
@@ -70,11 +69,6 @@ impl StyleSink for MockHost {
     }
     fn is_file_hover(&self, _id: ElementId) -> bool {
         false
-    }
-    fn mark_style_dirty_with(&mut self, _id: ElementId, _reason: StyleReason) {}
-    fn mark_needs_layout(&mut self) {}
-    fn inspector_capture_style(&mut self, id: ElementId, computed_style: &Style) {
-        self.captured.push((id, computed_style.clone()));
     }
 }
 
@@ -253,19 +247,18 @@ fn clean_tree_stays_clean_after_compute() {
     tree.compute_style(n, &mut host);
     assert!(!tree.is_dirty(n));
 
-    // Second pass with nothing dirty: inspector_capture_style should not
-    // fire again for `n`.
-    let captures_before = host.captured.len();
+    // Second pass with nothing dirty: node stays clean and
+    // `take_scheduled` reports nothing new.
     tree.compute_style(n, &mut host);
-    assert_eq!(
-        host.captured.len(),
-        captures_before,
-        "clean nodes should not be recomputed"
+    assert!(!tree.is_dirty(n), "clean node should not re-enter dirty");
+    assert!(
+        tree.take_scheduled().next().is_none(),
+        "no scheduling work when nothing dirty"
     );
 }
 
 #[test]
-fn inspector_capture_fires_once_per_computed_node() {
+fn cascade_visits_each_dirty_node_and_computes_it() {
     let mut box_tree = Tree::new();
     let mut tree = StyleTree::new();
     let mut host = MockHost::new_default();
@@ -276,11 +269,14 @@ fn inspector_capture_fires_once_per_computed_node() {
     tree.set_children(parent, &[c1, c2]);
 
     tree.compute_style(parent, &mut host);
-    assert_eq!(host.captured.len(), 3);
-    // Order of capture is parent-first, then children in order.
-    assert_eq!(host.captured[0].0, tree.get(parent).unwrap().element_id);
-    assert_eq!(host.captured[1].0, tree.get(c1).unwrap().element_id);
-    assert_eq!(host.captured[2].0, tree.get(c2).unwrap().element_id);
+
+    // All three nodes should be clean and have computed styles populated.
+    assert!(!tree.is_dirty(parent));
+    assert!(!tree.is_dirty(c1));
+    assert!(!tree.is_dirty(c2));
+    assert!(tree.computed_style(parent).is_some());
+    assert!(tree.computed_style(c1).is_some());
+    assert!(tree.computed_style(c2).is_some());
 }
 
 // Test helper.

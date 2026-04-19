@@ -178,6 +178,17 @@ pub struct StyleTree {
     // an empty set next frame until more transitions happen.
     fixed_elements_added: SmallVec<[ElementId; 2]>,
     fixed_elements_removed: SmallVec<[ElementId; 2]>,
+    // Set during `compute_style` when the cascade detects a change
+    // that requires the host to re-run layout (e.g. a `display` /
+    // visibility flip). Hosts consume via
+    // [`Self::take_needs_layout`] after each pass.
+    needs_layout: bool,
+    // Elements the cascade marked dirty during this pass for
+    // host-visible side effects — their computed-style changed in a
+    // way the host's per-view bookkeeping (animations, taffy push,
+    // next-frame traversal) needs to know about. Host drains via
+    // [`Self::take_dirtied_this_pass`] after `compute_style`.
+    dirtied_this_pass: FxHashMap<ElementId, StyleReason>,
 }
 
 impl StyleTree {
@@ -192,6 +203,8 @@ impl StyleTree {
             fixed_elements: FxHashSet::default(),
             fixed_elements_added: SmallVec::new(),
             fixed_elements_removed: SmallVec::new(),
+            needs_layout: false,
+            dirtied_this_pass: FxHashMap::default(),
         }
     }
 
@@ -215,18 +228,23 @@ impl StyleTree {
 
     /// Record that `element_id` resolved to `position: fixed` on the
     /// current pass. Idempotent: a node already present in the set is
-    /// a no-op, not a reported transition.
+    /// a no-op, not a reported transition. Addition flips
+    /// `needs_layout` so the host relayouts on the drain.
     fn register_fixed_element(&mut self, element_id: ElementId) {
         if self.fixed_elements.insert(element_id) {
             self.fixed_elements_added.push(element_id);
+            self.needs_layout = true;
         }
     }
 
     /// Record that `element_id` no longer resolves to `position: fixed`.
-    /// Idempotent: a node already absent is a no-op.
+    /// Idempotent: a node already absent is a no-op. Removal flips
+    /// `needs_layout` (the host also needs to reset the box-tree world
+    /// position, surfaced through [`Self::take_fixed_element_changes`]).
     fn unregister_fixed_element(&mut self, element_id: ElementId) {
         if self.fixed_elements.remove(&element_id) {
             self.fixed_elements_removed.push(element_id);
+            self.needs_layout = true;
         }
     }
 
@@ -247,6 +265,35 @@ impl StyleTree {
             std::mem::take(&mut self.fixed_elements_added),
             std::mem::take(&mut self.fixed_elements_removed),
         )
+    }
+
+    /// `true` if the cascade detected a style change that invalidates
+    /// the host's layout (e.g. a `display` / visibility flip). Drained
+    /// each pass so subsequent calls return `false` until the cascade
+    /// asks for another relayout.
+    pub fn take_needs_layout(&mut self) -> bool {
+        std::mem::take(&mut self.needs_layout)
+    }
+
+    /// Drain every `(ElementId, StyleReason)` the cascade surfaced
+    /// during the most recent `compute_style`. Hosts consume these to
+    /// update their own dirty maps — floem routes each entry through
+    /// `WindowState::mark_style_dirty_with` so the next frame's
+    /// traversal covers descendants whose inherited / class / visibility
+    /// context changed this pass.
+    pub fn take_dirtied_this_pass(
+        &mut self,
+    ) -> impl Iterator<Item = (ElementId, StyleReason)> {
+        std::mem::take(&mut self.dirtied_this_pass).into_iter()
+    }
+
+    /// Record that `element_id` was marked dirty during this cascade
+    /// pass. Merges with any existing entry for the same element.
+    fn record_pass_dirty(&mut self, element_id: ElementId, reason: StyleReason) {
+        self.dirtied_this_pass
+            .entry(element_id)
+            .and_modify(|existing| existing.merge(reason.clone()))
+            .or_insert(reason);
     }
 
     /// Register an [`Animation`] on `node`. Returns the slot index used
@@ -409,6 +456,7 @@ impl StyleTree {
         self.selected_interest.remove(&id);
         if self.fixed_elements.remove(&node.element_id) {
             self.fixed_elements_removed.push(node.element_id);
+            self.needs_layout = true;
         }
         if let Some(parent) = node.parent
             && let Some(parent_node) = self.nodes.get_mut(parent)
@@ -935,15 +983,15 @@ impl StyleTree {
             };
             for child in children {
                 self.mark_dirty(child, reason.clone());
-                // Also surface the dirty to the host so floem's own
-                // `style_dirty` map includes the child on the next
-                // traversal — otherwise downstream per-view work
-                // (animations, taffy push) wouldn't run for
-                // inherited/class-context-changed descendants.
+                // Also surface the dirty so the host's per-view
+                // bookkeeping (floem's `style_dirty` map, driving the
+                // next frame's traversal for animations / taffy push /
+                // etc.) covers descendants whose inherited or class
+                // context just changed.
                 if let Some(child_element_id) =
                     self.nodes.get(child).map(|n| n.element_id)
                 {
-                    sink.mark_style_dirty_with(child_element_id, reason.clone());
+                    self.record_pass_dirty(child_element_id, reason.clone());
                 }
             }
         }
@@ -960,9 +1008,9 @@ impl StyleTree {
                 .filter_map(|c| self.nodes.get(*c).map(|n| n.element_id))
                 .collect();
             for child_element_id in children {
-                sink.mark_style_dirty_with(child_element_id, StyleReason::visibility());
+                self.record_pass_dirty(child_element_id, StyleReason::visibility());
             }
-            sink.mark_needs_layout();
+            self.needs_layout = true;
         }
         if old_interaction_cx.selected != new_interaction_cx.selected
             && !old_dirty_selectors.is_some_and(|s| s.has(StyleSelector::Selected))
@@ -970,7 +1018,7 @@ impl StyleTree {
             let dirtied = self
                 .mark_descendants_with_selector_dirty(id, StyleSelector::Selected);
             for (child_element_id, reason) in dirtied {
-                sink.mark_style_dirty_with(child_element_id, reason);
+                self.record_pass_dirty(child_element_id, reason);
             }
         }
         if old_interaction_cx.disabled != new_interaction_cx.disabled
@@ -979,7 +1027,7 @@ impl StyleTree {
             let dirtied = self
                 .mark_descendants_with_selector_dirty(id, StyleSelector::Disabled);
             for (child_element_id, reason) in dirtied {
-                sink.mark_style_dirty_with(child_element_id, reason);
+                self.record_pass_dirty(child_element_id, reason);
             }
         }
 
@@ -987,10 +1035,6 @@ impl StyleTree {
         // registries. Subsequent descendant-dirty walks use these to
         // visit only the subset of nodes that could match.
         self.update_selector_interest(id, Some(selectors));
-
-        // Let the host snapshot the computed style (inspector, tests, etc.).
-        let computed_ref = self.nodes[id].computed_style.clone();
-        sink.inspector_capture_style(element_id, &computed_ref);
     }
 
     /// Return `(child_index, sibling_count)` for `id` using the tree's own

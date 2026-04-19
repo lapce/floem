@@ -674,13 +674,15 @@ impl WindowState {
         self.root_size = size;
     }
 
-    /// Apply the post-cascade side effects of `position: fixed` transitions
-    /// recorded by the style tree. Called right after `compute_style`
-    /// returns so the host's layout and box-tree state catches up before
-    /// the next frame starts.
-    fn drain_fixed_element_changes(&mut self) {
-        let (added, removed) = self.style_tree.take_fixed_element_changes();
-        if !added.is_empty() {
+    /// Apply the post-cascade side effects the style tree recorded during
+    /// its pass — `position: fixed` transitions (relayout + box-tree
+    /// world-position resets) and any other engine-detected relayout
+    /// triggers (visibility flips etc.). Called right after
+    /// `compute_style` returns so the host's layout and box-tree state
+    /// catches up before the next frame starts.
+    fn drain_style_tree_effects(&mut self) {
+        let (_added, removed) = self.style_tree.take_fixed_element_changes();
+        if self.style_tree.take_needs_layout() {
             self.needs_layout = true;
         }
         if !removed.is_empty() {
@@ -690,7 +692,6 @@ impl WindowState {
             }
             drop(box_tree);
             self.needs_box_tree_commit = true;
-            self.needs_layout = true;
         }
     }
 
@@ -1349,14 +1350,23 @@ impl WindowState {
             // transitions still interpolating). Route each into floem's
             // per-frame update queue.
             let engine_scheduled: Vec<_> = tree.take_scheduled().collect();
+            // Descendants the cascade dirtied during this pass (inherited /
+            // class-context / visibility changes). These need to feed into
+            // floem's `style_dirty` map so the next frame's traversal picks
+            // them up for per-view work (animations, taffy push).
+            let cascade_dirtied: Vec<_> = tree.take_dirtied_this_pass().collect();
             self.style_tree = tree;
             for (element_id, reason) in engine_scheduled {
                 self.schedule_style_with_target(element_id, reason);
             }
-            // `position: fixed` transitions detected by the cascade need
-            // a relayout (always) and a box-tree world-position reset
-            // (when an element lost its fixed positioning).
-            self.drain_fixed_element_changes();
+            for (element_id, reason) in cascade_dirtied {
+                self.mark_style_dirty_with(element_id, reason);
+            }
+            // Fixed-element transitions detected by the cascade need
+            // box-tree world-position resets, and any engine-requested
+            // relayout (visibility flips, fixed transitions) needs to
+            // flip the host's layout-dirty flag.
+            self.drain_style_tree_effects();
         }
 
         // Pass 3: copy outputs back into per-view `style_storage`.
@@ -1387,6 +1397,16 @@ impl WindowState {
                 .cloned()
                 .unwrap_or_default();
             let has_selectors = self.style_tree.has_style_selectors(style_node);
+
+            // Snapshot for the inspector if a capture is active. Covers
+            // the previous engine-side `StyleSink::inspector_capture_style`
+            // callback — same data, fired per dirty view instead of per
+            // cascade node. Pass 3 already walks every view the cascade
+            // recomputed, so this loses no coverage and lets the engine
+            // stay host-free.
+            if let Some(capture) = self.capture.as_mut() {
+                capture.record_computed_style(*view_id, computed.clone());
+            }
 
             let new_cursor = computed.builtin().cursor();
             let state = view_id.state();
