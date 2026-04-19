@@ -469,3 +469,59 @@ fn sink_apply_animations_hook_is_invoked() {
         "compute_style should invoke sink.apply_animations once per dirty node"
     );
 }
+
+/// Animations pushed directly onto a `StyleTree` node are ticked by the
+/// cascade without any host-side registry. The generated events land in
+/// the node's event buffer for the host to drain. This is the path
+/// standalone consumers (floem-native, tests) use — no reactive
+/// wrapper, no per-view `Stack<Animation>`, just the engine.
+#[test]
+fn tree_stored_animations_tick_during_cascade() {
+    use floem_style::animation::{Animation, KeyFrame};
+    use std::time::Duration;
+
+    let mut box_tree = Tree::new();
+    let mut tree = StyleTree::new();
+    let mut host = MockHost::new();
+
+    let element_id = fresh_element(&mut box_tree, 7);
+    let n = tree.new_node(element_id);
+    tree.set_direct_style(n, Style::new());
+
+    // Push a simple two-keyframe animation onto the tree node. The
+    // host never touches it — the cascade handles the whole lifecycle.
+    let anim = Animation::new()
+        .duration(Duration::from_millis(500))
+        .keyframe(0, |f: KeyFrame| {
+            f.ease_linear().style(|s| s.background(css::RED))
+        })
+        .keyframe(100, |f: KeyFrame| {
+            f.ease_linear().style(|s| s.background(css::BLUE))
+        });
+    let slot = tree.push_animation(n, anim);
+    assert_eq!(slot, 0);
+    assert_eq!(tree.animations(n).len(), 1);
+
+    // First compute_style: animation is Idle; the tick transitions it
+    // to PassInProgress and fires a `started` event.
+    tree.compute_style(n, &mut host);
+    let events = tree.take_animation_events(n);
+    assert_eq!(events.len(), 1, "started event should have fired");
+    assert!(events[0].1.started);
+    assert_eq!(events[0].0, slot, "event should reference the pushed slot");
+
+    // Cascade should also schedule the node for another frame while the
+    // animation is active.
+    let scheduled: Vec<_> = tree.take_scheduled().collect();
+    assert!(
+        scheduled.iter().any(|(id, _)| *id == element_id),
+        "active tree-animation should have scheduled its element"
+    );
+
+    // After the tick the animation is actually advancing: it's no
+    // longer Idle and `can_advance` remains true.
+    let anim = &tree.animations(n)[slot];
+    assert!(!anim.is_idle());
+    assert!(anim.is_in_progress());
+    assert!(anim.can_advance());
+}

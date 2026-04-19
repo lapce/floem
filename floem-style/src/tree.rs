@@ -23,6 +23,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use slotmap::{SlotMap, new_key_type};
 
+use crate::animation::{Animation, AnimationEvents};
 use crate::builtin_props::Display;
 use crate::cache::{StyleCache, StyleCacheKey};
 use crate::cascade::resolve_nested_maps;
@@ -98,6 +99,22 @@ pub struct StyleNode {
     /// Why this node (or a subtree rooted here) is pending recomputation.
     /// Empty means the caches are up to date.
     pub(crate) dirty: StyleReason,
+
+    // ── Animation registry ─────────────────────────────────────────────
+    /// Animations declared on this node. The cascade ticks these during
+    /// [`StyleTree::compute_style`] and folds their interpolated values
+    /// into `combined_style` before the result is propagated to children.
+    ///
+    /// A host may either push animations here directly (standalone hosts,
+    /// tests) or keep its own registry and override
+    /// [`StyleSink::apply_animations`](crate::StyleSink::apply_animations);
+    /// both paths coexist and are invoked in order each frame.
+    pub(crate) animations: SmallVec<[Animation; 1]>,
+
+    /// Lifecycle events produced by the most recent tick of this node's
+    /// animations. Hosts drain via
+    /// [`StyleTree::take_animation_events`] to fire their own observers.
+    pub(crate) pending_animation_events: SmallVec<[(usize, AnimationEvents); 1]>,
 }
 
 impl StyleNode {
@@ -117,6 +134,8 @@ impl StyleNode {
             style_interaction_cx: InheritedInteractionCx::default(),
             has_style_selectors: None,
             dirty: StyleReason::style_pass(),
+            animations: SmallVec::new(),
+            pending_animation_events: SmallVec::new(),
         }
     }
 
@@ -178,6 +197,71 @@ impl StyleTree {
     /// per-frame scheduling.
     pub fn take_scheduled(&mut self) -> impl Iterator<Item = (ElementId, StyleReason)> {
         std::mem::take(&mut self.scheduled).into_iter()
+    }
+
+    /// Register an [`Animation`] on `node`. Returns the slot index used
+    /// by later [`Self::set_animation`] / [`Self::update_animation_with`]
+    /// calls. Panics if `node` is unknown.
+    pub fn push_animation(&mut self, node: StyleNodeId, anim: Animation) -> usize {
+        let node = &mut self.nodes[node];
+        let idx = node.animations.len();
+        node.animations.push(anim);
+        idx
+    }
+
+    /// Replace the animation at `slot` on `node`. No-op if `node` or the
+    /// slot is missing.
+    pub fn set_animation(&mut self, node: StyleNodeId, slot: usize, anim: Animation) {
+        if let Some(n) = self.nodes.get_mut(node)
+            && let Some(existing) = n.animations.get_mut(slot)
+        {
+            *existing = anim;
+        }
+    }
+
+    /// Mutate the animation at `slot` on `node` in place (used by
+    /// reactive state commands).
+    pub fn update_animation_with<F>(&mut self, node: StyleNodeId, slot: usize, f: F)
+    where
+        F: FnOnce(&mut Animation),
+    {
+        if let Some(n) = self.nodes.get_mut(node)
+            && let Some(existing) = n.animations.get_mut(slot)
+        {
+            f(existing);
+        }
+    }
+
+    /// Read-only view of every animation registered on `node`.
+    pub fn animations(&self, node: StyleNodeId) -> &[Animation] {
+        self.nodes
+            .get(node)
+            .map(|n| n.animations.as_slice())
+            .unwrap_or(&[])
+    }
+
+    /// Mutable view of every animation registered on `node`.
+    pub fn animations_mut(&mut self, node: StyleNodeId) -> &mut [Animation] {
+        self.nodes
+            .get_mut(node)
+            .map(|n| n.animations.as_mut_slice())
+            .unwrap_or(&mut [])
+    }
+
+    /// Drain animation-lifecycle events produced by the most recent
+    /// [`Self::compute_style`]. Each entry is `(slot_index, events)`
+    /// for the node identified by `node`. Hosts call this to fire their
+    /// own observers (floem: reactive `Trigger`s; native hosts:
+    /// platform-specific notifications).
+    pub fn take_animation_events(
+        &mut self,
+        node: StyleNodeId,
+    ) -> SmallVec<[(usize, AnimationEvents); 1]> {
+        if let Some(n) = self.nodes.get_mut(node) {
+            std::mem::take(&mut n.pending_animation_events)
+        } else {
+            SmallVec::new()
+        }
     }
 
     /// Drop every cached cascade result. The host should call this when a
@@ -682,14 +766,53 @@ impl StyleTree {
             (combined_style, selectors, post_interact)
         };
 
-        // Apply host-owned animations on top of the cached/cascaded
-        // combined_style. Animations must run AFTER the cache write so the
-        // cache holds pre-animation baselines (per-pass time-varying
-        // values can't be cached), and BEFORE inherited context derivation
-        // below so animated inherited props propagate to descendants.
-        let has_active_animation =
+        // Apply animations on top of the cached/cascaded combined_style.
+        // Animations must run AFTER the cache write so the cache holds
+        // pre-animation baselines (per-pass time-varying values can't be
+        // cached), and BEFORE inherited context derivation so animated
+        // inherited props propagate to descendants.
+        //
+        // Two parallel paths coexist:
+        // - Tree-stored animations ticked inline (for standalone hosts
+        //   and tests that push directly via `push_animation`). Events
+        //   are queued on the node for the host to drain via
+        //   `take_animation_events`.
+        // - `StyleSink::apply_animations` for hosts that maintain their
+        //   own registry with reactive wrappers (floem today). This also
+        //   gives native hosts a hook to delegate to a compositor
+        //   animation engine instead of CPU-ticking.
+        let tree_has_active = {
+            let node = &mut self.nodes[id];
+            let mut any_active = false;
+            for (slot, anim) in node.animations.iter_mut().enumerate() {
+                let can_advance = anim.can_advance();
+                let should_apply = anim.should_apply_folded();
+                if !can_advance && !should_apply {
+                    continue;
+                }
+                if can_advance {
+                    any_active = true;
+                    anim.animate_into(&mut combined_style);
+                    let events = anim.advance();
+                    if events.started || events.visual_completed || events.completed {
+                        node.pending_animation_events.push((slot, events));
+                    }
+                } else {
+                    anim.apply_folded(&mut combined_style);
+                }
+            }
+            // Mirror host-apply_animations interact OR'ing.
+            let builtin = combined_style.builtin();
+            interact_state.is_hidden |= builtin.display() == Display::None;
+            interact_state.is_selected |= builtin.set_selected();
+            interact_state.is_disabled |= builtin.set_disabled();
+            any_active
+        };
+
+        let sink_has_active =
             sink.apply_animations(element_id, &mut combined_style, &mut interact_state);
-        if has_active_animation {
+
+        if tree_has_active || sink_has_active {
             self.schedule(element_id, StyleReason::animation());
         }
 
