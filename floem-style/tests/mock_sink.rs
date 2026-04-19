@@ -115,8 +115,6 @@ impl StyleSink for MockHost {
         self.calls.marked_dirty.push(id);
     }
 
-    fn register_fixed_element(&mut self, _id: ElementId) {}
-    fn unregister_fixed_element(&mut self, _id: ElementId) {}
     fn mark_needs_layout(&mut self) {
         self.calls.needs_layout = true;
     }

@@ -167,6 +167,17 @@ pub struct StyleTree {
     // and by `schedule`; drained by the host via [`take_scheduled`] after
     // each `compute_style` to feed the host's own per-frame work queue.
     scheduled: FxHashMap<ElementId, StyleReason>,
+    // Authoritative set of elements whose resolved style has
+    // `position: fixed`. Maintained inline by the cascade; hosts that
+    // need to walk every fixed element (for layout positioning, paint
+    // ordering, etc.) read it via [`Self::fixed_elements`].
+    fixed_elements: FxHashSet<ElementId>,
+    // Transitions from the most recent `compute_style` pass. The host
+    // drains these via [`Self::take_fixed_element_changes`] to trigger
+    // post-cascade side-effects (relayout, box-tree commit), then gets
+    // an empty set next frame until more transitions happen.
+    fixed_elements_added: SmallVec<[ElementId; 2]>,
+    fixed_elements_removed: SmallVec<[ElementId; 2]>,
 }
 
 impl StyleTree {
@@ -178,6 +189,9 @@ impl StyleTree {
             disabled_interest: FxHashSet::default(),
             selected_interest: FxHashSet::default(),
             scheduled: FxHashMap::default(),
+            fixed_elements: FxHashSet::default(),
+            fixed_elements_added: SmallVec::new(),
+            fixed_elements_removed: SmallVec::new(),
         }
     }
 
@@ -197,6 +211,42 @@ impl StyleTree {
     /// per-frame scheduling.
     pub fn take_scheduled(&mut self) -> impl Iterator<Item = (ElementId, StyleReason)> {
         std::mem::take(&mut self.scheduled).into_iter()
+    }
+
+    /// Record that `element_id` resolved to `position: fixed` on the
+    /// current pass. Idempotent: a node already present in the set is
+    /// a no-op, not a reported transition.
+    fn register_fixed_element(&mut self, element_id: ElementId) {
+        if self.fixed_elements.insert(element_id) {
+            self.fixed_elements_added.push(element_id);
+        }
+    }
+
+    /// Record that `element_id` no longer resolves to `position: fixed`.
+    /// Idempotent: a node already absent is a no-op.
+    fn unregister_fixed_element(&mut self, element_id: ElementId) {
+        if self.fixed_elements.remove(&element_id) {
+            self.fixed_elements_removed.push(element_id);
+        }
+    }
+
+    /// Every element currently resolving to `position: fixed`.
+    pub fn fixed_elements(&self) -> &FxHashSet<ElementId> {
+        &self.fixed_elements
+    }
+
+    /// `(added, removed)` transitions to the fixed-element set since the
+    /// last drain. Hosts call this after `compute_style` to trigger any
+    /// layout / box-tree side effects their fixed-positioning flow
+    /// needs. Subsequent calls return empty sets until more transitions
+    /// happen.
+    pub fn take_fixed_element_changes(
+        &mut self,
+    ) -> (SmallVec<[ElementId; 2]>, SmallVec<[ElementId; 2]>) {
+        (
+            std::mem::take(&mut self.fixed_elements_added),
+            std::mem::take(&mut self.fixed_elements_removed),
+        )
     }
 
     /// Register an [`Animation`] on `node`. Returns the slot index used
@@ -357,6 +407,9 @@ impl StyleTree {
         self.responsive_interest.remove(&id);
         self.disabled_interest.remove(&id);
         self.selected_interest.remove(&id);
+        if self.fixed_elements.remove(&node.element_id) {
+            self.fixed_elements_removed.push(node.element_id);
+        }
         if let Some(parent) = node.parent
             && let Some(parent_node) = self.nodes.get_mut(parent)
         {
@@ -822,9 +875,9 @@ impl StyleTree {
         let computed_style = computed_style.with_inherited_context(&parent_inherited);
 
         if computed_style.builtin().is_fixed() {
-            sink.register_fixed_element(element_id);
+            self.register_fixed_element(element_id);
         } else {
-            sink.unregister_fixed_element(element_id);
+            self.unregister_fixed_element(element_id);
         }
 
         // Derive the inherited + class contexts children will see.

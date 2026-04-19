@@ -113,8 +113,6 @@ impl StyleSink for MockHost {
         false
     }
     fn mark_style_dirty_with(&mut self, _id: ElementId, _reason: StyleReason) {}
-    fn register_fixed_element(&mut self, _id: ElementId) {}
-    fn unregister_fixed_element(&mut self, _id: ElementId) {}
     fn mark_needs_layout(&mut self) {}
 }
 
@@ -413,12 +411,6 @@ fn sink_apply_animations_hook_is_invoked() {
         }
         fn mark_style_dirty_with(&mut self, id: ElementId, reason: StyleReason) {
             self.inner.mark_style_dirty_with(id, reason)
-        }
-        fn register_fixed_element(&mut self, id: ElementId) {
-            self.inner.register_fixed_element(id)
-        }
-        fn unregister_fixed_element(&mut self, id: ElementId) {
-            self.inner.unregister_fixed_element(id)
         }
         fn mark_needs_layout(&mut self) {
             self.inner.mark_needs_layout()

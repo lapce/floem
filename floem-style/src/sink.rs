@@ -50,8 +50,6 @@ pub trait StyleSink {
     fn mark_style_dirty_with(&mut self, id: ElementId, reason: StyleReason);
 
     // --- Host side-effects ---
-    fn register_fixed_element(&mut self, id: ElementId);
-    fn unregister_fixed_element(&mut self, id: ElementId);
     fn mark_needs_layout(&mut self);
 
     /// Called at the end of a style resolution pass so hosts running under

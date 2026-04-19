@@ -62,13 +62,6 @@ impl StyleSink for WindowState {
         WindowState::mark_style_dirty_with(self, id, reason)
     }
 
-    fn register_fixed_element(&mut self, id: ElementId) {
-        WindowState::register_fixed_element(self, id.owning_id())
-    }
-    fn unregister_fixed_element(&mut self, id: ElementId) {
-        WindowState::unregister_fixed_element(self, id.owning_id())
-    }
-
     fn mark_needs_layout(&mut self) {
         self.needs_layout = true;
     }

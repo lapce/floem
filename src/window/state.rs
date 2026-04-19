@@ -116,9 +116,6 @@ pub struct WindowState {
     pub(crate) root_view_id: ViewId,
     pub(crate) root_layout_node: NodeId,
     pub(crate) root_size: Size,
-    /// Set of ViewIds that have IsFixed style. When root_size changes,
-    /// we request layout on these views directly instead of traversing the tree.
-    pub(crate) fixed_elements: FxHashSet<ViewId>,
     /// The OS-provided DPI scale for this window.
     ///
     /// This comes from the platform/windowing backend and changes when the window
@@ -218,7 +215,6 @@ impl WindowState {
             os_scale,
             user_scale: 1.0,
             root_size: Size::ZERO,
-            fixed_elements: FxHashSet::default(),
             screen_size_bp: ScreenSizeBp::Xs,
             scheduled_updates: vec![FrameUpdate::Paint(root_view_id)],
             request_paint: true,
@@ -366,7 +362,6 @@ impl WindowState {
         box_tree.borrow_mut().remove(this_element_id.0);
         self.needs_box_tree_commit = true;
         id.remove();
-        self.fixed_elements.remove(&id);
         let keys = view_state.borrow().registered_listener_keys.clone();
         for key in keys {
             if let Some(ids) = self.listeners.get_mut(&key) {
@@ -672,28 +667,28 @@ impl WindowState {
     pub fn set_root_size(&mut self, size: Size) {
         if self.root_size != size {
             // Request layout on all fixed elements since their size depends on root_size
-            for &id in &self.fixed_elements {
-                id.request_layout();
+            for &element_id in self.style_tree.fixed_elements() {
+                element_id.owning_id().request_layout();
             }
         }
         self.root_size = size;
     }
 
-    /// Register a view as having fixed positioning.
-    /// Called when a view's style sets IsFixed to true.
-    pub fn register_fixed_element(&mut self, id: ViewId) {
-        if self.fixed_elements.insert(id) {
+    /// Apply the post-cascade side effects of `position: fixed` transitions
+    /// recorded by the style tree. Called right after `compute_style`
+    /// returns so the host's layout and box-tree state catches up before
+    /// the next frame starts.
+    fn drain_fixed_element_changes(&mut self) {
+        let (added, removed) = self.style_tree.take_fixed_element_changes();
+        if !added.is_empty() {
             self.needs_layout = true;
         }
-    }
-
-    /// Unregister a view from fixed positioning.
-    /// Called when a view's style sets IsFixed to false.
-    pub fn unregister_fixed_element(&mut self, id: ViewId) {
-        if self.fixed_elements.remove(&id) {
-            self.box_tree
-                .borrow_mut()
-                .set_world_position(id.get_element_id().0, None);
+        if !removed.is_empty() {
+            let mut box_tree = self.box_tree.borrow_mut();
+            for element_id in &removed {
+                box_tree.set_world_position(element_id.0, None);
+            }
+            drop(box_tree);
             self.needs_box_tree_commit = true;
             self.needs_layout = true;
         }
@@ -701,7 +696,12 @@ impl WindowState {
 
     fn apply_fixed_element_styles(&self) {
         let root_size = self.root_size / self.user_scale;
-        let fixed_views: SmallVec<[ViewId; 32]> = self.fixed_elements.iter().copied().collect();
+        let fixed_views: SmallVec<[ViewId; 32]> = self
+            .style_tree
+            .fixed_elements()
+            .iter()
+            .map(|e| e.owning_id())
+            .collect();
         VIEW_STORAGE.with_borrow(|s| {
             for view_id in fixed_views {
                 if let Some(state) = s.states.get(view_id) {
@@ -1130,9 +1130,11 @@ impl WindowState {
     fn apply_fixed_positioning_transforms(&self) {
         let root_size = self.root_size / self.user_scale;
         let positions: SmallVec<[(ElementId, Point); 32]> = VIEW_STORAGE.with_borrow(|s| {
-            self.fixed_elements
+            self.style_tree
+                .fixed_elements()
                 .iter()
-                .filter_map(|&view_id| {
+                .filter_map(|&element_id| {
+                    let view_id = element_id.owning_id();
                     let state = s.states.get(view_id)?;
                     let state_borrow = state.borrow();
                     let element_id = state_borrow.element_id;
@@ -1351,6 +1353,10 @@ impl WindowState {
             for (element_id, reason) in engine_scheduled {
                 self.schedule_style_with_target(element_id, reason);
             }
+            // `position: fixed` transitions detected by the cascade need
+            // a relayout (always) and a box-tree world-position reset
+            // (when an element lost its fixed positioning).
+            self.drain_fixed_element_changes();
         }
 
         // Pass 3: copy outputs back into per-view `style_storage`.

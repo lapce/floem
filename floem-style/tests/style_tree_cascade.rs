@@ -72,8 +72,6 @@ impl StyleSink for MockHost {
         false
     }
     fn mark_style_dirty_with(&mut self, _id: ElementId, _reason: StyleReason) {}
-    fn register_fixed_element(&mut self, _id: ElementId) {}
-    fn unregister_fixed_element(&mut self, _id: ElementId) {}
     fn mark_needs_layout(&mut self) {}
     fn inspector_capture_style(&mut self, id: ElementId, computed_style: &Style) {
         self.captured.push((id, computed_style.clone()));
