@@ -14,9 +14,8 @@ use web_time::Instant;
 use floem_style::builtin_props::{Background, FontSize, TextColor};
 use floem_style::props::StyleClass;
 use floem_style::responsive::ScreenSizeBp;
-use floem_style::selectors::{StyleSelector, StyleSelectors};
 use floem_style::{
-    CursorStyle, ElementId, Style, StyleSink, StyleTree, recalc::StyleReason,
+    ElementId, Style, StyleSink, StyleTree, recalc::StyleReason,
     style_class,
 };
 use peniko::color::palette::css;
@@ -75,15 +74,7 @@ impl StyleSink for MockHost {
     fn mark_style_dirty_with(&mut self, _id: ElementId, _reason: StyleReason) {}
     fn register_fixed_element(&mut self, _id: ElementId) {}
     fn unregister_fixed_element(&mut self, _id: ElementId) {}
-    fn invalidate_focus_nav_cache(&mut self) {}
-    fn mark_needs_cursor_resolution(&mut self) {}
     fn mark_needs_layout(&mut self) {}
-    fn set_cursor(&mut self, _id: ElementId, _cursor: CursorStyle) -> Option<CursorStyle> {
-        None
-    }
-    fn clear_cursor(&mut self, _id: ElementId) -> Option<CursorStyle> {
-        None
-    }
     fn inspector_capture_style(&mut self, id: ElementId, computed_style: &Style) {
         self.captured.push((id, computed_style.clone()));
     }

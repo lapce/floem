@@ -33,11 +33,10 @@ use web_time::Instant;
 
 use floem_style::builtin_props::{Background, FontSize};
 use floem_style::responsive::ScreenSizeBp;
-use floem_style::selectors::{StyleSelector, StyleSelectors};
 use floem_style::unit::{Angle, Pt};
 use floem_style::{
-    CursorStyle, ElementId, LayoutProps, PropExtractorCx, Style, StyleSink, StyleTree,
-    TransformProps, ViewStyleProps, recalc::StyleReason,
+    ElementId, LayoutProps, PropExtractorCx, Style, StyleSink, StyleTree, TransformProps,
+    ViewStyleProps, recalc::StyleReason,
 };
 use peniko::color::palette::css;
 use peniko::kurbo;
@@ -57,7 +56,6 @@ struct MockHost {
     default_classes: Style,
 
     // Recordings tests assert on.
-    paints: Vec<ElementId>,
     transition_requests: Vec<ElementId>,
 
     // Per-element sink state the cascade reads.
@@ -117,15 +115,7 @@ impl StyleSink for MockHost {
     fn mark_style_dirty_with(&mut self, _id: ElementId, _reason: StyleReason) {}
     fn register_fixed_element(&mut self, _id: ElementId) {}
     fn unregister_fixed_element(&mut self, _id: ElementId) {}
-    fn invalidate_focus_nav_cache(&mut self) {}
-    fn mark_needs_cursor_resolution(&mut self) {}
     fn mark_needs_layout(&mut self) {}
-    fn set_cursor(&mut self, _id: ElementId, _cursor: CursorStyle) -> Option<CursorStyle> {
-        None
-    }
-    fn clear_cursor(&mut self, _id: ElementId) -> Option<CursorStyle> {
-        None
-    }
 }
 
 impl PropExtractorCx for MockHost {
@@ -430,20 +420,8 @@ fn sink_apply_animations_hook_is_invoked() {
         fn unregister_fixed_element(&mut self, id: ElementId) {
             self.inner.unregister_fixed_element(id)
         }
-        fn invalidate_focus_nav_cache(&mut self) {
-            self.inner.invalidate_focus_nav_cache()
-        }
-        fn mark_needs_cursor_resolution(&mut self) {
-            self.inner.mark_needs_cursor_resolution()
-        }
         fn mark_needs_layout(&mut self) {
             self.inner.mark_needs_layout()
-        }
-        fn set_cursor(&mut self, id: ElementId, cursor: CursorStyle) -> Option<CursorStyle> {
-            self.inner.set_cursor(id, cursor)
-        }
-        fn clear_cursor(&mut self, id: ElementId) -> Option<CursorStyle> {
-            self.inner.clear_cursor(id)
         }
         fn apply_animations(
             &mut self,

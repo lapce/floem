@@ -19,7 +19,7 @@ use web_time::Instant;
 
 use floem_style::builtin_props::{Background, Disabled, TextColor};
 use floem_style::responsive::ScreenSizeBp;
-use floem_style::selectors::{StyleSelector, StyleSelectors};
+use floem_style::selectors::StyleSelector;
 use floem_style::{
     CacheHit, CursorStyle, ElementId, InheritedInteractionCx, InteractionState, Style, StyleCache,
     StyleCacheKey, StyleSink, recalc::StyleReason, resolve_nested_maps,
@@ -117,25 +117,32 @@ impl StyleSink for MockHost {
 
     fn register_fixed_element(&mut self, _id: ElementId) {}
     fn unregister_fixed_element(&mut self, _id: ElementId) {}
-    fn invalidate_focus_nav_cache(&mut self) {}
-    fn mark_needs_cursor_resolution(&mut self) {
-        self.calls.needs_cursor_resolution = true;
-    }
     fn mark_needs_layout(&mut self) {
         self.calls.needs_layout = true;
+    }
+
+    fn inspector_capture_style(&mut self, id: ElementId, _computed_style: &Style) {
+        self.calls.captured_styles.push(id);
+    }
+}
+
+// Cursor overrides and cursor-resolution flags are host-only — they're
+// not on the `StyleSink` trait because the engine doesn't read or
+// mutate them. Tests that want to record these calls keep them as
+// inherent methods on the mock.
+impl MockHost {
+    fn mark_needs_cursor_resolution(&mut self) {
+        self.calls.needs_cursor_resolution = true;
     }
 
     fn set_cursor(&mut self, id: ElementId, cursor: CursorStyle) -> Option<CursorStyle> {
         self.calls.cursor_sets.push((id, cursor));
         self.cursors.insert(id, cursor)
     }
+
     fn clear_cursor(&mut self, id: ElementId) -> Option<CursorStyle> {
         self.calls.cursor_clears.push(id);
         self.cursors.remove(&id)
-    }
-
-    fn inspector_capture_style(&mut self, id: ElementId, _computed_style: &Style) {
-        self.calls.captured_styles.push(id);
     }
 }
 

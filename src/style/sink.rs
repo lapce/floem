@@ -68,27 +68,9 @@ impl StyleSink for WindowState {
     fn unregister_fixed_element(&mut self, id: ElementId) {
         WindowState::unregister_fixed_element(self, id.owning_id())
     }
-    fn invalidate_focus_nav_cache(&mut self) {
-        WindowState::invalidate_focus_nav_cache(self)
-    }
 
-    fn mark_needs_cursor_resolution(&mut self) {
-        self.needs_cursor_resolution = true;
-    }
     fn mark_needs_layout(&mut self) {
         self.needs_layout = true;
-    }
-
-    fn set_cursor(
-        &mut self,
-        id: ElementId,
-        cursor: crate::style::CursorStyle,
-    ) -> Option<crate::style::CursorStyle> {
-        WindowState::set_cursor(self, id, cursor)
-    }
-
-    fn clear_cursor(&mut self, id: ElementId) -> Option<crate::style::CursorStyle> {
-        WindowState::clear_cursor(self, id)
     }
 
     fn inspector_capture_style(&mut self, id: ElementId, computed_style: &Style) {
