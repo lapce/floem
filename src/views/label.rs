@@ -489,7 +489,7 @@ impl View for Label {
             self.id.request_paint();
         }
         if self.selection_style.read(cx) {
-            cx.window_state.request_paint(self.id.into());
+            cx.window_state.request_paint(self.id);
         }
     }
 

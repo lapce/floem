@@ -20,7 +20,6 @@ use crate::element_id::ElementId;
 use crate::interaction::InteractionState;
 use crate::recalc::StyleReason;
 use crate::responsive::ScreenSizeBp;
-use crate::selectors::{StyleSelector, StyleSelectors};
 use crate::style::Style;
 use crate::values::CursorStyle;
 
@@ -53,19 +52,11 @@ pub trait StyleSink {
     fn mark_style_dirty_with(&mut self, id: ElementId, reason: StyleReason);
     fn schedule_style(&mut self, id: ElementId, reason: StyleReason);
     fn schedule_style_with_target(&mut self, target: ElementId, reason: StyleReason);
-    fn mark_descendants_with_selector_dirty(
-        &mut self,
-        ancestor: ElementId,
-        selector: StyleSelector,
-    );
-    fn mark_descendants_with_responsive_selector_dirty(&mut self, ancestor: ElementId);
-    fn update_selector_interest(&mut self, id: ElementId, selectors: Option<StyleSelectors>);
 
     // --- Host side-effects ---
     fn register_fixed_element(&mut self, id: ElementId);
     fn unregister_fixed_element(&mut self, id: ElementId);
     fn invalidate_focus_nav_cache(&mut self);
-    fn request_paint(&mut self, id: ElementId);
     fn mark_needs_cursor_resolution(&mut self);
     fn mark_needs_layout(&mut self);
 

@@ -10,7 +10,7 @@ use floem_style::StyleSink;
 use crate::{ElementId, ElementIdExt};
 use crate::layout::responsive::ScreenSizeBp;
 use crate::style::recalc::StyleReason;
-use crate::style::{Style, StyleSelector, StyleSelectors};
+use crate::style::Style;
 use crate::window::state::WindowState;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -67,15 +67,6 @@ impl StyleSink for WindowState {
     fn schedule_style_with_target(&mut self, target: ElementId, reason: StyleReason) {
         WindowState::schedule_style_with_target(self, target, reason)
     }
-    fn mark_descendants_with_selector_dirty(&mut self, ancestor: ElementId, selector: StyleSelector) {
-        WindowState::mark_descendants_with_selector_dirty(self, ancestor.owning_id(), selector)
-    }
-    fn mark_descendants_with_responsive_selector_dirty(&mut self, ancestor: ElementId) {
-        WindowState::mark_descendants_with_responsive_selector_dirty(self, ancestor.owning_id())
-    }
-    fn update_selector_interest(&mut self, id: ElementId, selectors: Option<StyleSelectors>) {
-        WindowState::update_selector_interest(self, id.owning_id(), selectors)
-    }
 
     fn register_fixed_element(&mut self, id: ElementId) {
         WindowState::register_fixed_element(self, id.owning_id())
@@ -85,9 +76,6 @@ impl StyleSink for WindowState {
     }
     fn invalidate_focus_nav_cache(&mut self) {
         WindowState::invalidate_focus_nav_cache(self)
-    }
-    fn request_paint(&mut self, id: ElementId) {
-        WindowState::request_paint(self, id)
     }
 
     fn mark_needs_cursor_resolution(&mut self) {

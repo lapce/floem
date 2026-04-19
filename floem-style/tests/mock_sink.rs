@@ -64,6 +64,12 @@ impl MockHost {
             cursors: Default::default(),
         }
     }
+
+    // Inherent recorder used by tests. `request_paint` is host-only and
+    // therefore not part of `StyleSink`, so MockHost owns this method.
+    fn request_paint(&mut self, id: ElementId) {
+        self.calls.paints.push(id);
+    }
 }
 
 impl StyleSink for MockHost {
@@ -115,21 +121,10 @@ impl StyleSink for MockHost {
     fn schedule_style_with_target(&mut self, target: ElementId, _reason: StyleReason) {
         self.calls.scheduled.push(target);
     }
-    fn mark_descendants_with_selector_dirty(
-        &mut self,
-        _ancestor: ElementId,
-        _selector: StyleSelector,
-    ) {
-    }
-    fn mark_descendants_with_responsive_selector_dirty(&mut self, _ancestor: ElementId) {}
-    fn update_selector_interest(&mut self, _id: ElementId, _selectors: Option<StyleSelectors>) {}
 
     fn register_fixed_element(&mut self, _id: ElementId) {}
     fn unregister_fixed_element(&mut self, _id: ElementId) {}
     fn invalidate_focus_nav_cache(&mut self) {}
-    fn request_paint(&mut self, id: ElementId) {
-        self.calls.paints.push(id);
-    }
     fn mark_needs_cursor_resolution(&mut self) {
         self.calls.needs_cursor_resolution = true;
     }
@@ -267,17 +262,17 @@ fn inspector_capture_routes_through_default_impl() {
 
 #[test]
 fn trait_object_dispatch_works() {
-    // Exercises `&mut dyn StyleSink` — the shape `StyleCx` stores internally.
-    fn touch_sink(sink: &mut dyn StyleSink, id: ElementId) {
+    // Exercises `&mut dyn StyleSink` — the shape an engine consumer
+    // hands to the cascade.
+    fn touch_sink(sink: &mut dyn StyleSink) {
         sink.mark_needs_layout();
-        sink.request_paint(id);
     }
 
     let mut tree = Tree::new();
     let elem = fresh_element(&mut tree, 3);
     let mut host = MockHost::new();
-    touch_sink(&mut host, elem);
+    touch_sink(&mut host);
+    let _ = elem;
 
     assert!(host.calls.needs_layout);
-    assert_eq!(host.calls.paints, vec![elem]);
 }

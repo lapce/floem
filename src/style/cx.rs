@@ -23,6 +23,7 @@ use crate::{
         resolve_nested_maps,
     },
     view::ViewId,
+    window::state::WindowState,
 };
 use crate::ElementIdExt;
 use floem_style::StyleSink;
@@ -32,7 +33,7 @@ use super::{Style, StyleProp};
 pub use floem_style::{InheritedInteractionCx, InteractionState};
 
 pub struct StyleCx<'a> {
-    pub window_state: &'a mut dyn StyleSink,
+    pub window_state: &'a mut WindowState,
 
     pub(crate) current_view: ViewId,
 
@@ -79,7 +80,7 @@ pub struct StyleCx<'a> {
 
 impl<'a> StyleCx<'a> {
     pub fn new(
-        window_state: &'a mut dyn StyleSink,
+        window_state: &'a mut WindowState,
         view_id: ViewId,
         reason: StyleReason,
     ) -> Self {
@@ -103,8 +104,7 @@ impl<'a> StyleCx<'a> {
         let mut reason_for_children = reason.for_children();
         if let Some(selectors) = reason_for_children.selectors {
             if selectors.has_responsive() {
-                window_state
-                    .mark_descendants_with_responsive_selector_dirty(view_id.get_element_id());
+                window_state.mark_descendants_with_responsive_selector_dirty(view_id);
                 reason_for_children.selectors =
                     Some(selectors.difference(crate::style::StyleSelectors::RESPONSIVE));
             }
@@ -114,7 +114,7 @@ impl<'a> StyleCx<'a> {
                 .is_some_and(|s| s.has(crate::style::StyleSelector::Disabled))
             {
                 window_state.mark_descendants_with_selector_dirty(
-                    view_id.get_element_id(),
+                    view_id,
                     crate::style::StyleSelector::Disabled,
                 );
                 reason_for_children.selectors = reason_for_children
@@ -269,7 +269,7 @@ impl<'a> StyleCx<'a> {
 
             if transitioning {
                 self.window_state
-                    .schedule_style(view_id.get_element_id(), StyleReason::transition());
+                    .schedule_style(view_id, StyleReason::transition());
             }
         }
 

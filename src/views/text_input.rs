@@ -1467,7 +1467,7 @@ impl View for TextInput {
             self.id.request_layout();
         }
         if self.style.read(cx) {
-            cx.window_state.request_paint(self.id.into());
+            cx.window_state.request_paint(self.id);
 
             // necessary to update the text layout attrs
             self.layout_data.borrow_mut().clear_overflow_state();

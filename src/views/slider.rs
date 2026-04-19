@@ -366,7 +366,7 @@ impl View for Slider {
         paint |= self.accent_bar_style.read_style(cx, &accent_bar_style);
         paint |= self.style.read(cx);
         if paint {
-            cx.window_state.request_paint(self.id.into());
+            cx.window_state.request_paint(self.id);
         }
     }
 

@@ -19,6 +19,7 @@
 //! host reads result   → tree.computed_style(node)
 //! ```
 
+use rustc_hash::FxHashSet;
 use smallvec::SmallVec;
 use slotmap::{SlotMap, new_key_type};
 
@@ -29,7 +30,7 @@ use crate::element_id::ElementId;
 use crate::interaction::{InheritedInteractionCx, InteractionState};
 use crate::props::StyleClassRef;
 use crate::recalc::StyleReason;
-use crate::selectors::StyleSelectors;
+use crate::selectors::{StyleSelector, StyleSelectors};
 use crate::sink::StyleSink;
 use crate::style::Style;
 
@@ -135,6 +136,13 @@ impl StyleNode {
 pub struct StyleTree {
     nodes: SlotMap<StyleNodeId, StyleNode>,
     cache: StyleCache,
+    // Per-selector interest registries, populated as the cascade resolves
+    // each node's style. Let descendant-dirty walks skip directly to the
+    // small set of nodes that could possibly match a given selector
+    // instead of traversing the full subtree.
+    responsive_interest: FxHashSet<StyleNodeId>,
+    disabled_interest: FxHashSet<StyleNodeId>,
+    selected_interest: FxHashSet<StyleNodeId>,
 }
 
 impl StyleTree {
@@ -142,6 +150,9 @@ impl StyleTree {
         Self {
             nodes: SlotMap::with_key(),
             cache: StyleCache::new(),
+            responsive_interest: FxHashSet::default(),
+            disabled_interest: FxHashSet::default(),
+            selected_interest: FxHashSet::default(),
         }
     }
 
@@ -157,6 +168,73 @@ impl StyleTree {
         self.cache.stats()
     }
 
+    /// Update `node`'s entry in the per-selector interest registries to
+    /// match the selector set its style resolved to.
+    fn update_selector_interest(
+        &mut self,
+        node: StyleNodeId,
+        selectors: Option<StyleSelectors>,
+    ) {
+        let has_responsive = selectors.is_some_and(StyleSelectors::has_responsive);
+        let has_disabled = selectors.is_some_and(|s| s.has(StyleSelector::Disabled));
+        let has_selected = selectors.is_some_and(|s| s.has(StyleSelector::Selected));
+        set_membership(&mut self.responsive_interest, node, has_responsive);
+        set_membership(&mut self.disabled_interest, node, has_disabled);
+        set_membership(&mut self.selected_interest, node, has_selected);
+    }
+
+    /// Mark every descendant of `ancestor` that has interest in `selector`
+    /// as dirty and return `(element_id, reason)` pairs for each so the
+    /// host can feed them into its own per-frame scheduling. Only
+    /// `Selected` and `Disabled` are tracked; other selectors return empty.
+    pub fn mark_descendants_with_selector_dirty(
+        &mut self,
+        ancestor: StyleNodeId,
+        selector: StyleSelector,
+    ) -> SmallVec<[(ElementId, StyleReason); 4]> {
+        let candidates: SmallVec<[StyleNodeId; 4]> = match selector {
+            StyleSelector::Disabled => self.disabled_interest.iter().copied().collect(),
+            StyleSelector::Selected => self.selected_interest.iter().copied().collect(),
+            _ => return SmallVec::new(),
+        };
+        let reason = StyleReason::with_selector(selector);
+        self.dirty_ancestry_matches(&candidates, ancestor, &reason)
+    }
+
+    /// Responsive counterpart of [`Self::mark_descendants_with_selector_dirty`].
+    pub fn mark_descendants_with_responsive_selector_dirty(
+        &mut self,
+        ancestor: StyleNodeId,
+    ) -> SmallVec<[(ElementId, StyleReason); 4]> {
+        let candidates: SmallVec<[StyleNodeId; 4]> =
+            self.responsive_interest.iter().copied().collect();
+        let reason = StyleReason::with_selectors(StyleSelectors::empty().responsive());
+        self.dirty_ancestry_matches(&candidates, ancestor, &reason)
+    }
+
+    /// For each candidate whose parent chain passes through `ancestor`,
+    /// set its dirty bit and collect `(element_id, reason)`. Shared core
+    /// of both descendant-dirty walks. Skips `ancestor` itself — floem's
+    /// original walk excludes the node that triggered the descent.
+    fn dirty_ancestry_matches(
+        &mut self,
+        candidates: &[StyleNodeId],
+        ancestor: StyleNodeId,
+        reason: &StyleReason,
+    ) -> SmallVec<[(ElementId, StyleReason); 4]> {
+        let mut out: SmallVec<[(ElementId, StyleReason); 4]> = SmallVec::new();
+        for &node in candidates {
+            if node != ancestor
+                && self.is_descendant_of(node, ancestor)
+                && let Some(element_id) = self.nodes.get(node).map(|n| n.element_id)
+            {
+                self.mark_dirty(node, reason.clone());
+                out.push((element_id, reason.clone()));
+            }
+        }
+        out
+    }
+
     /// Allocate a new orphan node tied to `element_id`. The node has no
     /// parent and no children until a setter is called.
     pub fn new_node(&mut self, element_id: ElementId) -> StyleNodeId {
@@ -168,6 +246,9 @@ impl StyleTree {
     /// — hosts are responsible for removing subtrees explicitly).
     pub fn remove_node(&mut self, id: StyleNodeId) -> Option<StyleNode> {
         let node = self.nodes.remove(id)?;
+        self.responsive_interest.remove(&id);
+        self.disabled_interest.remove(&id);
+        self.selected_interest.remove(&id);
         if let Some(parent) = node.parent
             && let Some(parent_node) = self.nodes.get_mut(parent)
         {
@@ -684,27 +765,28 @@ impl StyleTree {
             sink.mark_needs_layout();
         }
         if old_interaction_cx.selected != new_interaction_cx.selected
-            && !old_dirty_selectors
-                .is_some_and(|s| s.has(crate::selectors::StyleSelector::Selected))
+            && !old_dirty_selectors.is_some_and(|s| s.has(StyleSelector::Selected))
         {
-            sink.mark_descendants_with_selector_dirty(
-                element_id,
-                crate::selectors::StyleSelector::Selected,
-            );
+            let dirtied = self
+                .mark_descendants_with_selector_dirty(id, StyleSelector::Selected);
+            for (child_element_id, reason) in dirtied {
+                sink.mark_style_dirty_with(child_element_id, reason);
+            }
         }
         if old_interaction_cx.disabled != new_interaction_cx.disabled
-            && !old_dirty_selectors
-                .is_some_and(|s| s.has(crate::selectors::StyleSelector::Disabled))
+            && !old_dirty_selectors.is_some_and(|s| s.has(StyleSelector::Disabled))
         {
-            sink.mark_descendants_with_selector_dirty(
-                element_id,
-                crate::selectors::StyleSelector::Disabled,
-            );
+            let dirtied = self
+                .mark_descendants_with_selector_dirty(id, StyleSelector::Disabled);
+            for (child_element_id, reason) in dirtied {
+                sink.mark_style_dirty_with(child_element_id, reason);
+            }
         }
 
-        // Keep the host's window-level selector-interest registry in
-        // sync with this node's resolved selector set.
-        sink.update_selector_interest(element_id, Some(selectors));
+        // Update this node's entry in the tree's per-selector interest
+        // registries. Subsequent descendant-dirty walks use these to
+        // visit only the subset of nodes that could match.
+        self.update_selector_interest(id, Some(selectors));
 
         // Let the host snapshot the computed style (inspector, tests, etc.).
         let computed_ref = self.nodes[id].computed_style.clone();
@@ -727,6 +809,14 @@ impl StyleTree {
             }
             None => (None, 0),
         }
+    }
+}
+
+fn set_membership(set: &mut FxHashSet<StyleNodeId>, id: StyleNodeId, present: bool) {
+    if present {
+        set.insert(id);
+    } else {
+        set.remove(&id);
     }
 }
 

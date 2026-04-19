@@ -968,7 +968,7 @@ impl View for EditorView {
             ed.es.update(|s| {
                 if s.read(cx) {
                     ed.floem_style_id.update(|val| *val += 1);
-                    cx.window_state.request_paint(self.id().into());
+                    cx.window_state.request_paint(self.id());
                 }
             })
         });
