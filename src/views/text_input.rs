@@ -1565,7 +1565,7 @@ impl View for TextInput {
                 .id
                 .state()
                 .borrow()
-                .combined_style
+                .style_storage.combined_style
                 .builtin()
                 .cursor_color();
             let cursor_rect = self.get_cursor_rect();

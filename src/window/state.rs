@@ -4,7 +4,7 @@ use crate::{
     action::exec_after_animation_frame,
     inspector::CaptureState,
     platform::menu_types::MenuId,
-    style::{StyleCache, StyleSelectors, recalc::StyleReason},
+    style::{StyleSelectors, recalc::StyleReason},
     view::ViewStorage,
 };
 
@@ -115,9 +115,6 @@ pub struct WindowState {
     pub(crate) root_view_id: ViewId,
     pub(crate) root_layout_node: NodeId,
     pub(crate) root_size: Size,
-    /// Set of ViewIds that have IsFixed style. When root_size changes,
-    /// we request layout on these views directly instead of traversing the tree.
-    pub(crate) fixed_elements: FxHashSet<ViewId>,
     /// The OS-provided DPI scale for this window.
     ///
     /// This comes from the platform/windowing backend and changes when the window
@@ -137,9 +134,6 @@ pub struct WindowState {
     pub(crate) user_scale: f64,
     pub(crate) scheduled_updates: Vec<FrameUpdate>,
     pub(crate) style_dirty: FxHashMap<ViewId, StyleReason>,
-    pub(crate) responsive_selector_views: FxHashMap<ViewId, ()>,
-    pub(crate) disabled_selector_views: FxHashMap<ViewId, ()>,
-    pub(crate) selected_selector_views: FxHashMap<ViewId, ()>,
     pub(crate) request_paint: bool,
     pub(crate) drag_tracker: DragTracker,
     pub(crate) screen_size_bp: ScreenSizeBp,
@@ -168,9 +162,37 @@ pub struct WindowState {
     /// This is set if we're currently capturing the window for the inspector.
     pub(crate) capture: Option<CaptureState>,
 
-    /// Cache for style resolution results.
-    /// Views with identical styles and interaction states can share resolved styles.
-    pub(crate) style_cache: StyleCache,
+    /// Engine-owned style tree. One [`StyleNodeId`](floem_style::StyleNodeId)
+    /// per styled view — kept in sync with the view hierarchy by this crate,
+    /// then walked by [`StyleTree::compute_style`] during the style pass.
+    ///
+    /// Phase 2a (this commit): the tree's node set and parent/child edges
+    /// track view lifecycle; style data and cascade invocation still live
+    /// in `StyleCx`. Later phases push style/class data and flip the
+    /// cascade to run here.
+    pub(crate) style_tree: floem_style::StyleTree,
+
+    /// Reverse of `ViewState.style_node` — given a `StyleNodeId` handed
+    /// back by the engine, recover the owning floem `ViewId` so
+    /// `StyleSink` reads can dispatch to view-keyed interaction state
+    /// and post-cascade drains can route into floem's view bookkeeping.
+    /// Same shape taffy hosts keep to relate their `NodeId` back to the
+    /// view that allocated it.
+    ///
+    /// Also populated for sub-element `StyleNodeId`s (see
+    /// `element_style_nodes`) so they resolve to their owning view.
+    pub(crate) style_node_to_view: FxHashMap<floem_style::StyleNodeId, ViewId>,
+
+    /// Maps each sub-element [`ElementId`] (`is_view() == false`) to a
+    /// dedicated [`StyleNodeId`]. Allocated lazily when a sub-element is
+    /// first marked dirty or queried during style dispatch.
+    ///
+    /// These nodes are *orphan* in the style tree — they carry no
+    /// parent/child edges and are never passed to `compute_style`. Their
+    /// only role is identity: they appear in `StyleReason::targets` so
+    /// sub-element dispatch loops (scroll handles, resizable handles)
+    /// can route a targeted restyle to the right sub-handler.
+    pub(crate) element_style_nodes: FxHashMap<ElementId, floem_style::StyleNodeId>,
 
     /// The default theme style containing class definitions for built-in components.
     /// This is used as the root style context for all views when no parent exists.
@@ -214,14 +236,10 @@ impl WindowState {
             os_scale,
             user_scale: 1.0,
             root_size: Size::ZERO,
-            fixed_elements: FxHashSet::default(),
             screen_size_bp: ScreenSizeBp::Xs,
             scheduled_updates: vec![FrameUpdate::Paint(root_view_id)],
             request_paint: true,
             style_dirty: Default::default(),
-            responsive_selector_views: FxHashMap::default(),
-            disabled_selector_views: FxHashMap::default(),
-            selected_selector_views: FxHashMap::default(),
             drag_tracker: DragTracker::new(),
             focus_state: FocusState::new(),
             last_focused_element: None,
@@ -247,7 +265,9 @@ impl WindowState {
             grid_bps: GridBreakpoints::default(),
             context_menu: HashMap::new(),
             capture: None,
-            style_cache: StyleCache::new(),
+            style_tree: floem_style::StyleTree::new(),
+            style_node_to_view: FxHashMap::default(),
+            element_style_nodes: FxHashMap::default(),
             default_theme: theme,
             default_theme_inherited: inherited,
             needs_layout: true,
@@ -312,7 +332,7 @@ impl WindowState {
         let mut inherited_style = Style::new();
         if theme.any_inherited() {
             let inherited_props = theme.map.iter().filter(|(k, _)| k.inherited());
-            inherited_style.apply_iter(inherited_props, None);
+            inherited_style.apply_iter(inherited_props);
         }
         inherited_style
     }
@@ -323,7 +343,7 @@ impl WindowState {
         let inherited = Self::extract_inherited_props(&new_theme);
         self.default_theme = new_theme;
         self.default_theme_inherited = inherited;
-        self.style_cache.clear();
+        self.style_tree.clear_cache();
     }
 
     /// This removes a view from the app state.
@@ -365,7 +385,6 @@ impl WindowState {
         box_tree.borrow_mut().remove(this_element_id.0);
         self.needs_box_tree_commit = true;
         id.remove();
-        self.fixed_elements.remove(&id);
         let keys = view_state.borrow().registered_listener_keys.clone();
         for key in keys {
             if let Some(ids) = self.listeners.get_mut(&key) {
@@ -373,10 +392,30 @@ impl WindowState {
             }
         }
         self.style_dirty.remove(&id);
-        self.responsive_selector_views.remove(&id);
-        self.disabled_selector_views.remove(&id);
-        self.selected_selector_views.remove(&id);
         self.views_needing_box_tree_update.remove(&id);
+
+        // Release the companion StyleTree node. `remove_view` recurses
+        // into children first, so their nodes are already gone by the
+        // time we reach this point and no orphan descendants are left
+        // behind.
+        if let Some(style_node) = view_state.borrow().style_node {
+            self.style_tree.remove_node(style_node);
+            self.style_node_to_view.remove(&style_node);
+        }
+
+        // Drop any sub-element `StyleNodeId`s this view lazily allocated.
+        let view_raw = id.as_raw();
+        let sub_nodes: SmallVec<[(ElementId, floem_style::StyleNodeId); 2]> = self
+            .element_style_nodes
+            .iter()
+            .filter(|(element_id, _)| element_id.1 == view_raw)
+            .map(|(k, v)| (*k, *v))
+            .collect();
+        for (element_id, style_node) in sub_nodes {
+            self.element_style_nodes.remove(&element_id);
+            self.style_tree.remove_node(style_node);
+            self.style_node_to_view.remove(&style_node);
+        }
 
         // Clean up pointer capture state for removed view
         self.pointer_capture_target
@@ -665,42 +704,55 @@ impl WindowState {
 
     pub fn set_root_size(&mut self, size: Size) {
         if self.root_size != size {
-            // Request layout on all fixed elements since their size depends on root_size
-            for &id in &self.fixed_elements {
-                id.request_layout();
+            // Request layout on all fixed elements since their size
+            // depends on root_size. Translate engine StyleNodeIds back
+            // to floem ViewIds via the reverse map.
+            for &node in self.style_tree.fixed_elements() {
+                if let Some(view) = self.style_node_to_view.get(&node) {
+                    view.request_layout();
+                }
             }
         }
         self.root_size = size;
     }
 
-    /// Register a view as having fixed positioning.
-    /// Called when a view's style sets IsFixed to true.
-    pub fn register_fixed_element(&mut self, id: ViewId) {
-        if self.fixed_elements.insert(id) {
+    /// Apply the post-cascade side effects the style tree recorded during
+    /// its pass — `position: fixed` transitions (relayout + box-tree
+    /// world-position resets) and any other engine-detected relayout
+    /// triggers (visibility flips etc.). Called right after
+    /// `compute_style` returns so the host's layout and box-tree state
+    /// catches up before the next frame starts.
+    fn drain_style_tree_effects(&mut self) {
+        let (_added, removed) = self.style_tree.take_fixed_element_changes();
+        if self.style_tree.take_needs_layout() {
             self.needs_layout = true;
         }
-    }
-
-    /// Unregister a view from fixed positioning.
-    /// Called when a view's style sets IsFixed to false.
-    pub fn unregister_fixed_element(&mut self, id: ViewId) {
-        if self.fixed_elements.remove(&id) {
-            self.box_tree
-                .borrow_mut()
-                .set_world_position(id.get_element_id().0, None);
+        if !removed.is_empty() {
+            let mut box_tree = self.box_tree.borrow_mut();
+            for node in &removed {
+                if let Some(view) = self.style_node_to_view.get(node) {
+                    let element_id = view.get_element_id();
+                    box_tree.set_world_position(element_id.0, None);
+                }
+            }
+            drop(box_tree);
             self.needs_box_tree_commit = true;
-            self.needs_layout = true;
         }
     }
 
     fn apply_fixed_element_styles(&self) {
         let root_size = self.root_size / self.user_scale;
-        let fixed_views: SmallVec<[ViewId; 32]> = self.fixed_elements.iter().copied().collect();
+        let fixed_views: SmallVec<[ViewId; 32]> = self
+            .style_tree
+            .fixed_elements()
+            .iter()
+            .filter_map(|node| self.style_node_to_view.get(node).copied())
+            .collect();
         VIEW_STORAGE.with_borrow(|s| {
             for view_id in fixed_views {
                 if let Some(state) = s.states.get(view_id) {
                     let state_borrow = state.borrow();
-                    if !state_borrow.combined_style.builtin().is_fixed() {
+                    if !state_borrow.style_storage.combined_style.builtin().is_fixed() {
                         continue;
                     }
                     let layout_node = state_borrow.layout_id;
@@ -1065,9 +1117,9 @@ impl WindowState {
                         let overlay_element_id = overlay_state_borrow.element_id;
                         let overlay_layout_id = overlay_state_borrow.layout_id;
                         let overlay_transform = overlay_state_borrow.transform;
-                        let font_size_cx = overlay_state_borrow.layout_props.font_size_cx();
+                        let font_size_cx = overlay_state_borrow.style_storage.layout_props.font_size_cx();
                         let style_transform_props =
-                            overlay_state_borrow.view_transform_props.clone();
+                            overlay_state_borrow.style_storage.view_transform_props.clone();
                         drop(overlay_state_borrow);
 
                         let logical_parent_id = s.parent.get(overlay_id).and_then(|p| *p)?;
@@ -1124,9 +1176,11 @@ impl WindowState {
     fn apply_fixed_positioning_transforms(&self) {
         let root_size = self.root_size / self.user_scale;
         let positions: SmallVec<[(ElementId, Point); 32]> = VIEW_STORAGE.with_borrow(|s| {
-            self.fixed_elements
+            self.style_tree
+                .fixed_elements()
                 .iter()
-                .filter_map(|&view_id| {
+                .filter_map(|node| {
+                    let view_id = self.style_node_to_view.get(node).copied()?;
                     let state = s.states.get(view_id)?;
                     let state_borrow = state.borrow();
                     let element_id = state_borrow.element_id;
@@ -1137,8 +1191,8 @@ impl WindowState {
                         .unwrap_or_default();
 
                     let mut pos = Point::new(0.0, 0.0);
-                    let font_size_cx = state_borrow.layout_props.font_size_cx();
-                    let layout_props = &state_borrow.layout_props;
+                    let font_size_cx = state_borrow.style_storage.layout_props.font_size_cx();
+                    let layout_props = &state_borrow.style_storage.layout_props;
 
                     if let (Some(left), Some(_)) = (
                         layout_props
@@ -1199,6 +1253,298 @@ impl WindowState {
         self.schedule_style_with_target(id.get_element_id(), reason);
     }
 
+    /// Ensure `view_id` has a companion [`floem_style::StyleNodeId`] in
+    /// [`Self::style_tree`] and that its parent edge matches the current
+    /// style-cx parent. Allocates the node on first call.
+    ///
+    /// The tree parent follows floem's `style_cx_parent` override when
+    /// set (e.g. list items re-parent their row under the list) so
+    /// inherited-prop / class-context propagation matches the old
+    /// cascade. Structural `:nth-child` position is computed separately
+    /// via [`Self::structural_position_for`] and pushed to the tree.
+    ///
+    /// Relies on top-down style traversal: when a child calls this, the
+    /// style-parent's style-node has already been allocated in the same
+    /// or an earlier pass, so the parent edge can be wired immediately.
+    pub(crate) fn ensure_style_node(&mut self, view_id: ViewId) -> floem_style::StyleNodeId {
+        let existing = view_id.state().borrow().style_node;
+        let node = match existing {
+            Some(id) if self.style_tree.contains(id) => id,
+            _ => {
+                let id = self.style_tree.new_node();
+                view_id.state().borrow_mut().style_node = Some(id);
+                self.style_node_to_view.insert(id, view_id);
+                id
+            }
+        };
+
+        let style_parent_view = view_id
+            .state()
+            .borrow()
+            .style_cx_parent
+            .or_else(|| view_id.parent());
+        let parent_node = style_parent_view
+            .and_then(|p| p.state().borrow().style_node)
+            .filter(|p| self.style_tree.contains(*p));
+        let current_parent = self.style_tree.get(node).and_then(|n| n.parent());
+        if current_parent != parent_node {
+            self.style_tree.set_parent(node, parent_node);
+        }
+        node
+    }
+
+    /// Resolve `element_id` (primary or sub-element) to a [`floem_style::StyleNodeId`].
+    ///
+    /// - Primary (`is_view() == true`): returns the owning view's companion
+    ///   node via [`Self::ensure_style_node`].
+    /// - Sub-element (`is_view() == false`): lazily allocates a dedicated
+    ///   orphan node in the style tree and caches the mapping in
+    ///   [`Self::element_style_nodes`]. The node is not wired into the
+    ///   cascade tree — it exists only as an identity token used by
+    ///   [`StyleReason::targets`] so sub-handler dispatch can match.
+    pub(crate) fn ensure_style_node_for_element(
+        &mut self,
+        element_id: ElementId,
+    ) -> floem_style::StyleNodeId {
+        if element_id.is_view() {
+            return self.ensure_style_node(element_id.owning_id());
+        }
+        if let Some(&node) = self.element_style_nodes.get(&element_id) {
+            if self.style_tree.contains(node) {
+                return node;
+            }
+            self.element_style_nodes.remove(&element_id);
+            self.style_node_to_view.remove(&node);
+        }
+        let node = self.style_tree.new_node();
+        self.element_style_nodes.insert(element_id, node);
+        self.style_node_to_view.insert(node, element_id.owning_id());
+        node
+    }
+
+    /// Compute the structural position (1-based `:nth-child` index and
+    /// sibling count) for `view_id` relative to its style-cx parent. When
+    /// a view (e.g. a row inside a list item) has a custom `style_cx_parent`,
+    /// we walk up the DOM tree to find the ancestor that's a direct child
+    /// of the style parent and use that ancestor's position. This matches
+    /// the behavior `StyleCx::get_interact_state` had before the tree
+    /// cascade took over.
+    pub(crate) fn structural_position_for(&self, view_id: ViewId) -> (Option<usize>, usize) {
+        let style_parent = view_id
+            .state()
+            .borrow()
+            .style_cx_parent
+            .or_else(|| view_id.parent());
+        let Some(parent) = style_parent else {
+            return (None, 0);
+        };
+        let indexed_child = parent.with_children(|siblings| {
+            if siblings.contains(&view_id) {
+                Some(view_id)
+            } else {
+                let mut cursor = view_id.parent();
+                while let Some(ancestor) = cursor {
+                    if ancestor.parent() == Some(parent) {
+                        return Some(ancestor);
+                    }
+                    cursor = ancestor.parent();
+                }
+                None
+            }
+        });
+        parent.with_children(|siblings| {
+            (
+                indexed_child
+                    .and_then(|id| siblings.iter().position(|child| *child == id))
+                    .map(|i| i + 1),
+                siblings.len(),
+            )
+        })
+    }
+
+    /// Drive one cascade over the subtree rooted at `root_view`, given
+    /// the set of views the traversal wants to re-style.
+    ///
+    /// Three passes:
+    ///   1. Mirror each view's `view_style` (when the reason requests),
+    ///      merged direct style, classes, parent-set interaction, and
+    ///      structural position into the [`floem_style::StyleTree`].
+    ///   2. Call [`floem_style::StyleTree::compute_style`]. `self` briefly
+    ///      hands out its tree by move so it can pass itself as the
+    ///      `&mut dyn StyleSink` sink (trait methods don't touch
+    ///      `style_tree`, so the split is safe).
+    ///   3. Copy cascade outputs back into each view's `style_storage` so
+    ///      downstream per-view work (animations, taffy push, prop
+    ///      extractors) continues reading from `ViewState` unchanged.
+    pub(crate) fn run_style_cascade(
+        &mut self,
+        root_view: ViewId,
+        traversal: &[(ViewId, StyleReason)],
+    ) {
+        // Pass 1: sync host state into the tree.
+        for (view_id, traversal_reason) in traversal {
+            let style_node = self.ensure_style_node(*view_id);
+
+            if traversal_reason
+                .flags
+                .contains(floem_style::recalc::StyleReasonFlags::VIEW_STYLE)
+                && let Some(view_style) = view_id.view().borrow().view_style()
+            {
+                let state = view_id.state();
+                let mut vs = state.borrow_mut();
+                let offset = vs.view_style_offset;
+                vs.style.set(offset, view_style);
+            }
+
+            let view_class = view_id.view().borrow().view_class();
+            let state = view_id.state();
+            let direct = state.borrow_mut().style();
+            let mut all_classes: SmallVec<[floem_style::StyleClassRef; 4]> =
+                state.borrow().classes.clone();
+            if let Some(vc) = view_class {
+                all_classes.push(vc);
+            }
+            let parent_set_interaction = state.borrow().style_storage.parent_set_style_interaction;
+            let structural = self.structural_position_for(*view_id);
+
+            self.style_tree.set_direct_style(style_node, direct);
+            self.style_tree.set_classes(style_node, &all_classes);
+            self.style_tree
+                .set_parent_interaction(style_node, parent_set_interaction);
+            self.style_tree
+                .set_structural_position_override(style_node, Some(structural));
+        }
+
+        // Pass 2: engine cascade.
+        let root_style_node = root_view.state().borrow().style_node;
+        if let Some(root_style_node) = root_style_node {
+            let mut tree = std::mem::take(&mut self.style_tree);
+            // Assemble the cascade inputs from self's fields. Pulling
+            // everything out first lets the interaction closure borrow
+            // only what it needs without tangling with `self` as a
+            // whole. The animation backend stays a small stack value
+            // that borrows the reverse map read-only.
+            let reverse_map = &self.style_node_to_view;
+            let anim_backend = crate::style::sink::FloemAnimationBackend {
+                style_node_to_view: reverse_map,
+            };
+            let interactions =
+                |node: floem_style::StyleNodeId| -> floem_style::PerNodeInteraction {
+                    let Some(view_id) = reverse_map.get(&node).copied() else {
+                        return floem_style::PerNodeInteraction::default();
+                    };
+                    let element_id = view_id.get_element_id();
+                    floem_style::PerNodeInteraction {
+                        is_hovered: self.is_hovered(element_id),
+                        is_focused: self.is_focused(element_id),
+                        is_focus_within: self.is_focus_within(element_id),
+                        is_active: self.is_active(element_id),
+                        is_file_hover: self.is_file_hover(element_id),
+                    }
+                };
+            let inputs = floem_style::CascadeInputs {
+                frame_start: self.frame_start,
+                screen_size_bp: self.screen_size_bp,
+                keyboard_navigation: self.keyboard_navigation,
+                root_size_width: self.root_size.width,
+                is_dark_mode: Self::is_dark_mode(self),
+                default_theme_classes: &self.default_theme,
+                default_theme_inherited: &self.default_theme_inherited,
+                interactions: &interactions,
+                animations: &anim_backend,
+            };
+            tree.compute_style(root_style_node, &inputs);
+            drop(inputs);
+            // Engine-originated next-frame schedule (animations mid-flight,
+            // transitions still interpolating). Route each into floem's
+            // per-frame update queue.
+            let engine_scheduled: Vec<_> = tree.take_scheduled().collect();
+            // Descendants the cascade dirtied during this pass (inherited /
+            // class-context / visibility changes). These need to feed into
+            // floem's `style_dirty` map so the next frame's traversal picks
+            // them up for per-view work (animations, taffy push).
+            let cascade_dirtied: Vec<_> = tree.take_dirtied_this_pass().collect();
+            self.style_tree = tree;
+            // Translate the engine's `StyleNodeId` drains back to
+            // floem's `ElementId` via the reverse map before feeding
+            // its per-view maps. If a node was removed mid-pass its
+            // entry in the reverse map may be gone — skip those.
+            for (node, reason) in engine_scheduled {
+                if let Some(view) = self.style_node_to_view.get(&node) {
+                    let element_id = view.get_element_id();
+                    self.schedule_style_with_target(element_id, reason);
+                }
+            }
+            for (node, reason) in cascade_dirtied {
+                if let Some(view) = self.style_node_to_view.get(&node) {
+                    let element_id = view.get_element_id();
+                    self.mark_style_dirty_with(element_id, reason);
+                }
+            }
+            // Fixed-element transitions detected by the cascade need
+            // box-tree world-position resets, and any engine-requested
+            // relayout (visibility flips, fixed transitions) needs to
+            // flip the host's layout-dirty flag.
+            self.drain_style_tree_effects();
+        }
+
+        // Pass 3: copy outputs back into per-view `style_storage`.
+        for (view_id, _) in traversal {
+            let Some(style_node) = view_id.state().borrow().style_node else {
+                continue;
+            };
+            let Some(combined) = self.style_tree.combined_style(style_node).cloned() else {
+                continue;
+            };
+            let inherited_cx = self
+                .style_tree
+                .inherited_context(style_node)
+                .cloned()
+                .unwrap_or_default();
+            let class_cx = self
+                .style_tree
+                .class_context(style_node)
+                .cloned()
+                .unwrap_or_default();
+            let post_interact = self
+                .style_tree
+                .style_interaction_cx(style_node)
+                .unwrap_or_default();
+            let computed = self
+                .style_tree
+                .computed_style(style_node)
+                .cloned()
+                .unwrap_or_default();
+            let has_selectors = self.style_tree.has_style_selectors(style_node);
+
+            // Snapshot for the inspector if a capture is active. Covers
+            // the previous engine-side `StyleSink::inspector_capture_style`
+            // callback — same data, fired per dirty view instead of per
+            // cascade node. Pass 3 already walks every view the cascade
+            // recomputed, so this loses no coverage and lets the engine
+            // stay host-free.
+            if let Some(capture) = self.capture.as_mut() {
+                capture.record_computed_style(*view_id, computed.clone());
+            }
+
+            let new_cursor = computed.builtin().cursor();
+            let state = view_id.state();
+            let mut vs = state.borrow_mut();
+            let cursor_changed = vs.style_storage.style_cursor != new_cursor;
+            vs.style_storage.combined_style = combined;
+            vs.style_storage.computed_style = computed;
+            vs.style_storage.style_cx = inherited_cx;
+            vs.style_storage.class_cx = class_cx;
+            vs.style_storage.style_interaction_cx = post_interact;
+            vs.style_storage.has_style_selectors = has_selectors;
+            if cursor_changed {
+                vs.style_storage.style_cursor = new_cursor;
+                drop(vs);
+                self.needs_cursor_resolution = true;
+            }
+        }
+    }
+
     /// Requests that the style pass will run for a specific element target on the next frame.
     ///
     /// Use this when a style update should be scoped to a sub-element owned by a view,
@@ -1235,7 +1581,7 @@ impl WindowState {
         let bp = self.grid_bps.get_width_bp(size.width);
         if bp != self.screen_size_bp {
             self.screen_size_bp = bp;
-            self.style_cache.clear();
+            self.style_tree.clear_cache();
             self.root_view_id.request_style(StyleReason::with_selectors(
                 StyleSelectors::empty().responsive(),
             ));
@@ -1247,45 +1593,8 @@ impl WindowState {
         let view_state = view_state.borrow();
 
         view_state
-            .has_style_selectors
+            .style_storage.has_style_selectors
             .is_some_and(|s| s.has(selector_kind))
-    }
-
-    pub(crate) fn update_selector_interest(
-        &mut self,
-        id: ViewId,
-        selectors: Option<StyleSelectors>,
-    ) {
-        let has_responsive = selectors.is_some_and(StyleSelectors::has_responsive);
-        let has_disabled = selectors.is_some_and(|s| s.has(StyleSelector::Disabled));
-        let has_selected = selectors.is_some_and(|s| s.has(StyleSelector::Selected));
-
-        Self::set_selector_interest_entry(&mut self.responsive_selector_views, id, has_responsive);
-        Self::set_selector_interest_entry(&mut self.disabled_selector_views, id, has_disabled);
-        Self::set_selector_interest_entry(&mut self.selected_selector_views, id, has_selected);
-    }
-
-    fn set_selector_interest_entry(
-        index: &mut FxHashMap<ViewId, ()>,
-        id: ViewId,
-        interested: bool,
-    ) {
-        if interested {
-            index.insert(id, ());
-        } else {
-            index.remove(&id);
-        }
-    }
-
-    fn is_descendant_of(descendant: ViewId, ancestor: ViewId) -> bool {
-        let mut current = descendant.parent();
-        while let Some(parent) = current {
-            if parent == ancestor {
-                return true;
-            }
-            current = parent.parent();
-        }
-        false
     }
 
     pub(crate) fn mark_descendants_with_selector_dirty(
@@ -1293,31 +1602,31 @@ impl WindowState {
         ancestor: ViewId,
         selector: StyleSelector,
     ) {
-        let candidates: Vec<ViewId> = match selector {
-            StyleSelector::Disabled => self.disabled_selector_views.keys().copied().collect(),
-            StyleSelector::Selected => self.selected_selector_views.keys().copied().collect(),
-            _ => return,
+        let Some(node) = ancestor.state().borrow().style_node else {
+            return;
         };
-
-        for view_id in candidates {
-            if Self::is_descendant_of(view_id, ancestor) {
-                self.mark_style_dirty_with(
-                    view_id.get_element_id(),
-                    StyleReason::with_selector(selector),
-                );
+        let dirtied = self
+            .style_tree
+            .mark_descendants_with_selector_dirty(node, selector);
+        for (node, reason) in dirtied {
+            if let Some(view) = self.style_node_to_view.get(&node) {
+                let element_id = view.get_element_id();
+                self.mark_style_dirty_with(element_id, reason);
             }
         }
     }
 
     pub(crate) fn mark_descendants_with_responsive_selector_dirty(&mut self, ancestor: ViewId) {
-        let candidates: Vec<ViewId> = self.responsive_selector_views.keys().copied().collect();
-
-        for view_id in candidates {
-            if Self::is_descendant_of(view_id, ancestor) {
-                self.mark_style_dirty_with(
-                    view_id.get_element_id(),
-                    StyleReason::with_selectors(StyleSelectors::empty().responsive()),
-                );
+        let Some(node) = ancestor.state().borrow().style_node else {
+            return;
+        };
+        let dirtied = self
+            .style_tree
+            .mark_descendants_with_responsive_selector_dirty(node);
+        for (node, reason) in dirtied {
+            if let Some(view) = self.style_node_to_view.get(&node) {
+                let element_id = view.get_element_id();
+                self.mark_style_dirty_with(element_id, reason);
             }
         }
     }
@@ -1362,7 +1671,8 @@ impl WindowState {
         if element_id.is_view() {
             (view_id, reason)
         } else {
-            (view_id, StyleReason::with_target(element_id, reason))
+            let style_node = self.ensure_style_node_for_element(element_id);
+            (view_id, StyleReason::with_target(style_node, reason))
         }
     }
 
@@ -1420,14 +1730,14 @@ fn compute_view_box_properties(
     let state = s.states.get(view_id).unwrap();
     let state_borrow = state.borrow();
 
-    let font_size_cx = state_borrow.layout_props.font_size_cx();
+    let font_size_cx = state_borrow.style_storage.layout_props.font_size_cx();
     let style_transform = state_borrow
-        .view_transform_props
+        .style_storage.view_transform_props
         .affine(size, &font_size_cx);
     let view_local_transform = style_transform * state_borrow.transform;
     let scroll_offset = state_borrow.child_translation;
     let clip = state_borrow
-        .view_transform_props
+        .style_storage.view_transform_props
         .clip_rect(local_rect, &font_size_cx);
     let element_id = state_borrow.element_id;
 
