@@ -15,11 +15,10 @@ use floem_style::builtin_props::Background;
 use floem_style::responsive::ScreenSizeBp;
 use floem_style::selectors::StyleSelector;
 use floem_style::{
-    CacheHit, CursorStyle, ElementId, InheritedInteractionCx, InteractionState, Style, StyleCache,
+    CacheHit, CursorStyle, InheritedInteractionCx, InteractionState, Style, StyleCache,
     StyleCacheKey, StyleNodeId, resolve_nested_maps,
 };
 use peniko::color::palette::css;
-use understory_box_tree::{LocalNode, Tree};
 
 // ─────────────────────────────────────────────────────────────────────────
 // Minimal mock host.
@@ -28,9 +27,9 @@ use understory_box_tree::{LocalNode, Tree};
 /// Recorded calls, so tests can assert on behavior rather than side effects.
 #[derive(Default, Debug)]
 struct Calls {
-    paints: Vec<ElementId>,
-    cursor_sets: Vec<(ElementId, CursorStyle)>,
-    cursor_clears: Vec<ElementId>,
+    paints: Vec<StyleNodeId>,
+    cursor_sets: Vec<(StyleNodeId, CursorStyle)>,
+    cursor_clears: Vec<StyleNodeId>,
     needs_layout: bool,
     needs_cursor_resolution: bool,
 }
@@ -40,7 +39,7 @@ struct MockHost {
     default_classes: Style,
     calls: Calls,
     hovered: std::collections::HashSet<StyleNodeId>,
-    cursors: std::collections::HashMap<ElementId, CursorStyle>,
+    cursors: std::collections::HashMap<StyleNodeId, CursorStyle>,
 }
 
 impl MockHost {
@@ -54,7 +53,7 @@ impl MockHost {
         }
     }
 
-    fn request_paint(&mut self, id: ElementId) {
+    fn request_paint(&mut self, id: StyleNodeId) {
         self.calls.paints.push(id);
     }
 
@@ -66,21 +65,15 @@ impl MockHost {
         self.calls.needs_layout = true;
     }
 
-    fn set_cursor(&mut self, id: ElementId, cursor: CursorStyle) -> Option<CursorStyle> {
+    fn set_cursor(&mut self, id: StyleNodeId, cursor: CursorStyle) -> Option<CursorStyle> {
         self.calls.cursor_sets.push((id, cursor));
         self.cursors.insert(id, cursor)
     }
 
-    fn clear_cursor(&mut self, id: ElementId) -> Option<CursorStyle> {
+    fn clear_cursor(&mut self, id: StyleNodeId) -> Option<CursorStyle> {
         self.calls.cursor_clears.push(id);
         self.cursors.remove(&id)
     }
-}
-
-/// Mint an [`ElementId`] by pushing a stub node into a real box tree.
-fn fresh_element(tree: &mut Tree, owning_view_raw: u64) -> ElementId {
-    let node = tree.push_child(None, LocalNode::default());
-    ElementId(node, owning_view_raw, true)
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -89,23 +82,23 @@ fn fresh_element(tree: &mut Tree, owning_view_raw: u64) -> ElementId {
 
 #[test]
 fn mock_host_records_inherent_calls() {
-    let mut tree = Tree::new();
-    let elem = fresh_element(&mut tree, 1);
+    let mut tree = floem_style::StyleTree::new();
+    let node = tree.new_node();
     let mut host = MockHost::new();
 
-    host.request_paint(elem);
+    host.request_paint(node);
     host.mark_needs_layout();
     host.mark_needs_cursor_resolution();
-    host.set_cursor(elem, CursorStyle::Pointer);
+    host.set_cursor(node, CursorStyle::Pointer);
 
-    assert_eq!(host.calls.paints, vec![elem]);
+    assert_eq!(host.calls.paints, vec![node]);
     assert!(host.calls.needs_layout);
     assert!(host.calls.needs_cursor_resolution);
-    assert_eq!(host.calls.cursor_sets, vec![(elem, CursorStyle::Pointer)]);
+    assert_eq!(host.calls.cursor_sets, vec![(node, CursorStyle::Pointer)]);
 
-    let prev = host.clear_cursor(elem);
+    let prev = host.clear_cursor(node);
     assert_eq!(prev, Some(CursorStyle::Pointer));
-    assert_eq!(host.calls.cursor_clears, vec![elem]);
+    assert_eq!(host.calls.cursor_clears, vec![node]);
 }
 
 #[test]

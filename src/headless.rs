@@ -27,7 +27,6 @@ use std::rc::Rc;
 use peniko::kurbo::{Point, Size};
 
 use crate::context::InteractionState;
-use crate::ElementIdExt;
 use crate::event::Event;
 use crate::event::path::hit_test;
 use crate::paint::{

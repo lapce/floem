@@ -23,7 +23,6 @@ use crate::{
     view::{IntoView, View, ViewId},
     views::{ContainerExt, Decorators, Label, ScrollExt, svg},
 };
-use crate::ElementIdExt;
 
 use super::list;
 

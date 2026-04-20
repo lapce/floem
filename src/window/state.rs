@@ -7,7 +7,6 @@ use crate::{
     style::{StyleSelectors, recalc::StyleReason},
     view::ViewStorage,
 };
-use crate::ElementIdExt;
 
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size, Vec2};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -179,7 +178,21 @@ pub struct WindowState {
     /// and post-cascade drains can route into floem's view bookkeeping.
     /// Same shape taffy hosts keep to relate their `NodeId` back to the
     /// view that allocated it.
+    ///
+    /// Also populated for sub-element `StyleNodeId`s (see
+    /// `element_style_nodes`) so they resolve to their owning view.
     pub(crate) style_node_to_view: FxHashMap<floem_style::StyleNodeId, ViewId>,
+
+    /// Maps each sub-element [`ElementId`] (`is_view() == false`) to a
+    /// dedicated [`StyleNodeId`]. Allocated lazily when a sub-element is
+    /// first marked dirty or queried during style dispatch.
+    ///
+    /// These nodes are *orphan* in the style tree — they carry no
+    /// parent/child edges and are never passed to `compute_style`. Their
+    /// only role is identity: they appear in `StyleReason::targets` so
+    /// sub-element dispatch loops (scroll handles, resizable handles)
+    /// can route a targeted restyle to the right sub-handler.
+    pub(crate) element_style_nodes: FxHashMap<ElementId, floem_style::StyleNodeId>,
 
     /// The default theme style containing class definitions for built-in components.
     /// This is used as the root style context for all views when no parent exists.
@@ -254,6 +267,7 @@ impl WindowState {
             capture: None,
             style_tree: floem_style::StyleTree::new(),
             style_node_to_view: FxHashMap::default(),
+            element_style_nodes: FxHashMap::default(),
             default_theme: theme,
             default_theme_inherited: inherited,
             needs_layout: true,
@@ -385,6 +399,20 @@ impl WindowState {
         // time we reach this point and no orphan descendants are left
         // behind.
         if let Some(style_node) = view_state.borrow().style_node {
+            self.style_tree.remove_node(style_node);
+            self.style_node_to_view.remove(&style_node);
+        }
+
+        // Drop any sub-element `StyleNodeId`s this view lazily allocated.
+        let view_raw = id.as_raw();
+        let sub_nodes: SmallVec<[(ElementId, floem_style::StyleNodeId); 2]> = self
+            .element_style_nodes
+            .iter()
+            .filter(|(element_id, _)| element_id.1 == view_raw)
+            .map(|(k, v)| (*k, *v))
+            .collect();
+        for (element_id, style_node) in sub_nodes {
+            self.element_style_nodes.remove(&element_id);
             self.style_tree.remove_node(style_node);
             self.style_node_to_view.remove(&style_node);
         }
@@ -1265,6 +1293,35 @@ impl WindowState {
         node
     }
 
+    /// Resolve `element_id` (primary or sub-element) to a [`floem_style::StyleNodeId`].
+    ///
+    /// - Primary (`is_view() == true`): returns the owning view's companion
+    ///   node via [`Self::ensure_style_node`].
+    /// - Sub-element (`is_view() == false`): lazily allocates a dedicated
+    ///   orphan node in the style tree and caches the mapping in
+    ///   [`Self::element_style_nodes`]. The node is not wired into the
+    ///   cascade tree — it exists only as an identity token used by
+    ///   [`StyleReason::targets`] so sub-handler dispatch can match.
+    pub(crate) fn ensure_style_node_for_element(
+        &mut self,
+        element_id: ElementId,
+    ) -> floem_style::StyleNodeId {
+        if element_id.is_view() {
+            return self.ensure_style_node(element_id.owning_id());
+        }
+        if let Some(&node) = self.element_style_nodes.get(&element_id) {
+            if self.style_tree.contains(node) {
+                return node;
+            }
+            self.element_style_nodes.remove(&element_id);
+            self.style_node_to_view.remove(&node);
+        }
+        let node = self.style_tree.new_node();
+        self.element_style_nodes.insert(element_id, node);
+        self.style_node_to_view.insert(node, element_id.owning_id());
+        node
+    }
+
     /// Compute the structural position (1-based `:nth-child` index and
     /// sibling count) for `view_id` relative to its style-cx parent. When
     /// a view (e.g. a row inside a list item) has a custom `style_cx_parent`,
@@ -1614,7 +1671,8 @@ impl WindowState {
         if element_id.is_view() {
             (view_id, reason)
         } else {
-            (view_id, StyleReason::with_target(element_id, reason))
+            let style_node = self.ensure_style_node_for_element(element_id);
+            (view_id, StyleReason::with_target(style_node, reason))
         }
     }
 

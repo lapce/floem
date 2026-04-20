@@ -18,7 +18,7 @@
 //! registration time whether to delegate to the platform's compositor
 //! animation engine or fall back to this crate's CPU ticker.
 //!
-//! See the floem-style crate-level docs for the broader engine/host split.
+//! See the floem_style crate-level docs for the broader engine/host split.
 
 use std::any::Any;
 use std::rc::Rc;

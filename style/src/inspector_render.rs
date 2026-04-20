@@ -2,7 +2,7 @@
 //!
 //! `PropDebugView` impls need to build view widgets (labels, canvases,
 //! stacks, tooltips, ...) when a prop is rendered in the inspector. Those
-//! widgets live in the `floem` crate, which `floem-style` can't name. To
+//! widgets live in the `floem` crate, which `floem_style` can't name. To
 //! break the cycle, `PropDebugView` impls take a `&dyn InspectorRender` and
 //! ask it for a preview widget, returned as `Box<dyn Any>`. The concrete
 //! implementor in `floem` downcasts back to `Box<dyn View>` at the call
@@ -10,7 +10,7 @@
 //!
 //! Each method here corresponds to ONE kind of inspector preview. Keep the
 //! surface small: only add a method when the current impl is
-//! widget-heavy enough that keeping its body in `floem-style` would pull
+//! widget-heavy enough that keeping its body in `floem_style` would pull
 //! in view types. Simpler impls can and do use `text(..)` / `sequence(..)`.
 
 use std::any::Any;

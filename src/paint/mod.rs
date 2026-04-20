@@ -25,7 +25,6 @@ use crossbeam::channel::Receiver;
 use std::sync::mpsc::Receiver;
 
 use crate::ElementId;
-use crate::ElementIdExt;
 use crate::style::FontSizeCx;
 use crate::view::ViewId;
 use crate::view::stacking::{StackingContextItem, collect_stacking_context_items_into};

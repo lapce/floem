@@ -22,7 +22,6 @@ thread_local! {
     static PENDING_SCOPE_REPARENTS: RefCell<HashSet<ViewId>> = RefCell::new(HashSet::new());
 }
 use crate::context::EventCallbackConfig;
-use crate::ElementIdExt;
 use crate::event::listener::EventListenerKey;
 use crate::event::{RouteKind, listener};
 use crate::style::recalc::StyleReason;

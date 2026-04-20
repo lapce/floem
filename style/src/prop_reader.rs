@@ -17,11 +17,11 @@ use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
-use crate::element_id::ElementId;
 use crate::props::StyleProp;
 use crate::style::Style;
 use crate::style_value::StyleValue;
 use crate::transition::TransitionState;
+use crate::tree::StyleNodeId;
 
 // ============================================================================
 // ExtractorField
@@ -133,10 +133,10 @@ pub trait PropExtractorCx {
     /// The merged direct style the extractor reads from when no
     /// explicit style is passed.
     fn direct_style(&self) -> &Style;
-    /// Element currently being styled; used as the default `target`
+    /// Style node currently being styled; used as the default `target`
     /// of transition re-style requests.
-    fn current_element(&self) -> ElementId;
+    fn current_element(&self) -> StyleNodeId;
     /// Request that `target` be re-styled on the next frame because
     /// at least one transition on this pass is still animating.
-    fn request_transition_for(&mut self, target: ElementId);
+    fn request_transition_for(&mut self, target: StyleNodeId);
 }

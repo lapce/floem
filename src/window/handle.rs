@@ -8,7 +8,6 @@ use crossbeam::channel::bounded as sync_channel;
 use std::sync::mpsc::sync_channel;
 
 use crate::event::{CustomEvent, RouteKind, ScrollTo, UpdatePhaseEvent};
-use crate::ElementIdExt;
 use crate::platform::menu_types::{Menu as MudaMenu, MenuId};
 use crate::style::recalc::StyleReason;
 use crate::style::{StyleSelector, StyleSelectors};

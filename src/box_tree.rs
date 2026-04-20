@@ -1,6 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use rustc_hash::FxHashMap;
+use understory_box_tree::NodeId;
 
 use crate::ViewId;
 
@@ -43,20 +44,18 @@ use crate::ViewId;
 ///
 /// // But hit testing can distinguish which specific rectangle was hit
 /// ```
-pub use floem_style::ElementId;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ElementId(pub NodeId, pub u64, pub bool);
 
-/// Extension methods on [`ElementId`] that return host-specific types.
-///
-/// [`ElementId`] itself lives in `floem_style` and stores the owning view
-/// as raw `u64` bits to stay host-agnostic; this trait re-lifts those bits
-/// into Floem's concrete [`ViewId`].
-pub trait ElementIdExt {
+impl ElementId {
+    /// Returns `true` when this is the primary element for its owning view.
+    #[inline]
+    pub const fn is_view(&self) -> bool {
+        self.2
+    }
+
     /// The owning view for this element id.
-    fn owning_id(&self) -> ViewId;
-}
-
-impl ElementIdExt for ElementId {
-    fn owning_id(&self) -> ViewId {
+    pub fn owning_id(&self) -> ViewId {
         ViewId::from(slotmap::KeyData::from_ffi(self.1))
     }
 }

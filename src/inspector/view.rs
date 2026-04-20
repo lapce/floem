@@ -20,7 +20,6 @@ use crate::{
     },
     window::WindowConfig,
 };
-use crate::ElementIdExt;
 use floem_reactive::{Effect, Memo, RwSignal, SignalGet, SignalUpdate};
 use peniko::{
     Color,

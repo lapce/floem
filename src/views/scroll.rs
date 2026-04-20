@@ -10,7 +10,6 @@ use taffy::Overflow;
 use ui_events::pointer::{PointerButton, PointerEvent, PointerId};
 
 use crate::easing::Linear;
-use crate::ElementIdExt;
 use crate::event::{
     DragEvent, DragSourceEvent, PointerCaptureEvent, PointerScrollEventExt, RouteKind, ScrollTo,
 };
@@ -107,7 +106,10 @@ impl ScrollHandle {
     fn style(&mut self, cx: &mut StyleCx) {
         let resolved =
             cx.resolve_nested_maps(Style::new(), &[Handle::class_ref()], self.element_id);
-        if self.style.read_style_for(cx, &resolved, self.element_id) {
+        let node = cx
+            .window_state
+            .ensure_style_node_for_element(self.element_id);
+        if self.style.read_style_for(cx, &resolved, node) {
             self.element_id.owning_id().request_paint();
         }
     }
@@ -329,7 +331,10 @@ impl ScrollTrack {
 
     fn style(&mut self, cx: &mut StyleCx) {
         let resolved = cx.resolve_nested_maps(Style::new(), &[Track::class_ref()], self.element_id);
-        if self.style.read_style_for(cx, &resolved, self.element_id) {
+        let node = cx
+            .window_state
+            .ensure_style_node_for_element(self.element_id);
+        if self.style.read_style_for(cx, &resolved, node) {
             self.element_id.owning_id().request_paint();
         }
     }
@@ -944,14 +949,26 @@ impl View for Scroll {
             return;
         }
 
-        for (element_id, _reason) in cx.targeted_elements.clone() {
-            if element_id == self.v_handle.element_id {
+        let v_handle_node = cx
+            .window_state
+            .ensure_style_node_for_element(self.v_handle.element_id);
+        let h_handle_node = cx
+            .window_state
+            .ensure_style_node_for_element(self.h_handle.element_id);
+        let v_track_node = cx
+            .window_state
+            .ensure_style_node_for_element(self.v_track.element_id);
+        let h_track_node = cx
+            .window_state
+            .ensure_style_node_for_element(self.h_track.element_id);
+        for (node, _reason) in cx.targeted_elements.clone() {
+            if node == v_handle_node {
                 self.v_handle.style(cx);
-            } else if element_id == self.h_handle.element_id {
+            } else if node == h_handle_node {
                 self.h_handle.style(cx);
-            } else if element_id == self.v_track.element_id {
+            } else if node == v_track_node {
                 self.v_track.style(cx);
-            } else if element_id == self.h_track.element_id {
+            } else if node == h_track_node {
                 self.h_track.style(cx);
             }
         }

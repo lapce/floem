@@ -1,6 +1,6 @@
 //! Inspector-preview extension for `Transition`.
 //!
-//! `Transition` itself lives in `floem-style` so that the style engine can be
+//! `Transition` itself lives in `floem_style` so that the style engine can be
 //! reused by hosts that do not pull in the view layer. Its rich inspector
 //! preview (a canvas + tooltip) constructs `floem` views, so it's split out
 //! into this extension trait that lives in the `floem` crate alongside the

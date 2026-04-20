@@ -220,7 +220,7 @@ pub mod receiver_signal {
     pub use stream_signal::*;
 }
 
-pub use box_tree::{BoxTree, ElementId, ElementIdExt, ElementMeta, FocusNavMeta};
+pub use box_tree::{BoxTree, ElementId, ElementMeta, FocusNavMeta};
 #[doc(inline)]
 pub use floem_style::{no_debug_view, prop, prop_extractor, style_class, style_debug_group};
 pub(crate) use box_tree::{bump_focus_nav_meta_revision, focus_nav_meta_revision};

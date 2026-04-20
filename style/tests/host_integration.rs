@@ -3,9 +3,8 @@
 //!
 //! This test is the "proof of reusability" — if it compiles and
 //! passes using only `floem_style::*` (plus generic support crates
-//! like `peniko`, `taffy`, `understory_box_tree`), the engine is
-//! usable by `floem-native` or any other downstream host that brings
-//! its own view tree.
+//! like `peniko`, `taffy`), the engine is usable by `floem-native` or
+//! any other downstream host that brings its own view tree.
 //!
 //! Walks the full host-integration flow:
 //! 1. Allocate engine nodes in a [`StyleTree`], wire parent/child edges.
@@ -37,13 +36,12 @@ use floem_style::builtin_props::{Background, FontSize};
 use floem_style::responsive::ScreenSizeBp;
 use floem_style::unit::{Angle, Pt};
 use floem_style::{
-    AnimationBackend, CascadeInputs, ElementId, InteractionState, LayoutProps, NoAnimationBackend,
+    AnimationBackend, CascadeInputs, InteractionState, LayoutProps, NoAnimationBackend,
     PerNodeInteraction, PropExtractorCx, Style, StyleNodeId, StyleTree, TransformProps,
     ViewStyleProps, recalc::StyleReason,
 };
 use peniko::color::palette::css;
 use peniko::kurbo;
-use understory_box_tree::{LocalNode, Tree};
 
 // ─────────────────────────────────────────────────────────────────────────
 // MockHost — bookkeeping a non-floem consumer would keep. The engine
@@ -58,13 +56,13 @@ struct MockHost {
     default_classes: Style,
 
     // Recordings tests assert on.
-    transition_requests: Vec<ElementId>,
+    transition_requests: Vec<StyleNodeId>,
 
-    // Per-element sink state the cascade reads.
+    // Per-node state the cascade reads.
     hovered: std::collections::HashSet<StyleNodeId>,
 
     // State PropExtractorCx reads through.
-    current_element: Option<ElementId>,
+    current_node: Option<StyleNodeId>,
     current_direct: Style,
 }
 
@@ -84,10 +82,10 @@ impl PropExtractorCx for MockHost {
     fn direct_style(&self) -> &Style {
         &self.current_direct
     }
-    fn current_element(&self) -> ElementId {
-        self.current_element.expect("current_element not set")
+    fn current_element(&self) -> StyleNodeId {
+        self.current_node.expect("current_node not set")
     }
-    fn request_transition_for(&mut self, target: ElementId) {
+    fn request_transition_for(&mut self, target: StyleNodeId) {
         self.transition_requests.push(target);
     }
 }
@@ -116,11 +114,6 @@ fn with_inputs<R>(
         interactions: &interactions,
         animations: &anim,
     })
-}
-
-fn fresh_element(tree: &mut Tree, owning: u64) -> ElementId {
-    let node = tree.push_child(None, LocalNode::default());
-    ElementId(node, owning, true)
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -210,16 +203,10 @@ fn layout_extractor_fills_taffy_style() {
 /// extracted values feed `affine()` correctly.
 #[test]
 fn transform_extractor_through_prop_extractor_cx() {
-    let mut box_tree = Tree::new();
     let mut tree = StyleTree::new();
     let mut host = MockHost::new();
 
     let n = tree.new_node();
-    // PropExtractorCx still uses `ElementId` for transition-target
-    // identity — it's floem's and other hosts' own notion of
-    // which sub-element a transition targets, separate from engine
-    // node identity. Mint a host-side element_id for the cx state.
-    let element_id = fresh_element(&mut box_tree, 1);
     tree.set_direct_style(
         n,
         Style::new()
@@ -232,7 +219,7 @@ fn transform_extractor_through_prop_extractor_cx() {
     let computed = tree.computed_style(n).unwrap().clone();
 
     // Set up PropExtractorCx state the extractor will read.
-    host.current_element = Some(element_id);
+    host.current_node = Some(n);
     host.current_direct = computed.clone();
 
     let mut transform = TransformProps::default();

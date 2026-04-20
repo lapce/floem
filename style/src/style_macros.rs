@@ -249,7 +249,7 @@ macro_rules! prop_extractor {
                 &mut self,
                 cx: &mut dyn $crate::PropExtractorCx,
                 style: &$crate::Style,
-                target: impl Into<$crate::ElementId>,
+                target: impl Into<$crate::StyleNodeId>,
             ) -> bool {
                 let now = $crate::PropExtractorCx::now(cx);
                 let mut transition = false;
@@ -272,7 +272,7 @@ macro_rules! prop_extractor {
             $vis fn read_for(
                 &mut self,
                 cx: &mut dyn $crate::PropExtractorCx,
-                target: impl Into<$crate::ElementId>,
+                target: impl Into<$crate::StyleNodeId>,
             ) -> bool {
                 let mut transition = false;
                 let changed = self.read_explicit(

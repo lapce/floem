@@ -1904,7 +1904,6 @@ dependencies = [
  "slotmap",
  "smallvec",
  "taffy",
- "understory_box_tree",
  "unic-langid",
  "web-time",
 ]

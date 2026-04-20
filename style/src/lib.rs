@@ -23,21 +23,23 @@
 //! - **Reactive runtime**: hosts bring their own signal/effect primitives.
 //!   The engine itself holds no reactive state.
 //! - **View tree / hit-test structure**: hosts own their node type
-//!   ([`floem::ViewId`], etc.) and map it to [`StyleNodeId`] via the
-//!   [`ElementId`] abstraction.
+//!   ([`floem::ViewId`], etc.) and keep a sidecar map to [`StyleNodeId`]
+//!   (the engine's slotmap-key identity).
 //! - **Rendering / input**: out of scope.
 //!
 //! # Integration
 //!
 //! A host drives the engine by:
-//! 1. Implementing the [`StyleSink`] trait on its window/root state.
+//! 1. Building a [`CascadeInputs`] each frame describing the viewport
+//!    (frame time, screen size, dark-mode flag), per-node interaction state,
+//!    and an [`AnimationBackend`].
 //! 2. Allocating a [`StyleNodeId`] per element via [`StyleTree::new_node`]
 //!    and wiring parent/children edges.
 //! 3. Pushing direct styles and classes via
 //!    [`StyleTree::set_direct_style`] / [`StyleTree::set_classes`].
 //! 4. Calling [`StyleTree::compute_style`] each frame, which runs the
-//!    cascade (including animations, selector matching, inherited/class
-//!    context propagation, and side-effects via the sink).
+//!    cascade (animations, selector matching, inherited/class context
+//!    propagation) using the host-supplied [`CascadeInputs`].
 //! 5. Reading resolved values from the [`StyleNode`] and converting
 //!    layout-relevant ones to a [`taffy::style::Style`] via
 //!    [`Style::to_taffy_style`] before passing to taffy.
@@ -54,7 +56,6 @@ pub mod context_value;
 pub mod debug_view;
 pub mod design_system;
 pub mod easing;
-pub mod element_id;
 pub mod extractors;
 pub mod inspector_render;
 pub mod interaction;
@@ -78,7 +79,7 @@ pub(crate) mod value_impls;
 pub mod values;
 pub mod visibility;
 
-/// Re-export of the [`taffy`] crate. floem-style owns the style →
+/// Re-export of the [`taffy`] crate. floem_style owns the style →
 /// layout-input bridge for taffy (see crate-level docs), so consumers
 /// can reach taffy types directly through `floem_style::taffy::...`
 /// without adding a separate dependency.
@@ -113,7 +114,6 @@ pub use context_value::ContextValue;
 pub use debug_view::PropDebugView;
 pub use design_system::DesignSystem;
 pub use easing::{Bezier, Easing, Linear, Spring, Step, StepPosition};
-pub use element_id::ElementId;
 pub use extractors::{FontProps, LayoutProps, TransformProps, ViewStyleProps};
 pub use inspector_render::InspectorRender;
 pub use interaction::{InheritedInteractionCx, InteractionState};

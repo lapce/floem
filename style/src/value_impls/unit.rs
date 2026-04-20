@@ -1,4 +1,4 @@
-//! `StylePropValue` impls for floem-style's own unit types.
+//! `StylePropValue` impls for floem_style's own unit types.
 
 #![allow(deprecated)]
 

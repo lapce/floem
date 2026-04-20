@@ -25,7 +25,6 @@ use crate::{
     view::ViewId,
     window::state::WindowState,
 };
-use crate::ElementIdExt;
 
 use super::{Style, StyleProp};
 
@@ -68,13 +67,14 @@ pub struct StyleCx<'a> {
     pub(crate) reason: StyleReason,
 
     /// Targeted sub-element invalidations. Populated when one or more specific
-    /// `ElementId`s owned by this view need updating without a full view restyle.
-    /// Empty means the full view is being restyled.
+    /// sub-element `StyleNodeId`s owned by this view need updating without a
+    /// full view restyle. Empty means the full view is being restyled.
     ///
-    /// `style_pass` implementations should walk this list and update only the
-    /// affected elements when non-empty, skipping the full cascade for untouched
-    /// sub-elements.
-    pub(crate) targeted_elements: SmallVec<[(ElementId, StyleReason); 2]>,
+    /// `style_pass` implementations walk this list, compare each entry to
+    /// their sub-elements' cached `StyleNodeId`s (see
+    /// [`WindowState::ensure_style_node_for_element`]), and restyle only
+    /// the affected sub-elements.
+    pub(crate) targeted_elements: SmallVec<[(floem_style::StyleNodeId, StyleReason); 2]>,
 }
 
 impl<'a> StyleCx<'a> {
@@ -474,24 +474,18 @@ impl<'a> StyleCx<'a> {
     }
 
     pub fn request_transition(&mut self) {
-        self.request_transition_for(self.current_view.get_element_id());
+        let node = self
+            .window_state
+            .ensure_style_node(self.current_view);
+        self.request_transition_for(node);
     }
 
     /// Request a transition-driven style update for a specific style target.
-    ///
-    /// This allows transition requests to target sub-elements instead of always
-    /// assuming the owning view element.
-    pub fn request_transition_for(&mut self, target: impl Into<ElementId>) {
+    pub fn request_transition_for(&mut self, target: floem_style::StyleNodeId) {
         if !self.view_interact_state.is_hidden {
-            let target: ElementId = target.into();
-            // Translate the host-side `ElementId` target to the engine's
-            // `StyleNodeId` via the owning view's allocated node. If the
-            // view doesn't have a style node yet, nothing to schedule.
-            if let Some(node) = target.owning_id().state().borrow().style_node {
-                self.window_state
-                    .style_tree
-                    .schedule(node, StyleReason::transition());
-            }
+            self.window_state
+                .style_tree
+                .schedule(target, StyleReason::transition());
         }
     }
 
@@ -571,10 +565,14 @@ impl floem_style::PropExtractorCx for StyleCx<'_> {
     fn direct_style(&self) -> &Style {
         &self.direct
     }
-    fn current_element(&self) -> ElementId {
-        self.current_view.get_element_id()
+    fn current_element(&self) -> floem_style::StyleNodeId {
+        self.current_view
+            .state()
+            .borrow()
+            .style_node
+            .expect("StyleCx used before style node allocation")
     }
-    fn request_transition_for(&mut self, target: ElementId) {
+    fn request_transition_for(&mut self, target: floem_style::StyleNodeId) {
         StyleCx::request_transition_for(self, target)
     }
 }
