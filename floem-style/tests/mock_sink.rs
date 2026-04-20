@@ -22,7 +22,7 @@ use floem_style::responsive::ScreenSizeBp;
 use floem_style::selectors::StyleSelector;
 use floem_style::{
     CacheHit, CursorStyle, ElementId, InheritedInteractionCx, InteractionState, Style, StyleCache,
-    StyleCacheKey, StyleSink, resolve_nested_maps,
+    StyleCacheKey, StyleNodeId, StyleSink, resolve_nested_maps,
 };
 use peniko::color::palette::css;
 use understory_box_tree::{LocalNode, Tree};
@@ -46,7 +46,7 @@ struct MockHost {
     default_inherited: Style,
     default_classes: Style,
     calls: Calls,
-    hovered: std::collections::HashSet<ElementId>,
+    hovered: std::collections::HashSet<StyleNodeId>,
     cursors: std::collections::HashMap<ElementId, CursorStyle>,
 }
 
@@ -93,19 +93,19 @@ impl StyleSink for MockHost {
         &self.default_inherited
     }
 
-    fn is_hovered(&self, id: ElementId) -> bool {
+    fn is_hovered(&self, id: StyleNodeId) -> bool {
         self.hovered.contains(&id)
     }
-    fn is_focused(&self, _id: ElementId) -> bool {
+    fn is_focused(&self, _id: StyleNodeId) -> bool {
         false
     }
-    fn is_focus_within(&self, _id: ElementId) -> bool {
+    fn is_focus_within(&self, _id: StyleNodeId) -> bool {
         false
     }
-    fn is_active(&self, _id: ElementId) -> bool {
+    fn is_active(&self, _id: StyleNodeId) -> bool {
         false
     }
-    fn is_file_hover(&self, _id: ElementId) -> bool {
+    fn is_file_hover(&self, _id: StyleNodeId) -> bool {
         false
     }
 
@@ -168,10 +168,10 @@ fn mock_host_can_implement_sink_and_record_calls() {
 
 #[test]
 fn cascade_runs_with_interaction_state_derived_from_sink() {
-    let mut tree = Tree::new();
-    let elem = fresh_element(&mut tree, 7);
+    let mut style_tree = floem_style::StyleTree::new();
+    let node = style_tree.new_node();
     let mut host = MockHost::new();
-    host.hovered.insert(elem);
+    host.hovered.insert(node);
 
     let style = Style::new()
         .background(css::RED)
@@ -180,7 +180,7 @@ fn cascade_runs_with_interaction_state_derived_from_sink() {
     // Derive InteractionState from sink trait methods, as a host would when
     // building the cascade's input.
     let mut state = InteractionState {
-        is_hovered: host.is_hovered(elem),
+        is_hovered: host.is_hovered(node),
         is_dark_mode: host.is_dark_mode(),
         window_width: host.root_size_width(),
         using_keyboard_navigation: host.keyboard_navigation(),
@@ -234,14 +234,14 @@ fn trait_object_dispatch_works() {
     // Exercises `&mut dyn StyleSink` — the shape an engine consumer
     // hands to the cascade. Reads and the `apply_animations` hook are
     // what the cascade actually dispatches through the trait.
-    fn peek_hover(sink: &dyn StyleSink, id: ElementId) -> bool {
-        sink.is_hovered(id)
+    fn peek_hover(sink: &dyn StyleSink, node: StyleNodeId) -> bool {
+        sink.is_hovered(node)
     }
 
-    let mut tree = Tree::new();
-    let elem = fresh_element(&mut tree, 3);
+    let mut style_tree = floem_style::StyleTree::new();
+    let node = style_tree.new_node();
     let mut host = MockHost::new();
-    host.hovered.insert(elem);
+    host.hovered.insert(node);
 
-    assert!(peek_hover(&host, elem));
+    assert!(peek_hover(&host, node));
 }

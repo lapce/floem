@@ -1,13 +1,15 @@
 //! [`floem_style::StyleSink`] implementation for floem's [`WindowState`].
 //!
-//! The trait definition itself lives in `floem_style`. This module holds
-//! floem's implementation, which derives the per-view `ViewId` from
-//! `ElementId::owning_id()` before delegating to `WindowState`'s inherent
-//! methods.
+//! The trait definition lives in `floem_style`. Every per-node method
+//! receives a `StyleNodeId` — the engine's opaque handle — and this impl
+//! translates back to floem's `ViewId` via `WindowState.style_node_to_view`
+//! before dispatching to `WindowState`'s view-keyed helpers. Same shape
+//! as taffy hosts keep — engine identity ↔ host identity is a host
+//! sidecar map.
 
-use floem_style::StyleSink;
+use floem_style::{StyleNodeId, StyleSink};
 
-use crate::{ElementId, ElementIdExt};
+use crate::ElementIdExt;
 use crate::layout::responsive::ScreenSizeBp;
 use crate::style::Style;
 use crate::window::state::WindowState;
@@ -41,29 +43,42 @@ impl StyleSink for WindowState {
         &self.default_theme_inherited
     }
 
-    fn is_hovered(&self, id: ElementId) -> bool {
-        WindowState::is_hovered(self, id)
+    fn is_hovered(&self, node: StyleNodeId) -> bool {
+        self.style_node_to_view
+            .get(&node)
+            .is_some_and(|v| WindowState::is_hovered(self, v.get_element_id()))
     }
-    fn is_focused(&self, id: ElementId) -> bool {
-        WindowState::is_focused(self, id)
+    fn is_focused(&self, node: StyleNodeId) -> bool {
+        self.style_node_to_view
+            .get(&node)
+            .is_some_and(|v| WindowState::is_focused(self, v.get_element_id()))
     }
-    fn is_focus_within(&self, id: ElementId) -> bool {
-        WindowState::is_focus_within(self, id)
+    fn is_focus_within(&self, node: StyleNodeId) -> bool {
+        self.style_node_to_view
+            .get(&node)
+            .is_some_and(|v| WindowState::is_focus_within(self, v.get_element_id()))
     }
-    fn is_active(&self, id: ElementId) -> bool {
-        WindowState::is_active(self, id)
+    fn is_active(&self, node: StyleNodeId) -> bool {
+        self.style_node_to_view
+            .get(&node)
+            .is_some_and(|v| WindowState::is_active(self, v.get_element_id()))
     }
-    fn is_file_hover(&self, id: ElementId) -> bool {
-        WindowState::is_file_hover(self, id)
+    fn is_file_hover(&self, node: StyleNodeId) -> bool {
+        self.style_node_to_view
+            .get(&node)
+            .is_some_and(|v| WindowState::is_file_hover(self, v.get_element_id()))
     }
 
     fn apply_animations(
         &mut self,
-        id: ElementId,
+        node: StyleNodeId,
         combined: &mut Style,
         interact: &mut floem_style::InteractionState,
     ) -> bool {
-        let view_state = id.owning_id().state();
+        let Some(view_id) = self.style_node_to_view.get(&node).copied() else {
+            return false;
+        };
+        let view_state = view_id.state();
         view_state.borrow_mut().apply_animations(combined, interact)
     }
 }

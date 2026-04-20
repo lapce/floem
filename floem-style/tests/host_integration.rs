@@ -35,8 +35,8 @@ use floem_style::builtin_props::{Background, FontSize};
 use floem_style::responsive::ScreenSizeBp;
 use floem_style::unit::{Angle, Pt};
 use floem_style::{
-    ElementId, LayoutProps, PropExtractorCx, Style, StyleSink, StyleTree, TransformProps,
-    ViewStyleProps, recalc::StyleReason,
+    ElementId, LayoutProps, PropExtractorCx, Style, StyleNodeId, StyleSink, StyleTree,
+    TransformProps, ViewStyleProps, recalc::StyleReason,
 };
 use peniko::color::palette::css;
 use peniko::kurbo;
@@ -59,7 +59,7 @@ struct MockHost {
     transition_requests: Vec<ElementId>,
 
     // Per-element sink state the cascade reads.
-    hovered: std::collections::HashSet<ElementId>,
+    hovered: std::collections::HashSet<StyleNodeId>,
 
     // State PropExtractorCx reads through.
     current_element: Option<ElementId>,
@@ -97,19 +97,19 @@ impl StyleSink for MockHost {
     fn default_theme_inherited(&self) -> &Style {
         &self.default_inherited
     }
-    fn is_hovered(&self, id: ElementId) -> bool {
+    fn is_hovered(&self, id: StyleNodeId) -> bool {
         self.hovered.contains(&id)
     }
-    fn is_focused(&self, _id: ElementId) -> bool {
+    fn is_focused(&self, _id: StyleNodeId) -> bool {
         false
     }
-    fn is_focus_within(&self, _id: ElementId) -> bool {
+    fn is_focus_within(&self, _id: StyleNodeId) -> bool {
         false
     }
-    fn is_active(&self, _id: ElementId) -> bool {
+    fn is_active(&self, _id: StyleNodeId) -> bool {
         false
     }
-    fn is_file_hover(&self, _id: ElementId) -> bool {
+    fn is_file_hover(&self, _id: StyleNodeId) -> bool {
         false
     }
 }
@@ -146,8 +146,8 @@ fn tree_cascade_produces_computed_style_and_inheritance() {
     let mut tree = StyleTree::new();
     let mut host = MockHost::new();
 
-    let root = tree.new_node(fresh_element(&mut box_tree, 1));
-    let child = tree.new_node(fresh_element(&mut box_tree, 2));
+    let root = tree.new_node();
+    let child = tree.new_node();
     tree.set_parent(child, Some(root));
 
     tree.set_direct_style(
@@ -184,7 +184,7 @@ fn layout_extractor_fills_taffy_style() {
     let mut tree = StyleTree::new();
     let mut host = MockHost::new();
 
-    let n = tree.new_node(fresh_element(&mut box_tree, 1));
+    let n = tree.new_node();
     tree.set_direct_style(
         n,
         Style::new()
@@ -227,8 +227,12 @@ fn transform_extractor_through_prop_extractor_cx() {
     let mut tree = StyleTree::new();
     let mut host = MockHost::new();
 
-    let n = tree.new_node(fresh_element(&mut box_tree, 1));
-    let element_id = tree.get(n).unwrap().element_id;
+    let n = tree.new_node();
+    // PropExtractorCx still uses `ElementId` for transition-target
+    // identity — it's floem's and other hosts' own notion of
+    // which sub-element a transition targets, separate from engine
+    // node identity. Mint a host-side element_id for the cx state.
+    let element_id = fresh_element(&mut box_tree, 1);
     tree.set_direct_style(
         n,
         Style::new()
@@ -272,7 +276,7 @@ fn view_style_extractor_reads_visual_props() {
     let mut tree = StyleTree::new();
     let mut host = MockHost::new();
 
-    let n = tree.new_node(fresh_element(&mut box_tree, 1));
+    let n = tree.new_node();
     tree.set_direct_style(n, Style::new().background(css::BLUE).outline(2.0));
     tree.compute_style(n, &mut host);
 
@@ -301,8 +305,8 @@ fn class_context_propagates_through_tree() {
     let mut tree = StyleTree::new();
     let mut host = MockHost::new();
 
-    let root = tree.new_node(fresh_element(&mut box_tree, 1));
-    let child = tree.new_node(fresh_element(&mut box_tree, 2));
+    let root = tree.new_node();
+    let child = tree.new_node();
     tree.set_parent(child, Some(root));
 
     tree.set_direct_style(
@@ -328,8 +332,7 @@ fn hover_selector_switches_between_passes() {
     let mut tree = StyleTree::new();
     let mut host = MockHost::new();
 
-    let n = tree.new_node(fresh_element(&mut box_tree, 1));
-    let element_id = tree.get(n).unwrap().element_id;
+    let n = tree.new_node();
     tree.set_direct_style(
         n,
         Style::new()
@@ -343,7 +346,7 @@ fn hover_selector_switches_between_passes() {
         Some(css::RED.into())
     );
 
-    host.hovered.insert(element_id);
+    host.hovered.insert(n);
     tree.mark_dirty(n, StyleReason::style_pass());
     tree.compute_style(n, &mut host);
     assert_eq!(
@@ -392,24 +395,24 @@ fn sink_apply_animations_hook_is_invoked() {
         fn default_theme_inherited(&self) -> &Style {
             self.inner.default_theme_inherited()
         }
-        fn is_hovered(&self, id: ElementId) -> bool {
+        fn is_hovered(&self, id: StyleNodeId) -> bool {
             self.inner.is_hovered(id)
         }
-        fn is_focused(&self, id: ElementId) -> bool {
+        fn is_focused(&self, id: StyleNodeId) -> bool {
             self.inner.is_focused(id)
         }
-        fn is_focus_within(&self, id: ElementId) -> bool {
+        fn is_focus_within(&self, id: StyleNodeId) -> bool {
             self.inner.is_focus_within(id)
         }
-        fn is_active(&self, id: ElementId) -> bool {
+        fn is_active(&self, id: StyleNodeId) -> bool {
             self.inner.is_active(id)
         }
-        fn is_file_hover(&self, id: ElementId) -> bool {
+        fn is_file_hover(&self, id: StyleNodeId) -> bool {
             self.inner.is_file_hover(id)
         }
         fn apply_animations(
             &mut self,
-            _id: ElementId,
+            _node: StyleNodeId,
             _combined: &mut Style,
             _interact: &mut floem_style::InteractionState,
         ) -> bool {
@@ -422,7 +425,7 @@ fn sink_apply_animations_hook_is_invoked() {
     let mut tree = StyleTree::new();
     let mut host = AnimHost::new();
 
-    let n = tree.new_node(fresh_element(&mut box_tree, 1));
+    let n = tree.new_node();
     tree.set_direct_style(n, Style::new().background(css::RED));
     tree.compute_style(n, &mut host);
 
@@ -442,12 +445,10 @@ fn tree_stored_animations_tick_during_cascade() {
     use floem_style::animation::{Animation, KeyFrame};
     use std::time::Duration;
 
-    let mut box_tree = Tree::new();
     let mut tree = StyleTree::new();
     let mut host = MockHost::new();
 
-    let element_id = fresh_element(&mut box_tree, 7);
-    let n = tree.new_node(element_id);
+    let n = tree.new_node();
     tree.set_direct_style(n, Style::new());
 
     // Push a simple two-keyframe animation onto the tree node. The
@@ -476,8 +477,8 @@ fn tree_stored_animations_tick_during_cascade() {
     // animation is active.
     let scheduled: Vec<_> = tree.take_scheduled().collect();
     assert!(
-        scheduled.iter().any(|(id, _)| *id == element_id),
-        "active tree-animation should have scheduled its element"
+        scheduled.iter().any(|(id, _)| *id == n),
+        "active tree-animation should have scheduled its node"
     );
 
     // After the tick the animation is actually advancing: it's no

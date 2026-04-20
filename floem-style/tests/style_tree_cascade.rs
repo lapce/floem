@@ -15,7 +15,7 @@ use floem_style::builtin_props::{Background, FontSize, TextColor};
 use floem_style::props::StyleClass;
 use floem_style::responsive::ScreenSizeBp;
 use floem_style::{
-    ElementId, Style, StyleSink, StyleTree, recalc::StyleReason,
+    ElementId, Style, StyleNodeId, StyleSink, StyleTree, recalc::StyleReason,
     style_class,
 };
 use peniko::color::palette::css;
@@ -28,7 +28,7 @@ use understory_box_tree::{LocalNode, Tree};
 
 #[derive(Default)]
 struct MockHost {
-    hovered: std::collections::HashSet<ElementId>,
+    hovered: std::collections::HashSet<StyleNodeId>,
     default_inherited: Style,
     default_classes: Style,
 }
@@ -55,19 +55,19 @@ impl StyleSink for MockHost {
     fn default_theme_inherited(&self) -> &Style {
         &self.default_inherited
     }
-    fn is_hovered(&self, id: ElementId) -> bool {
+    fn is_hovered(&self, id: StyleNodeId) -> bool {
         self.hovered.contains(&id)
     }
-    fn is_focused(&self, _id: ElementId) -> bool {
+    fn is_focused(&self, _id: StyleNodeId) -> bool {
         false
     }
-    fn is_focus_within(&self, _id: ElementId) -> bool {
+    fn is_focus_within(&self, _id: StyleNodeId) -> bool {
         false
     }
-    fn is_active(&self, _id: ElementId) -> bool {
+    fn is_active(&self, _id: StyleNodeId) -> bool {
         false
     }
-    fn is_file_hover(&self, _id: ElementId) -> bool {
+    fn is_file_hover(&self, _id: StyleNodeId) -> bool {
         false
     }
 }
@@ -87,7 +87,7 @@ fn single_node_direct_style_flows_to_computed() {
     let mut tree = StyleTree::new();
     let mut host = MockHost::new_default();
 
-    let n = tree.new_node(fresh_element(&mut box_tree, 1));
+    let n = tree.new_node();
     tree.set_direct_style(n, Style::new().background(css::RED));
     tree.compute_style(n, &mut host);
 
@@ -97,12 +97,10 @@ fn single_node_direct_style_flows_to_computed() {
 
 #[test]
 fn hover_selector_respects_sink_state() {
-    let mut box_tree = Tree::new();
     let mut tree = StyleTree::new();
     let mut host = MockHost::new_default();
 
-    let elem = fresh_element(&mut box_tree, 1);
-    let n = tree.new_node(elem);
+    let n = tree.new_node();
     tree.set_direct_style(
         n,
         Style::new()
@@ -118,7 +116,7 @@ fn hover_selector_respects_sink_state() {
     );
 
     // Hovered → hover branch.
-    host.hovered.insert(elem);
+    host.hovered.insert(n);
     tree.mark_dirty(n, StyleReason::style_pass());
     tree.compute_style(n, &mut host);
     assert_eq!(
@@ -133,8 +131,8 @@ fn inherited_font_size_flows_parent_to_child() {
     let mut tree = StyleTree::new();
     let mut host = MockHost::new_default();
 
-    let parent = tree.new_node(fresh_element(&mut box_tree, 1));
-    let child = tree.new_node(fresh_element(&mut box_tree, 2));
+    let parent = tree.new_node();
+    let child = tree.new_node();
     tree.set_parent(child, Some(parent));
 
     // Parent sets font-size; child inherits.
@@ -153,9 +151,9 @@ fn class_context_from_ancestor_resolves_in_descendant() {
     let mut tree = StyleTree::new();
     let mut host = MockHost::new_default();
 
-    let grandparent = tree.new_node(fresh_element(&mut box_tree, 1));
-    let parent = tree.new_node(fresh_element(&mut box_tree, 2));
-    let child = tree.new_node(fresh_element(&mut box_tree, 3));
+    let grandparent = tree.new_node();
+    let parent = tree.new_node();
+    let child = tree.new_node();
     tree.set_parent(parent, Some(grandparent));
     tree.set_parent(child, Some(parent));
 
@@ -182,8 +180,8 @@ fn changing_parent_inherited_marks_child_dirty_on_next_pass() {
     let mut tree = StyleTree::new();
     let mut host = MockHost::new_default();
 
-    let parent = tree.new_node(fresh_element(&mut box_tree, 1));
-    let child = tree.new_node(fresh_element(&mut box_tree, 2));
+    let parent = tree.new_node();
+    let child = tree.new_node();
     tree.set_parent(child, Some(parent));
 
     tree.set_direct_style(parent, Style::new().set(TextColor, Some(css::RED)));
@@ -209,9 +207,9 @@ fn first_child_structural_selector_uses_tree_sibling_order() {
     let mut tree = StyleTree::new();
     let mut host = MockHost::new_default();
 
-    let parent = tree.new_node(fresh_element(&mut box_tree, 1));
-    let a = tree.new_node(fresh_element(&mut box_tree, 2));
-    let b = tree.new_node(fresh_element(&mut box_tree, 3));
+    let parent = tree.new_node();
+    let a = tree.new_node();
+    let b = tree.new_node();
     tree.set_children(parent, &[a, b]);
 
     // Each child has a style that changes background if it's the first child.
@@ -241,7 +239,7 @@ fn clean_tree_stays_clean_after_compute() {
     let mut tree = StyleTree::new();
     let mut host = MockHost::new_default();
 
-    let n = tree.new_node(fresh_element(&mut box_tree, 1));
+    let n = tree.new_node();
     tree.set_direct_style(n, Style::new().background(css::RED));
 
     tree.compute_style(n, &mut host);
@@ -263,9 +261,9 @@ fn cascade_visits_each_dirty_node_and_computes_it() {
     let mut tree = StyleTree::new();
     let mut host = MockHost::new_default();
 
-    let parent = tree.new_node(fresh_element(&mut box_tree, 1));
-    let c1 = tree.new_node(fresh_element(&mut box_tree, 2));
-    let c2 = tree.new_node(fresh_element(&mut box_tree, 3));
+    let parent = tree.new_node();
+    let c1 = tree.new_node();
+    let c2 = tree.new_node();
     tree.set_children(parent, &[c1, c2]);
 
     tree.compute_style(parent, &mut host);

@@ -10,7 +10,7 @@
 //! (e.g. `ViewId`) to [`StyleNodeId`] and push state changes here:
 //!
 //! ```text
-//! host creates view   → tree.new_node(element_id)
+//! host creates view   → tree.new_node()          -> StyleNodeId
 //! host adds child     → tree.set_parent(child, parent)
 //!                     → tree.set_children(parent, &[...])
 //! host sets style     → tree.set_direct_style(node, style)
@@ -18,6 +18,10 @@
 //! host runs pass      → tree.compute_style(root, &mut sink)
 //! host reads result   → tree.computed_style(node)
 //! ```
+//!
+//! The engine carries no host identity — hosts that need to relate a
+//! `StyleNodeId` back to their own view type (floem: `ViewId`) keep a
+//! sidecar mapping, same shape as [`taffy::NodeId`] ↔ host-view.
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
@@ -27,7 +31,6 @@ use crate::animation::{Animation, AnimationEvents};
 use crate::builtin_props::Display;
 use crate::cache::{StyleCache, StyleCacheKey};
 use crate::cascade::resolve_nested_maps;
-use crate::element_id::ElementId;
 use crate::interaction::{InheritedInteractionCx, InteractionState};
 use crate::props::StyleClassRef;
 use crate::recalc::StyleReason;
@@ -48,13 +51,16 @@ new_key_type! {
 /// are [`direct_style`](Self::direct_style), [`classes`](Self::classes), the
 /// parent/children edges, and
 /// [`parent_set_style_interaction`](Self::parent_set_style_interaction).
+///
+/// The node carries no host-side identity. Hosts that need to relate a
+/// [`StyleNodeId`] back to their own view/element type keep a sidecar
+/// mapping (taffy-style): forward as `ViewState.style_node:
+/// Option<StyleNodeId>`, reverse as a `FxHashMap<StyleNodeId, ViewId>`
+/// on the host state. The engine's APIs are keyed entirely on
+/// [`StyleNodeId`] — sink reads, scheduling, fixed-element registry,
+/// animation hooks.
 #[derive(Debug, Clone)]
 pub struct StyleNode {
-    /// Host-side identity for this node, used when the cascade needs to
-    /// query the sink (`is_hovered(element_id)`, etc.) or emit per-element
-    /// callbacks (`request_paint(element_id)`).
-    pub element_id: ElementId,
-
     // ── Tree edges ──────────────────────────────────────────────────────
     pub(crate) parent: Option<StyleNodeId>,
     pub(crate) children: Vec<StyleNodeId>,
@@ -118,9 +124,8 @@ pub struct StyleNode {
 }
 
 impl StyleNode {
-    fn new(element_id: ElementId) -> Self {
+    fn new() -> Self {
         Self {
-            element_id,
             parent: None,
             children: Vec::new(),
             direct_style: Style::new(),
@@ -162,33 +167,33 @@ pub struct StyleTree {
     responsive_interest: FxHashSet<StyleNodeId>,
     disabled_interest: FxHashSet<StyleNodeId>,
     selected_interest: FxHashSet<StyleNodeId>,
-    // Elements the engine needs a future cascade pass for (animations in
+    // Nodes the engine needs a future cascade pass for (animations in
     // flight, transitions still interpolating). Populated by the cascade
     // and by `schedule`; drained by the host via [`take_scheduled`] after
     // each `compute_style` to feed the host's own per-frame work queue.
-    scheduled: FxHashMap<ElementId, StyleReason>,
-    // Authoritative set of elements whose resolved style has
+    scheduled: FxHashMap<StyleNodeId, StyleReason>,
+    // Authoritative set of nodes whose resolved style has
     // `position: fixed`. Maintained inline by the cascade; hosts that
-    // need to walk every fixed element (for layout positioning, paint
+    // need to walk every fixed node (for layout positioning, paint
     // ordering, etc.) read it via [`Self::fixed_elements`].
-    fixed_elements: FxHashSet<ElementId>,
+    fixed_elements: FxHashSet<StyleNodeId>,
     // Transitions from the most recent `compute_style` pass. The host
     // drains these via [`Self::take_fixed_element_changes`] to trigger
     // post-cascade side-effects (relayout, box-tree commit), then gets
     // an empty set next frame until more transitions happen.
-    fixed_elements_added: SmallVec<[ElementId; 2]>,
-    fixed_elements_removed: SmallVec<[ElementId; 2]>,
+    fixed_elements_added: SmallVec<[StyleNodeId; 2]>,
+    fixed_elements_removed: SmallVec<[StyleNodeId; 2]>,
     // Set during `compute_style` when the cascade detects a change
     // that requires the host to re-run layout (e.g. a `display` /
     // visibility flip). Hosts consume via
     // [`Self::take_needs_layout`] after each pass.
     needs_layout: bool,
-    // Elements the cascade marked dirty during this pass for
-    // host-visible side effects — their computed-style changed in a
-    // way the host's per-view bookkeeping (animations, taffy push,
-    // next-frame traversal) needs to know about. Host drains via
+    // Nodes the cascade marked dirty during this pass for host-visible
+    // side effects — their computed-style changed in a way the host's
+    // per-view bookkeeping (animations, taffy push, next-frame
+    // traversal) needs to know about. Host drains via
     // [`Self::take_dirtied_this_pass`] after `compute_style`.
-    dirtied_this_pass: FxHashMap<ElementId, StyleReason>,
+    dirtied_this_pass: FxHashMap<StyleNodeId, StyleReason>,
 }
 
 impl StyleTree {
@@ -208,12 +213,12 @@ impl StyleTree {
         }
     }
 
-    /// Record that `element_id` needs a restyle on the next frame.
-    /// Called by the cascade for animation-driven elements and by
-    /// prop-extractor transition hooks.
-    pub fn schedule(&mut self, element_id: ElementId, reason: StyleReason) {
+    /// Record that `node` needs a restyle on the next frame. Called by
+    /// the cascade for animation-driven nodes and by prop-extractor
+    /// transition hooks.
+    pub fn schedule(&mut self, node: StyleNodeId, reason: StyleReason) {
         self.scheduled
-            .entry(element_id)
+            .entry(node)
             .and_modify(|existing| existing.merge(reason.clone()))
             .or_insert(reason);
     }
@@ -222,34 +227,34 @@ impl StyleTree {
     /// should call this once per cascade pass, immediately after
     /// `compute_style` returns, and funnel each entry into their own
     /// per-frame scheduling.
-    pub fn take_scheduled(&mut self) -> impl Iterator<Item = (ElementId, StyleReason)> {
+    pub fn take_scheduled(&mut self) -> impl Iterator<Item = (StyleNodeId, StyleReason)> {
         std::mem::take(&mut self.scheduled).into_iter()
     }
 
-    /// Record that `element_id` resolved to `position: fixed` on the
-    /// current pass. Idempotent: a node already present in the set is
-    /// a no-op, not a reported transition. Addition flips
-    /// `needs_layout` so the host relayouts on the drain.
-    fn register_fixed_element(&mut self, element_id: ElementId) {
-        if self.fixed_elements.insert(element_id) {
-            self.fixed_elements_added.push(element_id);
+    /// Record that `node` resolved to `position: fixed` on the current
+    /// pass. Idempotent: a node already present in the set is a no-op,
+    /// not a reported transition. Addition flips `needs_layout` so the
+    /// host relayouts on the drain.
+    fn register_fixed_element(&mut self, node: StyleNodeId) {
+        if self.fixed_elements.insert(node) {
+            self.fixed_elements_added.push(node);
             self.needs_layout = true;
         }
     }
 
-    /// Record that `element_id` no longer resolves to `position: fixed`.
+    /// Record that `node` no longer resolves to `position: fixed`.
     /// Idempotent: a node already absent is a no-op. Removal flips
     /// `needs_layout` (the host also needs to reset the box-tree world
     /// position, surfaced through [`Self::take_fixed_element_changes`]).
-    fn unregister_fixed_element(&mut self, element_id: ElementId) {
-        if self.fixed_elements.remove(&element_id) {
-            self.fixed_elements_removed.push(element_id);
+    fn unregister_fixed_element(&mut self, node: StyleNodeId) {
+        if self.fixed_elements.remove(&node) {
+            self.fixed_elements_removed.push(node);
             self.needs_layout = true;
         }
     }
 
-    /// Every element currently resolving to `position: fixed`.
-    pub fn fixed_elements(&self) -> &FxHashSet<ElementId> {
+    /// Every node currently resolving to `position: fixed`.
+    pub fn fixed_elements(&self) -> &FxHashSet<StyleNodeId> {
         &self.fixed_elements
     }
 
@@ -260,7 +265,7 @@ impl StyleTree {
     /// happen.
     pub fn take_fixed_element_changes(
         &mut self,
-    ) -> (SmallVec<[ElementId; 2]>, SmallVec<[ElementId; 2]>) {
+    ) -> (SmallVec<[StyleNodeId; 2]>, SmallVec<[StyleNodeId; 2]>) {
         (
             std::mem::take(&mut self.fixed_elements_added),
             std::mem::take(&mut self.fixed_elements_removed),
@@ -275,23 +280,23 @@ impl StyleTree {
         std::mem::take(&mut self.needs_layout)
     }
 
-    /// Drain every `(ElementId, StyleReason)` the cascade surfaced
+    /// Drain every `(StyleNodeId, StyleReason)` the cascade surfaced
     /// during the most recent `compute_style`. Hosts consume these to
-    /// update their own dirty maps — floem routes each entry through
-    /// `WindowState::mark_style_dirty_with` so the next frame's
-    /// traversal covers descendants whose inherited / class / visibility
-    /// context changed this pass.
+    /// update their own dirty maps — floem translates each to its own
+    /// view id and routes through `WindowState::mark_style_dirty_with`
+    /// so the next frame's traversal covers descendants whose
+    /// inherited / class / visibility context changed this pass.
     pub fn take_dirtied_this_pass(
         &mut self,
-    ) -> impl Iterator<Item = (ElementId, StyleReason)> {
+    ) -> impl Iterator<Item = (StyleNodeId, StyleReason)> {
         std::mem::take(&mut self.dirtied_this_pass).into_iter()
     }
 
-    /// Record that `element_id` was marked dirty during this cascade
-    /// pass. Merges with any existing entry for the same element.
-    fn record_pass_dirty(&mut self, element_id: ElementId, reason: StyleReason) {
+    /// Record that `node` was marked dirty during this cascade pass.
+    /// Merges with any existing entry for the same node.
+    fn record_pass_dirty(&mut self, node: StyleNodeId, reason: StyleReason) {
         self.dirtied_this_pass
-            .entry(element_id)
+            .entry(node)
             .and_modify(|existing| existing.merge(reason.clone()))
             .or_insert(reason);
     }
@@ -389,14 +394,14 @@ impl StyleTree {
     }
 
     /// Mark every descendant of `ancestor` that has interest in `selector`
-    /// as dirty and return `(element_id, reason)` pairs for each so the
+    /// as dirty and return `(StyleNodeId, reason)` pairs for each so the
     /// host can feed them into its own per-frame scheduling. Only
     /// `Selected` and `Disabled` are tracked; other selectors return empty.
     pub fn mark_descendants_with_selector_dirty(
         &mut self,
         ancestor: StyleNodeId,
         selector: StyleSelector,
-    ) -> SmallVec<[(ElementId, StyleReason); 4]> {
+    ) -> SmallVec<[(StyleNodeId, StyleReason); 4]> {
         let candidates: SmallVec<[StyleNodeId; 4]> = match selector {
             StyleSelector::Disabled => self.disabled_interest.iter().copied().collect(),
             StyleSelector::Selected => self.selected_interest.iter().copied().collect(),
@@ -410,7 +415,7 @@ impl StyleTree {
     pub fn mark_descendants_with_responsive_selector_dirty(
         &mut self,
         ancestor: StyleNodeId,
-    ) -> SmallVec<[(ElementId, StyleReason); 4]> {
+    ) -> SmallVec<[(StyleNodeId, StyleReason); 4]> {
         let candidates: SmallVec<[StyleNodeId; 4]> =
             self.responsive_interest.iter().copied().collect();
         let reason = StyleReason::with_selectors(StyleSelectors::empty().responsive());
@@ -418,32 +423,32 @@ impl StyleTree {
     }
 
     /// For each candidate whose parent chain passes through `ancestor`,
-    /// set its dirty bit and collect `(element_id, reason)`. Shared core
-    /// of both descendant-dirty walks. Skips `ancestor` itself — floem's
-    /// original walk excludes the node that triggered the descent.
+    /// set its dirty bit and collect `(StyleNodeId, reason)`. Shared
+    /// core of both descendant-dirty walks. Skips `ancestor` itself —
+    /// floem's original walk excludes the node that triggered the
+    /// descent.
     fn dirty_ancestry_matches(
         &mut self,
         candidates: &[StyleNodeId],
         ancestor: StyleNodeId,
         reason: &StyleReason,
-    ) -> SmallVec<[(ElementId, StyleReason); 4]> {
-        let mut out: SmallVec<[(ElementId, StyleReason); 4]> = SmallVec::new();
+    ) -> SmallVec<[(StyleNodeId, StyleReason); 4]> {
+        let mut out: SmallVec<[(StyleNodeId, StyleReason); 4]> = SmallVec::new();
         for &node in candidates {
-            if node != ancestor
-                && self.is_descendant_of(node, ancestor)
-                && let Some(element_id) = self.nodes.get(node).map(|n| n.element_id)
-            {
+            if node != ancestor && self.is_descendant_of(node, ancestor) {
                 self.mark_dirty(node, reason.clone());
-                out.push((element_id, reason.clone()));
+                out.push((node, reason.clone()));
             }
         }
         out
     }
 
-    /// Allocate a new orphan node tied to `element_id`. The node has no
-    /// parent and no children until a setter is called.
-    pub fn new_node(&mut self, element_id: ElementId) -> StyleNodeId {
-        self.nodes.insert(StyleNode::new(element_id))
+    /// Allocate a new orphan node. The node has no parent and no
+    /// children until a setter is called. Hosts keep their own
+    /// `ViewId → StyleNodeId` map (taffy-style); the engine itself
+    /// carries no host identity.
+    pub fn new_node(&mut self) -> StyleNodeId {
+        self.nodes.insert(StyleNode::new())
     }
 
     /// Remove a node. Detaches from its parent's child list and clears
@@ -454,8 +459,8 @@ impl StyleTree {
         self.responsive_interest.remove(&id);
         self.disabled_interest.remove(&id);
         self.selected_interest.remove(&id);
-        if self.fixed_elements.remove(&node.element_id) {
-            self.fixed_elements_removed.push(node.element_id);
+        if self.fixed_elements.remove(&id) {
+            self.fixed_elements_removed.push(id);
             self.needs_layout = true;
         }
         if let Some(parent) = node.parent
@@ -766,10 +771,9 @@ impl StyleTree {
             .unwrap_or_else(|| self.structural_position(id));
 
         // Snapshot node inputs while borrowed immutably.
-        let (element_id, direct_style, classes, parent_overrides) = {
+        let (direct_style, classes, parent_overrides) = {
             let node = &self.nodes[id];
             (
-                node.element_id,
                 node.direct_style.clone(),
                 node.classes.clone(),
                 node.parent_set_style_interaction,
@@ -781,12 +785,12 @@ impl StyleTree {
             is_selected: parent_overrides.selected | parent_interaction_cx.selected,
             is_disabled: parent_overrides.disabled | parent_interaction_cx.disabled,
             is_hidden: parent_overrides.hidden | parent_interaction_cx.hidden,
-            is_hovered: sink.is_hovered(element_id),
-            is_focused: sink.is_focused(element_id),
-            is_focus_within: sink.is_focus_within(element_id),
-            is_active: sink.is_active(element_id),
+            is_hovered: sink.is_hovered(id),
+            is_focused: sink.is_focused(id),
+            is_focus_within: sink.is_focus_within(id),
+            is_active: sink.is_active(id),
             is_dark_mode: sink.is_dark_mode(),
-            is_file_hover: sink.is_file_hover(element_id),
+            is_file_hover: sink.is_file_hover(id),
             using_keyboard_navigation: sink.keyboard_navigation(),
             child_index,
             sibling_count,
@@ -911,10 +915,10 @@ impl StyleTree {
         };
 
         let sink_has_active =
-            sink.apply_animations(element_id, &mut combined_style, &mut interact_state);
+            sink.apply_animations(id, &mut combined_style, &mut interact_state);
 
         if tree_has_active || sink_has_active {
-            self.schedule(element_id, StyleReason::animation());
+            self.schedule(id, StyleReason::animation());
         }
 
         // Merge inherited + combined → computed style for this node.
@@ -923,9 +927,9 @@ impl StyleTree {
         let computed_style = computed_style.with_inherited_context(&parent_inherited);
 
         if computed_style.builtin().is_fixed() {
-            self.register_fixed_element(element_id);
+            self.register_fixed_element(id);
         } else {
-            self.unregister_fixed_element(element_id);
+            self.unregister_fixed_element(id);
         }
 
         // Derive the inherited + class contexts children will see.
@@ -988,11 +992,7 @@ impl StyleTree {
                 // next frame's traversal for animations / taffy push /
                 // etc.) covers descendants whose inherited or class
                 // context just changed.
-                if let Some(child_element_id) =
-                    self.nodes.get(child).map(|n| n.element_id)
-                {
-                    self.record_pass_dirty(child_element_id, reason.clone());
-                }
+                self.record_pass_dirty(child, reason.clone());
             }
         }
 
@@ -1001,14 +1001,9 @@ impl StyleTree {
         // caller's `dirty` already carried the matching selector — the
         // descendant walk has already been scheduled in that case.
         if old_interaction_cx.hidden != new_interaction_cx.hidden {
-            let children: Vec<ElementId> = self
-                .nodes[id]
-                .children
-                .iter()
-                .filter_map(|c| self.nodes.get(*c).map(|n| n.element_id))
-                .collect();
-            for child_element_id in children {
-                self.record_pass_dirty(child_element_id, StyleReason::visibility());
+            let children: Vec<StyleNodeId> = self.nodes[id].children.clone();
+            for child in children {
+                self.record_pass_dirty(child, StyleReason::visibility());
             }
             self.needs_layout = true;
         }
@@ -1017,8 +1012,8 @@ impl StyleTree {
         {
             let dirtied = self
                 .mark_descendants_with_selector_dirty(id, StyleSelector::Selected);
-            for (child_element_id, reason) in dirtied {
-                self.record_pass_dirty(child_element_id, reason);
+            for (node_id, reason) in dirtied {
+                self.record_pass_dirty(node_id, reason);
             }
         }
         if old_interaction_cx.disabled != new_interaction_cx.disabled
@@ -1026,8 +1021,8 @@ impl StyleTree {
         {
             let dirtied = self
                 .mark_descendants_with_selector_dirty(id, StyleSelector::Disabled);
-            for (child_element_id, reason) in dirtied {
-                self.record_pass_dirty(child_element_id, reason);
+            for (node_id, reason) in dirtied {
+                self.record_pass_dirty(node_id, reason);
             }
         }
 
@@ -1071,19 +1066,12 @@ mod tests {
 
     use super::*;
     use crate::builtin_props::Background;
-    use understory_box_tree::{LocalNode, Tree};
-
-    fn fresh_element(tree: &mut Tree, owning: u64) -> ElementId {
-        let node = tree.push_child(None, LocalNode::default());
-        ElementId(node, owning, true)
-    }
 
     #[test]
     fn new_node_allocates_a_fresh_id() {
-        let mut tree = Tree::new();
         let mut st = StyleTree::new();
-        let a = st.new_node(fresh_element(&mut tree, 1));
-        let b = st.new_node(fresh_element(&mut tree, 2));
+        let a = st.new_node();
+        let b = st.new_node();
         assert_ne!(a, b);
         assert_eq!(st.len(), 2);
         assert!(st.contains(a));
@@ -1092,10 +1080,9 @@ mod tests {
 
     #[test]
     fn set_parent_updates_both_sides() {
-        let mut tree = Tree::new();
         let mut st = StyleTree::new();
-        let parent = st.new_node(fresh_element(&mut tree, 1));
-        let child = st.new_node(fresh_element(&mut tree, 2));
+        let parent = st.new_node();
+        let child = st.new_node();
 
         st.set_parent(child, Some(parent));
         assert_eq!(st.get(child).unwrap().parent(), Some(parent));
@@ -1104,11 +1091,10 @@ mod tests {
 
     #[test]
     fn set_parent_detaches_from_old_parent() {
-        let mut tree = Tree::new();
         let mut st = StyleTree::new();
-        let p1 = st.new_node(fresh_element(&mut tree, 1));
-        let p2 = st.new_node(fresh_element(&mut tree, 2));
-        let child = st.new_node(fresh_element(&mut tree, 3));
+        let p1 = st.new_node();
+        let p2 = st.new_node();
+        let child = st.new_node();
 
         st.set_parent(child, Some(p1));
         st.set_parent(child, Some(p2));
@@ -1118,12 +1104,11 @@ mod tests {
 
     #[test]
     fn set_children_replaces_and_updates_parents() {
-        let mut tree = Tree::new();
         let mut st = StyleTree::new();
-        let parent = st.new_node(fresh_element(&mut tree, 1));
-        let c1 = st.new_node(fresh_element(&mut tree, 2));
-        let c2 = st.new_node(fresh_element(&mut tree, 3));
-        let c3 = st.new_node(fresh_element(&mut tree, 4));
+        let parent = st.new_node();
+        let c1 = st.new_node();
+        let c2 = st.new_node();
+        let c3 = st.new_node();
 
         st.set_children(parent, &[c1, c2]);
         assert_eq!(st.get(parent).unwrap().children(), &[c1, c2]);
@@ -1139,11 +1124,10 @@ mod tests {
 
     #[test]
     fn remove_node_detaches_from_tree() {
-        let mut tree = Tree::new();
         let mut st = StyleTree::new();
-        let parent = st.new_node(fresh_element(&mut tree, 1));
-        let child = st.new_node(fresh_element(&mut tree, 2));
-        let grandchild = st.new_node(fresh_element(&mut tree, 3));
+        let parent = st.new_node();
+        let child = st.new_node();
+        let grandchild = st.new_node();
         st.set_parent(child, Some(parent));
         st.set_parent(grandchild, Some(child));
 
@@ -1158,9 +1142,8 @@ mod tests {
 
     #[test]
     fn set_direct_style_stores_style_and_marks_dirty() {
-        let mut tree = Tree::new();
         let mut st = StyleTree::new();
-        let n = st.new_node(fresh_element(&mut tree, 1));
+        let n = st.new_node();
 
         let style = Style::new().background(peniko::color::palette::css::RED);
         st.set_direct_style(n, style);
@@ -1175,10 +1158,9 @@ mod tests {
     #[test]
     #[should_panic(expected = "would create a cycle")]
     fn set_parent_rejects_cycle() {
-        let mut tree = Tree::new();
         let mut st = StyleTree::new();
-        let a = st.new_node(fresh_element(&mut tree, 1));
-        let b = st.new_node(fresh_element(&mut tree, 2));
+        let a = st.new_node();
+        let b = st.new_node();
         st.set_parent(b, Some(a));
         // This would put `a` under its own descendant.
         st.set_parent(a, Some(b));

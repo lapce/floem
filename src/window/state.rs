@@ -173,6 +173,14 @@ pub struct WindowState {
     /// cascade to run here.
     pub(crate) style_tree: floem_style::StyleTree,
 
+    /// Reverse of `ViewState.style_node` — given a `StyleNodeId` handed
+    /// back by the engine, recover the owning floem `ViewId` so
+    /// `StyleSink` reads can dispatch to view-keyed interaction state
+    /// and post-cascade drains can route into floem's view bookkeeping.
+    /// Same shape taffy hosts keep to relate their `NodeId` back to the
+    /// view that allocated it.
+    pub(crate) style_node_to_view: FxHashMap<floem_style::StyleNodeId, ViewId>,
+
     /// The default theme style containing class definitions for built-in components.
     /// This is used as the root style context for all views when no parent exists.
     /// Contains styling like `.class(ListClass, |s| { s.class(ListItemClass, ...) })`.
@@ -245,6 +253,7 @@ impl WindowState {
             context_menu: HashMap::new(),
             capture: None,
             style_tree: floem_style::StyleTree::new(),
+            style_node_to_view: FxHashMap::default(),
             default_theme: theme,
             default_theme_inherited: inherited,
             needs_layout: true,
@@ -377,6 +386,7 @@ impl WindowState {
         // behind.
         if let Some(style_node) = view_state.borrow().style_node {
             self.style_tree.remove_node(style_node);
+            self.style_node_to_view.remove(&style_node);
         }
 
         // Clean up pointer capture state for removed view
@@ -666,9 +676,13 @@ impl WindowState {
 
     pub fn set_root_size(&mut self, size: Size) {
         if self.root_size != size {
-            // Request layout on all fixed elements since their size depends on root_size
-            for &element_id in self.style_tree.fixed_elements() {
-                element_id.owning_id().request_layout();
+            // Request layout on all fixed elements since their size
+            // depends on root_size. Translate engine StyleNodeIds back
+            // to floem ViewIds via the reverse map.
+            for &node in self.style_tree.fixed_elements() {
+                if let Some(view) = self.style_node_to_view.get(&node) {
+                    view.request_layout();
+                }
             }
         }
         self.root_size = size;
@@ -687,8 +701,11 @@ impl WindowState {
         }
         if !removed.is_empty() {
             let mut box_tree = self.box_tree.borrow_mut();
-            for element_id in &removed {
-                box_tree.set_world_position(element_id.0, None);
+            for node in &removed {
+                if let Some(view) = self.style_node_to_view.get(node) {
+                    let element_id = view.get_element_id();
+                    box_tree.set_world_position(element_id.0, None);
+                }
             }
             drop(box_tree);
             self.needs_box_tree_commit = true;
@@ -701,7 +718,7 @@ impl WindowState {
             .style_tree
             .fixed_elements()
             .iter()
-            .map(|e| e.owning_id())
+            .filter_map(|node| self.style_node_to_view.get(node).copied())
             .collect();
         VIEW_STORAGE.with_borrow(|s| {
             for view_id in fixed_views {
@@ -1134,8 +1151,8 @@ impl WindowState {
             self.style_tree
                 .fixed_elements()
                 .iter()
-                .filter_map(|&element_id| {
-                    let view_id = element_id.owning_id();
+                .filter_map(|node| {
+                    let view_id = self.style_node_to_view.get(node).copied()?;
                     let state = s.states.get(view_id)?;
                     let state_borrow = state.borrow();
                     let element_id = state_borrow.element_id;
@@ -1222,13 +1239,13 @@ impl WindowState {
     /// style-parent's style-node has already been allocated in the same
     /// or an earlier pass, so the parent edge can be wired immediately.
     pub(crate) fn ensure_style_node(&mut self, view_id: ViewId) -> floem_style::StyleNodeId {
-        let element_id = view_id.state().borrow().element_id;
         let existing = view_id.state().borrow().style_node;
         let node = match existing {
             Some(id) if self.style_tree.contains(id) => id,
             _ => {
-                let id = self.style_tree.new_node(element_id);
+                let id = self.style_tree.new_node();
                 view_id.state().borrow_mut().style_node = Some(id);
+                self.style_node_to_view.insert(id, view_id);
                 id
             }
         };
@@ -1356,11 +1373,21 @@ impl WindowState {
             // them up for per-view work (animations, taffy push).
             let cascade_dirtied: Vec<_> = tree.take_dirtied_this_pass().collect();
             self.style_tree = tree;
-            for (element_id, reason) in engine_scheduled {
-                self.schedule_style_with_target(element_id, reason);
+            // Translate the engine's `StyleNodeId` drains back to
+            // floem's `ElementId` via the reverse map before feeding
+            // its per-view maps. If a node was removed mid-pass its
+            // entry in the reverse map may be gone — skip those.
+            for (node, reason) in engine_scheduled {
+                if let Some(view) = self.style_node_to_view.get(&node) {
+                    let element_id = view.get_element_id();
+                    self.schedule_style_with_target(element_id, reason);
+                }
             }
-            for (element_id, reason) in cascade_dirtied {
-                self.mark_style_dirty_with(element_id, reason);
+            for (node, reason) in cascade_dirtied {
+                if let Some(view) = self.style_node_to_view.get(&node) {
+                    let element_id = view.get_element_id();
+                    self.mark_style_dirty_with(element_id, reason);
+                }
             }
             // Fixed-element transitions detected by the cascade need
             // box-tree world-position resets, and any engine-requested
@@ -1489,8 +1516,11 @@ impl WindowState {
         let dirtied = self
             .style_tree
             .mark_descendants_with_selector_dirty(node, selector);
-        for (element_id, reason) in dirtied {
-            self.mark_style_dirty_with(element_id, reason);
+        for (node, reason) in dirtied {
+            if let Some(view) = self.style_node_to_view.get(&node) {
+                let element_id = view.get_element_id();
+                self.mark_style_dirty_with(element_id, reason);
+            }
         }
     }
 
@@ -1501,8 +1531,11 @@ impl WindowState {
         let dirtied = self
             .style_tree
             .mark_descendants_with_responsive_selector_dirty(node);
-        for (element_id, reason) in dirtied {
-            self.mark_style_dirty_with(element_id, reason);
+        for (node, reason) in dirtied {
+            if let Some(view) = self.style_node_to_view.get(&node) {
+                let element_id = view.get_element_id();
+                self.mark_style_dirty_with(element_id, reason);
+            }
         }
     }
 

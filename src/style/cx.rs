@@ -484,14 +484,20 @@ impl<'a> StyleCx<'a> {
     /// assuming the owning view element.
     pub fn request_transition_for(&mut self, target: impl Into<ElementId>) {
         if !self.view_interact_state.is_hidden {
-            self.window_state
-                .style_tree
-                .schedule(target.into(), StyleReason::transition());
+            let target: ElementId = target.into();
+            // Translate the host-side `ElementId` target to the engine's
+            // `StyleNodeId` via the owning view's allocated node. If the
+            // view doesn't have a style node yet, nothing to schedule.
+            if let Some(node) = target.owning_id().state().borrow().style_node {
+                self.window_state
+                    .style_tree
+                    .schedule(node, StyleReason::transition());
+            }
         }
     }
 
     pub fn get_interact_state(
-        window_state: &dyn StyleSink,
+        window_state: &WindowState,
         id: impl Into<crate::ElementId>,
     ) -> InteractionState {
         let id: crate::ElementId = id.into();
@@ -545,16 +551,16 @@ impl<'a> StyleCx<'a> {
             is_selected: parent_override.selected | parent_cx.selected,
             is_disabled: parent_override.disabled | parent_cx.disabled,
             is_hidden: parent_override.hidden | parent_cx.hidden,
-            is_hovered: StyleSink::is_hovered(window_state, id),
-            is_focused: StyleSink::is_focused(window_state, id),
-            is_focus_within: StyleSink::is_focus_within(window_state, id),
-            is_active: StyleSink::is_active(window_state, id),
-            is_dark_mode: StyleSink::is_dark_mode(window_state),
-            is_file_hover: StyleSink::is_file_hover(window_state, id),
-            using_keyboard_navigation: StyleSink::keyboard_navigation(window_state),
+            is_hovered: window_state.is_hovered(id),
+            is_focused: window_state.is_focused(id),
+            is_focus_within: window_state.is_focus_within(id),
+            is_active: window_state.is_active(id),
+            is_dark_mode: WindowState::is_dark_mode(window_state),
+            is_file_hover: window_state.is_file_hover(id),
+            using_keyboard_navigation: window_state.keyboard_navigation,
             child_index,
             sibling_count,
-            window_width: StyleSink::root_size_width(window_state),
+            window_width: window_state.root_size.width,
         }
     }
 }
