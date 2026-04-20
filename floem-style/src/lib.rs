@@ -128,7 +128,7 @@ pub use props::{
     StyleKeyInfo, StyleProp, StylePropInfo, StylePropRef, RESPONSIVE_SELECTORS_INFO,
     STRUCTURAL_SELECTORS_INFO,
 };
-pub use sink::StyleSink;
+pub use sink::{AnimationBackend, CascadeInputs, NoAnimationBackend, PerNodeInteraction};
 pub use style::{BuiltinStyle, ContextRef, DeferredStyleEffect, ExprStyle, Style};
 pub use style_value::{StyleMapValue, StyleValue};
 pub use transition::{ActiveTransition, DirectTransition, Transition, TransitionState};

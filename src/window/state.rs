@@ -1362,7 +1362,42 @@ impl WindowState {
         let root_style_node = root_view.state().borrow().style_node;
         if let Some(root_style_node) = root_style_node {
             let mut tree = std::mem::take(&mut self.style_tree);
-            tree.compute_style(root_style_node, self);
+            // Assemble the cascade inputs from self's fields. Pulling
+            // everything out first lets the interaction closure borrow
+            // only what it needs without tangling with `self` as a
+            // whole. The animation backend stays a small stack value
+            // that borrows the reverse map read-only.
+            let reverse_map = &self.style_node_to_view;
+            let anim_backend = crate::style::sink::FloemAnimationBackend {
+                style_node_to_view: reverse_map,
+            };
+            let interactions =
+                |node: floem_style::StyleNodeId| -> floem_style::PerNodeInteraction {
+                    let Some(view_id) = reverse_map.get(&node).copied() else {
+                        return floem_style::PerNodeInteraction::default();
+                    };
+                    let element_id = view_id.get_element_id();
+                    floem_style::PerNodeInteraction {
+                        is_hovered: self.is_hovered(element_id),
+                        is_focused: self.is_focused(element_id),
+                        is_focus_within: self.is_focus_within(element_id),
+                        is_active: self.is_active(element_id),
+                        is_file_hover: self.is_file_hover(element_id),
+                    }
+                };
+            let inputs = floem_style::CascadeInputs {
+                frame_start: self.frame_start,
+                screen_size_bp: self.screen_size_bp,
+                keyboard_navigation: self.keyboard_navigation,
+                root_size_width: self.root_size.width,
+                is_dark_mode: Self::is_dark_mode(self),
+                default_theme_classes: &self.default_theme,
+                default_theme_inherited: &self.default_theme_inherited,
+                interactions: &interactions,
+                animations: &anim_backend,
+            };
+            tree.compute_style(root_style_node, &inputs);
+            drop(inputs);
             // Engine-originated next-frame schedule (animations mid-flight,
             // transitions still interpolating). Route each into floem's
             // per-frame update queue.

@@ -1,79 +1,38 @@
-//! [`floem_style::StyleSink`] implementation for floem's [`WindowState`].
+//! Floem's `AnimationBackend` for the style engine's cascade.
 //!
-//! The trait definition lives in `floem_style`. Every per-node method
-//! receives a `StyleNodeId` — the engine's opaque handle — and this impl
-//! translates back to floem's `ViewId` via `WindowState.style_node_to_view`
-//! before dispatching to `WindowState`'s view-keyed helpers. Same shape
-//! as taffy hosts keep — engine identity ↔ host identity is a host
-//! sidecar map.
+//! Engine-side, the cascade reads everything it needs from a
+//! [`floem_style::CascadeInputs`] struct and delegates the animation
+//! tick to an [`AnimationBackend`]. Floem keeps its animation state on
+//! per-view `ViewState.animations` stacks, so its backend is a small
+//! adapter that finds the owning `ViewId` for a `StyleNodeId` and
+//! forwards the tick into that view's stack.
+//!
+//! The closure `WindowState::run_style_cascade` uses to populate
+//! `CascadeInputs::interactions` lives inline at the call site —
+//! it's simpler than a trait impl and the short lifetime is exactly
+//! right for the duration of one `compute_style` call.
 
-use floem_style::{StyleNodeId, StyleSink};
+use floem_style::{AnimationBackend, StyleNodeId};
+use rustc_hash::FxHashMap;
 
-use crate::ElementIdExt;
-use crate::layout::responsive::ScreenSizeBp;
-use crate::style::Style;
-use crate::window::state::WindowState;
+use crate::style::{InteractionState, Style};
+use crate::view::ViewId;
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::Instant;
-#[cfg(target_arch = "wasm32")]
-use web_time::Instant;
+/// `AnimationBackend` wired to floem's per-view `ViewState.animations`
+/// stacks. Holds only a borrow of the `StyleNodeId → ViewId` reverse
+/// map so the method can find the right view to tick for each node.
+/// All mutation happens through `ViewState`'s `RefCell`, so the
+/// `&self` signature is honest.
+pub(crate) struct FloemAnimationBackend<'a> {
+    pub(crate) style_node_to_view: &'a FxHashMap<StyleNodeId, ViewId>,
+}
 
-impl StyleSink for WindowState {
-    fn frame_start(&self) -> Instant {
-        self.frame_start
-    }
-    fn screen_size_bp(&self) -> ScreenSizeBp {
-        self.screen_size_bp
-    }
-    fn keyboard_navigation(&self) -> bool {
-        self.keyboard_navigation
-    }
-    fn root_size_width(&self) -> f64 {
-        self.root_size.width
-    }
-    fn is_dark_mode(&self) -> bool {
-        WindowState::is_dark_mode(self)
-    }
-
-    fn default_theme_classes(&self) -> &Style {
-        &self.default_theme
-    }
-    fn default_theme_inherited(&self) -> &Style {
-        &self.default_theme_inherited
-    }
-
-    fn is_hovered(&self, node: StyleNodeId) -> bool {
-        self.style_node_to_view
-            .get(&node)
-            .is_some_and(|v| WindowState::is_hovered(self, v.get_element_id()))
-    }
-    fn is_focused(&self, node: StyleNodeId) -> bool {
-        self.style_node_to_view
-            .get(&node)
-            .is_some_and(|v| WindowState::is_focused(self, v.get_element_id()))
-    }
-    fn is_focus_within(&self, node: StyleNodeId) -> bool {
-        self.style_node_to_view
-            .get(&node)
-            .is_some_and(|v| WindowState::is_focus_within(self, v.get_element_id()))
-    }
-    fn is_active(&self, node: StyleNodeId) -> bool {
-        self.style_node_to_view
-            .get(&node)
-            .is_some_and(|v| WindowState::is_active(self, v.get_element_id()))
-    }
-    fn is_file_hover(&self, node: StyleNodeId) -> bool {
-        self.style_node_to_view
-            .get(&node)
-            .is_some_and(|v| WindowState::is_file_hover(self, v.get_element_id()))
-    }
-
-    fn apply_animations(
-        &mut self,
+impl AnimationBackend for FloemAnimationBackend<'_> {
+    fn apply(
+        &self,
         node: StyleNodeId,
         combined: &mut Style,
-        interact: &mut floem_style::InteractionState,
+        interact: &mut InteractionState,
     ) -> bool {
         let Some(view_id) = self.style_node_to_view.get(&node).copied() else {
             return false;

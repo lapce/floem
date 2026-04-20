@@ -1,9 +1,9 @@
 //! Cascade tests for [`StyleTree`].
 //!
-//! Exercises `StyleTree::compute_style` end-to-end with a mock sink: the
+//! Exercises `StyleTree::compute_style` end-to-end with a mock host: the
 //! cascade resolves classes + selectors + inheritance and walks parent →
-//! child through the tree's own edges. If these pass, a non-floem host can
-//! drive the style engine by pushing state into a `StyleTree` and running
+//! child through the tree's own edges. If these pass, a non-floem host
+//! can drive the style engine by assembling a `CascadeInputs` and running
 //! `compute_style`.
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -15,15 +15,14 @@ use floem_style::builtin_props::{Background, FontSize, TextColor};
 use floem_style::props::StyleClass;
 use floem_style::responsive::ScreenSizeBp;
 use floem_style::{
-    ElementId, Style, StyleNodeId, StyleSink, StyleTree, recalc::StyleReason,
-    style_class,
+    CascadeInputs, NoAnimationBackend, PerNodeInteraction, Style, StyleNodeId, StyleTree,
+    recalc::StyleReason, style_class,
 };
 use peniko::color::palette::css;
-use understory_box_tree::{LocalNode, Tree};
 
 // ─────────────────────────────────────────────────────────────────────────
-// Minimal MockHost. Duplicated from `mock_sink.rs` (integration tests don't
-// share modules); keep it small.
+// Minimal host state. Cascade tests only need the per-node interaction
+// closure and the theme defaults; everything else is constant.
 // ─────────────────────────────────────────────────────────────────────────
 
 #[derive(Default)]
@@ -33,48 +32,39 @@ struct MockHost {
     default_classes: Style,
 }
 
-impl StyleSink for MockHost {
-    fn frame_start(&self) -> Instant {
-        Instant::now()
-    }
-    fn screen_size_bp(&self) -> ScreenSizeBp {
-        ScreenSizeBp::Md
-    }
-    fn keyboard_navigation(&self) -> bool {
-        false
-    }
-    fn root_size_width(&self) -> f64 {
-        1024.0
-    }
-    fn is_dark_mode(&self) -> bool {
-        false
-    }
-    fn default_theme_classes(&self) -> &Style {
-        &self.default_classes
-    }
-    fn default_theme_inherited(&self) -> &Style {
-        &self.default_inherited
-    }
-    fn is_hovered(&self, id: StyleNodeId) -> bool {
-        self.hovered.contains(&id)
-    }
-    fn is_focused(&self, _id: StyleNodeId) -> bool {
-        false
-    }
-    fn is_focus_within(&self, _id: StyleNodeId) -> bool {
-        false
-    }
-    fn is_active(&self, _id: StyleNodeId) -> bool {
-        false
-    }
-    fn is_file_hover(&self, _id: StyleNodeId) -> bool {
-        false
+impl MockHost {
+    fn new_default() -> Self {
+        Self::default()
     }
 }
 
-fn fresh_element(tree: &mut Tree, owning: u64) -> ElementId {
-    let node = tree.push_child(None, LocalNode::default());
-    ElementId(node, owning, true)
+/// Build a fresh `CascadeInputs` for this pass. Using a function keeps
+/// the closures' lifetimes scoped to one call.
+fn cascade<'a>(host: &'a MockHost) -> (Box<dyn Fn(StyleNodeId) -> PerNodeInteraction + 'a>, NoAnimationBackend) {
+    let interactions: Box<dyn Fn(StyleNodeId) -> PerNodeInteraction + 'a> =
+        Box::new(|node: StyleNodeId| PerNodeInteraction {
+            is_hovered: host.hovered.contains(&node),
+            ..Default::default()
+        });
+    (interactions, NoAnimationBackend)
+}
+
+fn inputs<'a>(
+    host: &'a MockHost,
+    interactions: &'a dyn Fn(StyleNodeId) -> PerNodeInteraction,
+    animations: &'a NoAnimationBackend,
+) -> CascadeInputs<'a> {
+    CascadeInputs {
+        frame_start: Instant::now(),
+        screen_size_bp: ScreenSizeBp::Md,
+        keyboard_navigation: false,
+        root_size_width: 1024.0,
+        is_dark_mode: false,
+        default_theme_classes: &host.default_classes,
+        default_theme_inherited: &host.default_inherited,
+        interactions,
+        animations,
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -83,20 +73,21 @@ fn fresh_element(tree: &mut Tree, owning: u64) -> ElementId {
 
 #[test]
 fn single_node_direct_style_flows_to_computed() {
-    let mut box_tree = Tree::new();
     let mut tree = StyleTree::new();
-    let mut host = MockHost::new_default();
+    let host = MockHost::new_default();
+    let (interactions, anim) = cascade(&host);
+    let cx = inputs(&host, &*interactions, &anim);
 
     let n = tree.new_node();
     tree.set_direct_style(n, Style::new().background(css::RED));
-    tree.compute_style(n, &mut host);
+    tree.compute_style(n, &cx);
 
     let computed = tree.computed_style(n).unwrap();
     assert_eq!(computed.get(Background), Some(css::RED.into()));
 }
 
 #[test]
-fn hover_selector_respects_sink_state() {
+fn hover_selector_respects_host_state() {
     let mut tree = StyleTree::new();
     let mut host = MockHost::new_default();
 
@@ -109,7 +100,11 @@ fn hover_selector_respects_sink_state() {
     );
 
     // Not hovered → base.
-    tree.compute_style(n, &mut host);
+    {
+        let (interactions, anim) = cascade(&host);
+        let cx = inputs(&host, &*interactions, &anim);
+        tree.compute_style(n, &cx);
+    }
     assert_eq!(
         tree.computed_style(n).unwrap().get(Background),
         Some(css::RED.into())
@@ -118,7 +113,11 @@ fn hover_selector_respects_sink_state() {
     // Hovered → hover branch.
     host.hovered.insert(n);
     tree.mark_dirty(n, StyleReason::style_pass());
-    tree.compute_style(n, &mut host);
+    {
+        let (interactions, anim) = cascade(&host);
+        let cx = inputs(&host, &*interactions, &anim);
+        tree.compute_style(n, &cx);
+    }
     assert_eq!(
         tree.computed_style(n).unwrap().get(Background),
         Some(css::BLUE.into())
@@ -127,9 +126,10 @@ fn hover_selector_respects_sink_state() {
 
 #[test]
 fn inherited_font_size_flows_parent_to_child() {
-    let mut box_tree = Tree::new();
     let mut tree = StyleTree::new();
-    let mut host = MockHost::new_default();
+    let host = MockHost::new_default();
+    let (interactions, anim) = cascade(&host);
+    let cx = inputs(&host, &*interactions, &anim);
 
     let parent = tree.new_node();
     let child = tree.new_node();
@@ -137,7 +137,7 @@ fn inherited_font_size_flows_parent_to_child() {
 
     // Parent sets font-size; child inherits.
     tree.set_direct_style(parent, Style::new().set(FontSize, 22.0));
-    tree.compute_style(parent, &mut host);
+    tree.compute_style(parent, &cx);
 
     assert_eq!(tree.computed_style(parent).unwrap().get(FontSize), 22.0);
     assert_eq!(tree.computed_style(child).unwrap().get(FontSize), 22.0);
@@ -147,9 +147,10 @@ fn inherited_font_size_flows_parent_to_child() {
 fn class_context_from_ancestor_resolves_in_descendant() {
     style_class!(pub Button);
 
-    let mut box_tree = Tree::new();
     let mut tree = StyleTree::new();
-    let mut host = MockHost::new_default();
+    let host = MockHost::new_default();
+    let (interactions, anim) = cascade(&host);
+    let cx = inputs(&host, &*interactions, &anim);
 
     let grandparent = tree.new_node();
     let parent = tree.new_node();
@@ -165,7 +166,7 @@ fn class_context_from_ancestor_resolves_in_descendant() {
     // Child applies the class.
     tree.set_classes(child, &[Button::class_ref()]);
 
-    tree.compute_style(grandparent, &mut host);
+    tree.compute_style(grandparent, &cx);
 
     assert_eq!(
         tree.computed_style(child).unwrap().get(Background),
@@ -176,16 +177,19 @@ fn class_context_from_ancestor_resolves_in_descendant() {
 
 #[test]
 fn changing_parent_inherited_marks_child_dirty_on_next_pass() {
-    let mut box_tree = Tree::new();
     let mut tree = StyleTree::new();
-    let mut host = MockHost::new_default();
+    let host = MockHost::new_default();
 
     let parent = tree.new_node();
     let child = tree.new_node();
     tree.set_parent(child, Some(parent));
 
     tree.set_direct_style(parent, Style::new().set(TextColor, Some(css::RED)));
-    tree.compute_style(parent, &mut host);
+    {
+        let (interactions, anim) = cascade(&host);
+        let cx = inputs(&host, &*interactions, &anim);
+        tree.compute_style(parent, &cx);
+    }
     assert_eq!(
         tree.computed_style(child).unwrap().get(TextColor),
         Some(css::RED)
@@ -193,7 +197,11 @@ fn changing_parent_inherited_marks_child_dirty_on_next_pass() {
 
     // Change parent's inherited prop. Child shouldn't still show red.
     tree.set_direct_style(parent, Style::new().set(TextColor, Some(css::BLUE)));
-    tree.compute_style(parent, &mut host);
+    {
+        let (interactions, anim) = cascade(&host);
+        let cx = inputs(&host, &*interactions, &anim);
+        tree.compute_style(parent, &cx);
+    }
     assert_eq!(
         tree.computed_style(child).unwrap().get(TextColor),
         Some(css::BLUE),
@@ -203,9 +211,10 @@ fn changing_parent_inherited_marks_child_dirty_on_next_pass() {
 
 #[test]
 fn first_child_structural_selector_uses_tree_sibling_order() {
-    let mut box_tree = Tree::new();
     let mut tree = StyleTree::new();
-    let mut host = MockHost::new_default();
+    let host = MockHost::new_default();
+    let (interactions, anim) = cascade(&host);
+    let cx = inputs(&host, &*interactions, &anim);
 
     let parent = tree.new_node();
     let a = tree.new_node();
@@ -219,7 +228,7 @@ fn first_child_structural_selector_uses_tree_sibling_order() {
     tree.set_direct_style(a, styled.clone());
     tree.set_direct_style(b, styled);
 
-    tree.compute_style(parent, &mut host);
+    tree.compute_style(parent, &cx);
 
     assert_eq!(
         tree.computed_style(a).unwrap().get(Background),
@@ -235,19 +244,26 @@ fn first_child_structural_selector_uses_tree_sibling_order() {
 
 #[test]
 fn clean_tree_stays_clean_after_compute() {
-    let mut box_tree = Tree::new();
     let mut tree = StyleTree::new();
-    let mut host = MockHost::new_default();
+    let host = MockHost::new_default();
 
     let n = tree.new_node();
     tree.set_direct_style(n, Style::new().background(css::RED));
 
-    tree.compute_style(n, &mut host);
+    {
+        let (interactions, anim) = cascade(&host);
+        let cx = inputs(&host, &*interactions, &anim);
+        tree.compute_style(n, &cx);
+    }
     assert!(!tree.is_dirty(n));
 
     // Second pass with nothing dirty: node stays clean and
     // `take_scheduled` reports nothing new.
-    tree.compute_style(n, &mut host);
+    {
+        let (interactions, anim) = cascade(&host);
+        let cx = inputs(&host, &*interactions, &anim);
+        tree.compute_style(n, &cx);
+    }
     assert!(!tree.is_dirty(n), "clean node should not re-enter dirty");
     assert!(
         tree.take_scheduled().next().is_none(),
@@ -257,16 +273,17 @@ fn clean_tree_stays_clean_after_compute() {
 
 #[test]
 fn cascade_visits_each_dirty_node_and_computes_it() {
-    let mut box_tree = Tree::new();
     let mut tree = StyleTree::new();
-    let mut host = MockHost::new_default();
+    let host = MockHost::new_default();
+    let (interactions, anim) = cascade(&host);
+    let cx = inputs(&host, &*interactions, &anim);
 
     let parent = tree.new_node();
     let c1 = tree.new_node();
     let c2 = tree.new_node();
     tree.set_children(parent, &[c1, c2]);
 
-    tree.compute_style(parent, &mut host);
+    tree.compute_style(parent, &cx);
 
     // All three nodes should be clean and have computed styles populated.
     assert!(!tree.is_dirty(parent));
@@ -275,11 +292,4 @@ fn cascade_visits_each_dirty_node_and_computes_it() {
     assert!(tree.computed_style(parent).is_some());
     assert!(tree.computed_style(c1).is_some());
     assert!(tree.computed_style(c2).is_some());
-}
-
-// Test helper.
-impl MockHost {
-    fn new_default() -> Self {
-        Self::default()
-    }
 }

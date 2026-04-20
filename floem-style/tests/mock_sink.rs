@@ -1,16 +1,10 @@
 //! End-to-end demonstration that a non-floem host can drive the style engine.
 //!
-//! This test implements the [`StyleSink`] trait on a plain bookkeeping struct
-//! (no view tree, no window handle, no reactive runtime) and exercises the
-//! sink + cascade + cache together. If this compiles and passes, a second
-//! host like `floem-native` can reuse `floem_style` through the same public
+//! A bookkeeping struct (no view tree, no window handle, no reactive
+//! runtime) assembles a [`CascadeInputs`] and exercises the cache plus
+//! `resolve_nested_maps`. If this compiles and passes, a second host
+//! like `floem-native` can reuse `floem_style` through the same public
 //! surface floem itself uses.
-//!
-//! Coverage intentionally stops short of `StyleCx` — that type still reads
-//! host-specific `ViewId` state (see `floem::style::cx`) and is outside this
-//! crate. The pieces exercised here are the ones a new host would drive
-//! directly: [`Style`], [`resolve_nested_maps`], [`StyleCache`], and the
-//! [`StyleSink`] trait.
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -22,7 +16,7 @@ use floem_style::responsive::ScreenSizeBp;
 use floem_style::selectors::StyleSelector;
 use floem_style::{
     CacheHit, CursorStyle, ElementId, InheritedInteractionCx, InteractionState, Style, StyleCache,
-    StyleCacheKey, StyleNodeId, StyleSink, resolve_nested_maps,
+    StyleCacheKey, StyleNodeId, resolve_nested_maps,
 };
 use peniko::color::palette::css;
 use understory_box_tree::{LocalNode, Tree};
@@ -42,7 +36,6 @@ struct Calls {
 }
 
 struct MockHost {
-    frame_start: Instant,
     default_inherited: Style,
     default_classes: Style,
     calls: Calls,
@@ -53,7 +46,6 @@ struct MockHost {
 impl MockHost {
     fn new() -> Self {
         Self {
-            frame_start: Instant::now(),
             default_inherited: Style::new(),
             default_classes: Style::new(),
             calls: Calls::default(),
@@ -62,60 +54,10 @@ impl MockHost {
         }
     }
 
-    // Inherent recorder used by tests. `request_paint` is host-only and
-    // therefore not part of `StyleSink`, so MockHost owns this method.
     fn request_paint(&mut self, id: ElementId) {
         self.calls.paints.push(id);
     }
-}
 
-impl StyleSink for MockHost {
-    fn frame_start(&self) -> Instant {
-        self.frame_start
-    }
-    fn screen_size_bp(&self) -> ScreenSizeBp {
-        ScreenSizeBp::Md
-    }
-    fn keyboard_navigation(&self) -> bool {
-        false
-    }
-    fn root_size_width(&self) -> f64 {
-        1024.0
-    }
-    fn is_dark_mode(&self) -> bool {
-        false
-    }
-
-    fn default_theme_classes(&self) -> &Style {
-        &self.default_classes
-    }
-    fn default_theme_inherited(&self) -> &Style {
-        &self.default_inherited
-    }
-
-    fn is_hovered(&self, id: StyleNodeId) -> bool {
-        self.hovered.contains(&id)
-    }
-    fn is_focused(&self, _id: StyleNodeId) -> bool {
-        false
-    }
-    fn is_focus_within(&self, _id: StyleNodeId) -> bool {
-        false
-    }
-    fn is_active(&self, _id: StyleNodeId) -> bool {
-        false
-    }
-    fn is_file_hover(&self, _id: StyleNodeId) -> bool {
-        false
-    }
-
-}
-
-// Cursor overrides and cursor-resolution flags are host-only — they're
-// not on the `StyleSink` trait because the engine doesn't read or
-// mutate them. Tests that want to record these calls keep them as
-// inherent methods on the mock.
-impl MockHost {
     fn mark_needs_cursor_resolution(&mut self) {
         self.calls.needs_cursor_resolution = true;
     }
@@ -146,7 +88,7 @@ fn fresh_element(tree: &mut Tree, owning_view_raw: u64) -> ElementId {
 // ─────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn mock_host_can_implement_sink_and_record_calls() {
+fn mock_host_records_inherent_calls() {
     let mut tree = Tree::new();
     let elem = fresh_element(&mut tree, 1);
     let mut host = MockHost::new();
@@ -167,9 +109,9 @@ fn mock_host_can_implement_sink_and_record_calls() {
 }
 
 #[test]
-fn cascade_runs_with_interaction_state_derived_from_sink() {
-    let mut style_tree = floem_style::StyleTree::new();
-    let node = style_tree.new_node();
+fn resolve_nested_maps_picks_hover_branch_for_hovered_node() {
+    let mut tree = floem_style::StyleTree::new();
+    let node = tree.new_node();
     let mut host = MockHost::new();
     host.hovered.insert(node);
 
@@ -177,23 +119,20 @@ fn cascade_runs_with_interaction_state_derived_from_sink() {
         .background(css::RED)
         .hover(|s| s.background(css::BLUE));
 
-    // Derive InteractionState from sink trait methods, as a host would when
-    // building the cascade's input.
+    // Build an InteractionState the way a host would when composing
+    // a `CascadeInputs::interactions` closure.
     let mut state = InteractionState {
-        is_hovered: host.is_hovered(node),
-        is_dark_mode: host.is_dark_mode(),
-        window_width: host.root_size_width(),
-        using_keyboard_navigation: host.keyboard_navigation(),
+        is_hovered: host.hovered.contains(&node),
         ..Default::default()
     };
 
     let (resolved, selectors) = resolve_nested_maps(
         style,
         &mut state,
-        host.screen_size_bp(),
+        ScreenSizeBp::Md,
         &[],
-        host.default_theme_inherited(),
-        host.default_theme_classes(),
+        &host.default_inherited,
+        &host.default_classes,
     );
     assert_eq!(resolved.get(Background), Some(css::BLUE.into()));
     assert!(selectors.has(StyleSelector::Hover));
@@ -201,9 +140,6 @@ fn cascade_runs_with_interaction_state_derived_from_sink() {
 
 #[test]
 fn style_cache_round_trips_values() {
-    // The engine's style cache lives inside `StyleTree`, but the cache
-    // itself is also usable standalone (e.g. by tests). This exercises
-    // the cache API directly.
     let parent = Style::new();
     let style = Style::new().background(css::RED);
     let state = InteractionState::default();
@@ -230,18 +166,27 @@ fn style_cache_round_trips_values() {
 }
 
 #[test]
-fn trait_object_dispatch_works() {
-    // Exercises `&mut dyn StyleSink` — the shape an engine consumer
-    // hands to the cascade. Reads and the `apply_animations` hook are
-    // what the cascade actually dispatches through the trait.
-    fn peek_hover(sink: &dyn StyleSink, node: StyleNodeId) -> bool {
-        sink.is_hovered(node)
-    }
+fn interactions_closure_captures_host_state() {
+    // Simulates the shape a host would construct for
+    // `CascadeInputs::interactions`: a closure that maps
+    // `StyleNodeId → PerNodeInteraction` by consulting the host's own
+    // per-view state. We exercise it standalone, without driving the
+    // full cascade — that's what `style_tree_cascade.rs` covers.
+    use floem_style::PerNodeInteraction;
 
     let mut style_tree = floem_style::StyleTree::new();
-    let node = style_tree.new_node();
+    let a = style_tree.new_node();
+    let b = style_tree.new_node();
     let mut host = MockHost::new();
-    host.hovered.insert(node);
+    host.hovered.insert(a);
 
-    assert!(peek_hover(&host, node));
+    let _unused_instant: Instant = Instant::now();
+
+    let interactions = |node: StyleNodeId| PerNodeInteraction {
+        is_hovered: host.hovered.contains(&node),
+        ..Default::default()
+    };
+
+    assert!(interactions(a).is_hovered);
+    assert!(!interactions(b).is_hovered);
 }

@@ -10,9 +10,8 @@
 //! Walks the full host-integration flow:
 //! 1. Allocate engine nodes in a [`StyleTree`], wire parent/child edges.
 //! 2. Push direct styles (plain props, classes, selectors).
-//! 3. Run [`StyleTree::compute_style`] through a sink that implements
-//!    both [`StyleSink`] (engine → host callbacks) and
-//!    [`PropExtractorCx`] (what the `prop_extractor!` macro reads).
+//! 3. Assemble a [`CascadeInputs`] per pass and drive
+//!    [`StyleTree::compute_style`].
 //! 4. Read resolved [`Style`] back from the tree and verify the
 //!    cascade did the right thing (direct values, inheritance,
 //!    class-context propagation, selector gates).
@@ -21,7 +20,8 @@
 //!    style via both `read_explicit` and the `PropExtractorCx`-based
 //!    `read_style` path; exercise `apply_to_taffy_style` and
 //!    `affine` helpers.
-//! 6. Verify sink side-effects (`request_paint`, animation hook) fire.
+//! 6. Verify the animation backend hook fires and tree-stored
+//!    animations tick.
 //!
 //! Nothing in this file touches floem. If moved behind a
 //! `floem-native` feature flag tomorrow, it would still pass.
@@ -31,22 +31,24 @@ use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
+use std::cell::Cell;
+
 use floem_style::builtin_props::{Background, FontSize};
 use floem_style::responsive::ScreenSizeBp;
 use floem_style::unit::{Angle, Pt};
 use floem_style::{
-    ElementId, LayoutProps, PropExtractorCx, Style, StyleNodeId, StyleSink, StyleTree,
-    TransformProps, ViewStyleProps, recalc::StyleReason,
+    AnimationBackend, CascadeInputs, ElementId, InteractionState, LayoutProps, NoAnimationBackend,
+    PerNodeInteraction, PropExtractorCx, Style, StyleNodeId, StyleTree, TransformProps,
+    ViewStyleProps, recalc::StyleReason,
 };
 use peniko::color::palette::css;
 use peniko::kurbo;
 use understory_box_tree::{LocalNode, Tree};
 
 // ─────────────────────────────────────────────────────────────────────────
-// MockHost — one struct that plays both roles the engine asks of a host:
-// - StyleSink: engine calls it for every cascade-emitted side-effect.
-// - PropExtractorCx: the trait `prop_extractor!`-generated convenience
-//   methods dispatch through.
+// MockHost — bookkeeping a non-floem consumer would keep. The engine
+// reads from it through a `CascadeInputs::interactions` closure; extractor
+// tests also use it as a `PropExtractorCx`.
 // ─────────────────────────────────────────────────────────────────────────
 
 #[derive(Default)]
@@ -75,45 +77,6 @@ impl MockHost {
     }
 }
 
-impl StyleSink for MockHost {
-    fn frame_start(&self) -> Instant {
-        self.frame_start.unwrap()
-    }
-    fn screen_size_bp(&self) -> ScreenSizeBp {
-        ScreenSizeBp::Md
-    }
-    fn keyboard_navigation(&self) -> bool {
-        false
-    }
-    fn root_size_width(&self) -> f64 {
-        1024.0
-    }
-    fn is_dark_mode(&self) -> bool {
-        false
-    }
-    fn default_theme_classes(&self) -> &Style {
-        &self.default_classes
-    }
-    fn default_theme_inherited(&self) -> &Style {
-        &self.default_inherited
-    }
-    fn is_hovered(&self, id: StyleNodeId) -> bool {
-        self.hovered.contains(&id)
-    }
-    fn is_focused(&self, _id: StyleNodeId) -> bool {
-        false
-    }
-    fn is_focus_within(&self, _id: StyleNodeId) -> bool {
-        false
-    }
-    fn is_active(&self, _id: StyleNodeId) -> bool {
-        false
-    }
-    fn is_file_hover(&self, _id: StyleNodeId) -> bool {
-        false
-    }
-}
-
 impl PropExtractorCx for MockHost {
     fn now(&self) -> Instant {
         self.frame_start.unwrap()
@@ -129,6 +92,32 @@ impl PropExtractorCx for MockHost {
     }
 }
 
+/// Build a `CascadeInputs` for the current host state. Captures `host`
+/// immutably for the interactions closure and pairs with a
+/// `NoAnimationBackend`; scoping everything inside one call avoids
+/// tangling the closure's lifetime with the tree.
+fn with_inputs<R>(
+    host: &MockHost,
+    f: impl FnOnce(CascadeInputs<'_>) -> R,
+) -> R {
+    let anim = NoAnimationBackend;
+    let interactions = |node: StyleNodeId| PerNodeInteraction {
+        is_hovered: host.hovered.contains(&node),
+        ..Default::default()
+    };
+    f(CascadeInputs {
+        frame_start: host.frame_start.unwrap_or_else(Instant::now),
+        screen_size_bp: ScreenSizeBp::Md,
+        keyboard_navigation: false,
+        root_size_width: 1024.0,
+        is_dark_mode: false,
+        default_theme_classes: &host.default_classes,
+        default_theme_inherited: &host.default_inherited,
+        interactions: &interactions,
+        animations: &anim,
+    })
+}
+
 fn fresh_element(tree: &mut Tree, owning: u64) -> ElementId {
     let node = tree.push_child(None, LocalNode::default());
     ElementId(node, owning, true)
@@ -142,9 +131,8 @@ fn fresh_element(tree: &mut Tree, owning: u64) -> ElementId {
 /// computed_style and inherited props propagate to descendants.
 #[test]
 fn tree_cascade_produces_computed_style_and_inheritance() {
-    let mut box_tree = Tree::new();
     let mut tree = StyleTree::new();
-    let mut host = MockHost::new();
+    let host = MockHost::new();
 
     let root = tree.new_node();
     let child = tree.new_node();
@@ -161,7 +149,7 @@ fn tree_cascade_produces_computed_style_and_inheritance() {
     );
     tree.set_direct_style(child, Style::new().width(Pt(50.0)).height(Pt(30.0)));
 
-    tree.compute_style(root, &mut host);
+    with_inputs(&host, |cx| tree.compute_style(root, &cx));
 
     // Root has its direct values resolved.
     let root_computed = tree.computed_style(root).unwrap();
@@ -180,9 +168,8 @@ fn tree_cascade_produces_computed_style_and_inheritance() {
 /// layout solver.
 #[test]
 fn layout_extractor_fills_taffy_style() {
-    let mut box_tree = Tree::new();
     let mut tree = StyleTree::new();
-    let mut host = MockHost::new();
+    let host = MockHost::new();
 
     let n = tree.new_node();
     tree.set_direct_style(
@@ -193,7 +180,7 @@ fn layout_extractor_fills_taffy_style() {
             .padding_left(Pt(8.0))
             .font_size(14.0),
     );
-    tree.compute_style(n, &mut host);
+    with_inputs(&host, |cx| tree.compute_style(n, &cx));
 
     let computed = tree.computed_style(n).unwrap();
 
@@ -240,7 +227,7 @@ fn transform_extractor_through_prop_extractor_cx() {
             .rotate(Angle::Deg(90.0))
             .border_top_left_radius(Pt(4.0)),
     );
-    tree.compute_style(n, &mut host);
+    with_inputs(&host, |cx| tree.compute_style(n, &cx));
 
     let computed = tree.computed_style(n).unwrap().clone();
 
@@ -272,13 +259,12 @@ fn transform_extractor_through_prop_extractor_cx() {
 /// `.background()` / `.border_color()` aggregator helpers.
 #[test]
 fn view_style_extractor_reads_visual_props() {
-    let mut box_tree = Tree::new();
     let mut tree = StyleTree::new();
-    let mut host = MockHost::new();
+    let host = MockHost::new();
 
     let n = tree.new_node();
     tree.set_direct_style(n, Style::new().background(css::BLUE).outline(2.0));
-    tree.compute_style(n, &mut host);
+    with_inputs(&host, |cx| tree.compute_style(n, &cx));
 
     let computed = tree.computed_style(n).unwrap();
     let mut vs = ViewStyleProps::default();
@@ -301,9 +287,8 @@ fn class_context_propagates_through_tree() {
 
     style_class!(pub Callout);
 
-    let mut box_tree = Tree::new();
     let mut tree = StyleTree::new();
-    let mut host = MockHost::new();
+    let host = MockHost::new();
 
     let root = tree.new_node();
     let child = tree.new_node();
@@ -315,7 +300,7 @@ fn class_context_propagates_through_tree() {
     );
     tree.set_classes(child, &[Callout::class_ref()]);
 
-    tree.compute_style(root, &mut host);
+    with_inputs(&host, |cx| tree.compute_style(root, &cx));
 
     assert_eq!(
         tree.computed_style(child).unwrap().get(Background),
@@ -324,11 +309,10 @@ fn class_context_propagates_through_tree() {
     );
 }
 
-/// Interaction-driven cascade: flipping `hovered` on the sink between
+/// Interaction-driven cascade: flipping `hovered` on the host between
 /// two `compute_style` passes must re-resolve the `:hover` branch.
 #[test]
 fn hover_selector_switches_between_passes() {
-    let mut box_tree = Tree::new();
     let mut tree = StyleTree::new();
     let mut host = MockHost::new();
 
@@ -340,7 +324,7 @@ fn hover_selector_switches_between_passes() {
             .hover(|s| s.background(css::GREEN)),
     );
 
-    tree.compute_style(n, &mut host);
+    with_inputs(&host, |cx| tree.compute_style(n, &cx));
     assert_eq!(
         tree.computed_style(n).unwrap().get(Background),
         Some(css::RED.into())
@@ -348,90 +332,60 @@ fn hover_selector_switches_between_passes() {
 
     host.hovered.insert(n);
     tree.mark_dirty(n, StyleReason::style_pass());
-    tree.compute_style(n, &mut host);
+    with_inputs(&host, |cx| tree.compute_style(n, &cx));
     assert_eq!(
         tree.computed_style(n).unwrap().get(Background),
         Some(css::GREEN.into())
     );
 }
 
-/// `StyleSink::apply_animations` is the host's hook for injecting
-/// per-view animations into the cascade. Override it, confirm the tree
-/// invokes it every time it recomputes a node.
+/// `AnimationBackend::apply` is the host's hook for injecting per-view
+/// animations into the cascade. Override it, confirm the tree invokes
+/// it every time it recomputes a node.
 #[test]
-fn sink_apply_animations_hook_is_invoked() {
-    struct AnimHost {
-        inner: MockHost,
-        anim_calls: usize,
+fn animation_backend_hook_is_invoked() {
+    struct AnimBackend {
+        anim_calls: Cell<usize>,
     }
-    impl AnimHost {
-        fn new() -> Self {
-            Self {
-                inner: MockHost::new(),
-                anim_calls: 0,
-            }
-        }
-    }
-    // Forward the bulk of StyleSink to the inner mock; override apply_animations.
-    impl StyleSink for AnimHost {
-        fn frame_start(&self) -> Instant {
-            self.inner.frame_start()
-        }
-        fn screen_size_bp(&self) -> ScreenSizeBp {
-            self.inner.screen_size_bp()
-        }
-        fn keyboard_navigation(&self) -> bool {
-            self.inner.keyboard_navigation()
-        }
-        fn root_size_width(&self) -> f64 {
-            self.inner.root_size_width()
-        }
-        fn is_dark_mode(&self) -> bool {
-            self.inner.is_dark_mode()
-        }
-        fn default_theme_classes(&self) -> &Style {
-            self.inner.default_theme_classes()
-        }
-        fn default_theme_inherited(&self) -> &Style {
-            self.inner.default_theme_inherited()
-        }
-        fn is_hovered(&self, id: StyleNodeId) -> bool {
-            self.inner.is_hovered(id)
-        }
-        fn is_focused(&self, id: StyleNodeId) -> bool {
-            self.inner.is_focused(id)
-        }
-        fn is_focus_within(&self, id: StyleNodeId) -> bool {
-            self.inner.is_focus_within(id)
-        }
-        fn is_active(&self, id: StyleNodeId) -> bool {
-            self.inner.is_active(id)
-        }
-        fn is_file_hover(&self, id: StyleNodeId) -> bool {
-            self.inner.is_file_hover(id)
-        }
-        fn apply_animations(
-            &mut self,
+    impl AnimationBackend for AnimBackend {
+        fn apply(
+            &self,
             _node: StyleNodeId,
             _combined: &mut Style,
-            _interact: &mut floem_style::InteractionState,
+            _interact: &mut InteractionState,
         ) -> bool {
-            self.anim_calls += 1;
+            self.anim_calls.set(self.anim_calls.get() + 1);
             false
         }
     }
 
-    let mut box_tree = Tree::new();
-    let mut tree = StyleTree::new();
-    let mut host = AnimHost::new();
+    let backend = AnimBackend {
+        anim_calls: Cell::new(0),
+    };
+    let host = MockHost::new();
 
+    let mut tree = StyleTree::new();
     let n = tree.new_node();
     tree.set_direct_style(n, Style::new().background(css::RED));
-    tree.compute_style(n, &mut host);
+
+    let interactions = |_: StyleNodeId| PerNodeInteraction::default();
+    let inputs = CascadeInputs {
+        frame_start: Instant::now(),
+        screen_size_bp: ScreenSizeBp::Md,
+        keyboard_navigation: false,
+        root_size_width: 1024.0,
+        is_dark_mode: false,
+        default_theme_classes: &host.default_classes,
+        default_theme_inherited: &host.default_inherited,
+        interactions: &interactions,
+        animations: &backend,
+    };
+    tree.compute_style(n, &inputs);
 
     assert_eq!(
-        host.anim_calls, 1,
-        "compute_style should invoke sink.apply_animations once per dirty node"
+        backend.anim_calls.get(),
+        1,
+        "compute_style should invoke AnimationBackend::apply once per dirty node"
     );
 }
 
@@ -446,7 +400,7 @@ fn tree_stored_animations_tick_during_cascade() {
     use std::time::Duration;
 
     let mut tree = StyleTree::new();
-    let mut host = MockHost::new();
+    let host = MockHost::new();
 
     let n = tree.new_node();
     tree.set_direct_style(n, Style::new());
@@ -467,7 +421,7 @@ fn tree_stored_animations_tick_during_cascade() {
 
     // First compute_style: animation is Idle; the tick transitions it
     // to PassInProgress and fires a `started` event.
-    tree.compute_style(n, &mut host);
+    with_inputs(&host, |cx| tree.compute_style(n, &cx));
     let events = tree.take_animation_events(n);
     assert_eq!(events.len(), 1, "started event should have fired");
     assert!(events[0].1.started);

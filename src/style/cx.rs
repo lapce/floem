@@ -26,7 +26,6 @@ use crate::{
     window::state::WindowState,
 };
 use crate::ElementIdExt;
-use floem_style::StyleSink;
 
 use super::{Style, StyleProp};
 
@@ -152,7 +151,7 @@ impl<'a> StyleCx<'a> {
         // Phase 2: Build interaction state for selector matching
         // ─────────────────────────────────────────────────────────────────────
         let view_interact_state = Self::get_interact_state(window_state, view_id);
-        let now = window_state.frame_start();
+        let now = window_state.frame_start;
 
         Self {
             window_state,
@@ -421,7 +420,7 @@ impl<'a> StyleCx<'a> {
         resolve_nested_maps(
             base_style,
             &mut view_interact_state,
-            self.window_state.screen_size_bp(),
+            self.window_state.screen_size_bp,
             classes,
             &self.inherited,
             &self.class_context,
@@ -439,7 +438,7 @@ impl<'a> StyleCx<'a> {
         resolve_nested_maps(
             base_style,
             &mut interact_state,
-            self.window_state.screen_size_bp(),
+            self.window_state.screen_size_bp,
             classes,
             &self.inherited,
             &self.class_context,

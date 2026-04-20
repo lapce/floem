@@ -138,7 +138,7 @@ use crate::prop_extractor;
 mod custom;
 mod cx;
 mod inspector_render_impl;
-mod sink;
+pub(crate) mod sink;
 mod storage;
 mod style_debug_ext;
 pub mod theme;

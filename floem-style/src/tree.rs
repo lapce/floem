@@ -15,7 +15,7 @@
 //!                     → tree.set_children(parent, &[...])
 //! host sets style     → tree.set_direct_style(node, style)
 //! host marks dirty    → tree.mark_dirty(node, reason)
-//! host runs pass      → tree.compute_style(root, &mut sink)
+//! host runs pass      → tree.compute_style(root, &inputs)
 //! host reads result   → tree.computed_style(node)
 //! ```
 //!
@@ -35,7 +35,7 @@ use crate::interaction::{InheritedInteractionCx, InteractionState};
 use crate::props::StyleClassRef;
 use crate::recalc::StyleReason;
 use crate::selectors::{StyleSelector, StyleSelectors};
-use crate::sink::StyleSink;
+use crate::sink::CascadeInputs;
 use crate::style::Style;
 
 new_key_type! {
@@ -57,8 +57,8 @@ new_key_type! {
 /// mapping (taffy-style): forward as `ViewState.style_node:
 /// Option<StyleNodeId>`, reverse as a `FxHashMap<StyleNodeId, ViewId>`
 /// on the host state. The engine's APIs are keyed entirely on
-/// [`StyleNodeId`] — sink reads, scheduling, fixed-element registry,
-/// animation hooks.
+/// [`StyleNodeId`] — cascade inputs, scheduling, fixed-element
+/// registry, animation hooks.
 #[derive(Debug, Clone)]
 pub struct StyleNode {
     // ── Tree edges ──────────────────────────────────────────────────────
@@ -111,10 +111,10 @@ pub struct StyleNode {
     /// [`StyleTree::compute_style`] and folds their interpolated values
     /// into `combined_style` before the result is propagated to children.
     ///
-    /// A host may either push animations here directly (standalone hosts,
-    /// tests) or keep its own registry and override
-    /// [`StyleSink::apply_animations`](crate::StyleSink::apply_animations);
-    /// both paths coexist and are invoked in order each frame.
+    /// A host may either push animations here directly (standalone
+    /// hosts, tests) or keep its own registry and implement
+    /// [`AnimationBackend`](crate::AnimationBackend); both paths
+    /// coexist and are invoked in order each frame.
     pub(crate) animations: SmallVec<[Animation; 1]>,
 
     /// Lifecycle events produced by the most recent tick of this node's
@@ -672,65 +672,35 @@ impl StyleTree {
 
     /// Run the style cascade over the subtree rooted at `root`.
     ///
-    /// For each dirty node in the subtree this resolves classes + selectors
-    /// + inherited context into `combined_style` / `computed_style`,
-    /// derives the child-facing `inherited_context` and `class_context`,
-    /// applies host-owned animations via [`StyleSink::apply_animations`],
-    /// and emits per-element side-effects through the sink:
+    /// For each dirty node in the subtree this resolves classes +
+    /// selectors + inherited context into `combined_style` /
+    /// `computed_style`, derives the child-facing `inherited_context`
+    /// and `class_context`, ticks tree-stored animations and the host's
+    /// optional [`AnimationBackend`](crate::AnimationBackend), and
+    /// records all side-effects (fixed-element transitions, scheduled
+    /// reruns, dirtied descendants, layout invalidations, animation
+    /// events) in tree-owned state.
     ///
-    /// - `register_fixed_element` / `unregister_fixed_element` when the
-    ///   resolved `Position::Fixed` flag flips
-    /// - `update_selector_interest` with the node's live selector set
-    /// - `mark_style_dirty_with` / `mark_descendants_with_selector_dirty`
-    ///   when inherited context, class context, or the cascaded
-    ///   `hidden` / `selected` / `disabled` bits flip
-    /// - `mark_needs_layout` when a visibility flip needs a relayout
-    /// - `inspector_capture_style` so hosts can snapshot computed styles
-    /// - `schedule_style` when animation is still in flight
+    /// Callers assemble a [`CascadeInputs`] once per pass with the
+    /// global reads (theme, frame-start, screen-size, etc.) plus a
+    /// per-node interaction closure, then drain every output after the
+    /// call via `tree.take_*` methods.
     ///
-    /// Clean nodes are traversed (so dirty descendants are visited) but
-    /// their own computed state is not recomputed.
+    /// Clean nodes are traversed (so dirty descendants are visited)
+    /// but their own computed state is not recomputed.
     ///
-    /// # Integration
-    ///
-    /// ```ignore
-    /// use floem_style::{ElementId, Style, StyleSink, StyleTree};
-    /// # struct Host;
-    /// # impl StyleSink for Host { /* …required methods… */ }
-    ///
-    /// let mut tree = StyleTree::new();
-    /// let mut host: Host = /* host state implementing StyleSink */ ;
-    ///
-    /// // Allocate engine nodes and wire edges.
-    /// let root = tree.new_node(ElementId::from(0));
-    /// let child = tree.new_node(ElementId::from(1));
-    /// tree.set_parent(child, Some(root));
-    ///
-    /// // Push style inputs (direct style, classes, parent interaction).
-    /// tree.set_direct_style(root, Style::new());
-    /// tree.set_direct_style(child, Style::new());
-    ///
-    /// // Drive the cascade. Emits side-effects through `host`.
-    /// tree.compute_style(root, &mut host);
-    ///
-    /// // Read outputs.
-    /// let _computed = tree.computed_style(child);
-    /// let _inherited = tree.inherited_context(child);
-    /// ```
-    ///
-    /// See `tests/mock_sink.rs` and `tests/style_tree_cascade.rs` in this
-    /// crate for complete, executable examples with a real [`StyleSink`]
-    /// implementation.
-    pub fn compute_style(&mut self, root: StyleNodeId, sink: &mut dyn StyleSink) {
+    /// See `tests/mock_sink.rs` and `tests/style_tree_cascade.rs` for
+    /// complete standalone-host examples.
+    pub fn compute_style(&mut self, root: StyleNodeId, inputs: &CascadeInputs<'_>) {
         if !self.contains(root) {
             return;
         }
-        self.compute_subtree(root, sink);
+        self.compute_subtree(root, inputs);
     }
 
-    fn compute_subtree(&mut self, id: StyleNodeId, sink: &mut dyn StyleSink) {
+    fn compute_subtree(&mut self, id: StyleNodeId, inputs: &CascadeInputs<'_>) {
         if self.is_dirty(id) {
-            self.compute_one(id, sink);
+            self.compute_one(id, inputs);
         }
         // Always descend — a clean parent may have dirty descendants.
         let children: Vec<StyleNodeId> = self
@@ -739,11 +709,11 @@ impl StyleTree {
             .map(|n| n.children.clone())
             .unwrap_or_default();
         for child in children {
-            self.compute_subtree(child, sink);
+            self.compute_subtree(child, inputs);
         }
     }
 
-    fn compute_one(&mut self, id: StyleNodeId, sink: &mut dyn StyleSink) {
+    fn compute_one(&mut self, id: StyleNodeId, inputs: &CascadeInputs<'_>) {
         // Gather parent context (or theme defaults if orphan / root).
         let (parent_inherited, parent_class_cx, parent_interaction_cx) = {
             let parent_id = self.nodes[id].parent;
@@ -754,8 +724,8 @@ impl StyleTree {
                     p.style_interaction_cx,
                 ),
                 None => (
-                    sink.default_theme_inherited().clone(),
-                    sink.default_theme_classes().clone(),
+                    inputs.default_theme_inherited.clone(),
+                    inputs.default_theme_classes.clone(),
                     InheritedInteractionCx::default(),
                 ),
             }
@@ -780,21 +750,24 @@ impl StyleTree {
             )
         };
 
-        // Build the interaction state the cascade reads.
+        // Pull per-node interaction bits through the one cascade-time
+        // callback the host provides, combine with the parent's
+        // inherited interaction cx and global reads from `inputs`.
+        let per_node = (inputs.interactions)(id);
         let mut interact_state = InteractionState {
             is_selected: parent_overrides.selected | parent_interaction_cx.selected,
             is_disabled: parent_overrides.disabled | parent_interaction_cx.disabled,
             is_hidden: parent_overrides.hidden | parent_interaction_cx.hidden,
-            is_hovered: sink.is_hovered(id),
-            is_focused: sink.is_focused(id),
-            is_focus_within: sink.is_focus_within(id),
-            is_active: sink.is_active(id),
-            is_dark_mode: sink.is_dark_mode(),
-            is_file_hover: sink.is_file_hover(id),
-            using_keyboard_navigation: sink.keyboard_navigation(),
+            is_hovered: per_node.is_hovered,
+            is_focused: per_node.is_focused,
+            is_focus_within: per_node.is_focus_within,
+            is_active: per_node.is_active,
+            is_dark_mode: inputs.is_dark_mode,
+            is_file_hover: per_node.is_file_hover,
+            using_keyboard_navigation: inputs.keyboard_navigation,
             child_index,
             sibling_count,
-            window_width: sink.root_size_width(),
+            window_width: inputs.root_size_width,
         };
 
         // Pull the direct style's own disabled/selected/hidden bits into
@@ -817,7 +790,7 @@ impl StyleTree {
             StyleCacheKey::new_from_hash(
                 direct_style.content_hash(),
                 &interact_state,
-                sink.screen_size_bp(),
+                inputs.screen_size_bp,
                 &classes,
                 &parent_class_cx,
             )
@@ -840,7 +813,7 @@ impl StyleTree {
             let (combined_style, selectors) = resolve_nested_maps(
                 direct_style,
                 &mut interact_state,
-                sink.screen_size_bp(),
+                inputs.screen_size_bp,
                 &classes,
                 &parent_inherited,
                 &parent_class_cx,
@@ -914,10 +887,12 @@ impl StyleTree {
             any_active
         };
 
-        let sink_has_active =
-            sink.apply_animations(id, &mut combined_style, &mut interact_state);
+        let backend_has_active =
+            inputs
+                .animations
+                .apply(id, &mut combined_style, &mut interact_state);
 
-        if tree_has_active || sink_has_active {
+        if tree_has_active || backend_has_active {
             self.schedule(id, StyleReason::animation());
         }
 
