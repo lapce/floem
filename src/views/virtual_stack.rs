@@ -530,11 +530,15 @@ impl<T> View for VirtualStack<T> {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        if self.style.read(cx) {
+        let mut transitioning = false;
+        if self.style.read(cx, &mut transitioning) {
             cx.window_state.request_paint(self.id);
             let dir = self.style.direction();
             self.direction.set(dir);
             self.content_size.borrow_mut().direction = dir;
+        }
+        if transitioning {
+            cx.request_transition();
         }
         for (child_id_index, child) in self.id.children().into_iter().enumerate() {
             if self

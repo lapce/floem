@@ -55,14 +55,10 @@ struct MockHost {
     default_inherited: Style,
     default_classes: Style,
 
-    // Recordings tests assert on.
-    transition_requests: Vec<StyleNodeId>,
-
     // Per-node state the cascade reads.
     hovered: std::collections::HashSet<StyleNodeId>,
 
     // State PropExtractorCx reads through.
-    current_node: Option<StyleNodeId>,
     current_direct: Style,
 }
 
@@ -81,12 +77,6 @@ impl PropExtractorCx for MockHost {
     }
     fn direct_style(&self) -> &Style {
         &self.current_direct
-    }
-    fn current_element(&self) -> StyleNodeId {
-        self.current_node.expect("current_node not set")
-    }
-    fn request_transition_for(&mut self, target: StyleNodeId) {
-        self.transition_requests.push(target);
     }
 }
 
@@ -219,12 +209,14 @@ fn transform_extractor_through_prop_extractor_cx() {
     let computed = tree.computed_style(n).unwrap().clone();
 
     // Set up PropExtractorCx state the extractor will read.
-    host.current_node = Some(n);
     host.current_direct = computed.clone();
 
     let mut transform = TransformProps::default();
-    // `read_style` on the extractor takes `&mut dyn PropExtractorCx`.
-    transform.read_style(&mut host as &mut dyn PropExtractorCx, &computed);
+    // `read_style` reports whether any prop is still transitioning
+    // through the `transitioning` out-param; the caller (this test)
+    // would normally schedule a re-cascade on the owning node.
+    let mut transitioning = false;
+    transform.read_style(&host as &dyn PropExtractorCx, &computed, &mut transitioning);
 
     // Rotation extracted — non-zero (we set 90°).
     assert!(transform.rotation().to_radians().abs() > 0.0);

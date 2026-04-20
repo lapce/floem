@@ -323,9 +323,10 @@ impl Handle {
         let node = cx
             .window_state
             .ensure_style_node_for_element(self.element_id);
+        let mut transitioning = false;
         if self
             .handle_style
-            .read_style_for(cx, &resolved, node)
+            .read_style(cx, &resolved, &mut transitioning)
         {
             let cursor = match axis {
                 Axis::Horizontal => CursorStyle::ColResize,
@@ -334,6 +335,9 @@ impl Handle {
             let cursor = self.handle_style.cursor().unwrap_or(cursor);
             cx.window_state.set_cursor(self.element_id, cursor);
             cx.window_state.request_paint(self.element_id);
+        }
+        if transitioning {
+            cx.request_transition_for(node);
         }
     }
 
@@ -387,8 +391,12 @@ impl View for Resizable {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        let mut transitioning = false;
         if cx.reason.flags != StyleReasonFlags::TARGET {
-            self.re_style.read(cx);
+            self.re_style.read(cx, &mut transitioning);
+        }
+        if transitioning {
+            cx.request_transition();
         }
 
         // If the reason implies nested style maps must be resolved, restyle everything.

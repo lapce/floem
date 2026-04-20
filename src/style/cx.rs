@@ -565,16 +565,6 @@ impl floem_style::PropExtractorCx for StyleCx<'_> {
     fn direct_style(&self) -> &Style {
         &self.direct
     }
-    fn current_element(&self) -> floem_style::StyleNodeId {
-        self.current_view
-            .state()
-            .borrow()
-            .style_node
-            .expect("StyleCx used before style node allocation")
-    }
-    fn request_transition_for(&mut self, target: floem_style::StyleNodeId) {
-        StyleCx::request_transition_for(self, target)
-    }
 }
 
 // Animation helper functions used by StyleCx::style_view

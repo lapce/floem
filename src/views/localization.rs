@@ -463,7 +463,8 @@ impl View for L10n {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        if self.locale.read(cx) {
+        let mut transitioning = false;
+        if self.locale.read(cx, &mut transitioning) {
             self.has_format_value = false;
         }
         if !self.has_format_value
@@ -472,9 +473,12 @@ impl View for L10n {
             self.label_id.update_state(formatted);
             self.has_format_value = true;
         }
-        self.fallback.read(cx);
+        self.fallback.read(cx, &mut transitioning);
         if !self.has_format_value && !self.apply_fallback() {
             self.label_id.update_state(self.key.clone());
+        }
+        if transitioning {
+            cx.request_transition();
         }
     }
 

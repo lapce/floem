@@ -234,56 +234,40 @@ macro_rules! prop_extractor {
         }
 
         impl $name {
+            /// Read every field of this extractor from `style`, advancing
+            /// any in-flight transitions against `cx.now()`. Returns
+            /// whether the aggregate resolved value changed. Sets
+            /// `*transitioning` to `true` if any field is still animating
+            /// after this pass — the caller is expected to schedule a
+            /// re-cascade on the owning node when that happens.
             #[allow(dead_code)]
             $vis fn read_style(
                 &mut self,
-                cx: &mut dyn $crate::PropExtractorCx,
+                cx: &dyn $crate::PropExtractorCx,
                 style: &$crate::Style,
-            ) -> bool {
-                let target = $crate::PropExtractorCx::current_element(cx);
-                self.read_style_for(cx, style, target)
-            }
-
-            #[allow(dead_code)]
-            $vis fn read_style_for(
-                &mut self,
-                cx: &mut dyn $crate::PropExtractorCx,
-                style: &$crate::Style,
-                target: impl Into<$crate::StyleNodeId>,
+                transitioning: &mut bool,
             ) -> bool {
                 let now = $crate::PropExtractorCx::now(cx);
-                let mut transition = false;
-                let changed = false $(
-                    | self.$field.read(style, &now, &mut transition)
-                )*;
-                if transition {
-                    $crate::PropExtractorCx::request_transition_for(cx, target.into());
-                }
+                let mut changed = false;
+                $(
+                    changed |= self.$field.read(style, &now, transitioning);
+                )*
                 changed
             }
 
+            /// Read every field of this extractor from `cx.direct_style()`.
+            /// See [`read_style`] for the transition contract.
             #[allow(dead_code)]
-            $vis fn read(&mut self, cx: &mut dyn $crate::PropExtractorCx) -> bool {
-                let target = $crate::PropExtractorCx::current_element(cx);
-                self.read_for(cx, target)
-            }
-
-            #[allow(dead_code)]
-            $vis fn read_for(
+            $vis fn read(
                 &mut self,
-                cx: &mut dyn $crate::PropExtractorCx,
-                target: impl Into<$crate::StyleNodeId>,
+                cx: &dyn $crate::PropExtractorCx,
+                transitioning: &mut bool,
             ) -> bool {
-                let mut transition = false;
-                let changed = self.read_explicit(
+                self.read_explicit(
                     $crate::PropExtractorCx::direct_style(cx),
                     &$crate::PropExtractorCx::now(cx),
-                    &mut transition,
-                );
-                if transition {
-                    $crate::PropExtractorCx::request_transition_for(cx, target.into());
-                }
-                changed
+                    transitioning,
+                )
             }
 
             #[allow(dead_code)]

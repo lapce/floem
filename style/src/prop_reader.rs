@@ -21,7 +21,6 @@ use crate::props::StyleProp;
 use crate::style::Style;
 use crate::style_value::StyleValue;
 use crate::transition::TransitionState;
-use crate::tree::StyleNodeId;
 
 // ============================================================================
 // ExtractorField
@@ -112,18 +111,19 @@ where
 // ============================================================================
 
 /// Narrow host interface the `prop_extractor!`-generated convenience
-/// methods (`read`, `read_for`, `read_style`, `read_style_for`) need.
+/// methods (`read`, `read_style`) need.
 ///
 /// Hosts implement this on their per-view style context type (e.g.
 /// floem's `StyleCx`). A second host's context needs only to answer:
 ///
 /// - "what time is it?" for transition ticks ([`Self::now`]),
 /// - "what style am I extracting from?" for the no-arg `read`
-///   convenience ([`Self::direct_style`]),
-/// - "what element am I styling?" so callers that don't pass a
-///   `target` default to the current one ([`Self::current_element`]),
-/// - "a transition is active, please restyle this element next
-///   frame" ([`Self::request_transition_for`]).
+///   convenience ([`Self::direct_style`]).
+///
+/// Transitions are reported as data: each generated method takes a
+/// `&mut bool` the extractor sets when a read is still animating, and
+/// the caller decides what to do (typically schedule a re-cascade on
+/// the node). No host callback fires during property extraction.
 ///
 /// Keeps the `prop_extractor!` macro fully engine-defined — the
 /// macro's expansion references only this trait, never a host type.
@@ -133,10 +133,4 @@ pub trait PropExtractorCx {
     /// The merged direct style the extractor reads from when no
     /// explicit style is passed.
     fn direct_style(&self) -> &Style;
-    /// Style node currently being styled; used as the default `target`
-    /// of transition re-style requests.
-    fn current_element(&self) -> StyleNodeId;
-    /// Request that `target` be re-styled on the next frame because
-    /// at least one transition on this pass is still animating.
-    fn request_transition_for(&mut self, target: StyleNodeId);
 }

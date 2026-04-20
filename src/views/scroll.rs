@@ -109,8 +109,12 @@ impl ScrollHandle {
         let node = cx
             .window_state
             .ensure_style_node_for_element(self.element_id);
-        if self.style.read_style_for(cx, &resolved, node) {
+        let mut transitioning = false;
+        if self.style.read_style(cx, &resolved, &mut transitioning) {
             self.element_id.owning_id().request_paint();
+        }
+        if transitioning {
+            cx.request_transition_for(node);
         }
     }
 
@@ -334,8 +338,12 @@ impl ScrollTrack {
         let node = cx
             .window_state
             .ensure_style_node_for_element(self.element_id);
-        if self.style.read_style_for(cx, &resolved, node) {
+        let mut transitioning = false;
+        if self.style.read_style(cx, &resolved, &mut transitioning) {
             self.element_id.owning_id().request_paint();
+        }
+        if transitioning {
+            cx.request_transition_for(node);
         }
     }
 
@@ -938,7 +946,11 @@ impl View for Scroll {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        self.scroll_style.read(cx);
+        let mut transitioning = false;
+        self.scroll_style.read(cx, &mut transitioning);
+        if transitioning {
+            cx.request_transition();
+        }
 
         // If the reason implies nested style maps must be resolved, restyle everything.
         if cx.reason.needs_resolve_nested_maps() {
