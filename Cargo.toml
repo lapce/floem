@@ -213,13 +213,16 @@ subduction = ["dep:subduction_core", "dep:subduction_backend_wgpu", "dep:subduct
 criterion = { version = "0.8.1", features = ["html_reports"] }
 peniko = { workspace = true }
 
-# [patch.crates-io]
+[patch.crates-io]
+kurbo = { path = "../kurbo/kurbo" }
 # naga = { path = "../wgpu/naga" }
 # wgpu = { path = "../wgpu/wgpu" }
 # wgpu-core = { path = "../wgpu/wgpu-core" }
 # wgpu-hal = { path = "../wgpu/wgpu-hal" }
 # wgpu-macros = { path = "../wgpu/wgpu-macros" }
 # wgpu-types = { path = "../wgpu/wgpu-types" }
+vello_common = { path = "../vello/sparse_strips/vello_common" }
+vello_hybrid = { path = "../vello/sparse_strips/vello_hybrid" }
 
 [[bench]]
 name = "event_dispatch"
@@ -252,4 +255,3 @@ harness = false
 [[bench]]
 name = "view_creation"
 harness = false
-

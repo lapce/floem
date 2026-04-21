@@ -10,7 +10,7 @@ use svg_imaging::{ParseOptions, RenderOptions, SvgDocument};
 
 use crate::{
     prop, prop_extractor,
-    style::{Display, Style, TextColor},
+    style::{Style, TextColor},
     style_class,
     view::ViewId,
     view::{LayoutNodeCx, MeasureFn, View},
@@ -148,7 +148,6 @@ pub struct Svg {
     css_prop: Option<Box<dyn SvgCssPropExtractor>>,
     aspect_ratio: f32,
     layout_data: Rc<RefCell<SvgLayoutData>>,
-    current_cache_key: Option<String>,
 }
 
 style_class!(pub SvgClass);
@@ -230,7 +229,6 @@ pub fn svg(svg_str_fn: impl Into<SvgStrFn> + 'static) -> Svg {
         svg_css: None,
         aspect_ratio: 1.,
         layout_data,
-        current_cache_key: None,
     };
     svg.set_taffy_layout();
     svg.class(SvgClass)
@@ -248,20 +246,6 @@ impl Svg {
                 finalize: None,
             }),
         );
-    }
-
-    fn evict_cached_scene_image(key: &str) {
-        SVG_SCENE_IMAGE_CACHE.with(|cache| {
-            cache.borrow_mut().remove(key);
-        });
-    }
-}
-
-impl Drop for Svg {
-    fn drop(&mut self) {
-        if let Some(key) = self.current_cache_key.take() {
-            Self::evict_cached_scene_image(&key);
-        }
     }
 }
 
@@ -285,22 +269,10 @@ impl View for Svg {
         self.svg_style.read_style(cx, &style);
         let current_cache_enabled = self.svg_style.svg_cache();
         let current_brush = self.svg_style.color_brush();
-        let is_hidden = style.builtin().display() == Display::None;
-        if is_hidden {
-            if let Some(key) = self.current_cache_key.take() {
-                Self::evict_cached_scene_image(&key);
-            }
-        }
         if previous_cache_enabled != current_cache_enabled {
-            if let Some(key) = self.current_cache_key.take() {
-                Self::evict_cached_scene_image(&key);
-            }
             self.id.request_paint();
         }
         if previous_brush != current_brush {
-            if let Some(key) = self.current_cache_key.take() {
-                Self::evict_cached_scene_image(&key);
-            }
             self.id.request_paint();
         }
         if let Some(document) = &self.svg_document {
@@ -329,9 +301,6 @@ impl View for Svg {
                 return;
             }
 
-            if let Some(key) = self.current_cache_key.take() {
-                Self::evict_cached_scene_image(&key);
-            }
             self.svg_string = text.clone();
             self.svg_css = style.clone();
 
@@ -381,14 +350,14 @@ impl View for Svg {
             let pixel_width = (rect.width() * cx.window_state.os_scale).round().max(1.0) as u32;
             let pixel_height = (rect.height() * cx.window_state.os_scale).round().max(1.0) as u32;
             let brush = self.svg_style.color_brush();
-            let cache_key = svg_scene_image_cache_key(
-                &self.svg_string,
-                self.svg_css.as_deref(),
-                brush.as_ref(),
-                pixel_width,
-                pixel_height,
-            );
             if self.svg_style.svg_cache() {
+                let cache_key = svg_scene_image_cache_key(
+                    &self.svg_string,
+                    self.svg_css.as_deref(),
+                    brush.as_ref(),
+                    pixel_width,
+                    pixel_height,
+                );
                 let image = cached_svg_scene_image(
                     &cache_key,
                     brush.as_ref(),
@@ -396,12 +365,6 @@ impl View for Svg {
                     pixel_width,
                     pixel_height,
                 );
-                if self.current_cache_key.as_ref() != Some(&cache_key) {
-                    if let Some(key) = self.current_cache_key.take() {
-                        Self::evict_cached_scene_image(&key);
-                    }
-                    self.current_cache_key = Some(cache_key);
-                }
                 let source_rect = Rect::new(
                     0.0,
                     0.0,
@@ -419,10 +382,6 @@ impl View for Svg {
                     .transform(transform)
                     .draw();
             } else {
-                if let Some(key) = self.current_cache_key.take() {
-                    Self::evict_cached_scene_image(&key);
-                }
-                dbg!("painting svg without scene image cache");
                 let transform = Affine::translate((rect.x0, rect.y0))
                     * Affine::scale_non_uniform(
                         rect.width() / size.width,

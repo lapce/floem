@@ -212,7 +212,7 @@ pub(crate) struct QueuedProfileEvent {
 
 impl WindowState {
     pub fn new(root_view_id: ViewId, os_theme: Option<Theme>, os_scale: f64) -> Self {
-        let theme = default_theme(os_theme.unwrap_or(Theme::Light));
+        let theme = default_theme(os_theme.unwrap_or(Theme::Light), os_scale);
         let inherited = Self::extract_inherited_props(&theme);
         let box_tree = VIEW_STORAGE.with_borrow_mut(|s| s.box_tree(root_view_id));
         let layout_tree = VIEW_STORAGE.with_borrow_mut(|s| s.taffy.clone());
@@ -418,7 +418,7 @@ impl WindowState {
 
     /// Update the default theme when the OS theme changes.
     pub(crate) fn update_default_theme(&mut self, theme: Theme) {
-        let new_theme = default_theme(theme);
+        let new_theme = default_theme(theme, self.effective_scale());
         let inherited = Self::extract_inherited_props(&new_theme);
         self.default_theme = new_theme;
         self.default_theme_inherited = inherited;

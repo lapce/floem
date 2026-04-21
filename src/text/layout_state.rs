@@ -4,7 +4,7 @@ use peniko::kurbo::{Point, Rect};
 
 use crate::{
     ViewId,
-    context::Phases,
+    context::{PaintCx, Phases},
     custom_event,
     event::Event,
     style::{NoWrapOverflow, TextOverflow},
@@ -148,21 +148,37 @@ impl TextLayoutState {
         &self,
         selection: &TextSelection,
         text_origin: Point,
+        effective_scale: f64,
         mut f: impl FnMut(Rect),
     ) {
         self.with_effective_text_layout(|layout| {
-            layout.selection_geometry_with_line_metrics(selection, |x0, y0, x1, y1| {
-                let rect = Rect::new(
-                    x0 + text_origin.x,
-                    y0 + text_origin.y,
-                    x1 + text_origin.x,
-                    y1 + text_origin.y,
-                );
-                if rect.width() > 0.0 && rect.height() > 0.0 {
-                    f(rect);
-                }
-            });
+            layout.selection_geometry_with_line_metrics(
+                selection,
+                effective_scale,
+                |x0, y0, x1, y1| {
+                    let rect = Rect::new(
+                        x0 + text_origin.x,
+                        y0 + text_origin.y,
+                        x1 + text_origin.x,
+                        y1 + text_origin.y,
+                    );
+                    if rect.width() > 0.0 && rect.height() > 0.0 {
+                        f(rect);
+                    }
+                },
+            );
         });
+    }
+
+    /// Paint-time convenience wrapper that sources optical-size scale from [`PaintCx`].
+    pub fn selection_rects_for_selection_with_paint_cx(
+        &self,
+        selection: &TextSelection,
+        text_origin: Point,
+        paint_cx: &PaintCx,
+        f: impl FnMut(Rect),
+    ) {
+        self.selection_rects_for_selection(selection, text_origin, paint_cx.effective_scale, f);
     }
 
     /// Iterates selection rectangles for a byte range in view coordinates.
@@ -171,22 +187,39 @@ impl TextLayoutState {
         start: usize,
         end: usize,
         text_origin: Point,
+        effective_scale: f64,
         mut f: impl FnMut(Rect),
     ) {
         self.with_effective_text_layout(|layout| {
             let selection = layout.selection_from_byte_range(start, end);
-            layout.selection_geometry_with_line_metrics(&selection, |x0, y0, x1, y1| {
-                let rect = Rect::new(
-                    x0 + text_origin.x,
-                    y0 + text_origin.y,
-                    x1 + text_origin.x,
-                    y1 + text_origin.y,
-                );
-                if rect.width() > 0.0 && rect.height() > 0.0 {
-                    f(rect);
-                }
-            });
+            layout.selection_geometry_with_line_metrics(
+                &selection,
+                effective_scale,
+                |x0, y0, x1, y1| {
+                    let rect = Rect::new(
+                        x0 + text_origin.x,
+                        y0 + text_origin.y,
+                        x1 + text_origin.x,
+                        y1 + text_origin.y,
+                    );
+                    if rect.width() > 0.0 && rect.height() > 0.0 {
+                        f(rect);
+                    }
+                },
+            );
         });
+    }
+
+    /// Paint-time convenience wrapper that sources optical-size scale from [`PaintCx`].
+    pub fn selection_rects_for_byte_range_with_paint_cx(
+        &self,
+        start: usize,
+        end: usize,
+        text_origin: Point,
+        paint_cx: &PaintCx,
+        f: impl FnMut(Rect),
+    ) {
+        self.selection_rects_for_byte_range(start, end, text_origin, paint_cx.effective_scale, f);
     }
 
     /// Returns the origin that vertically centers the effective layout in `content_rect`.

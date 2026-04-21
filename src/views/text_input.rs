@@ -4,7 +4,6 @@ use crate::{
     action::{TimerToken, exec_after, set_ime_allowed, set_ime_cursor_area},
     custom_event,
     event::{EventPropagation, FocusEvent, ImeEvent, Phase, RouteKind},
-    paint::PainterExt,
     prop_extractor,
     reactive::RwSignal,
     style::{
@@ -1111,7 +1110,11 @@ impl TextInput {
         self.selection = self.selection_from_byte_positions(new_selection.start, new_selection.end);
     }
 
-    fn paint_selection_rect_with_painter(&self, painter: &mut imaging::Painter<'_>) {
+    fn paint_selection_rect_with_painter(
+        &self,
+        effective_scale: f64,
+        painter: &mut imaging::Painter<'_>,
+    ) {
         let cursor_color = self.selection_style.selection_color();
         let selection = if let Some(selection) = self.selection {
             selection
@@ -1137,6 +1140,7 @@ impl TextInput {
         self.layout_data.borrow().selection_rects_for_selection(
             &selection,
             selection_origin,
+            effective_scale,
             |rect| {
                 painter.fill(rect, &cursor_color).draw();
             },
@@ -1493,9 +1497,10 @@ impl View for TextInput {
                 .borrow()
                 .with_effective_text_layout(|text_layout| {
                     text_layout.draw_with_painter(
-                        p.dyn_painter(),
+                        p.as_dyn(),
                         Point::new(text_start_point.x - self.scroll_offset, text_start_point.y),
                         cx.font_embolden,
+                        cx.window_state.effective_scale(),
                     );
                 });
 
@@ -1535,7 +1540,7 @@ impl View for TextInput {
                 if has_selection {
                     let sink: &mut dyn imaging::PaintSink = p.sink_mut();
                     let mut painter = imaging::Painter::new(sink);
-                    self.paint_selection_rect_with_painter(&mut painter);
+                    self.paint_selection_rect_with_painter(cx.effective_scale, &mut painter);
                 }
             }
         });

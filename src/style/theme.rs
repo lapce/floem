@@ -548,7 +548,13 @@ pub fn overlay_style() -> Style {
         .dark_mode(|s| s.border(1).border_top(2.))
 }
 
-pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
+fn macos_font_embolden(font_size: f64, effective_scale: f64) -> kurbo::Vec2 {
+    let size_in_device_px = font_size * effective_scale;
+    let embolden = kurbo::Vec2::new(0.015125, 0.0121) * size_in_device_px;
+    kurbo::Vec2::new(embolden.x.min(0.3), embolden.y.min(0.3))
+}
+
+pub(crate) fn default_theme(os_theme: winit::window::Theme, effective_scale: f64) -> Style {
     let button_style = Style::new()
         .selectable(false)
         .with_theme(|s, t| {
@@ -770,6 +776,14 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .background(dark.bg_base())
                 .color(dark.text())
                 .theme(dark)
+        })
+        .apply_if(cfg!(target_os = "macos"), |s| {
+            s.with::<FontSize>(|s, fs| {
+                s.set_context(
+                    FontEmbolden,
+                    fs.def(move |font_size| macos_font_embolden(font_size, effective_scale)),
+                )
+            })
         })
         .line_height(1.2)
         .class(LabelClass, |s| {

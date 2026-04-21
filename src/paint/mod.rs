@@ -133,7 +133,7 @@ pub struct PaintCx<'a> {
     pub window_state: &'a mut WindowState,
     pub painter: Painter<'a, Scene>,
     is_vger: bool,
-    /// The target visual node being painted (CRITICAL for views with multiple visuals)
+    /// The target visual node being painted
     pub target_id: ElementId,
     /// World transform for this visual node (from box tree)
     pub world_transform: Affine,
@@ -143,23 +143,7 @@ pub struct PaintCx<'a> {
     pub clip: Option<RoundedRect>,
     pub font_size_cx: FontSizeCx,
     pub font_embolden: peniko::kurbo::Vec2,
-}
-
-pub trait PainterExt {
-    fn dyn_painter(&mut self) -> Painter<'_, dyn PaintSink + '_>;
-}
-
-impl<S: PaintSink> PainterExt for Painter<'_, S> {
-    fn dyn_painter(&mut self) -> Painter<'_, dyn PaintSink + '_> {
-        let sink: &mut dyn PaintSink = self.sink_mut();
-        Painter::new(sink)
-    }
-}
-
-impl PaintCx<'_> {
-    pub fn dyn_painter(&mut self) -> Painter<'_, dyn PaintSink + '_> {
-        self.painter.dyn_painter()
-    }
+    pub effective_scale: f64,
 }
 
 impl GlobalPaintCx<'_> {
@@ -457,6 +441,7 @@ impl GlobalPaintCx<'_> {
         let is_vger = false;
         let world_transform = self.element_base_transform(element_id);
         let font_size_cx = view_state.borrow().layout_props.font_size_cx();
+        let effective_scale = self.window_state.effective_scale();
 
         {
             // Create per-target PaintCx
@@ -473,6 +458,7 @@ impl GlobalPaintCx<'_> {
                     .borrow()
                     .computed_style
                     .get(crate::style::FontEmbolden),
+                effective_scale,
             };
 
             if !is_post {

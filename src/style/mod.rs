@@ -1921,11 +1921,7 @@ define_builtin_props!(
     /// Adjusts glyph emboldening for text content.
     ///
     /// This property is inherited by child views.
-    FontEmbolden font_embolden { nocb, tr }: Vec2 { inherited } = if cfg!(target_os = "macos") {
-        Vec2::new(0.1, 0.1)
-    } else {
-        Vec2::ZERO
-    },
+    FontEmbolden font_embolden { nocb, tr }: Vec2 { inherited } = Vec2::ZERO,
 
     /// Sets the font family for text content.
     ///

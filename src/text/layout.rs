@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     cell::RefCell,
     collections::HashMap,
     num::NonZeroU8,
@@ -9,7 +10,7 @@ use std::{
 use crate::text::{AttrsList, GlyphRunRef, TextBrush};
 use imaging::{Composite, Painter, record::Glyph as ImagingGlyph};
 use parking_lot::Mutex;
-use parley::swash::{FontRef, scale::ScaleContext, zeno};
+use parley::swash::{FontRef, StringId, Tag, scale::ScaleContext, tag_from_bytes, zeno};
 use parley::{
     Affinity, Alignment, Cursor, FontContext, LayoutContext, Selection,
     layout::{AlignmentOptions, Layout},
@@ -26,6 +27,8 @@ use peniko::{
 /// with the same font database used by [`TextLayout`].
 pub static FONT_CONTEXT: LazyLock<Mutex<FontContext>> =
     LazyLock::new(|| Mutex::new(FontContext::new()));
+
+const OPSZ_TAG: Tag = tag_from_bytes(b"opsz");
 
 thread_local! {
     static LAYOUT_CONTEXT: RefCell<LayoutContext<TextBrush>> =
@@ -136,6 +139,64 @@ fn expand_tabs(text: &str, tab_width: usize) -> Option<TabInfo> {
     })
 }
 
+#[cfg(target_os = "macos")]
+fn effective_normalized_coords<'a>(
+    font: &'a FontData,
+    font_size: f32,
+    effective_scale: f64,
+    normalized_coords: &'a [i16],
+) -> Cow<'a, [i16]> {
+    if !normalized_coords.is_empty() {
+        return Cow::Borrowed(normalized_coords);
+    }
+
+    let Some(font_ref) = FontRef::from_index(font.data.data(), font.index as usize) else {
+        return Cow::Borrowed(normalized_coords);
+    };
+
+    synthesize_opsz_coords(font_ref, font_size * effective_scale as f32)
+        .map(Cow::Owned)
+        .unwrap_or_else(|| Cow::Borrowed(normalized_coords))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn effective_normalized_coords<'a>(
+    _font: &'a FontData,
+    _font_size: f32,
+    _effective_scale: f64,
+    normalized_coords: &'a [i16],
+) -> Cow<'a, [i16]> {
+    Cow::Borrowed(normalized_coords)
+}
+
+#[cfg(target_os = "macos")]
+fn synthesize_opsz_coords(font_ref: FontRef<'_>, font_size: f32) -> Option<Vec<i16>> {
+    let variations = font_ref.variations();
+    let opsz = variations.find_by_tag(OPSZ_TAG)?;
+    let axis_value =
+        macos_opsz_value(font_ref, font_size).clamp(opsz.min_value(), opsz.max_value());
+    let mut coords = vec![0; variations.len()];
+    coords[opsz.index()] = opsz.normalize(axis_value);
+    Some(coords)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_opsz_value(font_ref: FontRef<'_>, font_size: f32) -> f32 {
+    if is_macos_system_ui_font(font_ref) {
+        font_size.max(17.0)
+    } else {
+        font_size
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn is_macos_system_ui_font(font_ref: FontRef<'_>) -> bool {
+    let strings = font_ref.localized_strings();
+    strings
+        .find_by_id(StringId::PostScript, None)
+        .is_some_and(|name| name.to_string().starts_with(".SF"))
+}
+
 #[derive(Clone)]
 /// A Floem wrapper around a Parley text layout.
 ///
@@ -235,6 +296,10 @@ impl TextLayout {
         skew: Option<f32>,
         glyph_id: u16,
     ) -> Option<zeno::Bounds> {
+        // Selection geometry currently has no access to window effective scale, so this uses
+        // logical font size until that context is threaded through.
+        let normalized_coords =
+            effective_normalized_coords(font, font_size, 1.0, normalized_coords);
         let key = GlyphOutlineBoundsKey {
             font_blob_id: font.data.id(),
             font_index: font.index,
@@ -256,7 +321,7 @@ impl TextLayout {
                 .builder(font_ref)
                 .size(font_size)
                 .hint(true)
-                .normalized_coords(normalized_coords)
+                .normalized_coords(normalized_coords.iter().copied())
                 .build();
             let mut outline = scaler.scale_outline(glyph_id)?;
             if let Some(angle) = skew {
@@ -661,6 +726,7 @@ impl TextLayout {
     pub fn selection_geometry_with_line_metrics(
         &self,
         selection: &TextSelection,
+        effective_scale: f64,
         mut f: impl FnMut(f64, f64, f64, f64),
     ) {
         let selection_range = selection.selection.text_range();
@@ -697,7 +763,13 @@ impl TextLayout {
                                     if let Some(bounds) = Self::glyph_outline_bounds(
                                         run.font(),
                                         run.font_size(),
-                                        run.normalized_coords(),
+                                        effective_normalized_coords(
+                                            run.font(),
+                                            run.font_size(),
+                                            effective_scale,
+                                            run.normalized_coords(),
+                                        )
+                                        .as_ref(),
                                         run.synthesis().skew(),
                                         glyph.id as u16,
                                     ) {
@@ -782,6 +854,7 @@ impl TextLayout {
         mut painter: Painter<'_>,
         origin: impl Into<Point>,
         font_embolden: peniko::kurbo::Vec2,
+        effective_scale: f64,
     ) {
         let origin = origin.into();
         for line in self.layout.lines() {
@@ -797,14 +870,20 @@ impl TextLayout {
                     .map(|angle| Affine::skew((angle as f64).to_radians().tan(), 0.0));
 
                 let style = peniko::Style::Fill(Fill::NonZero);
+                let normalized_coords = effective_normalized_coords(
+                    run.font(),
+                    run.font_size(),
+                    effective_scale,
+                    run.normalized_coords(),
+                );
                 let run = GlyphRunRef {
                     font: run.font(),
                     transform: Affine::IDENTITY,
                     glyph_transform,
                     font_size: run.font_size(),
                     font_embolden,
-                    hint: true,
-                    normalized_coords: run.normalized_coords(),
+                    hint: false,
+                    normalized_coords: normalized_coords.as_ref(),
                     style: &style,
                     brush: glyph_run.style().brush.0.into(),
                     composite: Composite::default(),
@@ -821,6 +900,7 @@ impl TextLayout {
                     .transform(run.transform * Affine::translate(origin.to_vec2()))
                     .glyph_transform(run.glyph_transform)
                     .font_size(run.font_size)
+                    .font_embolden(run.font_embolden)
                     .hint(run.hint)
                     .normalized_coords(run.normalized_coords)
                     .draw(run.style, glyphs);
@@ -831,6 +911,7 @@ impl TextLayout {
     /// Draws the layout into Floem's retained paint recorder.
     pub fn draw(&self, cx: &mut crate::paint::PaintCx<'_>, origin: impl Into<Point>) {
         let font_embolden = cx.font_embolden;
-        self.draw_with_painter(cx.dyn_painter(), origin, font_embolden);
+        let effective_scale = cx.effective_scale;
+        self.draw_with_painter(cx.painter.as_dyn(), origin, font_embolden, effective_scale);
     }
 }

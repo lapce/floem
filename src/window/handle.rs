@@ -453,7 +453,10 @@ impl WindowHandle {
             paint_state,
             size,
             default_theme: match apply_default_theme {
-                true => Some(default_theme(window_state.light_dark_theme)),
+                true => Some(default_theme(
+                    window_state.light_dark_theme,
+                    window_state.effective_scale(),
+                )),
                 false => None,
             },
             window_state,
@@ -616,7 +619,10 @@ impl WindowHandle {
             scope,
             paint_state,
             size,
-            default_theme: Some(default_theme(window_state.light_dark_theme)),
+            default_theme: Some(default_theme(
+                window_state.light_dark_theme,
+                window_state.effective_scale(),
+            )),
             window_state,
             is_maximized,
             transparent: false,
@@ -729,6 +735,10 @@ impl WindowHandle {
 
     pub(crate) fn os_scale(&mut self, os_scale: f64) {
         self.window_state.os_scale = os_scale;
+        self.window_state
+            .update_default_theme(self.window_state.light_dark_theme);
+        self.window_state
+            .mark_style_dirty(self.window_state.root_view_id.get_element_id());
         let scale = self.window_state.effective_scale();
         self.event(Event::Window(WindowEvent::ScaleChanged(scale)));
         self.window_state
@@ -748,7 +758,7 @@ impl WindowHandle {
         if let Some(theme) = theme {
             // Only override the theme with the default if the user did not provide one
             if self.default_theme.is_some() {
-                self.default_theme = Some(default_theme(theme));
+                self.default_theme = Some(default_theme(theme, self.window_state.effective_scale()));
             }
             // Update the default theme in WindowState for style computation
             self.window_state.update_default_theme(theme);
@@ -1964,6 +1974,10 @@ impl WindowHandle {
                     }
                     UpdateMessage::WindowScale(scale) => {
                         cx.window_state.user_scale = scale;
+                        cx.window_state
+                            .update_default_theme(cx.window_state.light_dark_theme);
+                        cx.window_state
+                            .mark_style_dirty(cx.window_state.root_view_id.get_element_id());
                         let scale = cx.window_state.effective_scale();
                         let root_view_id = cx.window_state.root_view_id;
                         self.event(Event::Window(WindowEvent::ScaleChanged(scale)));

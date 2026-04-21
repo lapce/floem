@@ -10,6 +10,7 @@ pub mod context_menu;
 pub mod draggable;
 pub mod dropdown;
 pub mod dropped_file;
+pub mod embolden;
 pub mod form;
 pub mod images;
 pub mod inputs;
@@ -21,6 +22,7 @@ pub mod slider;
 pub mod tabs;
 pub mod texteditor;
 
+use floem::kurbo::{self, Rect, Shape, Vec2};
 use floem::{
     action::{set_theme, set_window_menu, toggle_global_theme, toggle_window_theme},
     kurbo::Size,
@@ -65,6 +67,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         "Rich Text",
         "Clipboard",
         "Animation",
+        "Embolden",
         "Draggable",
         "Dropped File",
         "Files",
@@ -87,6 +90,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             "Slider" => slider::slider_view().into_any(),
             "Dropdown" => dropdown::dropdown_view().into_any(),
             "Animation" => animation::animation_view().into_any(),
+            "Embolden" => embolden::embolden_view().into_any(),
             "Draggable" => draggable::draggable_view().into_any(),
             "Dropped File" => dropped_file::dropped_file_view().into_any(),
             #[cfg(feature = "full")]

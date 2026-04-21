@@ -1,6 +1,5 @@
-use std::fs::read_to_string;
-
 use floem::{
+    kurbo::{self, Rect, Shape, Vec2},
     prelude::*,
     text::{Alignment, FontStyle, FontWeight},
     theme::StyleThemeExt,
@@ -9,6 +8,19 @@ use floem::{
 use crate::form::{form, form_item};
 
 pub fn label_view() -> impl IntoView {
+    let new_box = canvas(|cx, size| {
+        let rect = Rect::from_origin_size((0., 0.), size);
+        // let rect = kurbo::expand(
+        //     rect.to_path(0.01),
+        //     Vec2::new(100., 50.),
+        //     kurbo::Join::Bevel,
+        //     100.,
+        //     0.01,
+        // );
+        cx.painter.fill(rect, css::RED).draw();
+    })
+    .style(|s| s.size(100, 100));
+
     form((
         form_item(
             "Simple Label:",
@@ -35,5 +47,6 @@ pub fn label_view() -> impl IntoView {
                     .text_align(Alignment::Center)
             }),
         ),
+        form_item("canvas box", new_box),
     ))
 }
