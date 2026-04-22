@@ -409,25 +409,25 @@ impl View for Label {
                 if self.label_props.text_selectable()
                     && state
                         .buttons
-                        .contains(ui_events::pointer::PointerButton::Primary)
-                => {
-                    self.selection_state = self
-                        .get_hit_point(state.logical_point())
-                        .map(|cursor| SelectionState::Ready {
-                            origin: state.logical_point(),
-                            selection: self
-                                .layout_data
-                                .borrow()
-                                .get_effective_text_layout()
-                                .map(|layout| layout.collapsed_selection(cursor))
-                                .expect("label text layout should be available on pointer down"),
-                        })
-                        .unwrap_or(SelectionState::None);
-                    if let Some(pointer_id) = pointer.pointer_id {
-                        cx.window_state.set_pointer_capture(pointer_id, self.id);
-                    }
-                    cx.window_state.request_paint(self.id);
+                        .contains(ui_events::pointer::PointerButton::Primary) =>
+            {
+                self.selection_state = self
+                    .get_hit_point(state.logical_point())
+                    .map(|cursor| SelectionState::Ready {
+                        origin: state.logical_point(),
+                        selection: self
+                            .layout_data
+                            .borrow()
+                            .get_effective_text_layout()
+                            .map(|layout| layout.collapsed_selection(cursor))
+                            .expect("label text layout should be available on pointer down"),
+                    })
+                    .unwrap_or(SelectionState::None);
+                if let Some(pointer_id) = pointer.pointer_id {
+                    cx.window_state.set_pointer_capture(pointer_id, self.id);
                 }
+                cx.window_state.request_paint(self.id);
+            }
             Event::Pointer(PointerEvent::Move(pu)) => {
                 if !self.label_props.text_selectable() {
                     if self.selection_state != SelectionState::None {

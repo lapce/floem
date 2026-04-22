@@ -1355,49 +1355,47 @@ impl View for TextInput {
             Event::Ime(ImeEvent::DeleteSurrounding {
                 before_bytes,
                 after_bytes,
-            })
-                if self.is_focused => {
-                    let selection = self.selection_byte_range();
-                    if let Some(selection) = selection.as_ref() {
-                        self.selection = None;
-                        self.cursor_glyph_idx = selection.start;
+            }) if self.is_focused => {
+                let selection = self.selection_byte_range();
+                if let Some(selection) = selection.as_ref() {
+                    self.selection = None;
+                    self.cursor_glyph_idx = selection.start;
+                }
+                self.buffer.update(|buf| {
+                    if let Some(selection) = selection.clone() {
+                        buf.replace_range(selection, "");
                     }
-                    self.buffer.update(|buf| {
-                        if let Some(selection) = selection.clone() {
-                            buf.replace_range(selection, "");
-                        }
-                        // If the index falls inside a character, delete that character too.
-                        // This only happens on desynchronized input:
-                        // 1. IME sends a request with index on code point boundary
-                        // 2. Another source shifts text around
-                        // 3. Request arrives.
-                        // This situation is expected to be rare, so not trying to be too clever at handling it.
-                        let before_start = buf[..self.cursor_glyph_idx]
-                            .char_indices()
-                            .rev()
-                            .find(|(index, _)| self.cursor_glyph_idx - index >= *before_bytes)
-                            .map(|(i, _)| i)
-                            .unwrap_or(0);
-                        let after_end = buf[self.cursor_glyph_idx..]
-                            .char_indices()
-                            .map(|(index, _)| index)
-                            .find(|index| index >= after_bytes)
-                            .map(|i| i + self.cursor_glyph_idx)
-                            .unwrap_or(buf.len());
-                        buf.replace_range(before_start..after_end, "");
-                        self.cursor_glyph_idx = before_start;
-                    });
-                    true
-                }
-            Event::Ime(ImeEvent::Commit(text))
-                if self.is_focused => {
-                    self.buffer
-                        .update(|buf| buf.insert_str(self.cursor_glyph_idx, text));
-                    self.cursor_glyph_idx += text.len();
-                    self.preedit = None;
+                    // If the index falls inside a character, delete that character too.
+                    // This only happens on desynchronized input:
+                    // 1. IME sends a request with index on code point boundary
+                    // 2. Another source shifts text around
+                    // 3. Request arrives.
+                    // This situation is expected to be rare, so not trying to be too clever at handling it.
+                    let before_start = buf[..self.cursor_glyph_idx]
+                        .char_indices()
+                        .rev()
+                        .find(|(index, _)| self.cursor_glyph_idx - index >= *before_bytes)
+                        .map(|(i, _)| i)
+                        .unwrap_or(0);
+                    let after_end = buf[self.cursor_glyph_idx..]
+                        .char_indices()
+                        .map(|(index, _)| index)
+                        .find(|index| index >= after_bytes)
+                        .map(|i| i + self.cursor_glyph_idx)
+                        .unwrap_or(buf.len());
+                    buf.replace_range(before_start..after_end, "");
+                    self.cursor_glyph_idx = before_start;
+                });
+                true
+            }
+            Event::Ime(ImeEvent::Commit(text)) if self.is_focused => {
+                self.buffer
+                    .update(|buf| buf.insert_str(self.cursor_glyph_idx, text));
+                self.cursor_glyph_idx += text.len();
+                self.preedit = None;
 
-                    true
-                }
+                true
+            }
 
             Event::Focus(focus) => {
                 match focus {
