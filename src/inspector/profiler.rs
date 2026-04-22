@@ -94,7 +94,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
             })
         })
         .collect();
-    frames.sort_by(|a, b| b.sum.cmp(&a.sum));
+    frames.sort_by_key(|frame| std::cmp::Reverse(frame.sum));
     let frames: Rc<[_]> = frames.into();
 
     let selected_frame = RwSignal::new(None);

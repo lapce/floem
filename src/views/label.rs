@@ -405,12 +405,12 @@ impl View for Label {
                 cx.window_state.request_paint(self.id);
                 return EventPropagation::Continue;
             }
-            Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, pointer, .. })) => {
+            Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, pointer, .. }))
                 if self.label_props.text_selectable()
                     && state
                         .buttons
                         .contains(ui_events::pointer::PointerButton::Primary)
-                {
+                => {
                     self.selection_state = self
                         .get_hit_point(state.logical_point())
                         .map(|cursor| SelectionState::Ready {
@@ -428,7 +428,6 @@ impl View for Label {
                     }
                     cx.window_state.request_paint(self.id);
                 }
-            }
             Event::Pointer(PointerEvent::Move(pu)) => {
                 if !self.label_props.text_selectable() {
                     if self.selection_state != SelectionState::None {

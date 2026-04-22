@@ -729,8 +729,8 @@ impl View for InspectorImageView {
                     return EventPropagation::Continue;
                 }
                 match key {
-                    Key::Named(NamedKey::ArrowUp) => {
-                        if !self.contain_ids.is_empty() {
+                    Key::Named(NamedKey::ArrowUp)
+                        if !self.contain_ids.is_empty() => {
                             self.contain_index = if self.contain_index == 0 {
                                 self.contain_ids.len() - 1
                             } else {
@@ -743,9 +743,8 @@ impl View for InspectorImageView {
                                 return EventPropagation::Stop;
                             }
                         }
-                    }
-                    Key::Named(NamedKey::ArrowDown) => {
-                        if !self.contain_ids.is_empty() {
+                    Key::Named(NamedKey::ArrowDown)
+                        if !self.contain_ids.is_empty() => {
                             self.contain_index = (self.contain_index + 1) % self.contain_ids.len();
                             if let Some(id) = self.contain_ids.get(self.contain_index).copied() {
                                 cx.window_state.request_paint = true;
@@ -754,7 +753,6 @@ impl View for InspectorImageView {
                                 return EventPropagation::Stop;
                             }
                         }
-                    }
                     _ => {}
                 }
             }

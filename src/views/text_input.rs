@@ -1355,8 +1355,8 @@ impl View for TextInput {
             Event::Ime(ImeEvent::DeleteSurrounding {
                 before_bytes,
                 after_bytes,
-            }) => {
-                if self.is_focused {
+            })
+                if self.is_focused => {
                     let selection = self.selection_byte_range();
                     if let Some(selection) = selection.as_ref() {
                         self.selection = None;
@@ -1388,22 +1388,16 @@ impl View for TextInput {
                         self.cursor_glyph_idx = before_start;
                     });
                     true
-                } else {
-                    false
                 }
-            }
-            Event::Ime(ImeEvent::Commit(text)) => {
-                if self.is_focused {
+            Event::Ime(ImeEvent::Commit(text))
+                if self.is_focused => {
                     self.buffer
                         .update(|buf| buf.insert_str(self.cursor_glyph_idx, text));
                     self.cursor_glyph_idx += text.len();
                     self.preedit = None;
 
                     true
-                } else {
-                    false
                 }
-            }
 
             Event::Focus(focus) => {
                 match focus {
