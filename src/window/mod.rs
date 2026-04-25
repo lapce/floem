@@ -1,3 +1,4 @@
+pub(crate) mod compositor;
 pub(crate) mod handle;
 pub(crate) mod id;
 pub mod mock;

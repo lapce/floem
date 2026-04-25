@@ -266,6 +266,31 @@ impl ApplicationHandle {
 
                 self.refresh_window_frame_schedule(window_id, event_loop);
             }
+            UserEvent::ExternalSurfaceContent {
+                window_id,
+                surface_id,
+                content,
+            } => {
+                if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                    handle
+                        .window_state
+                        .set_external_surface_content(surface_id, content);
+                    handle.refresh_frame_activity();
+                }
+                self.request_update();
+            }
+            UserEvent::ExternalSurfaceRequestFrame {
+                window_id,
+                surface_id,
+            } => {
+                if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                    handle
+                        .window_state
+                        .request_external_surface_frame(surface_id);
+                    handle.refresh_frame_activity();
+                }
+                self.request_update();
+            }
             #[cfg(all(feature = "subduction", target_os = "macos"))]
             UserEvent::SubductionFrameTick { window_id, tick } => {
                 let mut should_refresh_schedule = false;

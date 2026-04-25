@@ -17,6 +17,11 @@ use understory_box_tree::NodeFlags;
 
 use crate::{
     BoxTree, ElementId,
+    external_surface::{ExternalSurfaceId, ExternalSurfacePaintOptions},
+    paint::composition::{
+        CompositionItem, CompositionKey, CompositionPlan, ExternalSurfaceLayer, PaintStage,
+        SceneLayer,
+    },
     view::stacking::{StackingContextItem, collect_stacking_context_items_into},
 };
 
@@ -71,6 +76,7 @@ pub(crate) fn transform_diff_class(original: Affine, current: Affine) -> Transfo
 #[derive(Clone)]
 pub(crate) struct ElementStage {
     pub scene: Scene,
+    pub external_surfaces: Vec<ExternalSurfacePlacement>,
     pub transform_class: TransformClass,
 }
 
@@ -78,15 +84,137 @@ impl Default for ElementStage {
     fn default() -> Self {
         Self {
             scene: Scene::new(),
+            external_surfaces: Vec::new(),
             transform_class: TransformClass::Affine,
         }
     }
 }
 
 impl ElementStage {
-    pub(crate) fn set_scene(&mut self, scene: Scene) {
+    pub(crate) fn set_scene(
+        &mut self,
+        scene: Scene,
+        external_surfaces: Vec<ExternalSurfacePlacement>,
+    ) {
         self.transform_class = scene_transform_class(&scene);
         self.scene = scene;
+        self.external_surfaces = external_surfaces;
+    }
+
+    pub(crate) fn has_external_surfaces(&self) -> bool {
+        !self.external_surfaces.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ExternalSurfacePlacement {
+    pub command_index: usize,
+    pub surface_id: ExternalSurfaceId,
+    pub rect: Rect,
+    pub options: ExternalSurfacePaintOptions,
+}
+
+#[doc(hidden)]
+pub struct StageRecorder {
+    scene: Scene,
+    external_surfaces: Vec<ExternalSurfacePlacement>,
+    command_count: usize,
+}
+
+impl StageRecorder {
+    pub(crate) fn from_stage(stage: &mut ElementStage) -> Self {
+        let scene = mem::take(&mut stage.scene);
+        let command_count = scene.commands().len();
+        Self {
+            scene,
+            external_surfaces: mem::take(&mut stage.external_surfaces),
+            command_count,
+        }
+    }
+
+    pub(crate) fn finish(self, stage: &mut ElementStage) {
+        stage.set_scene(self.scene, self.external_surfaces);
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.scene.clear();
+        self.external_surfaces.clear();
+        self.command_count = 0;
+    }
+
+    pub fn draw_external_surface(
+        &mut self,
+        surface_id: ExternalSurfaceId,
+        rect: Rect,
+        options: ExternalSurfacePaintOptions,
+    ) {
+        self.external_surfaces.push(ExternalSurfacePlacement {
+            command_index: self.command_count,
+            surface_id,
+            rect,
+            options,
+        });
+    }
+
+    fn refresh_command_count(&mut self) {
+        self.command_count = self.scene.commands().len();
+    }
+}
+
+impl PaintSink for StageRecorder {
+    fn push_context(&mut self, context: imaging::ContextRef<'_>) {
+        self.scene.push_context(context.label, context.source);
+        self.refresh_command_count();
+    }
+
+    fn pop_context(&mut self) {
+        self.scene.pop_context();
+        self.refresh_command_count();
+    }
+
+    fn push_clip(&mut self, clip: ClipRef<'_>) {
+        self.scene.push_clip(clip.to_owned());
+        self.refresh_command_count();
+    }
+
+    fn pop_clip(&mut self) {
+        self.scene.pop_clip();
+        self.refresh_command_count();
+    }
+
+    fn push_group(&mut self, group: GroupRef<'_>) {
+        PaintSink::push_group(&mut self.scene, group);
+        self.refresh_command_count();
+    }
+
+    fn pop_group(&mut self) {
+        self.scene.pop_group();
+        self.refresh_command_count();
+    }
+
+    fn fill(&mut self, draw: FillRef<'_>) {
+        PaintSink::fill(&mut self.scene, draw);
+        self.refresh_command_count();
+    }
+
+    fn stroke(&mut self, draw: StrokeRef<'_>) {
+        PaintSink::stroke(&mut self.scene, draw);
+        self.refresh_command_count();
+    }
+
+    fn glyph_run(&mut self, draw: GlyphRunRef<'_>, glyphs: &mut dyn Iterator<Item = ImagingGlyph>) {
+        PaintSink::glyph_run(&mut self.scene, draw, glyphs);
+        self.refresh_command_count();
+    }
+
+    fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
+        PaintSink::blurred_rounded_rect(&mut self.scene, draw);
+        self.refresh_command_count();
+    }
+
+    fn scene_picture(&mut self, picture: &imaging::ScenePicture, transform: Affine) {
+        PaintSink::scene_picture(&mut self.scene, picture, transform);
+        self.refresh_command_count();
     }
 }
 
@@ -146,6 +274,7 @@ struct DisplayNode {
     composed_scene: Scene,
     composed_dirty: bool,
     subtree_size: usize,
+    subtree_external_surface_count: usize,
 }
 
 #[derive(Default)]
@@ -325,6 +454,131 @@ impl RetainedDisplayList {
             .is_some_and(DisplayNode::caches_composed_scene)
     }
 
+    pub(crate) fn lower_composition_plan(&self) -> CompositionPlan {
+        let mut plan = CompositionPlan::new();
+        let mut chunk_index = 0;
+        let mut external_occurrence = 0;
+        for slot in &self.roots {
+            self.lower_slot_into_plan(*slot, &mut plan, &mut chunk_index, &mut external_occurrence);
+        }
+        plan
+    }
+
+    fn lower_slot_into_plan(
+        &self,
+        slot: DisplayNodeSlot,
+        plan: &mut CompositionPlan,
+        chunk_index: &mut u32,
+        external_occurrence: &mut u32,
+    ) {
+        let Some(node) = self.node(slot) else {
+            return;
+        };
+        let Some(element_id) = node.element_id else {
+            return;
+        };
+        let Some(snapshot) = node.display.snapshot else {
+            return;
+        };
+
+        self.lower_stage_into_plan(
+            element_id,
+            PaintStage::Paint,
+            &node.display.paint,
+            snapshot,
+            plan,
+            chunk_index,
+            external_occurrence,
+        );
+
+        for child in &node.children.ordered {
+            self.lower_slot_into_plan(*child, plan, chunk_index, external_occurrence);
+        }
+
+        self.lower_stage_into_plan(
+            element_id,
+            PaintStage::Post,
+            &node.display.post,
+            snapshot,
+            plan,
+            chunk_index,
+            external_occurrence,
+        );
+    }
+
+    fn lower_stage_into_plan(
+        &self,
+        element_id: ElementId,
+        stage_kind: PaintStage,
+        stage: &ElementStage,
+        snapshot: ElementSnapshot,
+        plan: &mut CompositionPlan,
+        chunk_index: &mut u32,
+        external_occurrence: &mut u32,
+    ) {
+        if stage.scene.is_empty() && stage.external_surfaces.is_empty() {
+            return;
+        }
+
+        let mut sorted_surfaces = stage.external_surfaces.clone();
+        sorted_surfaces.sort_by_key(|surface| surface.command_index);
+
+        let mut range_start = 0;
+        for surface in sorted_surfaces {
+            let range_end = surface.command_index.min(stage.scene.commands().len());
+            if let Some(scene) = scene_command_range(&stage.scene, range_start, range_end) {
+                plan.items.push(CompositionItem::Scene(SceneLayer {
+                    key: CompositionKey::SceneChunk {
+                        owner: element_id,
+                        stage: stage_kind,
+                        chunk_index: *chunk_index,
+                    },
+                    scene,
+                    transform: snapshot.world_transform,
+                    clip: snapshot.clip,
+                    bounds: snapshot.local_bounds,
+                    opacity: 1.0,
+                }));
+                *chunk_index += 1;
+            }
+
+            plan.items
+                .push(CompositionItem::ExternalSurface(ExternalSurfaceLayer {
+                    key: CompositionKey::ExternalSurface {
+                        owner: element_id,
+                        stage: stage_kind,
+                        surface_id: surface.surface_id,
+                        occurrence: *external_occurrence,
+                    },
+                    surface_id: surface.surface_id,
+                    rect: surface.rect,
+                    transform: snapshot.world_transform,
+                    clip: snapshot.clip,
+                    opacity: surface.options.opacity,
+                }));
+            *external_occurrence += 1;
+            range_start = range_end;
+        }
+
+        if let Some(scene) =
+            scene_command_range(&stage.scene, range_start, stage.scene.commands().len())
+        {
+            plan.items.push(CompositionItem::Scene(SceneLayer {
+                key: CompositionKey::SceneChunk {
+                    owner: element_id,
+                    stage: stage_kind,
+                    chunk_index: *chunk_index,
+                },
+                scene,
+                transform: snapshot.world_transform,
+                clip: snapshot.clip,
+                bounds: snapshot.local_bounds,
+                opacity: 1.0,
+            }));
+            *chunk_index += 1;
+        }
+    }
+
     fn sync_branch(
         &mut self,
         element_id: ElementId,
@@ -394,14 +648,34 @@ impl RetainedDisplayList {
                         .unwrap_or(0)
                 })
                 .sum::<usize>();
+            let own_external_surface_count = inactive_display
+                .as_ref()
+                .map(node_external_surface_count)
+                .or_else(|| {
+                    self.node(slot)
+                        .map(|node| node_external_surface_count(&node.display))
+                })
+                .unwrap_or(0);
+            let subtree_external_surface_count = own_external_surface_count
+                + children
+                    .ordered
+                    .iter()
+                    .map(|child| {
+                        self.node(*child)
+                            .map(|child_node| child_node.subtree_external_surface_count)
+                            .unwrap_or(0)
+                    })
+                    .sum::<usize>();
             let node = self.node_mut(slot).expect("display list node missing");
             let structure_changed = node.parent != parent
                 || node.children.ordered != children.ordered
-                || node.subtree_size != subtree_size;
+                || node.subtree_size != subtree_size
+                || node.subtree_external_surface_count != subtree_external_surface_count;
             node.element_id = Some(element_id);
             node.parent = parent;
             node.children = children;
             node.subtree_size = subtree_size;
+            node.subtree_external_surface_count = subtree_external_surface_count;
             if let Some(display) = inactive_display {
                 node.display = display;
             }
@@ -540,7 +814,46 @@ impl RetainedDisplayList {
 
 impl DisplayNode {
     fn caches_composed_scene(&self) -> bool {
-        self.subtree_size >= COMPOSED_SCENE_MIN_SUBTREE_SIZE
+        self.subtree_external_surface_count == 0
+            && self.subtree_size >= COMPOSED_SCENE_MIN_SUBTREE_SIZE
+    }
+}
+
+fn node_external_surface_count(display: &ElementDisplayList) -> usize {
+    display.paint.external_surfaces.len() + display.post.external_surfaces.len()
+}
+
+fn scene_command_range(scene: &Scene, start: usize, end: usize) -> Option<Scene> {
+    if start >= end {
+        return None;
+    }
+
+    let mut out = Scene::new();
+    for command in &scene.commands()[start..end] {
+        append_scene_command(scene, &mut out, command);
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+fn append_scene_command(source: &Scene, dest: &mut Scene, command: &Command) {
+    match *command {
+        Command::PushContext(id) => {
+            let context = source.context(id);
+            dest.push_context(context.as_ref(source).label, context.as_ref(source).source);
+        }
+        Command::PopContext => dest.pop_context(),
+        Command::PushClip(id) => {
+            dest.push_clip(source.clip(id).clone());
+        }
+        Command::PopClip => dest.pop_clip(),
+        Command::PushGroup(id) => {
+            let group = source.group(id).as_ref_with(source);
+            PaintSink::push_group(dest, group);
+        }
+        Command::PopGroup => dest.pop_group(),
+        Command::Draw(id) => {
+            dest.draw(source.draw_op(id).clone());
+        }
     }
 }
 
@@ -655,9 +968,10 @@ pub mod bench_support {
             let slot = self.list.find_slot(element_id).expect("bench node");
             self.mutation_epoch = self.mutation_epoch.wrapping_add(1);
             let node = self.list.node_mut(slot).expect("bench node");
-            node.display
-                .paint
-                .set_scene(make_scene(self.scene_commands, self.mutation_epoch));
+            node.display.paint.set_scene(
+                make_scene(self.scene_commands, self.mutation_epoch),
+                Vec::new(),
+            );
             self.list.mark_composed_dirty(element_id);
         }
 
@@ -689,8 +1003,8 @@ pub mod bench_support {
             let node = list.node_mut(slot).expect("bench node");
             node.parent = parent;
             node.display.snapshot = Some(snapshot);
-            node.display.paint.set_scene(paint_scene);
-            node.display.post.set_scene(Scene::new());
+            node.display.paint.set_scene(paint_scene, Vec::new());
+            node.display.post.set_scene(Scene::new(), Vec::new());
             node.composed_dirty = true;
         }
         list.slot_by_id.insert(element_id, slot);
@@ -1014,8 +1328,8 @@ mod tests {
             let node = list.node_mut(slot).expect("node");
             node.parent = parent;
             node.display.snapshot = Some(snapshot);
-            node.display.paint.set_scene(paint_scene);
-            node.display.post.set_scene(post_scene);
+            node.display.paint.set_scene(paint_scene, Vec::new());
+            node.display.post.set_scene(post_scene, Vec::new());
             node.composed_dirty = true;
         }
         list.slot_by_id.insert(element_id, slot);
@@ -1080,7 +1394,7 @@ mod tests {
             shape: Geometry::Rect(rect),
             composite: Composite::default(),
         });
-        stage.set_scene(scene);
+        stage.set_scene(scene, Vec::new());
 
         assert_eq!(stage.scene.commands().len(), 2);
         assert_eq!(stage.transform_class, TransformClass::Affine);
@@ -1098,7 +1412,7 @@ mod tests {
         });
         let _ = scene.draw(fill_draw(rect, Affine::IDENTITY));
         scene.pop_clip();
-        stage.set_scene(scene);
+        stage.set_scene(scene, Vec::new());
 
         assert_eq!(stage.scene.commands().len(), 3);
     }
@@ -1115,9 +1429,30 @@ mod tests {
             std_dev: 6.0,
             composite: Composite::default(),
         }));
-        stage.set_scene(scene);
+        stage.set_scene(scene, Vec::new());
 
         assert_eq!(stage.transform_class, TransformClass::TranslateOnly);
+    }
+
+    #[test]
+    fn stage_recorder_places_external_surface_at_current_command_index() {
+        let mut stage = ElementStage::default();
+        let mut recorder = StageRecorder::from_stage(&mut stage);
+        let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
+
+        PaintSink::fill(&mut recorder, FillRef::new(rect, Color::BLACK));
+        recorder.draw_external_surface(
+            crate::external_surface::ExternalSurfaceId::test_new(7),
+            rect,
+            ExternalSurfacePaintOptions::default(),
+        );
+        let stroke = peniko::kurbo::Stroke::new(1.0);
+        PaintSink::stroke(&mut recorder, StrokeRef::new(rect, &stroke, Color::WHITE));
+        recorder.finish(&mut stage);
+
+        assert_eq!(stage.scene.commands().len(), 2);
+        assert_eq!(stage.external_surfaces.len(), 1);
+        assert_eq!(stage.external_surfaces[0].command_index, 1);
     }
 
     #[test]
@@ -1295,7 +1630,7 @@ mod tests {
             .expect("child node")
             .display
             .paint
-            .set_scene(updated_child_scene);
+            .set_scene(updated_child_scene, Vec::new());
         list.mark_composed_dirty(child_id);
         list.ensure_composed_scene(root_slot);
 

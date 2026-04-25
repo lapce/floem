@@ -22,10 +22,11 @@ use crate::{
     BoxTree, ElementId,
     action::add_update_message,
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
+    external_surface::{ExternalSurfaceContent, ExternalSurfaceId},
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
-    paint::PaintStats,
     paint::display_list::RetainedDisplayList,
+    paint::{PaintStats, composition::CompositionPlan},
     platform::Instant,
     style::{CursorStyle, Style, StyleSelector, theme::default_theme},
     view::{LayoutNodeCx, MeasureCx, VIEW_STORAGE, ViewId},
@@ -101,6 +102,9 @@ pub struct WindowState {
     pub(crate) layout_tree: Rc<RefCell<taffy::TaffyTree<LayoutNodeCx>>>,
     pub(crate) box_tree: Rc<RefCell<BoxTree>>,
     pub(crate) display_list: RetainedDisplayList,
+    pub(crate) composition_plan: CompositionPlan,
+    pub(crate) compositor: crate::window::compositor::WindowCompositor,
+    pub(crate) external_surfaces: FxHashMap<ExternalSurfaceId, ExternalSurfaceEntry>,
     pub(crate) last_paint_stats: PaintStats,
 
     /// Per-pointer capture tracking inspired by Chromium's PointerEventManager.
@@ -204,6 +208,23 @@ pub struct WindowState {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct ExternalSurfaceEntry {
+    pub content: ExternalSurfaceContent,
+    pub content_dirty: bool,
+    pub version: u64,
+}
+
+impl Default for ExternalSurfaceEntry {
+    fn default() -> Self {
+        Self {
+            content: ExternalSurfaceContent::Empty,
+            content_dirty: false,
+            version: 0,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct QueuedProfileEvent {
     pub start: Instant,
     pub end: Instant,
@@ -226,6 +247,9 @@ impl WindowState {
             layout_tree,
             box_tree,
             display_list: RetainedDisplayList::default(),
+            composition_plan: CompositionPlan::new(),
+            compositor: crate::window::compositor::WindowCompositor::default(),
+            external_surfaces: FxHashMap::default(),
             last_paint_stats: PaintStats::default(),
             pointer_capture_target: PointerCaptureMap::new(),
             pending_pointer_capture_target: PointerCaptureMap::new(),
@@ -283,6 +307,22 @@ impl WindowState {
             begin_frame_callbacks: Vec::new(),
             defer_visual_updates_until_present: false,
         }
+    }
+
+    pub(crate) fn set_external_surface_content(
+        &mut self,
+        surface_id: ExternalSurfaceId,
+        content: ExternalSurfaceContent,
+    ) {
+        let entry = self.external_surfaces.entry(surface_id).or_default();
+        entry.content = content;
+        entry.content_dirty = true;
+        entry.version = entry.version.wrapping_add(1);
+        self.request_paint(self.root_view_id);
+    }
+
+    pub(crate) fn request_external_surface_frame(&mut self, _surface_id: ExternalSurfaceId) {
+        self.request_paint(self.root_view_id);
     }
 
     pub(crate) fn request_animation_frame(&mut self, callback: Box<dyn FnOnce(FrameTime)>) {

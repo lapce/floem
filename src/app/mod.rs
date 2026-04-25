@@ -28,6 +28,7 @@ use winit::{
 
 use crate::{
     action::{Timer, TimerToken},
+    external_surface::{ExternalSurfaceContent, ExternalSurfaceId},
     frame::FrameTime,
     inspector::{Capture, profiler::Profile},
     platform::clipboard::Clipboard,
@@ -170,6 +171,15 @@ pub(crate) enum UserEvent {
     FrameReady {
         window_id: WindowId,
         frame_id: u64,
+    },
+    ExternalSurfaceContent {
+        window_id: WindowId,
+        surface_id: ExternalSurfaceId,
+        content: ExternalSurfaceContent,
+    },
+    ExternalSurfaceRequestFrame {
+        window_id: WindowId,
+        surface_id: ExternalSurfaceId,
     },
     #[cfg(all(feature = "subduction", target_os = "macos"))]
     SubductionFrameTick {

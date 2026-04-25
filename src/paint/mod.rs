@@ -5,12 +5,12 @@
 //! - [`PaintState`] - State for the renderer (pending or initialized)
 
 pub mod border_path_iter;
+pub(crate) mod composition;
 pub mod display_list;
 pub mod renderer;
 
 use crate::gpu_resources::{GpuResourceError, GpuResources};
 pub use border_path_iter::{BorderPath, BorderPathEvent};
-use imaging::record::Scene;
 use imaging::{PaintSink, Painter};
 use peniko::kurbo::{Affine, Point, RoundedRect, Size};
 use rustc_hash::FxHashSet;
@@ -27,7 +27,8 @@ use crate::style::FontSizeCx;
 use crate::view::ViewId;
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
-use display_list::{ElementSnapshot, replay_scene};
+use composition::CompositionItem;
+use display_list::{ElementSnapshot, StageRecorder, replay_scene};
 
 std::thread_local! {
     /// Holds the ID of a View being painted very briefly if it is being rendered as
@@ -131,7 +132,7 @@ pub struct GlobalPaintCx<'a> {
 pub struct PaintCx<'a> {
     /// Reference to global paint state
     pub window_state: &'a mut WindowState,
-    pub painter: Painter<'a, Scene>,
+    pub painter: Painter<'a, StageRecorder>,
     is_vger: bool,
     /// The target visual node being painted
     pub target_id: ElementId,
@@ -149,6 +150,11 @@ pub struct PaintCx<'a> {
 impl GlobalPaintCx<'_> {
     pub(crate) fn paint_with_traversal_into(&mut self, root_id: ViewId, sink: &mut dyn PaintSink) {
         self.prepare_display_list(root_id);
+        #[cfg(feature = "subduction")]
+        if self.window_state.composition_plan.has_external_surfaces() {
+            Self::replay_composition_prefix_to_sink(self.window_state, sink, Point::ZERO, None);
+            return;
+        }
         Self::replay_display_list_to_sink_with_state(
             self.window_state,
             self.record_paint_order,
@@ -234,6 +240,44 @@ impl GlobalPaintCx<'_> {
             rerecord_ids,
             replay_steps: self.window_state.display_list.replay_step_count(),
         };
+        self.window_state.composition_plan =
+            self.window_state.display_list.lower_composition_plan();
+        let _composition_diff = self.window_state.compositor.apply_plan(
+            &self.window_state.composition_plan,
+            &self.window_state.external_surfaces,
+        );
+    }
+
+    #[cfg(feature = "subduction")]
+    fn replay_composition_prefix_to_sink(
+        window_state: &mut WindowState,
+        sink: &mut dyn PaintSink,
+        target_origin: Point,
+        render_size: Option<Size>,
+    ) {
+        let effective_scale = window_state.effective_scale();
+        let root_size = window_state.root_size;
+        let os_scale = window_state.os_scale;
+        let render_size = render_size.unwrap_or_else(|| root_size * os_scale);
+
+        for item in &window_state.composition_plan.items {
+            match item {
+                CompositionItem::Scene(layer) => {
+                    let base_transform = layer
+                        .transform
+                        .then_scale(effective_scale)
+                        .then_translate(-target_origin.to_vec2());
+                    if let Some(clip) = layer.clip {
+                        display_list::replay_view_clip(sink, clip, base_transform, render_size);
+                    }
+                    replay_scene(&layer.scene, sink, base_transform, render_size);
+                    if layer.clip.is_some() {
+                        PaintSink::pop_clip(sink);
+                    }
+                }
+                CompositionItem::ExternalSurface(_) => break,
+            }
+        }
     }
 
     fn replay_display_list_to_sink_with_state(
@@ -422,16 +466,16 @@ impl GlobalPaintCx<'_> {
         let snapshot = ElementSnapshot::from_box_tree(&box_tree, element_id);
         drop(box_tree);
 
-        let mut scene = {
+        let mut recorder = {
             let element = self.window_state.display_list.element_mut(element_id);
             let stage = if is_post {
                 &mut element.post
             } else {
                 &mut element.paint
             };
-            let mut scene = std::mem::take(&mut stage.scene);
-            scene.clear();
-            scene
+            let mut recorder = StageRecorder::from_stage(stage);
+            recorder.clear();
+            recorder
         };
 
         let layout_rect = layout_rect_local;
@@ -447,7 +491,7 @@ impl GlobalPaintCx<'_> {
             // Create per-target PaintCx
             let mut cx = PaintCx {
                 window_state: self.window_state,
-                painter: Painter::new(&mut scene),
+                painter: Painter::new(&mut recorder),
                 is_vger,
                 target_id: element_id,
                 world_transform,
@@ -489,7 +533,7 @@ impl GlobalPaintCx<'_> {
         } else {
             &mut element.paint
         };
-        stage.set_scene(scene);
+        recorder.finish(stage);
         element.snapshot = Some(snapshot);
         self.window_state
             .display_list
@@ -498,6 +542,17 @@ impl GlobalPaintCx<'_> {
 }
 
 impl<'a> PaintCx<'a> {
+    pub fn draw_external_surface(
+        &mut self,
+        surface: &crate::external_surface::ExternalSurface,
+        rect: peniko::kurbo::Rect,
+        options: crate::external_surface::ExternalSurfacePaintOptions,
+    ) {
+        self.painter
+            .sink_mut()
+            .draw_external_surface(surface.id(), rect, options);
+    }
+
     /// Allows a `View` to determine if it is being called in order to
     /// paint a *draggable* image of itself during a drag (likely
     /// `draggable()` was called on the `View` or `ViewId`) as opposed

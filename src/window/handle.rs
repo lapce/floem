@@ -485,6 +485,11 @@ impl WindowHandle {
         if paint_state_initialized {
             window_handle.init_renderer();
         }
+        #[cfg(feature = "subduction")]
+        window_handle
+            .window_state
+            .compositor
+            .ensure_platform_presenter(window_handle.window.as_ref());
         window_handle
             .window_state
             .set_root_size(size.get_untracked());
@@ -758,7 +763,8 @@ impl WindowHandle {
         if let Some(theme) = theme {
             // Only override the theme with the default if the user did not provide one
             if self.default_theme.is_some() {
-                self.default_theme = Some(default_theme(theme, self.window_state.effective_scale()));
+                self.default_theme =
+                    Some(default_theme(theme, self.window_state.effective_scale()));
             }
             // Update the default theme in WindowState for style computation
             self.window_state.update_default_theme(theme);
