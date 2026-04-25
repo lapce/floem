@@ -132,6 +132,7 @@ pub struct GlobalPaintCx<'a> {
 pub struct PaintCx<'a> {
     /// Reference to global paint state
     pub window_state: &'a mut WindowState,
+    gpu_resources: Option<&'a GpuResources>,
     pub painter: Painter<'a, StageRecorder>,
     is_vger: bool,
     /// The target visual node being painted
@@ -145,6 +146,14 @@ pub struct PaintCx<'a> {
     pub font_size_cx: FontSizeCx,
     pub font_embolden: peniko::kurbo::Vec2,
     pub effective_scale: f64,
+}
+
+impl<'a> PaintCx<'a> {
+    /// Returns the WGPU resources used by Floem's renderer for this window, if
+    /// the active renderer has a GPU context.
+    pub fn gpu_resources(&self) -> Option<&'a GpuResources> {
+        self.gpu_resources
+    }
 }
 
 impl GlobalPaintCx<'_> {
@@ -242,9 +251,14 @@ impl GlobalPaintCx<'_> {
         };
         self.window_state.composition_plan =
             self.window_state.display_list.lower_composition_plan();
+        let effective_scale = self.window_state.effective_scale();
+        self.window_state
+            .external_surfaces
+            .update_providers(&self.window_state.composition_plan, effective_scale);
         let _composition_diff = self.window_state.compositor.apply_plan(
             &self.window_state.composition_plan,
-            &self.window_state.external_surfaces,
+            self.window_state.external_surfaces.entries(),
+            self.gpu_resources.as_ref(),
         );
     }
 
@@ -491,6 +505,7 @@ impl GlobalPaintCx<'_> {
             // Create per-target PaintCx
             let mut cx = PaintCx {
                 window_state: self.window_state,
+                gpu_resources: self.gpu_resources.as_ref(),
                 painter: Painter::new(&mut recorder),
                 is_vger,
                 target_id: element_id,

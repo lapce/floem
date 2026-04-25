@@ -344,16 +344,14 @@ impl Label {
         if let Some(selection) = self.selection() {
             let selection_color = self.selection_style.selection_color();
             let effective_scale = paint_cx.effective_scale;
-            self.layout_data
-                .borrow()
-                .selection_rects_for_selection(
-                    &selection,
-                    text_loc,
-                    effective_scale,
-                    |rect| {
-                        paint_cx.painter.fill(rect, &selection_color).draw();
-                    },
-                );
+            self.layout_data.borrow().selection_rects_for_selection(
+                &selection,
+                text_loc,
+                effective_scale,
+                |rect| {
+                    paint_cx.painter.fill(rect, &selection_color).draw();
+                },
+            );
         }
     }
 

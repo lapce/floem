@@ -6,9 +6,9 @@
 use crate::text::FontWeight;
 use imaging::Brush;
 use parley::style::{OverflowWrap, WordBreakStrength};
+use peniko::Color;
 use peniko::color::palette;
 use peniko::kurbo::Stroke;
-use peniko::Color;
 
 use crate::theme::StyleThemeExt;
 use crate::unit::{FontSizeCx, Length, LengthAuto};

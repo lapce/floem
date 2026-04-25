@@ -28,7 +28,7 @@ use winit::{
 
 use crate::{
     action::{Timer, TimerToken},
-    external_surface::{ExternalSurfaceContent, ExternalSurfaceId},
+    external_surface::{ExternalSurfaceContent, ExternalSurfaceId, ExternalSurfaceProviderHandle},
     frame::FrameTime,
     inspector::{Capture, profiler::Profile},
     platform::clipboard::Clipboard,
@@ -52,6 +52,7 @@ pub struct AppConfig {
     pub(crate) exit_on_close: bool,
     pub(crate) wgpu_features: wgpu::Features,
     pub(crate) wgpu_backends: Option<wgpu::Backends>,
+    pub(crate) gpu_resources: Option<crate::gpu_resources::GpuResources>,
     pub(crate) global_theme_override: Option<Theme>,
     pub(crate) renderer_chooser: crate::paint::renderer::RendererChooser,
 }
@@ -62,6 +63,7 @@ impl std::fmt::Debug for AppConfig {
             .field("exit_on_close", &self.exit_on_close)
             .field("wgpu_features", &self.wgpu_features)
             .field("wgpu_backends", &self.wgpu_backends)
+            .field("gpu_resources", &self.gpu_resources)
             .field("global_theme_override", &self.global_theme_override)
             .field("renderer_chooser", &"<closure>")
             .finish()
@@ -74,6 +76,7 @@ impl Default for AppConfig {
             exit_on_close: !cfg!(target_os = "macos"),
             wgpu_features: wgpu::Features::default(),
             wgpu_backends: None,
+            gpu_resources: None,
             global_theme_override: None,
             renderer_chooser: crate::paint::renderer::default_renderer(),
         }
@@ -92,6 +95,17 @@ impl AppConfig {
     #[inline]
     pub fn wgpu_features(mut self, features: wgpu::Features) -> Self {
         self.wgpu_features = features;
+        self
+    }
+
+    /// Uses an existing WGPU instance, adapter, device, and queue for Floem.
+    ///
+    /// Floem-created window surfaces and compositor-owned external surfaces
+    /// will be configured against these resources instead of requesting a
+    /// separate WGPU context.
+    #[inline]
+    pub fn gpu_resources(mut self, gpu_resources: crate::gpu_resources::GpuResources) -> Self {
+        self.gpu_resources = Some(gpu_resources);
         self
     }
 
@@ -180,6 +194,11 @@ pub(crate) enum UserEvent {
     ExternalSurfaceRequestFrame {
         window_id: WindowId,
         surface_id: ExternalSurfaceId,
+    },
+    ExternalSurfaceProvider {
+        window_id: WindowId,
+        surface_id: ExternalSurfaceId,
+        provider: ExternalSurfaceProviderHandle,
     },
     #[cfg(all(feature = "subduction", target_os = "macos"))]
     SubductionFrameTick {
@@ -296,9 +315,7 @@ impl ApplicationHandler for Application {
 
     fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
         self.handle.handle_timer(event_loop);
-        for event in self.receiver.try_iter() {
-            self.handle.handle_user_event(event_loop, event);
-        }
+        self.drain_proxy_events(event_loop);
         if Runtime::has_pending_work() {
             self.handle.request_update();
         }
@@ -356,6 +373,12 @@ impl Application {
     pub fn on_event(mut self, action: impl Fn(AppEvent) + 'static) -> Self {
         self.handle.event_listener = Some(Box::new(action));
         self
+    }
+
+    fn drain_proxy_events(&mut self, event_loop: &dyn ActiveEventLoop) {
+        for event in self.receiver.try_iter() {
+            self.handle.handle_user_event(event_loop, event);
+        }
     }
 
     /// Create a new window for the application, if you want multiple windows,

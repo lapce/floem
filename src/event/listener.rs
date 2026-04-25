@@ -87,6 +87,7 @@ pub use inner::{
     WindowCloseRequested,
     WindowClosed,
     WindowGainedFocus,
+    WindowGpuResourcesReady,
     WindowLostFocus,
     WindowMaximizeChanged,
     WindowMoved,
@@ -114,6 +115,7 @@ mod inner {
         DragSourceEvent, DragStartEvent, DragTargetEvent, DragToken, Event, FileDragEvent,
         FocusEvent, ImeEvent, InteractionEvent, PointerCaptureEvent, UpdatePhaseEvent, WindowEvent,
     };
+    use crate::gpu_resources::GpuResources;
 
     // EventListener using the same pattern as StyleClass
     #[derive(Copy, Clone)]
@@ -969,6 +971,21 @@ mod inner {
         |event| {
             if let Event::Window(WindowEvent::Resized(size)) = event {
                 return Some(size as &dyn Any);
+            }
+            None
+        }
+    );
+
+    event_listener!(
+        /// Receives [`Event::Window`] `GpuResourcesReady` variant — fired once Floem has acquired
+        /// the wgpu instance/adapter/device/queue for this window.
+        ///
+        /// External surface producers should use these resources instead of creating an unrelated
+        /// wgpu device.
+        pub WindowGpuResourcesReady: GpuResources,
+        |event| {
+            if let Event::Window(WindowEvent::GpuResourcesReady(resources)) = event {
+                return Some(resources as &dyn Any);
             }
             None
         }

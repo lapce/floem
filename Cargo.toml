@@ -98,7 +98,7 @@ floem-editor-core = { path = "editor-core", version = "0.2.0", optional = true }
 subduction_core = { path = "../subduction/subduction_core", package = "subduction_core", optional = true, features = ["std"] }
 subduction_platform = { path = "../subduction/subduction_platform", package = "subduction_platform", optional = true }
 subduction_backend_wgpu = { path = "../subduction/subduction_backend_wgpu", package = "subduction_backend_wgpu", optional = true }
-subduction_backend_apple = { path = "../subduction/subduction_backend_apple", package = "subduction_backend_apple", optional = true, default-features = false, features = ["ca-display-link", "wgpu"] }
+subduction_backend_apple = { path = "../subduction/subduction_backend_apple", package = "subduction_backend_apple", optional = true, default-features = false, features = ["cv-display-link", "wgpu"] }
 copypasta = { version = "0.10", default-features = false, features = [
   "wayland",
   "x11",

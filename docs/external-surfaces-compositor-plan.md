@@ -447,19 +447,35 @@ The provider API should look like:
 
 ```rust
 pub trait ExternalSurfaceProvider {
-    fn update_current_content(&mut self, args: ExternalSurfaceFrameArgs) -> bool;
+    fn update_current_content(
+        &mut self,
+        args: ExternalSurfaceFrameArgs,
+    ) -> ExternalSurfaceFrameUpdate;
+
     fn current_content(&self) -> Option<ExternalSurfaceContent>;
+
     fn release_current_content(&mut self, outcome: ExternalSurfaceOutcome);
 }
 
 pub struct ExternalSurfaceFrameArgs {
-    pub deadline_min: Instant,
-    pub deadline_max: Instant,
-    pub predicted_present: Option<Instant>,
-    pub background_rendering: bool,
+    pub surface_id: ExternalSurfaceId,
+    pub interval: PresentationInterval,
     pub visible: bool,
+    pub rect: Rect,
     pub size_px: Size,
-    pub previous_outcome: Option<FrameOutcome>,
+    pub previous_outcome: Option<ExternalSurfaceOutcome>,
+}
+
+pub struct ExternalSurfaceFrameUpdate {
+    pub content_changed: bool,
+    pub request_next_frame: bool,
+}
+
+pub struct ExternalSurfaceOutcome {
+    pub surface_id: ExternalSurfaceId,
+    pub frame_index: u64,
+    pub visible: bool,
+    pub outcome: FrameOutcome,
 }
 ```
 
@@ -467,15 +483,22 @@ Video selection policy stays outside Floem core:
 
 ```rust
 impl ExternalSurfaceProvider for VideoSurface {
-    fn update_current_content(&mut self, args: ExternalSurfaceFrameArgs) -> bool {
+    fn update_current_content(
+        &mut self,
+        args: ExternalSurfaceFrameArgs,
+    ) -> ExternalSurfaceFrameUpdate {
         self.current = self.algorithm.select_texture(
-            args.deadline_min,
-            args.deadline_max,
-            args.predicted_present,
+            args.interval.deadline_min,
+            args.interval.deadline_max,
+            args.interval.predicted_present,
             args.previous_outcome,
             &self.uploaded_frames,
         );
-        self.current.is_some()
+
+        ExternalSurfaceFrameUpdate {
+            content_changed: self.current.is_some(),
+            request_next_frame: self.is_playing(),
+        }
     }
 
     fn current_content(&self) -> Option<ExternalSurfaceContent> {
@@ -495,6 +518,29 @@ The algorithm may implement Project Butter's priority order:
 3. drift-based selection when no frame overlaps the interval
 
 Floem core only supplies timing, visibility, placement, and outcome feedback.
+If a provider returns `request_next_frame`, Floem keeps scheduling frame work so
+visible video is pulled by the compositor clock instead of by a sleeping video
+thread.
+If a provider returns `content_changed` and `current_content()` returns `None`,
+Floem clears the surface content.
+
+Provider pulls are not ordinary paint invalidation. They are frame-scheduler
+work:
+
+- With a display-link/subduction frame clock, each external tick may advance the
+  provider pull if the window has external-surface frame work.
+- With the heuristic frame clock, provider pulls arm a paced update wake.
+- If only provider content changes, Floem applies a compositor diff and does
+  not rerender the main window surface.
+- If retained Floem content above an external surface changes, Floem rerenders
+  only the promoted compositor-owned scene layer when the window prefix before
+  the first external surface is unchanged.
+- Promoted compositor-owned scene layers are rendered through the same renderer
+  backend instance as the main window. For the threaded window renderer this is
+  the existing render worker; GPU results are blitted into the layer surface,
+  and CPU results are uploaded as RGBA and then blitted.
+- If the prefix before the first external surface changes, the main window
+  surface must be rerendered because that content lives in the window surface.
 
 ## Background Rendering
 
@@ -545,7 +591,41 @@ Platform paths:
 - Windows: DirectComposition-style presenter when available
 - fallback: `subduction_backend_wgpu::WgpuPresenter`
 
+## GPU Resource Ownership
+
+External surfaces that Floem owns or renders into must use the same WGPU
+`Instance`, `Adapter`, `Device`, and `Queue` as the window renderer. Creating a
+separate device for compositor-owned scene layers is incorrect because it breaks
+resource sharing assumptions and can choose a different adapter from the app.
+
+Floem therefore exposes `AppConfig::gpu_resources(GpuResources)` for embedding
+apps that already own WGPU state. If no resources are supplied, Floem requests
+them once and shares that `GpuResources` through:
+
+- the main window renderer
+- compositor-owned scene surfaces above/between external surfaces
+- `WindowEvent::GpuResourcesReady(GpuResources)` / `WindowGpuResourcesReady`
+  for producers that should start after Floem has acquired the window GPU
+  context
+- subduction external surface targets created through
+  `SubductionWgpuSurface::create_target_with_gpu_resources`
+
+The standalone `create_target` path exists only as a convenience for independent
+producers. Video integrations that need zero-copy/shared-resource behavior
+should use the app/Floem `GpuResources` path.
+
 ## Implementation Plan
+
+Status:
+
+- Phases 1-4 are implemented as the current vertical slice.
+- Phase 5 is implemented for visible compositor-pulled surfaces: providers are
+  registered on `ExternalSurface`, called after display-list lowering with the
+  current `PresentationInterval`, may update content, may request the next
+  compositor pull, and receive frame outcome feedback.
+- Phase 5 background mode is still pending.
+- Phase 6 remains outside Floem core: a video crate/view should implement the
+  provider and own cadence/coverage/drift frame selection.
 
 ### Phase 1: Internal Display-List Command
 
@@ -584,6 +664,10 @@ Platform paths:
 - During frame prepare/lowering, call providers for visible placements with
   `PresentationInterval`.
 - Call outcome feedback after draw/present.
+- Let providers request the next compositor pull.
+- Keep provider pulls separate from ordinary paint invalidation.
+- Only rerender the main window surface when the scene prefix before the first
+  external surface changes.
 - Add background rendering mode.
 
 ### Phase 6: Video Prototype
@@ -603,4 +687,3 @@ Platform paths:
 - Should one `ExternalSurfaceId` be allowed to appear multiple times in one
   frame, or should V1 enforce one visible placement per surface?
 - What should the exact background rendering cadence and opt-in policy be?
-

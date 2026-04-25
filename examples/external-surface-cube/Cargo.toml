@@ -6,6 +6,5 @@ license.workspace = true
 
 [dependencies]
 bytemuck = { version = "1.21", features = ["derive"] }
-floem = { path = "../..", default-features = false, features = ["editor", "vello-hybrid", "subduction"] }
-pollster = "0.4"
+floem = { path = "../..", default-features = false, features = ["editor", "skia", "subduction"] }
 wgpu.workspace = true

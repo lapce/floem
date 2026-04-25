@@ -7,10 +7,8 @@ use winit::window::WindowId;
 #[cfg(all(feature = "subduction", target_os = "macos"))]
 use crate::{Application, app::UserEvent};
 #[cfg(all(feature = "subduction", target_os = "macos"))]
-use objc2::MainThreadMarker;
-#[cfg(all(feature = "subduction", target_os = "macos"))]
 use subduction_backend_apple::{
-    DisplayLink, compute_present_hints, now as subduction_now, timebase,
+    DisplayLink, TickForwarder, compute_present_hints, now as subduction_now, timebase,
 };
 #[cfg(all(feature = "subduction", target_os = "windows"))]
 use subduction_backend_windows::{
@@ -31,7 +29,6 @@ use subduction_core::{
     time::{Duration as HostDuration, HostTime, Timebase},
     timing::{FramePlan, FrameTick, PendingFeedback, PresentHints},
 };
-
 pub(crate) trait FrameClock {
     fn current_frame_time(
         &self,
@@ -68,6 +65,8 @@ pub(crate) trait FrameClock {
     }
     #[cfg(all(feature = "subduction", target_os = "macos"))]
     fn receive_frame_tick(&mut self, _tick: FrameTick) {}
+    #[cfg(all(feature = "subduction", target_os = "macos"))]
+    fn set_native_display_id(&mut self, _display_id: Option<u32>) {}
 }
 
 fn force_heuristic_frame_clock_requested() -> bool {
@@ -113,8 +112,6 @@ fn min_duration(a: Duration, b: Duration) -> Duration {
 const MIN_SURFACE_ACQUIRE_GUARD_BAND: Duration = Duration::from_millis(1);
 #[cfg(all(feature = "subduction", target_os = "windows"))]
 const SUBDUCTION_PRESENT_WAKE_SLACK: Duration = Duration::from_micros(20);
-#[cfg(all(feature = "subduction", target_os = "macos"))]
-const MACOS_SUBDUCTION_PRESENT_DELAY: Duration = Duration::from_micros(500);
 
 #[derive(Debug)]
 pub(crate) struct HeuristicFrameClock {
@@ -269,24 +266,22 @@ struct SubductionPlanState {
 ))]
 impl SubductionPlanState {
     fn ready_frame_target(&self) -> Option<Instant> {
-        self.latest_hints
-            .and_then(|hints| hints.desired_present)
-            .map(|present| self.host_to_instant(present))
-            .map(|surface_available_at| {
-                #[cfg(all(feature = "subduction", target_os = "macos"))]
-                {
-                    surface_available_at
-                        .checked_add(MACOS_SUBDUCTION_PRESENT_DELAY)
-                        .unwrap_or(surface_available_at)
-                }
+        #[cfg(all(feature = "subduction", target_os = "macos"))]
+        {
+            return self.latest_commit_deadline();
+        }
 
-                #[cfg(all(feature = "subduction", target_os = "windows"))]
-                {
+        #[cfg(all(feature = "subduction", target_os = "windows"))]
+        {
+            self.latest_hints
+                .and_then(|hints| hints.desired_present)
+                .map(|present| self.host_to_instant(present))
+                .map(|surface_available_at| {
                     surface_available_at
                         .checked_sub(SUBDUCTION_PRESENT_WAKE_SLACK)
                         .unwrap_or(surface_available_at)
-                }
-            })
+                })
+        }
     }
 
     fn new(output: OutputId, scheduler: Scheduler, now: HostTime, timebase: Timebase) -> Self {
@@ -470,21 +465,25 @@ impl SubductionPlanState {
 struct SubductionFrameClock {
     plan_state: SubductionPlanState,
     window_id: WindowId,
+    native_display_id: Option<u32>,
     display_link: Option<DisplayLink>,
+    tick_forwarder: Option<TickForwarder>,
 }
 
 #[cfg(all(feature = "subduction", target_os = "macos"))]
 impl SubductionFrameClock {
-    fn new(window_id: WindowId, output: OutputId) -> Self {
+    fn new(window_id: WindowId, fallback_output: OutputId) -> Self {
         Self {
             plan_state: SubductionPlanState::new(
-                output,
+                fallback_output,
                 Scheduler::new(SchedulerConfig::macos()),
                 subduction_now(),
                 timebase(),
             ),
             window_id,
+            native_display_id: None,
             display_link: None,
+            tick_forwarder: None,
         }
     }
 
@@ -494,18 +493,19 @@ impl SubductionFrameClock {
         }
 
         let output = self.plan_state.output;
-        let Some(mtm) = MainThreadMarker::new() else {
+        let window_id = self.window_id;
+        let forwarder = TickForwarder::new(move |tick| {
+            Application::send_proxy_event(UserEvent::SubductionFrameTick { window_id, tick });
+        });
+        let native_display_id = self.native_display_id;
+        let Ok(display_link) = DisplayLink::new(forwarder.sender(), output, native_display_id)
+        else {
             return;
         };
-        let window_id = self.window_id;
-        let display_link = DisplayLink::new(
-            move |tick| {
-                Application::send_proxy_event(UserEvent::SubductionFrameTick { window_id, tick });
-            },
-            output,
-            mtm,
-        );
-        display_link.start();
+        if display_link.start().is_err() {
+            return;
+        }
+        self.tick_forwarder = Some(forwarder);
         self.display_link = Some(display_link);
     }
 }
@@ -569,7 +569,8 @@ impl FrameClock for SubductionFrameClock {
         if active {
             self.ensure_display_link();
         } else if let Some(display_link) = self.display_link.take() {
-            display_link.stop();
+            let _ = display_link.stop();
+            self.tick_forwarder = None;
         }
     }
 
@@ -604,6 +605,23 @@ impl FrameClock for SubductionFrameClock {
             hints,
             plan,
         );
+    }
+
+    fn set_native_display_id(&mut self, display_id: Option<u32>) {
+        if self.native_display_id == display_id {
+            return;
+        }
+
+        self.native_display_id = display_id;
+        if self.display_link.is_some() {
+            if let Some(display_link) = self.display_link.take() {
+                let _ = display_link.stop();
+            }
+            self.tick_forwarder = None;
+            if self.plan_state.active {
+                self.ensure_display_link();
+            }
+        }
     }
 }
 

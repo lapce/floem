@@ -1073,14 +1073,12 @@ impl View for ProfilerTimelineView {
                         * 0.5,
             );
             cx.painter.with_fill_clip(rect, |p| {
-                element
-                    .label_layout
-                    .draw_with_painter(
-                        p.as_dyn(),
-                        text_origin,
-                        cx.font_embolden,
-                        cx.window_state.effective_scale(),
-                    );
+                element.label_layout.draw_with_painter(
+                    p.as_dyn(),
+                    text_origin,
+                    cx.font_embolden,
+                    cx.window_state.effective_scale(),
+                );
             });
         }
     }

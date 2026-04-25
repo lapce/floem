@@ -1,16 +1,15 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
-#[cfg(all(feature = "subduction", feature = "vello-hybrid"))]
-use imaging_wgpu::{TextureRenderer, TextureViewTarget};
-
 use crate::{
     external_surface::{ExternalSurfaceContent, ExternalSurfaceId},
+    gpu_resources::GpuResources,
     paint::composition::{
         CompositionItem, CompositionKey, CompositionPlan, ExternalSurfaceLayer, SceneLayer,
     },
+    paint::renderer::{RenderedFrame, WindowRenderer},
 };
 
-use super::state::ExternalSurfaceEntry;
+use super::external_surface::ExternalSurfaceEntry;
 
 #[derive(Default)]
 pub(crate) struct WindowCompositor {
@@ -38,6 +37,7 @@ impl WindowCompositor {
         &mut self,
         plan: &CompositionPlan,
         external_surfaces: &FxHashMap<ExternalSurfaceId, ExternalSurfaceEntry>,
+        gpu_resources: Option<&GpuResources>,
     ) -> CompositorDiff {
         let mut diff = CompositorDiff::default();
         let mut new_order = Vec::with_capacity(plan.items.len());
@@ -76,10 +76,22 @@ impl WindowCompositor {
 
         #[cfg(feature = "subduction")]
         if let Some(platform) = &mut self.platform {
-            platform.apply_plan(plan, external_surfaces);
+            platform.apply_plan(plan, external_surfaces, gpu_resources);
         }
 
         diff
+    }
+
+    #[cfg(feature = "subduction")]
+    pub(crate) fn render_scene_layers(
+        &mut self,
+        plan: &CompositionPlan,
+        gpu_resources: &GpuResources,
+        renderer: &mut dyn WindowRenderer,
+    ) {
+        if let Some(platform) = &mut self.platform {
+            platform.render_scene_layers(plan, gpu_resources, renderer);
+        }
     }
 }
 
@@ -89,9 +101,7 @@ struct PlatformCompositor {
     presenter: subduction_platform::LayerPresenter,
     root: subduction_core::layer::LayerId,
     layers: FxHashMap<CompositionKey, subduction_core::layer::LayerId>,
-    #[cfg(feature = "vello-hybrid")]
     scene_surfaces: FxHashMap<CompositionKey, SceneSurface>,
-    #[cfg(feature = "vello-hybrid")]
     next_scene_surface_id: u32,
 }
 
@@ -108,9 +118,7 @@ impl PlatformCompositor {
             presenter,
             root,
             layers: FxHashMap::default(),
-            #[cfg(feature = "vello-hybrid")]
             scene_surfaces: FxHashMap::default(),
-            #[cfg(feature = "vello-hybrid")]
             next_scene_surface_id: 0x8000_0000,
         })
     }
@@ -119,6 +127,7 @@ impl PlatformCompositor {
         &mut self,
         plan: &CompositionPlan,
         external_surfaces: &FxHashMap<ExternalSurfaceId, ExternalSurfaceEntry>,
+        gpu_resources: Option<&GpuResources>,
     ) {
         let mut live_keys = FxHashSet::default();
         let mut found_external_surface = false;
@@ -148,7 +157,6 @@ impl PlatformCompositor {
                 }
                 self.store.destroy_layer(layer);
             }
-            #[cfg(feature = "vello-hybrid")]
             self.scene_surfaces.remove(&key);
         }
 
@@ -177,10 +185,9 @@ impl PlatformCompositor {
 
             match item {
                 CompositionItem::Scene(layer) => {
-                    #[cfg(feature = "vello-hybrid")]
-                    let surface_id = self.render_scene_layer(layer);
-                    #[cfg(not(feature = "vello-hybrid"))]
-                    let surface_id = None;
+                    let surface_id = gpu_resources.and_then(|gpu_resources| {
+                        self.ensure_scene_layer_surface(layer, gpu_resources)
+                    });
 
                     configure_layer_geometry(
                         &mut self.store,
@@ -215,7 +222,6 @@ impl PlatformCompositor {
         for item in &plan.items {
             match item {
                 CompositionItem::Scene(layer) => {
-                    #[cfg(feature = "vello-hybrid")]
                     if let (Some(layer_id), Some(scene_surface)) = (
                         self.layers.get(&layer.key).copied(),
                         self.scene_surfaces.get(&layer.key),
@@ -259,10 +265,28 @@ impl PlatformCompositor {
         }
     }
 
-    #[cfg(feature = "vello-hybrid")]
-    fn render_scene_layer(
+    pub(crate) fn render_scene_layers(
+        &mut self,
+        plan: &CompositionPlan,
+        gpu_resources: &GpuResources,
+        renderer: &mut dyn WindowRenderer,
+    ) {
+        let mut found_external_surface = false;
+        for item in &plan.items {
+            match item {
+                CompositionItem::Scene(_) if !found_external_surface => continue,
+                CompositionItem::Scene(layer) => {
+                    self.render_scene_layer(layer, gpu_resources, renderer);
+                }
+                CompositionItem::ExternalSurface(_) => found_external_surface = true,
+            }
+        }
+    }
+
+    fn ensure_scene_layer_surface(
         &mut self,
         layer: &SceneLayer,
+        gpu_resources: &GpuResources,
     ) -> Option<subduction_core::layer::SurfaceId> {
         let width = layer.bounds.width().ceil().max(1.0) as u32;
         let height = layer.bounds.height().ceil().max(1.0) as u32;
@@ -275,13 +299,16 @@ impl PlatformCompositor {
                 f64::from(width),
                 f64::from(height),
             );
-            let target = futures::executor::block_on(surface.create_target(width, height)).ok()?;
-            let renderer = imaging_vello_hybrid::VelloHybridRenderer::new(
-                target.device.clone(),
-                target.queue.clone(),
-            );
-            let texture = create_scene_texture(&target.device, width, height);
-            let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let target = surface
+                .create_target_with_context(
+                    &gpu_resources.instance,
+                    &gpu_resources.adapter,
+                    gpu_resources.device.clone(),
+                    gpu_resources.queue.clone(),
+                    width,
+                    height,
+                )
+                .ok()?;
             let blitter = wgpu::util::TextureBlitter::new(&target.device, target.config.format);
             self.scene_surfaces.insert(
                 key.clone(),
@@ -289,12 +316,10 @@ impl PlatformCompositor {
                     surface_id,
                     surface,
                     target,
-                    renderer,
-                    texture,
-                    texture_view,
                     blitter,
                     width,
                     height,
+                    content_revision: 0,
                 },
             );
         }
@@ -307,24 +332,42 @@ impl PlatformCompositor {
                 f64::from(width),
                 f64::from(height),
             );
-            scene_surface.target =
-                futures::executor::block_on(scene_surface.surface.create_target(width, height))
-                    .ok()?;
-            scene_surface.renderer = imaging_vello_hybrid::VelloHybridRenderer::new(
-                scene_surface.target.device.clone(),
-                scene_surface.target.queue.clone(),
-            );
-            scene_surface.texture =
-                create_scene_texture(&scene_surface.target.device, width, height);
-            scene_surface.texture_view = scene_surface
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor::default());
+            scene_surface.target = scene_surface
+                .surface
+                .create_target_with_context(
+                    &gpu_resources.instance,
+                    &gpu_resources.adapter,
+                    gpu_resources.device.clone(),
+                    gpu_resources.queue.clone(),
+                    width,
+                    height,
+                )
+                .ok()?;
             scene_surface.blitter = wgpu::util::TextureBlitter::new(
                 &scene_surface.target.device,
                 scene_surface.target.config.format,
             );
             scene_surface.width = width;
             scene_surface.height = height;
+            scene_surface.content_revision = 0;
+        }
+
+        if scene_surface.content_revision == layer.content_revision {
+            return Some(scene_surface.surface_id);
+        }
+        Some(scene_surface.surface_id)
+    }
+
+    fn render_scene_layer(
+        &mut self,
+        layer: &SceneLayer,
+        gpu_resources: &GpuResources,
+        renderer: &mut dyn WindowRenderer,
+    ) -> Option<subduction_core::layer::SurfaceId> {
+        let surface_id = self.ensure_scene_layer_surface(layer, gpu_resources)?;
+        let scene_surface = self.scene_surfaces.get_mut(&layer.key)?;
+        if scene_surface.content_revision == layer.content_revision {
+            return Some(surface_id);
         }
 
         let surface_texture = match scene_surface.target.surface.get_current_texture() {
@@ -340,14 +383,7 @@ impl PlatformCompositor {
         let view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut source = &layer.scene;
-        scene_surface
-            .renderer
-            .render_source_into_texture(
-                &mut source,
-                TextureViewTarget::new(&scene_surface.texture_view, width, height),
-            )
-            .ok()?;
+        let frame = renderer.render_offscreen_frame(layer.scene.clone(), layer.bounds.size())?;
         let mut encoder =
             scene_surface
                 .target
@@ -355,48 +391,90 @@ impl PlatformCompositor {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("floem subduction scene blit"),
                 });
-        scene_surface.blitter.copy(
-            &scene_surface.target.device,
-            &mut encoder,
-            &scene_surface.texture_view,
-            &view,
-        );
+        match frame {
+            RenderedFrame::Gpu(texture) => {
+                let source_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                scene_surface.blitter.copy(
+                    &scene_surface.target.device,
+                    &mut encoder,
+                    &source_view,
+                    &view,
+                );
+            }
+            RenderedFrame::Cpu(frame) => {
+                let texture = create_cpu_scene_texture(
+                    &scene_surface.target.device,
+                    &scene_surface.target.queue,
+                    frame.image,
+                );
+                let source_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                scene_surface.blitter.copy(
+                    &scene_surface.target.device,
+                    &mut encoder,
+                    &source_view,
+                    &view,
+                );
+            }
+        }
         scene_surface.target.queue.submit([encoder.finish()]);
         surface_texture.present();
+        scene_surface.content_revision = layer.content_revision;
 
         Some(scene_surface.surface_id)
     }
 }
 
-#[cfg(all(feature = "subduction", feature = "vello-hybrid"))]
-fn create_scene_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture {
-    device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("floem subduction scene rgba target"),
+#[cfg(feature = "subduction")]
+fn create_cpu_scene_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    image: imaging::RgbaImage,
+) -> wgpu::Texture {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("floem subduction cpu scene upload"),
         size: wgpu::Extent3d {
-            width,
-            height,
+            width: image.width,
+            height: image.height,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8Unorm,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
-    })
+    });
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &image.data,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * image.width),
+            rows_per_image: Some(image.height),
+        },
+        wgpu::Extent3d {
+            width: image.width,
+            height: image.height,
+            depth_or_array_layers: 1,
+        },
+    );
+    texture
 }
 
-#[cfg(all(feature = "subduction", feature = "vello-hybrid"))]
+#[cfg(feature = "subduction")]
 struct SceneSurface {
     surface_id: subduction_core::layer::SurfaceId,
     surface: subduction_platform::ExternalWgpuSurface,
     target: subduction_platform::ExternalWgpuTarget,
-    renderer: imaging_vello_hybrid::VelloHybridRenderer,
-    texture: wgpu::Texture,
-    texture_view: wgpu::TextureView,
     blitter: wgpu::util::TextureBlitter,
     width: u32,
     height: u32,
+    content_revision: u64,
 }
 
 #[cfg(feature = "subduction")]
@@ -462,6 +540,7 @@ pub(crate) struct SceneCompositorLayer {
     pub clip: Option<peniko::kurbo::RoundedRect>,
     pub bounds: peniko::kurbo::Rect,
     pub opacity: f32,
+    pub content_revision: u64,
     pub command_count: usize,
 }
 
@@ -473,6 +552,7 @@ impl SceneCompositorLayer {
             clip: layer.clip,
             bounds: layer.bounds,
             opacity: layer.opacity,
+            content_revision: layer.content_revision,
             command_count: layer.scene.commands().len(),
         }
     }

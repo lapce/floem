@@ -1,8 +1,8 @@
+use floem_reactive::{RwSignal, SignalGet, SignalUpdate};
 use imaging::{
     Composite, Filter,
     record::{AppliedMask, Clip, Command, Context, Draw, Geometry, Group, Mask, Scene, replay},
 };
-use floem_reactive::{RwSignal, SignalGet, SignalUpdate};
 use peniko::{
     Color,
     color::palette::css,
@@ -168,7 +168,10 @@ fn disclosure_icon(expanded: bool) -> AnyView {
         r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6.427 4.427l3.396 3.396a.25.25 0 010 .354l-3.396 3.396A.25.25 0 016 11.396V4.604a.25.25 0 01.427-.177z"/></svg>"#
     };
     svg(icon)
-        .style(|s| s.size(14.0, 14.0).with_theme(|s, t| s.color(t.text_muted())))
+        .style(|s| {
+            s.size(14.0, 14.0)
+                .with_theme(|s, t| s.color(t.text_muted()))
+        })
         .into_any()
 }
 
@@ -205,10 +208,7 @@ fn collapsible_section(
                 .padding_vert(7.0)
                 .border_radius(8.0)
                 .border(1.0)
-                .with_theme(|s, t| {
-                    s.background(t.bg_base())
-                        .border_color(t.border())
-                })
+                .with_theme(|s, t| s.background(t.bg_base()).border_color(t.border()))
         })
         .action(move || expanded.update(|value| *value = !*value)),
         dyn_view(move || {
@@ -234,10 +234,7 @@ fn raw_debug_section(title: impl Into<String>, text: impl Into<String>) -> AnyVi
                 s.padding(8.0)
                     .border_radius(8.0)
                     .border(1.0)
-                    .with_theme(|s, t| {
-                        s.background(t.bg_base())
-                            .border_color(t.border())
-                    })
+                    .with_theme(|s, t| s.background(t.bg_base()).border_color(t.border()))
             })
             .into_any()
     })
@@ -249,17 +246,19 @@ fn scene_size_hint(size: Size) -> Size {
     Size::new(width, height)
 }
 
-fn nested_scene_section(title: impl Into<String>, subtitle: impl Into<String>, scene: Scene, size: Size) -> AnyView {
+fn nested_scene_section(
+    title: impl Into<String>,
+    subtitle: impl Into<String>,
+    scene: Scene,
+    size: Size,
+) -> AnyView {
     collapsible_section(title, Some(subtitle.into()), false, move || {
         scene_debug_view_with_size(scene.clone(), scene_size_hint(size))
             .style(|s| {
                 s.padding(8.0)
                     .border_radius(10.0)
                     .border(1.0)
-                    .with_theme(|s, t| {
-                        s.background(t.bg_base())
-                            .border_color(t.border())
-                    })
+                    .with_theme(|s, t| s.background(t.bg_base()).border_color(t.border()))
             })
             .into_any()
     })
@@ -291,7 +290,12 @@ fn brush_summary_view(brush: &imaging::Brush) -> AnyView {
             let source_label = match &image_brush.image {
                 imaging::Image::Raster(image) => format!("raster {}×{}", image.width, image.height),
                 imaging::Image::Scene(scene) => {
-                    format!("scene image #{}  {}×{}", scene.id(), scene.width(), scene.height())
+                    format!(
+                        "scene image #{}  {}×{}",
+                        scene.id(),
+                        scene.width(),
+                        scene.height()
+                    )
                 }
             };
             let mut rows = vec![
@@ -327,7 +331,10 @@ fn brush_summary_view(brush: &imaging::Brush) -> AnyView {
                         scene_image.scene().clone(),
                         Size::new(scene_image.width() as f64, scene_image.height() as f64),
                     ));
-                    rows.push(raw_debug_section("Image Metadata", format!("{:?}", scene_image)));
+                    rows.push(raw_debug_section(
+                        "Image Metadata",
+                        format!("{:?}", scene_image),
+                    ));
                 }
                 imaging::Image::Raster(image) => {
                     rows.push(raw_debug_section("Image Metadata", format!("{:?}", image)));
@@ -650,7 +657,10 @@ impl IntoView for Draw {
                     field_row("kind", "scene picture"),
                     field_row("picture id", picture.id().to_string()),
                     field_view("bounds", bounds_view(picture.bounds())),
-                    field_row("scene commands", picture.scene().commands().len().to_string()),
+                    field_row(
+                        "scene commands",
+                        picture.scene().commands().len().to_string(),
+                    ),
                 ];
                 if transform != Affine::IDENTITY {
                     rows.insert(1, field_value("transform", &transform));
@@ -726,10 +736,7 @@ fn command_card(title: impl Into<String>, body: AnyView) -> AnyView {
             .min_width(0.0)
             .border_radius(10.0)
             .border(1.0)
-            .with_theme(|s, t| {
-                s.background(t.bg_elevated())
-                    .border_color(t.border())
-            })
+            .with_theme(|s, t| s.background(t.bg_elevated()).border_color(t.border()))
     })
     .into_any()
 }

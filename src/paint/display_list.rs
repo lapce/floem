@@ -78,6 +78,7 @@ pub(crate) struct ElementStage {
     pub scene: Scene,
     pub external_surfaces: Vec<ExternalSurfacePlacement>,
     pub transform_class: TransformClass,
+    pub content_revision: u64,
 }
 
 impl Default for ElementStage {
@@ -86,6 +87,7 @@ impl Default for ElementStage {
             scene: Scene::new(),
             external_surfaces: Vec::new(),
             transform_class: TransformClass::Affine,
+            content_revision: 0,
         }
     }
 }
@@ -99,6 +101,7 @@ impl ElementStage {
         self.transform_class = scene_transform_class(&scene);
         self.scene = scene;
         self.external_surfaces = external_surfaces;
+        self.content_revision = self.content_revision.wrapping_add(1);
     }
 
     pub(crate) fn has_external_surfaces(&self) -> bool {
@@ -534,6 +537,7 @@ impl RetainedDisplayList {
                         chunk_index: *chunk_index,
                     },
                     scene,
+                    content_revision: stage.content_revision,
                     transform: snapshot.world_transform,
                     clip: snapshot.clip,
                     bounds: snapshot.local_bounds,
@@ -570,6 +574,7 @@ impl RetainedDisplayList {
                     chunk_index: *chunk_index,
                 },
                 scene,
+                content_revision: stage.content_revision,
                 transform: snapshot.world_transform,
                 clip: snapshot.clip,
                 bounds: snapshot.local_bounds,

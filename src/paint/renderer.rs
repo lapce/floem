@@ -457,6 +457,15 @@ pub(crate) trait WindowRenderer {
     /// queued async work obsolete.
     fn discard_pending_frames(&mut self) {}
 
+    /// Renders an offscreen scene using this renderer's existing backend.
+    ///
+    /// Threaded renderers execute this on their render worker, reusing the same
+    /// renderer instance and caches as the main window.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn render_offscreen_frame(&mut self, _scene: Scene, _size: Size) -> Option<RenderedFrame> {
+        None
+    }
+
     /// Captures output from the supplied scene source without going through the
     /// live window frame pipeline.
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput;
@@ -546,7 +555,7 @@ pub(crate) enum RenderedFrame {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) struct RenderedImageFrame {
-    image: RgbaImage,
+    pub(crate) image: RgbaImage,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1509,6 +1518,10 @@ impl WindowRenderer for ThreadedWindowRenderer {
         self.ready_order.clear();
     }
 
+    fn render_offscreen_frame(&mut self, scene: Scene, size: Size) -> Option<RenderedFrame> {
+        self.worker.render_sync(scene, size)
+    }
+
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {
         self.worker.capture(OffscreenRenderJob {
             frame_id: 0,
@@ -1672,6 +1685,37 @@ impl WindowRenderer for TargetGpuWindowRenderer {
         self.ready_frame.as_ref().map(|(frame_id, _)| *frame_id)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    fn render_offscreen_frame(&mut self, mut scene: Scene, size: Size) -> Option<RenderedFrame> {
+        let width = size.width.max(1.0) as u32;
+        let height = size.height.max(1.0) as u32;
+        let texture = self.target.create_render_texture(width, height);
+        match (&mut self.backend.backend, &self.backend.output) {
+            (GpuRendererBackend::Texture(backend), GpuOutputMode::ProvidedTarget) => backend
+                .render_source_into_texture(&mut scene, texture.clone())
+                .ok()
+                .map(|_| RenderedFrame::Gpu(texture)),
+            (GpuRendererBackend::TextureView(backend), GpuOutputMode::ProvidedTarget) => {
+                let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                backend
+                    .render_source_into_texture(
+                        &mut scene,
+                        TextureViewTarget::new(&texture_view, width, height),
+                    )
+                    .ok()
+                    .map(|_| RenderedFrame::Gpu(texture))
+            }
+            (GpuRendererBackend::Texture(backend), GpuOutputMode::OwnedTexture) => backend
+                .render_source_texture(&mut scene, width, height)
+                .ok()
+                .map(RenderedFrame::Gpu),
+            (GpuRendererBackend::TextureView(backend), GpuOutputMode::OwnedTexture) => backend
+                .render_source_texture(&mut scene, width, height)
+                .ok()
+                .map(RenderedFrame::Gpu),
+        }
+    }
+
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {
         let total_start = Instant::now();
         let scene_start = total_start;
@@ -1777,6 +1821,18 @@ impl WindowRenderer for ImageWindowRenderer {
 
     fn poll_ready_frame(&mut self) -> Option<u64> {
         self.prepared_frame.as_ref().map(|(frame_id, _)| *frame_id)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn render_offscreen_frame(&mut self, mut scene: Scene, size: Size) -> Option<RenderedFrame> {
+        let width = size.width.max(1.0) as u32;
+        let height = size.height.max(1.0) as u32;
+        let mut image = RgbaImage::new(width, height);
+        self.backend
+            .backend
+            .render_source_into(&mut scene, ImageBufferTarget::from_rgba_image(&mut image))
+            .ok()
+            .map(|_| RenderedFrame::Cpu(RenderedImageFrame { image }))
     }
 
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {

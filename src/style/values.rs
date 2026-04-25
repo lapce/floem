@@ -1221,9 +1221,8 @@ impl IntoView for imaging::Brush {
                         .font_bold()
                         .with_theme(|s, t| s.color(t.text_muted()))
                 }),
-                Label::new(format!("{:?}", image.image)).style(|s| {
-                    s.font_size(11.0).min_width(0.0).text_wrap()
-                }),
+                Label::new(format!("{:?}", image.image))
+                    .style(|s| s.font_size(11.0).min_width(0.0).text_wrap()),
                 Label::new(format!(
                     "quality: {:?}, extend: {:?}/{:?}, alpha: {:.3}",
                     image.sampler.quality,

@@ -1,11 +1,14 @@
 use std::{
+    sync::{Arc, Mutex, mpsc::Receiver},
     thread,
     time::{Duration, Instant},
 };
 
 use bytemuck::{Pod, Zeroable};
 use floem::{
-    Application, ExternalSurface, ExternalSurfacePaintOptions, SubductionWgpuSurface,
+    Application, ExternalSurface, ExternalSurfacePaintOptions, GpuResources, SubductionWgpuSurface,
+    action::inspect,
+    external_surface::{SubductionFrameTick, SubductionFrameTicker},
     kurbo::{Circle, Point, Rect, Size, Stroke},
     peniko::Color,
     prelude::*,
@@ -21,7 +24,9 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         window_id,
         Size::new(f64::from(CUBE_SIZE), f64::from(CUBE_SIZE)),
     );
-    start_cube_thread(producer_surface);
+    let producer_surface = Arc::new(Mutex::new(Some(producer_surface)));
+    let frame_ticker = Arc::new(Mutex::new(None::<SubductionFrameTicker>));
+    let paint_surface = surface.clone();
 
     (
         "Subduction Cube".style(|s| {
@@ -31,7 +36,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         }),
         "Below: Floem paint. Middle: system-composited external surface. Above: Floem paint on a compositor-owned layer."
             .style(|s| s.font_size(14.0).color(Color::from_rgb8(155, 169, 177))),
-        cube_canvas(surface).style(|s| {
+        cube_canvas(paint_surface).style(|s| {
             s.width(780.0)
                 .height(520.0)
                 .margin_top(22.0)
@@ -49,9 +54,32 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 .padding(36.0)
                 .background(Color::from_rgb8(11, 15, 17))
         })
+        .on_event_stop(
+            listener::WindowGpuResourcesReady,
+            move |_cx, gpu_resources| {
+                let Some(producer_surface) = producer_surface.lock().unwrap().take() else {
+                    return;
+                };
+                let Ok((ticker, rx)) = producer_surface.start_frame_ticker() else {
+                    eprintln!("external-surface-cube: failed to start subduction frame ticker");
+                    return;
+                };
+                *frame_ticker.lock().unwrap() = Some(ticker);
+                start_cube_thread(producer_surface, gpu_resources.clone(), rx);
+            },
+        )
+        .on_event_stop(listener::KeyUp, |_, KeyboardEvent { key, .. }| {
+            if *key == Key::Named(NamedKey::F11) {
+                inspect();
+            }
+        })
 }
 
 fn cube_canvas(surface: ExternalSurface) -> impl IntoView {
+    let nums = [Some(5), None];
+    for num in nums.iter().filter(|n| n.is_some()) {
+        dbg!(num);
+    }
     canvas(move |cx, size| {
         let canvas = Rect::ZERO.with_size(size);
         let cube_rect = centered_rect(size, Size::new(440.0, 330.0));
@@ -144,24 +172,47 @@ fn centered_rect(container: Size, size: Size) -> Rect {
     Rect::from_origin_size(origin, size)
 }
 
-fn start_cube_thread(surface: SubductionWgpuSurface) {
+fn start_cube_thread(
+    surface: SubductionWgpuSurface,
+    gpu_resources: GpuResources,
+    rx: Receiver<SubductionFrameTick>,
+) {
     thread::spawn(move || {
-        let mut renderer =
-            match pollster::block_on(CubeRenderer::new(surface, CUBE_SIZE, CUBE_SIZE)) {
-                Ok(renderer) => renderer,
+        let mut renderer = match CubeRenderer::new(surface, gpu_resources, CUBE_SIZE, CUBE_SIZE) {
+            Ok(renderer) => renderer,
+            Err(err) => {
+                eprintln!("external-surface-cube: {err}");
+                return;
+            }
+        };
+        let mut diag = CubeRenderDiagnostics::new();
+        let started = Instant::now();
+        let mut surface_texture = match renderer.acquire_surface_texture(&mut diag) {
+            Ok(surface_texture) => surface_texture,
+            Err(err) => {
+                eprintln!("external-surface-cube: {err}");
+                return;
+            }
+        };
+
+        while let Ok(tick) = rx.recv() {
+            diag.record_recv(tick);
+            let animation_time = tick.predicted_present.unwrap_or(tick.received_at);
+            let seconds = animation_time
+                .checked_duration_since(started)
+                .unwrap_or(Duration::ZERO)
+                .as_secs_f32();
+            if let Err(err) = renderer.render(seconds, surface_texture, &mut diag) {
+                eprintln!("external-surface-cube: {err}");
+            }
+            surface_texture = match renderer.acquire_surface_texture(&mut diag) {
+                Ok(surface_texture) => surface_texture,
                 Err(err) => {
                     eprintln!("external-surface-cube: {err}");
-                    return;
+                    break;
                 }
             };
-        let started = Instant::now();
-
-        loop {
-            if let Err(err) = renderer.render(started.elapsed().as_secs_f32()) {
-                eprintln!("external-surface-cube: {err}");
-                thread::sleep(Duration::from_millis(250));
-            }
-            thread::sleep(Duration::from_millis(16));
+            diag.maybe_report();
         }
     });
 }
@@ -180,10 +231,14 @@ struct CubeRenderer {
 }
 
 impl CubeRenderer {
-    async fn new(surface: SubductionWgpuSurface, width: u32, height: u32) -> Result<Self, String> {
+    fn new(
+        surface: SubductionWgpuSurface,
+        gpu_resources: GpuResources,
+        width: u32,
+        height: u32,
+    ) -> Result<Self, String> {
         let target = surface
-            .create_target(width, height)
-            .await
+            .create_target_with_gpu_resources(&gpu_resources, width, height)
             .map_err(|err| format!("failed to create subduction wgpu target: {err}"))?;
         let device = &target.device;
         let target_format = target.format();
@@ -282,16 +337,11 @@ impl CubeRenderer {
         })
     }
 
-    fn render(&mut self, seconds: f32) -> Result<(), String> {
-        let aspect = self.width as f32 / self.height as f32;
-        let model = mul(rotation_y(seconds * 0.9), rotation_x(seconds * 0.55));
-        let view = translation(0.0, 0.0, -4.8);
-        let projection = perspective(45_f32.to_radians(), aspect, 0.1, 100.0);
-        let mvp = mul(projection, mul(view, model));
-        self.target
-            .queue
-            .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&mvp));
-
+    fn acquire_surface_texture(
+        &mut self,
+        diag: &mut CubeRenderDiagnostics,
+    ) -> Result<wgpu::SurfaceTexture, String> {
+        let acquire_start = Instant::now();
         let surface_texture = match self.target.surface.get_current_texture() {
             Ok(surface_texture) => surface_texture,
             Err(err) => {
@@ -301,6 +351,26 @@ impl CubeRenderer {
                 return Err(format!("failed to acquire cube surface texture: {err}"));
             }
         };
+        diag.record_acquire(acquire_start.elapsed());
+        Ok(surface_texture)
+    }
+
+    fn render(
+        &mut self,
+        seconds: f32,
+        surface_texture: wgpu::SurfaceTexture,
+        diag: &mut CubeRenderDiagnostics,
+    ) -> Result<(), String> {
+        let frame_start = Instant::now();
+        let aspect = self.width as f32 / self.height as f32;
+        let model = mul(rotation_y(seconds * 0.9), rotation_x(seconds * 0.55));
+        let view = translation(0.0, 0.0, -4.8);
+        let projection = perspective(45_f32.to_radians(), aspect, 0.1, 100.0);
+        let mvp = mul(projection, mul(view, model));
+        self.target
+            .queue
+            .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&mvp));
+
         let target_view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -347,9 +417,111 @@ impl CubeRenderer {
             pass.draw_indexed(0..self.index_count, 0, 0..1);
         }
 
+        let submit_start = Instant::now();
         self.target.queue.submit(Some(encoder.finish()));
+        diag.record_submit(submit_start.elapsed());
+        let present_start = Instant::now();
         surface_texture.present();
+        diag.record_present(present_start.elapsed(), frame_start.elapsed());
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct CubeRenderDiagnostics {
+    enabled: bool,
+    last_report: Instant,
+    last_recv: Option<Instant>,
+    last_frame_index: Option<u64>,
+    recv: u64,
+    dropped_ticks: u64,
+    max_recv_gap: Duration,
+    max_tick_to_recv: Duration,
+    max_acquire: Duration,
+    max_submit: Duration,
+    max_present: Duration,
+    max_frame: Duration,
+}
+
+impl CubeRenderDiagnostics {
+    fn new() -> Self {
+        Self {
+            enabled: std::env::var_os("FLOEM_CUBE_DIAG").is_some(),
+            last_report: Instant::now(),
+            last_recv: None,
+            last_frame_index: None,
+            recv: 0,
+            dropped_ticks: 0,
+            max_recv_gap: Duration::ZERO,
+            max_tick_to_recv: Duration::ZERO,
+            max_acquire: Duration::ZERO,
+            max_submit: Duration::ZERO,
+            max_present: Duration::ZERO,
+            max_frame: Duration::ZERO,
+        }
+    }
+
+    fn record_recv(&mut self, tick: SubductionFrameTick) {
+        if !self.enabled {
+            return;
+        }
+        let now = Instant::now();
+        if let Some(last_recv) = self.last_recv {
+            self.max_recv_gap = self.max_recv_gap.max(now.duration_since(last_recv));
+        }
+        if let Some(last_frame_index) = self.last_frame_index {
+            let gap = tick.frame_index.saturating_sub(last_frame_index);
+            if gap > 1 {
+                self.dropped_ticks = self.dropped_ticks.saturating_add(gap - 1);
+            }
+        }
+        self.last_recv = Some(now);
+        self.last_frame_index = Some(tick.frame_index);
+        self.max_tick_to_recv = self
+            .max_tick_to_recv
+            .max(now.saturating_duration_since(tick.received_at));
+        self.recv = self.recv.saturating_add(1);
+    }
+
+    fn record_acquire(&mut self, elapsed: Duration) {
+        if self.enabled {
+            self.max_acquire = self.max_acquire.max(elapsed);
+        }
+    }
+
+    fn record_submit(&mut self, elapsed: Duration) {
+        if self.enabled {
+            self.max_submit = self.max_submit.max(elapsed);
+        }
+    }
+
+    fn record_present(&mut self, present: Duration, frame: Duration) {
+        if self.enabled {
+            self.max_present = self.max_present.max(present);
+            self.max_frame = self.max_frame.max(frame);
+        }
+    }
+
+    fn maybe_report(&mut self) {
+        if !self.enabled || self.last_report.elapsed() < Duration::from_secs(1) {
+            return;
+        }
+        eprintln!(
+            "cube render: recv={} dropped_ticks={} max_recv_gap={:.2}ms max_tick_to_recv={:.2}ms max_acquire={:.2}ms max_submit={:.2}ms max_present_call={:.2}ms max_frame={:.2}ms",
+            self.recv,
+            self.dropped_ticks,
+            self.max_recv_gap.as_secs_f64() * 1000.0,
+            self.max_tick_to_recv.as_secs_f64() * 1000.0,
+            self.max_acquire.as_secs_f64() * 1000.0,
+            self.max_submit.as_secs_f64() * 1000.0,
+            self.max_present.as_secs_f64() * 1000.0,
+            self.max_frame.as_secs_f64() * 1000.0,
+        );
+        *self = Self {
+            enabled: true,
+            last_report: Instant::now(),
+            ..Self::new()
+        };
     }
 }
 

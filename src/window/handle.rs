@@ -19,6 +19,8 @@ use winit::window::{
     ImeCapabilities, ImeEnableRequest, ImeHint, ImePurpose, ImeRequest, ImeRequestData,
 };
 
+#[cfg(all(feature = "subduction", target_os = "macos"))]
+use crate::external_surface::refresh_subduction_frame_tickers;
 use crate::frame_clock::{FrameClock, new_window_frame_clock};
 use crate::gpu_resources::GpuResources;
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
@@ -484,12 +486,17 @@ impl WindowHandle {
         };
         if paint_state_initialized {
             window_handle.init_renderer();
+            if let Some(gpu_resources) = window_handle.gpu_resources.clone() {
+                window_handle.event(Event::Window(WindowEvent::GpuResourcesReady(gpu_resources)));
+            }
         }
         #[cfg(feature = "subduction")]
         window_handle
             .window_state
             .compositor
             .ensure_platform_presenter(window_handle.window.as_ref());
+        #[cfg(all(feature = "subduction", target_os = "macos"))]
+        window_handle.refresh_frame_clock_display_link_layer();
         window_handle
             .window_state
             .set_root_size(size.get_untracked());
@@ -1107,6 +1114,18 @@ impl WindowHandle {
             && (self.window_state.has_pending_paint() || self.window_state.has_pending_render())
     }
 
+    fn needs_external_surface_submission(&self) -> bool {
+        if self.frame_clock.has_external_frame_signal() {
+            return false;
+        }
+        self.window_state.external_surfaces.needs_submission(
+            self.frame_pipeline.can_submit_render(),
+            self.window_state.has_pending_paint(),
+            self.window_state.has_pending_render(),
+            self.window_state.composition_plan.has_external_surfaces(),
+        )
+    }
+
     /// Promotes frame-clock work into the current update turn.
     ///
     /// This is the prepare stage of the pipeline: it lifts "next frame" work
@@ -1140,8 +1159,20 @@ impl WindowHandle {
     /// This is correct because painting is window policy and renderer
     /// submission, while presentation remains a separate caller-controlled step.
     pub(crate) fn paint_frame(&mut self) -> bool {
+        if self.needs_external_surface_submission() {
+            return self.pull_external_surface_frame();
+        }
         if !self.needs_render_submission() {
             return false;
+        }
+        if self.window_state.composition_plan.has_external_surfaces()
+            && !self.prepare_external_surface_composition_requires_window_render()
+        {
+            self.render_compositor_scene_layers();
+            #[cfg(all(feature = "subduction", target_os = "macos"))]
+            self.refresh_frame_clock_display_link_layer();
+            self.retire_compositor_only_frame(true);
+            return true;
         }
 
         let frame_id = self.next_frame_id;
@@ -1157,6 +1188,84 @@ impl WindowHandle {
 
         true
     }
+
+    fn pull_external_surface_frame(&mut self) -> bool {
+        let effective_scale = self.window_state.effective_scale();
+        self.window_state.external_surfaces.pull_frame(
+            self.current_frame_time(),
+            &self.window_state.composition_plan,
+            &mut self.window_state.compositor,
+            effective_scale,
+            self.gpu_resources.as_ref(),
+        );
+        #[cfg(all(feature = "subduction", target_os = "macos"))]
+        self.refresh_frame_clock_display_link_layer();
+        self.retire_compositor_only_frame(true);
+        true
+    }
+
+    fn retire_compositor_only_frame(&mut self, presented: bool) {
+        let frame_index = self.next_frame_id;
+        self.next_frame_id = self.next_frame_id.saturating_add(1);
+        self.window_state
+            .external_surfaces
+            .release_outcomes(|outcome| {
+                outcome.frame_index = frame_index;
+                outcome.outcome.draw_completed = presented;
+                outcome.outcome.missed_deadline = None;
+            });
+    }
+
+    fn prepare_external_surface_composition_requires_window_render(&mut self) -> bool {
+        let old_prefix = self
+            .window_state
+            .external_surfaces
+            .begin_composition_update(
+                self.current_frame_time(),
+                &self.window_state.composition_plan,
+            );
+
+        let gpu_resources = self.gpu_resources.clone();
+        let window = self.window.clone();
+        let record_paint_order = crate::paint::is_paint_order_tracking_enabled();
+        let mut cx = crate::paint::GlobalPaintCx {
+            window_state: &mut self.window_state,
+            gpu_resources,
+            window,
+            record_paint_order,
+        };
+        cx.prepare_display_list(self.id);
+
+        self.window_state
+            .external_surfaces
+            .composition_update_requires_window_render(
+                &old_prefix,
+                &self.window_state.composition_plan,
+            )
+    }
+
+    #[cfg(feature = "subduction")]
+    fn render_compositor_scene_layers(&mut self) {
+        let Some(gpu_resources) = self.gpu_resources.as_ref() else {
+            return;
+        };
+        if !matches!(self.paint_state, PaintState::Initialized { .. }) {
+            return;
+        }
+        if !self.window_state.composition_plan.has_external_surfaces() {
+            return;
+        }
+
+        let plan = self.window_state.composition_plan.clone();
+        self.window_state.compositor.render_scene_layers(
+            &plan,
+            gpu_resources,
+            self.paint_state.backend_mut(),
+        );
+    }
+
+    #[cfg(not(feature = "subduction"))]
+    fn render_compositor_scene_layers(&mut self) {}
 
     /// Builds the scene source for a paint/capture operation and runs a single
     /// backend operation against it.
@@ -1243,6 +1352,15 @@ impl WindowHandle {
         let total_start = Instant::now();
         let resize_start = Instant::now();
         let mut timing = std::mem::take(&mut self.pending_timing);
+        if !self.frame_clock.has_external_frame_signal() {
+            self.window_state.external_surfaces.take_frame_pull();
+        }
+        self.window_state
+            .external_surfaces
+            .begin_composition_update(
+                self.current_frame_time(),
+                &self.window_state.composition_plan,
+            );
         let Some(rendered) = self.render_scene(|paint_state, frame_size, source| {
             paint_state
                 .backend_mut()
@@ -1251,6 +1369,9 @@ impl WindowHandle {
             self.pending_timing = timing;
             return false;
         };
+        self.render_compositor_scene_layers();
+        #[cfg(all(feature = "subduction", target_os = "macos"))]
+        self.refresh_frame_clock_display_link_layer();
         let total_end = Instant::now();
 
         timing.push_absolute_span("Paint", total_start, total_end, TimingKind::Paint);
@@ -1278,6 +1399,12 @@ impl WindowHandle {
         let notify_end = Instant::now();
 
         let mut timing = std::mem::take(&mut self.pending_timing);
+        self.window_state
+            .external_surfaces
+            .begin_composition_update(
+                self.current_frame_time(),
+                &self.window_state.composition_plan,
+            );
         let Some(immediate) = self.render_scene(|paint_state, frame_size, source| {
             paint_state
                 .backend_mut()
@@ -1294,6 +1421,9 @@ impl WindowHandle {
             self.pending_timing = timing;
             return false;
         }
+        self.render_compositor_scene_layers();
+        #[cfg(all(feature = "subduction", target_os = "macos"))]
+        self.refresh_frame_clock_display_link_layer();
 
         timing.record_renderer_span(
             "PrePresentNotify",
@@ -1331,6 +1461,16 @@ impl WindowHandle {
         self.frame_clock.refresh_schedule(frame_interval, now);
     }
 
+    #[cfg(all(feature = "subduction", target_os = "macos"))]
+    pub(crate) fn refresh_frame_clock_display_link_layer(&mut self) {
+        let display_id = self
+            .window
+            .current_monitor()
+            .and_then(|monitor| u32::try_from(monitor.native_id()).ok());
+        self.frame_clock.set_native_display_id(display_id);
+        refresh_subduction_frame_tickers(self.window_id);
+    }
+
     fn run_begin_frame_callbacks(&mut self) {
         if !self.window_state.has_pending_begin_frame_callbacks() {
             return;
@@ -1346,6 +1486,19 @@ impl WindowHandle {
     #[cfg(all(feature = "subduction", target_os = "macos"))]
     pub(crate) fn receive_frame_tick(&mut self, tick: subduction_core::timing::FrameTick) {
         self.frame_clock.receive_frame_tick(tick);
+    }
+
+    #[cfg(all(feature = "subduction", target_os = "macos"))]
+    pub(crate) fn drive_external_surfaces_from_frame_signal(&mut self) -> bool {
+        if !self.can_render_now()
+            || self.has_frame_underway()
+            || !self.window_state.composition_plan.has_external_surfaces()
+            || !self.window_state.external_surfaces.has_frame_pull()
+        {
+            return false;
+        }
+
+        self.pull_external_surface_frame()
     }
 
     /// Accepts an explicit backend frame-ready notification into window-owned
@@ -1393,12 +1546,28 @@ impl WindowHandle {
             || self.has_frame_underway()
     }
 
+    pub(crate) fn has_window_frame_work(&self) -> bool {
+        self.window_state.has_next_window_frame_work()
+            || self.window_state.has_pending_render()
+            || self.has_frame_to_present()
+            || self.has_frame_underway()
+    }
+
     pub(crate) fn has_frame_to_present(&self) -> bool {
         self.frame_pipeline.has_frame_to_present()
     }
 
     pub(crate) fn take_present_immediately_when_ready(&mut self) -> bool {
         std::mem::take(&mut self.present_immediately_when_ready)
+    }
+
+    #[cfg(all(feature = "subduction", target_os = "macos"))]
+    pub(crate) fn should_present_ready_frame_immediately(&self) -> bool {
+        self.can_render_now()
+            && self.has_frame_to_present()
+            && self
+                .frame_clock
+                .should_present_immediately_on_frame_ready(self.frame_interval(), Instant::now())
     }
 
     /// Returns whether the window pipeline still owns a frame that has been
@@ -1549,6 +1718,14 @@ impl WindowHandle {
         if presented || !frame_still_underway {
             self.frame_clock.set_frame_prepared(false);
         }
+        let frame_index = self.next_frame_id.saturating_sub(1);
+        self.window_state
+            .external_surfaces
+            .release_outcomes(|outcome| {
+                outcome.frame_index = frame_index;
+                outcome.outcome.draw_completed = presented;
+                outcome.outcome.missed_deadline = None;
+            });
         presented
     }
 

@@ -244,8 +244,9 @@ pub use box_tree::{BoxTree, ElementId, ElementMeta, FocusNavMeta};
 pub(crate) use box_tree::{bump_focus_nav_meta_revision, focus_nav_meta_revision};
 pub use external_surface::{
     ExternalSurface, ExternalSurfaceAlphaMode, ExternalSurfaceConfig, ExternalSurfaceContent,
-    ExternalSurfaceHandle, ExternalSurfaceId, ExternalSurfaceKind, ExternalSurfacePaintOptions,
-    ExternalTexture,
+    ExternalSurfaceFrameArgs, ExternalSurfaceFrameUpdate, ExternalSurfaceHandle, ExternalSurfaceId,
+    ExternalSurfaceKind, ExternalSurfaceOutcome, ExternalSurfacePaintOptions,
+    ExternalSurfaceProvider, ExternalSurfaceProviderHandle, ExternalTexture,
 };
 #[cfg(feature = "subduction")]
 pub use external_surface::{SubductionWgpuSurface, SubductionWgpuTarget};

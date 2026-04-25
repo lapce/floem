@@ -804,18 +804,15 @@ impl View for InspectorImageView {
                 }
                 cx.window_state.request_paint(self.id);
                 self.contain_index = 0;
-                self.capture_view.highlighted.set(
-                    self.contain_ids
-                        .last()
-                        .copied()
-                        .map(|id| {
-                            if id.is_view() {
-                                InspectorSelection::View(id.owning_id())
-                            } else {
-                                InspectorSelection::BoxNode(id)
-                            }
-                        }),
-                );
+                self.capture_view
+                    .highlighted
+                    .set(self.contain_ids.last().copied().map(|id| {
+                        if id.is_view() {
+                            InspectorSelection::View(id.owning_id())
+                        } else {
+                            InspectorSelection::BoxNode(id)
+                        }
+                    }));
             }
             Event::Pointer(PointerEvent::Up(_)) => {
                 self.contain_ids.clear();

@@ -1,6 +1,5 @@
 use std::{collections::HashMap, ops::RangeInclusive, rc::Rc};
 
-use imaging::Brush;
 use crate::{
     action::{set_ime_allowed, set_ime_cursor_area},
     context::{LayoutChanged, LayoutChangedListener, PaintCx, UpdateCx, VisualChanged},
@@ -25,6 +24,7 @@ use floem_editor_core::{
     mode::{Mode, VisualMode},
 };
 use floem_reactive::{SignalGet, SignalTrack, SignalUpdate, SignalWith};
+use imaging::Brush;
 use taffy::Overflow;
 use ui_events::{
     keyboard::{Key, KeyboardEvent, Modifiers},

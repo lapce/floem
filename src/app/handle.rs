@@ -57,6 +57,85 @@ struct PacedWakeTimerState {
     kind: PacedWakeKind,
 }
 
+#[cfg(all(feature = "subduction", target_os = "macos"))]
+#[derive(Default)]
+struct TimingDiagnostics {
+    enabled: bool,
+    last_report: Option<Instant>,
+    last_tick_index: Option<u64>,
+    tick_count: u64,
+    tick_gap_count: u64,
+    tick_gap_frames: u64,
+    max_tick_gap: u64,
+    frame_ready_count: u64,
+    present_wake_armed: u64,
+    present_wake_due_now: u64,
+    present_timer_fired: u64,
+    present_attempts: u64,
+    present_success: u64,
+    max_present_timer_late_us: u128,
+}
+
+#[cfg(all(feature = "subduction", target_os = "macos"))]
+impl TimingDiagnostics {
+    fn new() -> Self {
+        Self {
+            enabled: std::env::var_os("FLOEM_SUBDUCTION_TIMING_DIAG").is_some(),
+            ..Self::default()
+        }
+    }
+
+    fn record_tick(&mut self, frame_index: u64) {
+        if !self.enabled {
+            return;
+        }
+        if let Some(last) = self.last_tick_index {
+            let gap = frame_index.saturating_sub(last);
+            if gap > 1 {
+                self.tick_gap_count = self.tick_gap_count.saturating_add(1);
+                self.tick_gap_frames = self.tick_gap_frames.saturating_add(gap - 1);
+                self.max_tick_gap = self.max_tick_gap.max(gap);
+            }
+        }
+        self.last_tick_index = Some(frame_index);
+        self.tick_count = self.tick_count.saturating_add(1);
+    }
+
+    fn maybe_report(&mut self) {
+        if !self.enabled {
+            return;
+        }
+        let now = Instant::now();
+        let Some(last_report) = self.last_report else {
+            self.last_report = Some(now);
+            return;
+        };
+        if now.duration_since(last_report) < Duration::from_secs(1) {
+            return;
+        }
+        eprintln!(
+            "subduction timing: ticks={} tick_gaps={} missing_ticks={} max_tick_gap={} frame_ready={} present_armed={} present_due_now={} present_timer={} present_attempts={} present_ok={} max_present_timer_late={:.3}ms",
+            self.tick_count,
+            self.tick_gap_count,
+            self.tick_gap_frames,
+            self.max_tick_gap,
+            self.frame_ready_count,
+            self.present_wake_armed,
+            self.present_wake_due_now,
+            self.present_timer_fired,
+            self.present_attempts,
+            self.present_success,
+            self.max_present_timer_late_us as f64 / 1000.0,
+        );
+        *self = Self {
+            enabled: true,
+            last_report: Some(now),
+            last_tick_index: self.last_tick_index,
+            ..Self::default()
+        };
+    }
+}
+
 pub(crate) struct ApplicationHandle {
     window_handles: HashMap<winit::window::WindowId, WindowHandle>,
     next_output_id: u32,
@@ -66,12 +145,15 @@ pub(crate) struct ApplicationHandle {
     pub(crate) event_listener: Option<Box<AppEventCallback>>,
     pub(crate) gpu_resources: Option<GpuResources>,
     pub(crate) config: AppConfig,
+    #[cfg(all(feature = "subduction", target_os = "macos"))]
+    timing_diag: TimingDiagnostics,
 }
 
 impl ApplicationHandle {
     const UPDATE_BUDGET: Duration = Duration::from_millis(4);
 
     pub(crate) fn new(config: AppConfig) -> Self {
+        let gpu_resources = config.gpu_resources.clone();
         Self {
             window_handles: HashMap::new(),
             next_output_id: 0,
@@ -79,8 +161,10 @@ impl ApplicationHandle {
             paced_wake_timers: HashMap::new(),
             pending_context_menus: Vec::new(),
             event_listener: None,
-            gpu_resources: None,
+            gpu_resources,
             config,
+            #[cfg(all(feature = "subduction", target_os = "macos"))]
+            timing_diag: TimingDiagnostics::new(),
         }
     }
 
@@ -95,6 +179,15 @@ impl ApplicationHandle {
         let start = Instant::now();
         let presented = handle.present_frame();
         let end = Instant::now();
+        #[cfg(all(feature = "subduction", target_os = "macos"))]
+        {
+            self.timing_diag.present_attempts = self.timing_diag.present_attempts.saturating_add(1);
+            if presented {
+                self.timing_diag.present_success =
+                    self.timing_diag.present_success.saturating_add(1);
+            }
+            self.timing_diag.maybe_report();
+        }
         if presented {
             Self::finalize_presented_profile_frame(
                 handle,
@@ -171,6 +264,11 @@ impl ApplicationHandle {
                     FrameWakeKind::Present => PacedWakeKind::Present,
                     FrameWakeKind::Update => PacedWakeKind::Update,
                 };
+                #[cfg(all(feature = "subduction", target_os = "macos"))]
+                if kind == PacedWakeKind::Present {
+                    self.timing_diag.present_wake_armed =
+                        self.timing_diag.present_wake_armed.saturating_add(1);
+                }
                 self.ensure_paced_wake_timer(window_id, wake.deadline, kind, event_loop);
             }
             None => self.cancel_paced_wake_timer(window_id, event_loop),
@@ -219,6 +317,11 @@ impl ApplicationHandle {
                     handle.paint_state = PaintState::Initialized { backend };
                     handle.gpu_resources = self.gpu_resources.clone();
                     handle.init_renderer();
+                    if let Some(gpu_resources) = handle.gpu_resources.clone() {
+                        handle.event(crate::event::Event::Window(
+                            crate::event::WindowEvent::GpuResourcesReady(gpu_resources),
+                        ));
+                    }
                 } else {
                     panic!("Sent a gpu resource update after it had already been initialized");
                 }
@@ -239,13 +342,20 @@ impl ApplicationHandle {
                 frame_id,
             } => {
                 #[cfg(all(feature = "subduction", target_os = "macos"))]
+                {
+                    self.timing_diag.frame_ready_count =
+                        self.timing_diag.frame_ready_count.saturating_add(1);
+                    self.timing_diag.maybe_report();
+                }
+                #[cfg(all(feature = "subduction", target_os = "macos"))]
                 let mut should_present_immediately = false;
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
                     #[cfg(all(feature = "subduction", target_os = "macos"))]
                     {
-                        handle.accept_frame_ready(frame_id);
+                        let accepted_frame = handle.accept_frame_ready(frame_id);
                         handle.refresh_frame_activity();
-                        should_present_immediately = handle.take_present_immediately_when_ready();
+                        should_present_immediately = handle.take_present_immediately_when_ready()
+                            || (accepted_frame && handle.should_present_ready_frame_immediately());
                     }
 
                     #[cfg(not(all(feature = "subduction", target_os = "macos")))]
@@ -291,16 +401,37 @@ impl ApplicationHandle {
                 }
                 self.request_update();
             }
+            UserEvent::ExternalSurfaceProvider {
+                window_id,
+                surface_id,
+                provider,
+            } => {
+                if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                    handle
+                        .window_state
+                        .set_external_surface_provider(surface_id, provider);
+                    handle.refresh_frame_activity();
+                }
+                self.request_update();
+            }
             #[cfg(all(feature = "subduction", target_os = "macos"))]
             UserEvent::SubductionFrameTick { window_id, tick } => {
+                self.timing_diag.record_tick(tick.frame_index);
+                self.timing_diag.maybe_report();
                 let mut should_refresh_schedule = false;
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
                     handle.record_profile_instant("VSync", Instant::now());
+                    handle.refresh_frame_clock_display_link_layer();
                     handle.receive_frame_tick(tick);
+                    let drove_external_surfaces =
+                        handle.drive_external_surfaces_from_frame_signal();
                     handle.refresh_frame_activity();
-                    if handle.can_render_now()
-                        && !handle.has_frame_underway()
-                        && handle.has_frame_work()
+                    let has_schedule_work = if drove_external_surfaces {
+                        handle.has_window_frame_work()
+                    } else {
+                        handle.has_frame_work()
+                    };
+                    if handle.can_render_now() && !handle.has_frame_underway() && has_schedule_work
                     {
                         // Subduction owns frame opportunities on this path.
                         // The app layer should only feed updated window state
@@ -514,15 +645,15 @@ impl ApplicationHandle {
                 {
                     frame_presented = window_handle.present_resize_sync_immediately(surface_size);
                 }
-                if !frame_presented {
-                    self.request_update();
-                }
+                self.request_update();
             }
             WindowEvent::Moved(position) => {
                 let position: LogicalPosition<f64> =
                     position.to_logical(window_handle.window_state.os_scale);
                 let point = Point::new(position.x, position.y);
                 window_handle.position(point);
+                #[cfg(all(feature = "subduction", target_os = "macos"))]
+                window_handle.refresh_frame_clock_display_link_layer();
             }
             WindowEvent::CloseRequested => {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
@@ -579,6 +710,8 @@ impl ApplicationHandle {
             WindowEvent::TouchpadPressure { .. } => {}
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 window_handle.os_scale(scale_factor);
+                #[cfg(all(feature = "subduction", target_os = "macos"))]
+                window_handle.refresh_frame_clock_display_link_layer();
             }
             WindowEvent::ThemeChanged(theme) => {
                 window_handle.set_theme(Some(theme), true);
@@ -629,6 +762,10 @@ impl ApplicationHandle {
                     }
                 }
             }
+        }
+        #[cfg(all(feature = "subduction", target_os = "macos"))]
+        if let Some(handle) = self.window_handles.get_mut(&window_id) {
+            handle.refresh_frame_clock_display_link_layer();
         }
         if frame_presented {
             if let Some(handle) = self.window_handles.get_mut(&window_id) {
@@ -1150,6 +1287,13 @@ impl ApplicationHandle {
                         && let Some(state) = self.paced_wake_timers.get_mut(&window_id)
                         && state.token == Some(token)
                     {
+                        if state.kind == PacedWakeKind::Present {
+                            self.timing_diag.present_timer_fired =
+                                self.timing_diag.present_timer_fired.saturating_add(1);
+                            let late = now.saturating_duration_since(state.deadline).as_micros();
+                            self.timing_diag.max_present_timer_late_us =
+                                self.timing_diag.max_present_timer_late_us.max(late);
+                        }
                         state.token = None;
                         match state.kind {
                             PacedWakeKind::Present => {

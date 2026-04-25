@@ -697,7 +697,7 @@ pub enum UpdatePhaseEvent {
 /// window events are sent only to views that have registered a listener
 /// for them (e.g., `.on_event(listener::WindowResized, ...)`). Views that
 /// do not register a listener will not receive window events.
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Debug)]
 pub enum WindowEvent {
     /// The window gained input focus.
     FocusGained,
@@ -733,6 +733,13 @@ pub enum WindowEvent {
 
     /// The element under the cursor changed.
     ChangeUnderCursor,
+
+    /// Floem has acquired the window GPU resources.
+    ///
+    /// External surface producers should use these resources when they need to
+    /// render into compositor-owned textures/surfaces so all wgpu work is on
+    /// the same instance/adapter/device/queue as the app renderer.
+    GpuResourcesReady(crate::gpu_resources::GpuResources),
 
     /// The window update cycle entered a new phase.
     ///
@@ -1728,7 +1735,7 @@ impl Clone for Event {
             Self::PointerCapture(arg0) => Self::PointerCapture(*arg0),
             Self::Ime(arg0) => Self::Ime(arg0.clone()),
             Self::Focus(arg0) => Self::Focus(*arg0),
-            Self::Window(arg0) => Self::Window(*arg0),
+            Self::Window(arg0) => Self::Window(arg0.clone()),
             Self::Interaction(arg0) => Self::Interaction(*arg0),
             Self::Drag(arg0) => Self::Drag(arg0.clone()),
             Self::Custom(arg0) => Self::Custom(arg0.clone_box()),
@@ -2065,6 +2072,9 @@ impl Event {
             Self::Window(WindowEvent::FocusLost) => WindowLostFocus::listener_key(),
             Self::Window(WindowEvent::ThemeChanged(_)) => ThemeChanged::listener_key(),
             Self::Window(WindowEvent::ChangeUnderCursor) => WindowChangeUnderCursor::listener_key(),
+            Self::Window(WindowEvent::GpuResourcesReady(_)) => {
+                WindowGpuResourcesReady::listener_key()
+            }
             Self::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::ProcessingMessages)) => {
                 UpdatePhaseProcessingMessages::listener_key()
             }
