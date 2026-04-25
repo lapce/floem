@@ -140,11 +140,9 @@ impl Handle {
                 self.update_bounds(toggle_size, radius);
                 cx.window_state.request_paint(self.parent_id);
             }
-            Event::Interaction(InteractionEvent::Click) => {
-                if !self.dragged {
-                    *state = !*state;
-                    self.snap(*state, toggle_size, radius, inset);
-                }
+            Event::Interaction(InteractionEvent::Click) if !self.dragged => {
+                *state = !*state;
+                self.snap(*state, toggle_size, radius, inset);
             }
 
             _ => {}

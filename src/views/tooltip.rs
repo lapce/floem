@@ -114,14 +114,12 @@ impl View for Tooltip {
 impl Tooltip {
     fn handle_event(&mut self, cx: &mut EventCx) -> EventPropagation {
         match &cx.event {
-            Event::Pointer(PointerEvent::Move(pu)) => {
-                if self.overlay.borrow().is_none() {
-                    let id = self.id();
-                    let token = exec_after(self.style.delay(), move |token| {
-                        id.update_state(token);
-                    });
-                    self.hover_point = Some((pu.current.logical_point(), token));
-                }
+            Event::Pointer(PointerEvent::Move(pu)) if self.overlay.borrow().is_none() => {
+                let id = self.id();
+                let token = exec_after(self.style.delay(), move |token| {
+                    id.update_state(token);
+                });
+                self.hover_point = Some((pu.current.logical_point(), token));
             }
             Event::Pointer(_) | Event::Key(_) => {
                 self.hover_point = None;
