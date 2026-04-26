@@ -29,8 +29,7 @@
 //! ## Renderer Selection
 //!
 //! Floem normally uses the active renderer selected by crate features and falls back to the
-//! configured CPU renderer only if needed. On native CPU window paths, Floem will prefer a
-//! `pixels` presenter when a GPU adapter is available and fall back to `softbuffer` otherwise.
+//! configured CPU renderer only if needed.
 //!
 //! To force Floem to use the CPU renderer path at runtime, set:
 //!
@@ -248,8 +247,6 @@ pub use external_surface::{
     ExternalSurfaceKind, ExternalSurfaceOutcome, ExternalSurfacePaintOptions,
     ExternalSurfaceProvider, ExternalSurfaceProviderHandle, ExternalTexture,
 };
-#[cfg(feature = "subduction")]
-pub use external_surface::{SubductionWgpuSurface, SubductionWgpuTarget};
 pub use floem_reactive as reactive;
 pub use frame::{
     DisplayTiming, FrameOutcome, FrameTime, FrameTimingFeedback, FrameWorkload, PresentPacing,

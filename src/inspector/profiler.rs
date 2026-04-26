@@ -209,16 +209,6 @@ fn profiler_chip(
     })
 }
 
-fn transform_max_scale(transform: Affine) -> f64 {
-    let [a, b, c, d, _, _] = transform.as_coeffs();
-    let s1 = a * a + b * b;
-    let s2 = c * c + d * d;
-    let trace = s1 + s2;
-    let det = a * d - b * c;
-    let disc = (trace * trace - 4.0 * det * det).max(0.0);
-    ((trace + disc.sqrt()) * 0.5).sqrt()
-}
-
 fn build_timeline_lanes(profile: &Profile) -> Vec<Vec<TimelineItem>> {
     let mut items = Vec::new();
 

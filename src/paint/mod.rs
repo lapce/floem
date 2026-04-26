@@ -159,7 +159,7 @@ impl<'a> PaintCx<'a> {
 impl GlobalPaintCx<'_> {
     pub(crate) fn paint_with_traversal_into(&mut self, root_id: ViewId, sink: &mut dyn PaintSink) {
         self.prepare_display_list(root_id);
-        #[cfg(feature = "subduction")]
+
         if self.window_state.composition_plan.has_external_surfaces() {
             Self::replay_composition_prefix_to_sink(self.window_state, sink, Point::ZERO, None);
             return;
@@ -249,6 +249,10 @@ impl GlobalPaintCx<'_> {
             rerecord_ids,
             replay_steps: self.window_state.display_list.replay_step_count(),
         };
+        self.apply_composition_plan();
+    }
+
+    fn apply_composition_plan(&mut self) {
         self.window_state.composition_plan =
             self.window_state.display_list.lower_composition_plan();
         let effective_scale = self.window_state.effective_scale();
@@ -262,7 +266,6 @@ impl GlobalPaintCx<'_> {
         );
     }
 
-    #[cfg(feature = "subduction")]
     fn replay_composition_prefix_to_sink(
         window_state: &mut WindowState,
         sink: &mut dyn PaintSink,
@@ -276,7 +279,7 @@ impl GlobalPaintCx<'_> {
 
         for item in &window_state.composition_plan.items {
             match item {
-                CompositionItem::Scene(layer) => {
+                CompositionItem::Scene(layer) if !layer.promoted => {
                     let base_transform = layer
                         .transform
                         .then_scale(effective_scale)
@@ -289,7 +292,7 @@ impl GlobalPaintCx<'_> {
                         PaintSink::pop_clip(sink);
                     }
                 }
-                CompositionItem::ExternalSurface(_) => break,
+                CompositionItem::Scene(_) | CompositionItem::ExternalSurface(_) => {}
             }
         }
     }
@@ -499,6 +502,7 @@ impl GlobalPaintCx<'_> {
         let is_vger = false;
         let world_transform = self.element_base_transform(element_id);
         let font_size_cx = view_state.borrow().layout_props.font_size_cx();
+        let font_embolden = view_state.borrow().view_style_props.font_embolden();
         let effective_scale = self.window_state.effective_scale();
 
         {
@@ -513,10 +517,7 @@ impl GlobalPaintCx<'_> {
                 layout_rect_local,
                 clip: snapshot.clip,
                 font_size_cx,
-                font_embolden: view_state
-                    .borrow()
-                    .computed_style
-                    .get(crate::style::FontEmbolden),
+                font_embolden,
                 effective_scale,
             };
 
@@ -606,7 +607,15 @@ pub(crate) enum PaintState {
     /// The renderer is not yet initialized. This state is used to wait for the GPU resources to be acquired.
     PendingGpuResources {
         window: Arc<dyn Window>,
-        rx: Receiver<Result<(GpuResources, wgpu::Surface<'static>), GpuResourceError>>,
+        rx: Receiver<
+            Result<
+                (
+                    GpuResources,
+                    subduction_platform::WgpuPresentSurfaceCapabilities,
+                ),
+                GpuResourceError,
+            >,
+        >,
         backend: renderer::WindowBackend,
     },
     /// The renderer is initialized and ready to paint.
@@ -616,20 +625,21 @@ pub(crate) enum PaintState {
 impl PaintState {
     pub fn new_pending(
         window: Arc<dyn Window>,
-        rx: Receiver<Result<(GpuResources, wgpu::Surface<'static>), GpuResourceError>>,
+        rx: Receiver<
+            Result<
+                (
+                    GpuResources,
+                    subduction_platform::WgpuPresentSurfaceCapabilities,
+                ),
+                GpuResourceError,
+            >,
+        >,
         _size: Size,
     ) -> Self {
         Self::PendingGpuResources {
             window,
             rx,
             backend: renderer::uninitialized_backend(),
-        }
-    }
-
-    pub(crate) fn backend(&self) -> &(dyn renderer::WindowRenderer + '_) {
-        match self {
-            PaintState::PendingGpuResources { backend, .. } => backend.as_ref(),
-            PaintState::Initialized { backend } => backend.as_ref(),
         }
     }
 

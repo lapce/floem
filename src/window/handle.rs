@@ -1,5 +1,5 @@
 #[cfg(not(target_arch = "wasm32"))]
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 
 use crate::event::{CustomEvent, RouteKind, ScrollTo, UpdatePhaseEvent};
@@ -19,8 +19,6 @@ use winit::window::{
     ImeCapabilities, ImeEnableRequest, ImeHint, ImePurpose, ImeRequest, ImeRequestData,
 };
 
-#[cfg(all(feature = "subduction", target_os = "macos"))]
-use crate::external_surface::refresh_subduction_frame_tickers;
 use crate::frame_clock::{FrameClock, new_window_frame_clock};
 use crate::gpu_resources::GpuResources;
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
@@ -54,7 +52,7 @@ use crate::{
         Event, GlobalEventCx, ImeEvent, WindowEvent, clear_hit_test_cache,
         dropped_file::FileDragEvent,
     },
-    frame::{FrameTime, FrameTimingFeedback, FrameWorkload},
+    frame::{FrameDamageClass, FrameTime, FrameTimingFeedback, FrameWorkload},
     inspector::{
         self, Capture, CaptureState, CapturedView, TimingKind, TimingReport, profiler::Profile,
     },
@@ -101,21 +99,24 @@ pub(crate) struct WindowHandle {
     is_occluded: bool,
     pending_timing: FrameTimingAccumulator,
     next_frame_id: u64,
-    frame_pipeline: FramePipeline,
     last_timing_report: Option<TimingReport>,
     frame_clock: Box<dyn FrameClock>,
-    present_immediately_when_ready: bool,
     active_frame_time: Option<FrameTime>,
     pending_frame_workload: FrameWorkload,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FrameWakeKind {
-    Present,
     Update,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FrameAdvanceSource {
+    Event,
+    FrameOpportunity,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct ScheduledFrameWake {
     pub(crate) deadline: Instant,
     pub(crate) kind: FrameWakeKind,
@@ -130,98 +131,12 @@ pub(crate) struct FrameSchedule {
     pub(crate) wake: Option<ScheduledFrameWake>,
 }
 
-/// Window-owned frame pipeline state.
-///
-/// The window, not the renderer backend, owns whether it currently has:
-/// - no frame work in flight
-/// - a paint submission underway
-/// - a prepared frame waiting to be presented
-///
-/// This keeps invalid states unrepresentable and prevents paint/present control
-/// flow from being hidden in backend readiness checks.
-#[derive(Debug)]
-struct FramePipeline {
-    rendering: VecDeque<FrameRecord>,
-    prepared: VecDeque<PreparedFrame>,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct FrameRecord {
-    id: u64,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct PreparedFrame {
-    frame: FrameRecord,
-    available_at: Instant,
-}
-
 fn surface_extent(size: Size, os_scale: f64) -> PhysicalSize<u32> {
     let physical = size * os_scale;
     PhysicalSize::new(
         physical.width.max(1.0).round() as u32,
         physical.height.max(1.0).round() as u32,
     )
-}
-
-impl FramePipeline {
-    const MAX_OUTSTANDING_FRAMES: usize = 1;
-
-    /// Returns whether the pipeline owns any in-flight or prepared frame state.
-    fn has_frame_underway(&self) -> bool {
-        !self.rendering.is_empty() || !self.prepared.is_empty()
-    }
-
-    /// Returns whether the pipeline currently owns a frame that can be
-    /// presented without further painting.
-    fn has_frame_to_present(&self) -> bool {
-        !self.prepared.is_empty()
-    }
-
-    /// Returns whether the pipeline can accept another render submission.
-    fn can_submit_render(&self) -> bool {
-        self.rendering.len() + self.prepared.len() < Self::MAX_OUTSTANDING_FRAMES
-    }
-
-    /// Records that the paint stage submitted a frame to the backend.
-    fn begin_render(&mut self, frame: FrameRecord) {
-        self.rendering.push_back(frame);
-    }
-
-    /// Records that the backend finished preparing a frame for presentation.
-    fn finish_render(&mut self, frame_id: u64, available_at: Instant) -> bool {
-        let Some(index) = self.rendering.iter().position(|frame| frame.id == frame_id) else {
-            return false;
-        };
-        let Some(frame) = self.rendering.remove(index) else {
-            return false;
-        };
-        self.prepared.push_back(PreparedFrame {
-            frame,
-            available_at,
-        });
-        true
-    }
-
-    /// Starts the present stage by consuming the prepared frame from pipeline
-    /// state and returning it to the caller.
-    fn begin_present(&mut self) -> Option<PreparedFrame> {
-        self.prepared.pop_back()
-    }
-
-    fn discard_pending_frames(&mut self) {
-        self.rendering.clear();
-        self.prepared.clear();
-    }
-}
-
-impl Default for FramePipeline {
-    fn default() -> Self {
-        Self {
-            rendering: VecDeque::new(),
-            prepared: VecDeque::new(),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -313,6 +228,48 @@ impl FrameTimingAccumulator {
             .map(|span| span.duration)
             .max()
             .unwrap_or(Duration::ZERO)
+    }
+
+    fn active_frame_work_duration(&self) -> Duration {
+        let mut intervals: Vec<(Duration, Duration)> = self
+            .spans
+            .iter()
+            .filter(|span| {
+                matches!(span.label, "PrepareFrame" | "Paint")
+                    || matches!(
+                        span.kind,
+                        TimingKind::Style | TimingKind::Layout | TimingKind::BoxTree
+                    )
+            })
+            .map(|span| (span.start, span.start.saturating_add(span.duration)))
+            .filter(|(start, end)| end > start)
+            .collect();
+
+        if intervals.is_empty() {
+            return Duration::ZERO;
+        }
+
+        intervals.sort_by_key(|(start, _)| *start);
+        let mut total = Duration::ZERO;
+        let (mut current_start, mut current_end) = intervals[0];
+        for (start, end) in intervals.into_iter().skip(1) {
+            if start <= current_end {
+                current_end = current_end.max(end);
+            } else {
+                total += current_end.saturating_sub(current_start);
+                current_start = start;
+                current_end = end;
+            }
+        }
+        total + current_end.saturating_sub(current_start)
+    }
+
+    fn sum_duration_for_kind(&self, kind: TimingKind) -> Duration {
+        self.spans
+            .iter()
+            .filter(|span| span.kind == kind)
+            .map(|span| span.duration)
+            .sum()
     }
 
     fn build_timing_report(self) -> TimingReport {
@@ -481,10 +438,8 @@ impl WindowHandle {
             is_occluded: false,
             pending_timing: FrameTimingAccumulator::default(),
             next_frame_id: 1,
-            frame_pipeline: FramePipeline::default(),
             last_timing_report: None,
             frame_clock: new_window_frame_clock(window_id, output_id),
-            present_immediately_when_ready: false,
             active_frame_time: None,
             pending_frame_workload: FrameWorkload::Animation,
         };
@@ -494,12 +449,12 @@ impl WindowHandle {
                 window_handle.event(Event::Window(WindowEvent::GpuResourcesReady(gpu_resources)));
             }
         }
-        #[cfg(feature = "subduction")]
+
         window_handle
             .window_state
             .compositor
-            .ensure_platform_presenter(window_handle.window.as_ref());
-        #[cfg(all(feature = "subduction", target_os = "macos"))]
+            .ensure_platform_presenter(window_id, window_handle.window.as_ref());
+        #[cfg(target_os = "macos")]
         window_handle.refresh_frame_clock_display_link_layer();
         window_handle
             .window_state
@@ -530,15 +485,21 @@ impl WindowHandle {
         os_scale: f64,
         size: Size,
     ) -> PaintState {
-        let surface = gpu_resources
-            .instance
-            .create_surface(Arc::clone(&window))
-            .expect("can create second window");
+        let surface_caps = subduction_platform::WgpuPresentSurfaceCapabilities {
+            formats: vec![wgpu::TextureFormat::Bgra8Unorm],
+            present_modes: vec![wgpu::PresentMode::AutoVsync],
+            alpha_modes: vec![
+                wgpu::CompositeAlphaMode::PreMultiplied,
+                wgpu::CompositeAlphaMode::PostMultiplied,
+                wgpu::CompositeAlphaMode::Opaque,
+            ],
+            nonblocking_acquire: true,
+        };
         let backend = crate::paint::renderer::NewRendererCx::build(
             renderer_chooser,
             window,
             Some(gpu_resources),
-            Some(surface),
+            Some(surface_caps),
             transparent,
             os_scale,
             size,
@@ -657,10 +618,8 @@ impl WindowHandle {
             is_occluded: false,
             pending_timing: FrameTimingAccumulator::default(),
             next_frame_id: 1,
-            frame_pipeline: FramePipeline::default(),
             last_timing_report: None,
             frame_clock: new_window_frame_clock(window_id, 0),
-            present_immediately_when_ready: false,
             active_frame_time: None,
             pending_frame_workload: FrameWorkload::Animation,
         };
@@ -1096,48 +1055,6 @@ impl WindowHandle {
         timing.push_absolute_span("BoxTreeCommit", start, end, TimingKind::BoxTree);
     }
 
-    /// Presents the currently prepared frame, if one exists.
-    ///
-    /// This is the final stage of the window frame pipeline. It does not paint
-    /// or prepare; it only consumes a frame that the pipeline has already
-    /// produced and hands it to the renderer backend for presentation.
-    ///
-    /// This is correct because present is a separate pipeline stage from paint:
-    /// callers decide when presentation is appropriate, and this method only
-    /// consumes already-window-owned frame state.
-    pub(crate) fn present_frame(&mut self) -> bool {
-        let Some(prepared_frame) = self.frame_pipeline.begin_present() else {
-            return false;
-        };
-
-        let presented =
-            self.present_prepared_frame(prepared_frame.frame.id, prepared_frame.available_at);
-
-        self.finish_presented_frame() && presented
-    }
-
-    /// Returns whether the live frame pipeline should submit a new paint pass.
-    ///
-    /// This is a query over window-owned frame state. It does not poll, paint,
-    /// or present. It exists to keep the submission condition explicit rather
-    /// than burying it inside `paint_frame`.
-    fn needs_render_submission(&self) -> bool {
-        self.frame_pipeline.can_submit_render()
-            && (self.window_state.has_pending_paint() || self.window_state.has_pending_render())
-    }
-
-    fn needs_external_surface_submission(&self) -> bool {
-        if self.frame_clock.has_external_frame_signal() {
-            return false;
-        }
-        self.window_state.external_surfaces.needs_submission(
-            self.frame_pipeline.can_submit_render(),
-            self.window_state.has_pending_paint(),
-            self.window_state.has_pending_render(),
-            self.window_state.composition_plan.has_external_surfaces(),
-        )
-    }
-
     /// Promotes frame-clock work into the current update turn.
     ///
     /// This is the prepare stage of the pipeline: it lifts "next frame" work
@@ -1152,54 +1069,64 @@ impl WindowHandle {
             return false;
         }
 
-        self.frame_clock.note_frame_prepare_started(Instant::now());
+        let prepare_start = Instant::now();
+        self.frame_clock.note_frame_prepare_started(prepare_start);
         self.active_frame_time = Some(self.current_frame_time());
         self.window_state.promote_next_frame_work();
         self.run_begin_frame_callbacks();
         self.process_update_no_paint();
         self.frame_clock.set_frame_prepared(true);
+        self.pending_timing.push_absolute_span(
+            "PrepareFrame",
+            prepare_start,
+            Instant::now(),
+            TimingKind::Total,
+        );
         true
     }
 
-    /// Runs the live paint stage and records any submitted frame in the window
-    /// pipeline.
-    ///
-    /// This method belongs between `prepare_frame` and `present_frame` in the
-    /// pipeline. It paints exactly once when the current window state requires a
-    /// frame submission, assigns a new frame id, and records that submission in
-    /// the explicit window-owned pipeline.
-    ///
-    /// This is correct because painting is window policy and renderer
-    /// submission, while presentation remains a separate caller-controlled step.
-    pub(crate) fn paint_frame(&mut self) -> bool {
-        if self.needs_external_surface_submission() {
-            return self.pull_external_surface_frame();
-        }
-        if !self.needs_render_submission() {
-            return false;
-        }
-        if self.window_state.composition_plan.has_external_surfaces()
-            && !self.prepare_external_surface_composition_requires_window_render()
-        {
-            self.render_compositor_scene_layers();
-            #[cfg(all(feature = "subduction", target_os = "macos"))]
-            self.refresh_frame_clock_display_link_layer();
-            self.retire_compositor_only_frame(true);
-            return true;
-        }
+    fn render_immediate_current_frame(&mut self) -> bool {
+        let notify_start = Instant::now();
+        self.window.pre_present_notify();
+        let notify_end = Instant::now();
 
-        let frame_id = self.next_frame_id;
-        let frame = FrameRecord { id: frame_id };
-        self.frame_pipeline.begin_render(frame);
-        let submitted = self.paint(frame_id);
-        if !submitted {
-            self.frame_pipeline.rendering.pop_back();
+        let mut timing = std::mem::take(&mut self.pending_timing);
+        self.window_state
+            .external_surfaces
+            .begin_composition_update(
+                self.current_frame_time(),
+                &self.window_state.composition_plan,
+            );
+        let Some(immediate) = self.render_scene(|paint_state, frame_size, source| {
+            paint_state
+                .backend_mut()
+                .render_immediate_and_present(frame_size, source, &mut timing)
+        }) else {
+            self.pending_timing = timing;
+            return false;
+        };
+
+        if !immediate {
+            self.pending_timing = timing;
             return false;
         }
 
-        self.next_frame_id += 1;
+        self.render_compositor_scene_layers();
+        #[cfg(target_os = "macos")]
+        self.refresh_frame_clock_display_link_layer();
 
-        true
+        timing.record_renderer_span(
+            "PrePresentNotify",
+            Some(crate::paint::renderer::TimingSpan::new(
+                notify_start,
+                notify_end,
+            )),
+            TimingKind::Renderer,
+        );
+        self.pending_timing = timing;
+        self.route_paint_present_event();
+        self.paint_state.backend_mut().discard_pending_frames();
+        self.finish_presented_frame(None)
     }
 
     fn pull_external_surface_frame(&mut self) -> bool {
@@ -1211,7 +1138,7 @@ impl WindowHandle {
             effective_scale,
             self.gpu_resources.as_ref(),
         );
-        #[cfg(all(feature = "subduction", target_os = "macos"))]
+        #[cfg(target_os = "macos")]
         self.refresh_frame_clock_display_link_layer();
         self.retire_compositor_only_frame(true);
         true
@@ -1229,36 +1156,7 @@ impl WindowHandle {
             });
     }
 
-    fn prepare_external_surface_composition_requires_window_render(&mut self) -> bool {
-        let old_prefix = self
-            .window_state
-            .external_surfaces
-            .begin_composition_update(
-                self.current_frame_time(),
-                &self.window_state.composition_plan,
-            );
-
-        let gpu_resources = self.gpu_resources.clone();
-        let window = self.window.clone();
-        let record_paint_order = crate::paint::is_paint_order_tracking_enabled();
-        let mut cx = crate::paint::GlobalPaintCx {
-            window_state: &mut self.window_state,
-            gpu_resources,
-            window,
-            record_paint_order,
-        };
-        cx.prepare_display_list(self.id);
-
-        self.window_state
-            .external_surfaces
-            .composition_update_requires_window_render(
-                &old_prefix,
-                &self.window_state.composition_plan,
-            )
-    }
-
-    #[cfg(feature = "subduction")]
-    fn render_compositor_scene_layers(&mut self) {
+    pub(crate) fn render_compositor_scene_layers(&mut self) {
         let Some(gpu_resources) = self.gpu_resources.as_ref() else {
             return;
         };
@@ -1277,9 +1175,6 @@ impl WindowHandle {
         );
     }
 
-    #[cfg(not(feature = "subduction"))]
-    fn render_compositor_scene_layers(&mut self) {}
-
     /// Builds the scene source for a paint/capture operation and runs a single
     /// backend operation against it.
     ///
@@ -1297,9 +1192,11 @@ impl WindowHandle {
 
         let extent = surface_extent(self.window_state.root_size, self.window_state.os_scale);
         let frame_size = Size::new(extent.width as f64, extent.height as f64);
-        self.paint_state
-            .backend_mut()
-            .resize(extent.width, extent.height);
+        self.paint_state.backend_mut().resize(
+            extent.width,
+            extent.height,
+            self.window_state.effective_scale(),
+        );
 
         let background = if self.transparent {
             None
@@ -1383,7 +1280,7 @@ impl WindowHandle {
             return false;
         };
         self.render_compositor_scene_layers();
-        #[cfg(all(feature = "subduction", target_os = "macos"))]
+        #[cfg(target_os = "macos")]
         self.refresh_frame_clock_display_link_layer();
         let total_end = Instant::now();
 
@@ -1402,9 +1299,11 @@ impl WindowHandle {
             return false;
         }
 
-        self.paint_state
-            .backend_mut()
-            .resize(target_extent.width, target_extent.height);
+        self.paint_state.backend_mut().resize(
+            target_extent.width,
+            target_extent.height,
+            self.window_state.effective_scale(),
+        );
 
         let notify_start = Instant::now();
         self.set_presents_with_transaction_now(true);
@@ -1435,7 +1334,7 @@ impl WindowHandle {
             return false;
         }
         self.render_compositor_scene_layers();
-        #[cfg(all(feature = "subduction", target_os = "macos"))]
+        #[cfg(target_os = "macos")]
         self.refresh_frame_clock_display_link_layer();
 
         timing.record_renderer_span(
@@ -1448,9 +1347,8 @@ impl WindowHandle {
         );
         self.pending_timing = timing;
         self.route_paint_present_event();
-        self.frame_pipeline.discard_pending_frames();
         self.paint_state.backend_mut().discard_pending_frames();
-        self.finish_presented_frame()
+        self.finish_presented_frame(None)
     }
 
     fn current_frame_time(&self) -> FrameTime {
@@ -1483,7 +1381,7 @@ impl WindowHandle {
         let frame_interval = self.frame_interval();
         let now = Instant::now();
         self.refresh_frame_clock(frame_interval, now);
-        self.frame_clock.redraw_deadline(frame_interval, now, false)
+        self.frame_clock.redraw_deadline(frame_interval, now)
     }
 
     pub(crate) fn note_input_frame_workload(&mut self) {
@@ -1499,14 +1397,16 @@ impl WindowHandle {
             .set_frame_workload(FrameWorkload::Animation);
     }
 
-    #[cfg(all(feature = "subduction", target_os = "macos"))]
+    #[cfg(target_os = "macos")]
     pub(crate) fn refresh_frame_clock_display_link_layer(&mut self) {
         let display_id = self
             .window
             .current_monitor()
             .and_then(|monitor| u32::try_from(monitor.native_id()).ok());
         self.frame_clock.set_native_display_id(display_id);
-        refresh_subduction_frame_tickers(self.window_id);
+        self.frame_clock.set_prefers_metal_display_link(false);
+        self.frame_clock
+            .set_metal_display_link_layer(self.window_state.compositor.display_link_layer());
     }
 
     fn run_begin_frame_callbacks(&mut self) {
@@ -1521,15 +1421,14 @@ impl WindowHandle {
         }
     }
 
-    #[cfg(all(feature = "subduction", target_os = "macos"))]
+    #[cfg(target_os = "macos")]
     pub(crate) fn receive_frame_tick(&mut self, tick: subduction_core::timing::FrameTick) {
         self.frame_clock.receive_frame_tick(tick);
     }
 
-    #[cfg(all(feature = "subduction", target_os = "macos"))]
+    #[cfg(target_os = "macos")]
     pub(crate) fn drive_external_surfaces_from_frame_signal(&mut self) -> bool {
         if !self.can_render_now()
-            || self.has_frame_underway()
             || !self.window_state.composition_plan.has_external_surfaces()
             || !self.window_state.external_surfaces.has_frame_pull()
         {
@@ -1537,33 +1436,6 @@ impl WindowHandle {
         }
 
         self.pull_external_surface_frame()
-    }
-
-    /// Accepts an explicit backend frame-ready notification into window-owned
-    /// frame state.
-    ///
-    /// This is the only readiness transition in the live frame pipeline. The
-    /// app loop routes `FrameReady { window_id, frame_id }` here, and this
-    /// method promotes that exact in-flight frame id from `Rendering` to
-    /// `Prepared`.
-    pub(crate) fn accept_frame_ready(&mut self, frame_id: u64) -> bool {
-        self.frame_pipeline.finish_render(frame_id, Instant::now())
-    }
-
-    /// Opportunistically promotes a backend-completed frame into the explicit
-    /// window pipeline without waiting for the normal `FrameReady` proxy event.
-    ///
-    /// The proxy event path is still the main mechanism: renderer completion is
-    /// expected to arrive there and be accepted through `accept_frame_ready`.
-    /// This helper is only a fallback for long input bursts where window-event
-    /// dispatch can outrun proxy wakeups and delay presentation of an already
-    /// finished frame.
-    pub(crate) fn accept_polled_ready_frame(&mut self) -> bool {
-        let Some(frame_id) = self.paint_state.backend_mut().poll_ready_frame() else {
-            return false;
-        };
-
-        self.frame_pipeline.finish_render(frame_id, Instant::now())
     }
 
     /// Refreshes the frame clock's active/inactive state from window-owned
@@ -1580,93 +1452,6 @@ impl WindowHandle {
         self.window_state.has_next_frame_work()
             || self.window_state.has_pending_begin_frame_callbacks()
             || self.window_state.has_pending_render()
-            || self.has_frame_to_present()
-            || self.has_frame_underway()
-    }
-
-    pub(crate) fn has_window_frame_work(&self) -> bool {
-        self.window_state.has_next_window_frame_work()
-            || self.window_state.has_pending_render()
-            || self.has_frame_to_present()
-            || self.has_frame_underway()
-    }
-
-    pub(crate) fn has_frame_to_present(&self) -> bool {
-        self.frame_pipeline.has_frame_to_present()
-    }
-
-    pub(crate) fn take_present_immediately_when_ready(&mut self) -> bool {
-        std::mem::take(&mut self.present_immediately_when_ready)
-    }
-
-    #[cfg(all(feature = "subduction", target_os = "macos"))]
-    pub(crate) fn should_present_ready_frame_immediately(&self) -> bool {
-        self.can_render_now()
-            && self.has_frame_to_present()
-            && self
-                .frame_clock
-                .should_present_immediately_on_frame_ready(self.frame_interval(), Instant::now())
-    }
-
-    /// Returns whether the window pipeline still owns a frame that has been
-    /// submitted but not fully retired yet.
-    ///
-    /// App-level scheduling uses this to avoid starting another tick-driven
-    /// animation frame while the current one is still rendering or waiting to
-    /// present.
-    pub(crate) fn has_frame_underway(&self) -> bool {
-        self.frame_pipeline.has_frame_underway()
-    }
-
-    /// Computes the next wakeup deadline for present/redraw.
-    ///
-    /// This is pure scheduling output derived from current pipeline state and
-    /// the frame clock. It does not mutate window state.
-    fn frame_schedule(
-        &self,
-        frame_interval: Duration,
-        now: Instant,
-        can_render_now: bool,
-    ) -> FrameSchedule {
-        if !can_render_now {
-            return FrameSchedule::default();
-        }
-
-        let present = self.has_frame_to_present().then(|| ScheduledFrameWake {
-            deadline: self.frame_clock.redraw_deadline(frame_interval, now, true),
-            kind: FrameWakeKind::Present,
-        });
-        let update = (self.window_state.has_next_frame_work()
-            && !self.frame_clock.has_external_frame_signal())
-        .then(|| {
-            // A frame opportunity may advance animations or begin-frame
-            // callbacks without producing damage to present immediately. Keep a
-            // paced wakeup armed for that deferred work, but do not conflate it
-            // with a prepared-frame present deadline.
-            //
-            // External-signal clocks (for example display-link/subduction on
-            // macOS) must not synthesize these update wakeups: those backends
-            // already own authoritative frame opportunities. However, a ready
-            // frame may still need a late present deadline, so `present`
-            // remains clock-driven for all backends.
-            ScheduledFrameWake {
-                deadline: self.frame_clock.redraw_deadline(frame_interval, now, false),
-                kind: FrameWakeKind::Update,
-            }
-        });
-
-        let wake = match (present, update) {
-            (Some(present), Some(update)) => Some(if present.deadline <= update.deadline {
-                present
-            } else {
-                update
-            }),
-            (Some(present), None) => Some(present),
-            (None, Some(update)) => Some(update),
-            (None, None) => None,
-        };
-
-        FrameSchedule { wake }
     }
 
     /// Advances the window frame pipeline for the current turn and returns the
@@ -1692,45 +1477,24 @@ impl WindowHandle {
         self.refresh_frame_clock(frame_interval, now);
 
         let can_render_now = self.can_render_now();
-        if can_render_now
-            && !self.has_frame_to_present()
-            && self.frame_pipeline.has_frame_underway()
-            && self
-                .frame_clock
-                .should_present_immediately_on_frame_ready(frame_interval, now)
-        {
-            self.present_immediately_when_ready = true;
+        if !can_render_now {
+            return FrameSchedule::default();
         }
-        let has_frame_underway = self.has_frame_underway();
 
-        // Blink-style scheduling runs begin-frame work against the current
-        // frame opportunity and only paces the late present/redraw stage.
-        //
-        // However, once any frame is already underway, we intentionally stop
-        // advancing newer begin-frame/render work. Otherwise a hot input turn
-        // can consume the same event twice by building one scene while the
-        // previous frame is still rendering, then presenting both back to
-        // back. Floem should only build a new scene after the prior frame has
-        // fully retired.
-        let prepared_frame = if can_render_now
-            && !has_frame_underway
-            && self
-                .frame_clock
-                .needs_frame_prepare(self.window_state.has_next_frame_work())
+        let prepared = if self
+            .frame_clock
+            .needs_frame_prepare(self.window_state.has_next_frame_work())
         {
             self.prepare_frame()
         } else {
             false
         };
 
-        if can_render_now && !has_frame_underway {
-            self.paint_frame();
+        if self.window_state.has_pending_paint() || self.window_state.has_pending_render() {
+            self.render_immediate_current_frame();
         }
 
-        if prepared_frame
-            && !self.frame_pipeline.has_frame_underway()
-            && !self.window_state.has_pending_render()
-        {
+        if prepared && !self.window_state.has_pending_render() {
             // This frame opportunity consumed deferred work but produced no
             // renderable damage. Release the prepared latch so the next paced
             // or newly queued future frame work can still be promoted instead
@@ -1739,21 +1503,60 @@ impl WindowHandle {
             self.frame_clock.set_frame_prepared(false);
         }
 
-        self.frame_schedule(frame_interval, Instant::now(), can_render_now)
+        if self.window_state.has_next_frame_work() && !self.frame_clock.has_external_frame_signal()
+        {
+            return FrameSchedule {
+                wake: Some(ScheduledFrameWake {
+                    deadline: self
+                        .frame_clock
+                        .redraw_deadline(frame_interval, Instant::now()),
+                    kind: FrameWakeKind::Update,
+                }),
+            };
+        }
+
+        FrameSchedule::default()
     }
 
-    fn finish_presented_frame(&mut self) -> bool {
+    fn finish_presented_frame(&mut self, submitted_at: Option<Instant>) -> bool {
         self.window_state.clear_pending_damage();
         let presented = self.pending_timing.has_kind(TimingKind::Present);
         if presented {
-            self.present_immediately_when_ready = false;
             self.active_frame_time = None;
             let update = mem::take(&mut self.pending_timing);
-            let render_cpu = update.max_duration_for_label("Paint");
+            let frame_end = Instant::now();
+            let submitted_at = submitted_at.unwrap_or(frame_end);
+            let render_cpu = update.active_frame_work_duration();
             let present_cpu = update
                 .max_duration_for_label("Present")
                 .saturating_sub(update.max_duration_for_label("AcquireSurface"));
-            let frame_end = Instant::now();
+            if crate::frame_clock::frame_pacing_diag_enabled() {
+                eprintln!(
+                    "floem frame pacing window feedback active_cpu={:.3}ms prepare={:.3}ms paint={:.3}ms style_sum={:.3}ms layout_sum={:.3}ms boxtree_sum={:.3}ms present={:.3}ms acquire={:.3}ms compose={:.3}ms present_call={:.3}ms",
+                    render_cpu.as_secs_f64() * 1000.0,
+                    update.max_duration_for_label("PrepareFrame").as_secs_f64() * 1000.0,
+                    update.max_duration_for_label("Paint").as_secs_f64() * 1000.0,
+                    update
+                        .sum_duration_for_kind(TimingKind::Style)
+                        .as_secs_f64()
+                        * 1000.0,
+                    update
+                        .sum_duration_for_kind(TimingKind::Layout)
+                        .as_secs_f64()
+                        * 1000.0,
+                    update
+                        .sum_duration_for_kind(TimingKind::BoxTree)
+                        .as_secs_f64()
+                        * 1000.0,
+                    update.max_duration_for_label("Present").as_secs_f64() * 1000.0,
+                    update
+                        .max_duration_for_label("AcquireSurface")
+                        .as_secs_f64()
+                        * 1000.0,
+                    update.max_duration_for_label("Compose").as_secs_f64() * 1000.0,
+                    update.max_duration_for_label("PresentCall").as_secs_f64() * 1000.0,
+                );
+            }
             self.record_profile_instant("FramePresented", frame_end);
             self.frame_clock.observe_presented(
                 FrameTimingFeedback {
@@ -1761,12 +1564,12 @@ impl WindowHandle {
                     present_cpu: Some(present_cpu),
                     gpu: None,
                 },
+                submitted_at,
                 frame_end,
             );
             self.last_timing_report = Some(update.build_timing_report());
         }
-        let frame_still_underway = self.frame_pipeline.has_frame_underway();
-        if presented || !frame_still_underway {
+        if presented {
             self.frame_clock.set_frame_prepared(false);
             self.active_frame_time = None;
         }
@@ -1794,46 +1597,6 @@ impl WindowHandle {
         let root_element_id = self.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
-    }
-
-    fn present_prepared_frame(&mut self, frame_id: u64, available_at: Instant) -> bool {
-        if !matches!(self.paint_state, PaintState::Initialized { .. }) {
-            return false;
-        }
-
-        let extent = surface_extent(self.window_state.root_size, self.window_state.os_scale);
-        let resize_start = Instant::now();
-        self.paint_state
-            .backend_mut()
-            .resize(extent.width, extent.height);
-        let _resize = resize_start.elapsed();
-        let notify_start = Instant::now();
-        self.window.pre_present_notify();
-        let notify_end = Instant::now();
-        let _ready_wait_span = crate::paint::renderer::TimingSpan::new(available_at, notify_start);
-        let mut timing = std::mem::take(&mut self.pending_timing);
-        let present = self
-            .paint_state
-            .backend_mut()
-            .present_frame(frame_id, &mut timing);
-        let present_ok = present.is_ok();
-        if present.is_ok() {
-            self.route_paint_present_event();
-        }
-        if present_ok {
-            // this is sometimes useful. but most of the time it's just noise
-            // timing.record_renderer_span("ReadyWait", Some(_ready_wait_span), TimingKind::Present);
-            timing.record_renderer_span(
-                "PrePresentNotify",
-                Some(crate::paint::renderer::TimingSpan::new(
-                    notify_start,
-                    notify_end,
-                )),
-                TimingKind::Renderer,
-            );
-        }
-        self.pending_timing = timing;
-        present_ok
     }
 
     fn capture_image(&mut self) -> crate::paint::renderer::CaptureOutput {
@@ -2684,21 +2447,7 @@ impl WindowHandle {
     }
 
     #[cfg(target_os = "macos")]
-    fn set_presents_with_transaction_now(&mut self, value: bool) {
-        use wgpu::hal::api::Metal;
-        let Some(surface) = self.paint_state.backend().gpu_surface() else {
-            return;
-        };
-
-        unsafe {
-            if let Some(metal_surface) = surface.as_hal::<Metal>() {
-                metal_surface
-                    .render_layer()
-                    .lock()
-                    .set_presents_with_transaction(value);
-            }
-        }
-    }
+    fn set_presents_with_transaction_now(&mut self, _value: bool) {}
 }
 
 pub(crate) fn get_current_view() -> ViewId {
@@ -2952,33 +2701,6 @@ mod tests {
     }
 
     #[test]
-    fn test_advance_frame_does_not_consume_next_frame_work_while_frame_underway() {
-        let root_id = ViewId::new_root();
-        set_current_view(root_id);
-
-        let view = Empty::new().style(|s| s.size(100.0, 100.0));
-        let mut window_handle =
-            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
-
-        window_handle.process_update_no_paint();
-        window_handle
-            .window_state
-            .request_animation_frame(Box::new(|_| {}));
-        window_handle
-            .frame_pipeline
-            .begin_render(FrameRecord { id: 1 });
-
-        window_handle.advance_frame();
-
-        assert!(
-            window_handle
-                .window_state
-                .has_pending_begin_frame_callbacks(),
-            "begin-frame work should stay queued until the in-flight frame retires"
-        );
-    }
-
-    #[test]
     fn test_advance_frame_keeps_animation_progress_alive_without_render_damage() {
         let root_id = ViewId::new_root();
         set_current_view(root_id);
@@ -3015,30 +2737,6 @@ mod tests {
             runs.get(),
             2,
             "second frame opportunity should still advance deferred begin-frame work"
-        );
-    }
-
-    #[test]
-    fn test_prepared_frame_counts_as_frame_work() {
-        let root_id = ViewId::new_root();
-        set_current_view(root_id);
-
-        let view = Empty::new().style(|s| s.size(100.0, 100.0));
-        let mut window_handle =
-            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
-
-        window_handle.process_update_no_paint();
-        window_handle
-            .frame_pipeline
-            .finish_render(1, Instant::now());
-
-        assert!(
-            window_handle.has_frame_to_present(),
-            "test setup should leave a prepared frame waiting to present"
-        );
-        assert!(
-            window_handle.has_frame_work(),
-            "prepared frames must count as frame work so scheduling does not need app-layer special cases"
         );
     }
 }

@@ -47,7 +47,6 @@ struct PendingContextMenu {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PacedWakeKind {
-    Present,
     Update,
 }
 
@@ -57,7 +56,7 @@ struct PacedWakeTimerState {
     kind: PacedWakeKind,
 }
 
-#[cfg(all(feature = "subduction", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 #[derive(Default)]
 struct TimingDiagnostics {
     enabled: bool,
@@ -76,7 +75,7 @@ struct TimingDiagnostics {
     max_present_timer_late_us: u128,
 }
 
-#[cfg(all(feature = "subduction", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 impl TimingDiagnostics {
     fn new() -> Self {
         Self {
@@ -145,7 +144,7 @@ pub(crate) struct ApplicationHandle {
     pub(crate) event_listener: Option<Box<AppEventCallback>>,
     pub(crate) gpu_resources: Option<GpuResources>,
     pub(crate) config: AppConfig,
-    #[cfg(all(feature = "subduction", target_os = "macos"))]
+    #[cfg(target_os = "macos")]
     timing_diag: TimingDiagnostics,
 }
 
@@ -163,70 +162,8 @@ impl ApplicationHandle {
             event_listener: None,
             gpu_resources,
             config,
-            #[cfg(all(feature = "subduction", target_os = "macos"))]
+            #[cfg(target_os = "macos")]
             timing_diag: TimingDiagnostics::new(),
-        }
-    }
-
-    /// Presents a window's prepared frame if one exists.
-    ///
-    /// The app handle does not choose frame contents or paint; it only asks the
-    /// window to perform the present stage and then finalizes profiling state.
-    fn present_window_frame(&mut self, window_id: WindowId) -> bool {
-        let Some(handle) = self.window_handles.get_mut(&window_id) else {
-            return false;
-        };
-        let start = Instant::now();
-        let presented = handle.present_frame();
-        let end = Instant::now();
-        #[cfg(all(feature = "subduction", target_os = "macos"))]
-        {
-            self.timing_diag.present_attempts = self.timing_diag.present_attempts.saturating_add(1);
-            if presented {
-                self.timing_diag.present_success =
-                    self.timing_diag.present_success.saturating_add(1);
-            }
-            self.timing_diag.maybe_report();
-        }
-        if presented {
-            Self::finalize_presented_profile_frame(
-                handle,
-                Some(ProfileEvent {
-                    start,
-                    end,
-                    name: "DirectPresent".to_string(),
-                    depth: 0,
-                }),
-            );
-        }
-        presented
-    }
-
-    /// Continues frame progression after a present attempt.
-    ///
-    /// A failed present needs an immediate schedule refresh because the window
-    /// still owns a frame that did not retire. A successful present is
-    /// different: we only need to wake the normal update loop again if the
-    /// window still has follow-up frame work. Recomputing the paced redraw
-    /// schedule immediately after present can pull the next present earlier
-    /// than intended.
-    fn continue_after_present(
-        &mut self,
-        window_id: WindowId,
-        presented: bool,
-        event_loop: &dyn ActiveEventLoop,
-    ) {
-        if !presented {
-            self.refresh_window_frame_schedule(window_id, event_loop);
-            self.request_update();
-            return;
-        }
-
-        if let Some(handle) = self.window_handles.get_mut(&window_id) {
-            handle.refresh_frame_activity();
-            if handle.has_frame_work() {
-                self.request_update();
-            }
         }
     }
 
@@ -261,14 +198,8 @@ impl ApplicationHandle {
         match schedule.wake {
             Some(wake) => {
                 let kind = match wake.kind {
-                    FrameWakeKind::Present => PacedWakeKind::Present,
                     FrameWakeKind::Update => PacedWakeKind::Update,
                 };
-                #[cfg(all(feature = "subduction", target_os = "macos"))]
-                if kind == PacedWakeKind::Present {
-                    self.timing_diag.present_wake_armed =
-                        self.timing_diag.present_wake_armed.saturating_add(1);
-                }
                 self.ensure_paced_wake_timer(window_id, wake.deadline, kind, event_loop);
             }
             None => self.cancel_paced_wake_timer(window_id, event_loop),
@@ -303,12 +234,12 @@ impl ApplicationHandle {
                     backend: _,
                 } = &handle.paint_state
                 {
-                    let (gpu_resources, surface) = rx.recv().unwrap().unwrap();
+                    let (gpu_resources, surface_caps) = rx.recv().unwrap().unwrap();
                     let backend = crate::paint::renderer::NewRendererCx::build(
                         &handle.renderer_chooser,
                         window.clone(),
                         Some(gpu_resources.clone()),
-                        Some(surface),
+                        Some(surface_caps),
                         handle.transparent,
                         handle.window_state.effective_scale(),
                         handle.window_state.root_size * handle.window_state.os_scale,
@@ -336,45 +267,6 @@ impl ApplicationHandle {
                     menu,
                     pos,
                 });
-            }
-            UserEvent::FrameReady {
-                window_id,
-                frame_id,
-            } => {
-                #[cfg(all(feature = "subduction", target_os = "macos"))]
-                {
-                    self.timing_diag.frame_ready_count =
-                        self.timing_diag.frame_ready_count.saturating_add(1);
-                    self.timing_diag.maybe_report();
-                }
-                #[cfg(all(feature = "subduction", target_os = "macos"))]
-                let mut should_present_immediately = false;
-                if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    #[cfg(all(feature = "subduction", target_os = "macos"))]
-                    {
-                        let accepted_frame = handle.accept_frame_ready(frame_id);
-                        handle.refresh_frame_activity();
-                        should_present_immediately = handle.take_present_immediately_when_ready()
-                            || (accepted_frame && handle.should_present_ready_frame_immediately());
-                    }
-
-                    #[cfg(not(all(feature = "subduction", target_os = "macos")))]
-                    {
-                        handle.accept_frame_ready(frame_id);
-                        handle.refresh_frame_activity();
-                    }
-                }
-
-                #[cfg(all(feature = "subduction", target_os = "macos"))]
-                {
-                    if should_present_immediately {
-                        let presented = self.present_window_frame(window_id);
-                        self.continue_after_present(window_id, presented, event_loop);
-                        return;
-                    }
-                }
-
-                self.refresh_window_frame_schedule(window_id, event_loop);
             }
             UserEvent::ExternalSurfaceContent {
                 window_id,
@@ -414,34 +306,36 @@ impl ApplicationHandle {
                 }
                 self.request_update();
             }
-            #[cfg(all(feature = "subduction", target_os = "macos"))]
+            UserEvent::CompositorSceneDrawableReady { window_id } => {
+                if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                    handle.render_compositor_scene_layers();
+                    handle.refresh_frame_activity();
+                }
+                self.refresh_window_frame_schedule(window_id, event_loop);
+            }
+            #[cfg(target_os = "macos")]
             UserEvent::SubductionFrameTick { window_id, tick } => {
                 self.timing_diag.record_tick(tick.frame_index);
                 self.timing_diag.maybe_report();
-                let mut should_refresh_schedule = false;
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
                     handle.record_profile_instant("VSync", Instant::now());
                     handle.refresh_frame_clock_display_link_layer();
                     handle.receive_frame_tick(tick);
+                }
+
+                Application::clear_update_posted();
+                self.drain_app_update_events(event_loop);
+                if Runtime::has_pending_work() {
+                    Runtime::drain_pending_work();
+                }
+
+                if let Some(handle) = self.window_handles.get_mut(&window_id) {
                     let drove_external_surfaces =
                         handle.drive_external_surfaces_from_frame_signal();
-                    handle.refresh_frame_activity();
-                    let has_schedule_work = if drove_external_surfaces {
-                        handle.has_window_frame_work()
-                    } else {
-                        handle.has_frame_work()
-                    };
-                    if handle.can_render_now() && !handle.has_frame_underway() && has_schedule_work
-                    {
-                        // Subduction owns frame opportunities on this path.
-                        // The app layer should only feed updated window state
-                        // back into scheduling; it should not invent a separate
-                        // "present now" branch here.
-                        should_refresh_schedule = true;
+                    if !drove_external_surfaces {
+                        handle.advance_frame();
                     }
-                }
-                if should_refresh_schedule {
-                    self.refresh_window_frame_schedule(window_id, event_loop);
+                    handle.refresh_frame_activity();
                 }
             }
         }
@@ -449,7 +343,26 @@ impl ApplicationHandle {
 
     pub(crate) fn handle_update_event(&mut self, event_loop: &dyn ActiveEventLoop) {
         Application::clear_update_posted();
+        self.drain_app_update_events(event_loop);
 
+        let start = Instant::now();
+        let mut any_work_remaining =
+            self.handle_updates_for_all_windows_budgeted(start, Self::UPDATE_BUDGET, event_loop);
+
+        if start.elapsed() < Self::UPDATE_BUDGET && Runtime::has_pending_work() {
+            Runtime::drain_pending_work();
+            if Runtime::has_pending_work() {
+                any_work_remaining = true;
+            }
+        }
+
+        if any_work_remaining {
+            self.request_update();
+        }
+        self.update_control_flow(event_loop);
+    }
+
+    fn drain_app_update_events(&mut self, event_loop: &dyn ActiveEventLoop) {
         let events = APP_UPDATE_EVENTS.with(|events| {
             let mut events = events.borrow_mut();
             std::mem::take(&mut *events)
@@ -555,22 +468,6 @@ impl ApplicationHandle {
                 }
             }
         }
-
-        let start = Instant::now();
-        let mut any_work_remaining =
-            self.handle_updates_for_all_windows_budgeted(start, Self::UPDATE_BUDGET, event_loop);
-
-        if start.elapsed() < Self::UPDATE_BUDGET && Runtime::has_pending_work() {
-            Runtime::drain_pending_work();
-            if Runtime::has_pending_work() {
-                any_work_remaining = true;
-            }
-        }
-
-        if any_work_remaining {
-            self.request_update();
-        }
-        self.update_control_flow(event_loop);
     }
 
     pub(crate) fn handle_window_event(
@@ -579,8 +476,6 @@ impl ApplicationHandle {
         event: WindowEvent,
         event_loop: &dyn ActiveEventLoop,
     ) {
-        self.refresh_window_frame_from_event_turn(window_id, event_loop);
-
         let window_handle = match self.window_handles.get_mut(&window_id) {
             Some(window_handle) => window_handle,
             None => return,
@@ -664,6 +559,17 @@ impl ApplicationHandle {
                 let size: LogicalSize<f64> =
                     surface_size.to_logical(window_handle.window_state.os_scale);
                 let size = Size::new(size.width, size.height);
+                if std::env::var_os("FLOEM_RESIZE_DIAG").is_some() {
+                    eprintln!(
+                        "floem resize event t={:?} physical={}x{} logical={:.2}x{:.2} scale={:.3}",
+                        Instant::now(),
+                        surface_size.width,
+                        surface_size.height,
+                        size.width,
+                        size.height,
+                        window_handle.window_state.effective_scale(),
+                    );
+                }
                 window_handle.size(size);
                 #[cfg(target_os = "macos")]
                 {
@@ -676,7 +582,7 @@ impl ApplicationHandle {
                     position.to_logical(window_handle.window_state.os_scale);
                 let point = Point::new(position.x, position.y);
                 window_handle.position(point);
-                #[cfg(all(feature = "subduction", target_os = "macos"))]
+                #[cfg(target_os = "macos")]
                 window_handle.refresh_frame_clock_display_link_layer();
             }
             WindowEvent::CloseRequested => {
@@ -734,7 +640,7 @@ impl ApplicationHandle {
             WindowEvent::TouchpadPressure { .. } => {}
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 window_handle.os_scale(scale_factor);
-                #[cfg(all(feature = "subduction", target_os = "macos"))]
+                #[cfg(target_os = "macos")]
                 window_handle.refresh_frame_clock_display_link_layer();
             }
             WindowEvent::ThemeChanged(theme) => {
@@ -787,7 +693,7 @@ impl ApplicationHandle {
                 }
             }
         }
-        #[cfg(all(feature = "subduction", target_os = "macos"))]
+        #[cfg(target_os = "macos")]
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
             handle.refresh_frame_clock_display_link_layer();
         }
@@ -802,30 +708,7 @@ impl ApplicationHandle {
             handle.refresh_frame_activity();
         }
         self.process_window_frame_from_event(window_id, event_loop);
-        self.refresh_window_frame_from_event_turn(window_id, event_loop);
         self.update_control_flow(event_loop);
-    }
-
-    /// Gives input-heavy window-event turns a chance to notice renderer
-    /// completions and present them promptly.
-    ///
-    /// This is deliberately not the main frame-ready path. Normal completion
-    /// still flows through `UserEvent::FrameReady` on the proxy wakeup side.
-    /// We only do this extra probe here so sustained input does not starve an
-    /// already-finished frame behind delayed proxy-event servicing.
-    fn refresh_window_frame_from_event_turn(
-        &mut self,
-        window_id: WindowId,
-        event_loop: &dyn ActiveEventLoop,
-    ) {
-        let Some(handle) = self.window_handles.get_mut(&window_id) else {
-            return;
-        };
-
-        if handle.accept_polled_ready_frame() {
-            handle.refresh_frame_activity();
-            self.refresh_window_frame_schedule(window_id, event_loop);
-        }
     }
 
     fn process_window_frame_from_event(
@@ -1301,20 +1184,17 @@ impl ApplicationHandle {
                         && let Some(state) = self.paced_wake_timers.get_mut(&window_id)
                         && state.token == Some(token)
                     {
-                        if state.kind == PacedWakeKind::Present {
-                            self.timing_diag.present_timer_fired =
-                                self.timing_diag.present_timer_fired.saturating_add(1);
-                            let late = now.saturating_duration_since(state.deadline).as_micros();
-                            self.timing_diag.max_present_timer_late_us =
-                                self.timing_diag.max_present_timer_late_us.max(late);
-                        }
                         state.token = None;
                         match state.kind {
-                            PacedWakeKind::Present => {
-                                let presented = self.present_window_frame(window_id);
-                                self.continue_after_present(window_id, presented, event_loop);
-                            }
                             PacedWakeKind::Update => {
+                                if crate::frame_clock::frame_pacing_diag_enabled() {
+                                    eprintln!(
+                                        "floem paced wake update window={:?} deadline_late={:.3}ms",
+                                        window_id,
+                                        now.saturating_duration_since(state.deadline).as_secs_f64()
+                                            * 1000.0,
+                                    );
+                                }
                                 self.request_update();
                             }
                         }

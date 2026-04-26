@@ -113,20 +113,6 @@ impl WindowExternalSurfaces {
         std::mem::take(&mut self.needs_frame_pull)
     }
 
-    pub(crate) fn needs_submission(
-        &self,
-        can_submit_render: bool,
-        has_pending_paint: bool,
-        has_pending_render: bool,
-        plan_has_external_surfaces: bool,
-    ) -> bool {
-        can_submit_render
-            && self.needs_frame_pull
-            && !has_pending_paint
-            && !has_pending_render
-            && plan_has_external_surfaces
-    }
-
     pub(crate) fn pull_frame(
         &mut self,
         frame_time: FrameTime,
@@ -149,14 +135,6 @@ impl WindowExternalSurfaces {
         let old_prefix = plan.window_prefix_fingerprint();
         self.frame_time = Some(frame_time);
         old_prefix
-    }
-
-    pub(crate) fn composition_update_requires_window_render(
-        &self,
-        old_prefix: &WindowPrefixFingerprint,
-        plan: &CompositionPlan,
-    ) -> bool {
-        !plan.has_external_surfaces() || old_prefix != &plan.window_prefix_fingerprint()
     }
 
     pub(crate) fn release_outcomes(&mut self, mut update: impl FnMut(&mut ExternalSurfaceOutcome)) {

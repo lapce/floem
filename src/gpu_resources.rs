@@ -41,7 +41,9 @@ impl GpuResources {
         required_features: wgpu::Features,
         backends: Option<Backends>,
         window: Arc<dyn Window>,
-    ) -> Receiver<Result<(Self, wgpu::Surface<'static>), GpuResourceError>> {
+    ) -> Receiver<
+        Result<(Self, subduction_platform::WgpuPresentSurfaceCapabilities), GpuResourceError>,
+    > {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: Backends::from_env().or(backends).unwrap_or(Backends::all()),
             flags: InstanceFlags::from_env_or_default(),
@@ -51,20 +53,10 @@ impl GpuResources {
 
         spawn({
             async move {
-                let surface = match instance.create_surface(Arc::clone(&window)) {
-                    Ok(surface) => surface,
-                    Err(err) => {
-                        tx.send(Err(GpuResourceError::SurfaceCreationError(err)))
-                            .unwrap();
-                        on_result(window.id());
-                        return;
-                    }
-                };
-
                 let Ok(adapter) = instance
                     .request_adapter(&wgpu::RequestAdapterOptions {
                         power_preference: wgpu::PowerPreference::default(),
-                        compatible_surface: Some(&surface),
+                        compatible_surface: None,
                         force_fallback_adapter: false,
                     })
                     .await
@@ -75,6 +67,16 @@ impl GpuResources {
                     return;
                 };
 
+                let surface_caps = subduction_platform::WgpuPresentSurfaceCapabilities {
+                    formats: vec![wgpu::TextureFormat::Bgra8Unorm],
+                    present_modes: vec![wgpu::PresentMode::AutoVsync],
+                    alpha_modes: vec![
+                        wgpu::CompositeAlphaMode::PreMultiplied,
+                        wgpu::CompositeAlphaMode::PostMultiplied,
+                        wgpu::CompositeAlphaMode::Opaque,
+                    ],
+                    nonblocking_acquire: true,
+                };
                 tx.send(
                     adapter
                         .request_device(&wgpu::DeviceDescriptor {
@@ -84,13 +86,17 @@ impl GpuResources {
                         })
                         .await
                         .map_err(GpuResourceError::DeviceRequestError)
-                        .map(|(device, queue)| Self {
-                            adapter,
-                            device,
-                            queue,
-                            instance,
-                        })
-                        .map(|res| (res, surface)),
+                        .map(|(device, queue)| {
+                            (
+                                Self {
+                                    adapter,
+                                    device,
+                                    queue,
+                                    instance,
+                                },
+                                surface_caps,
+                            )
+                        }),
                 )
                 .unwrap();
                 on_result(window.id());
@@ -103,7 +109,6 @@ impl GpuResources {
 /// Possible errors during GPU resource setup.
 #[derive(Debug)]
 pub enum GpuResourceError {
-    SurfaceCreationError(wgpu::CreateSurfaceError),
     AdapterNotFoundError,
     DeviceRequestError(wgpu::RequestDeviceError),
 }
@@ -111,9 +116,6 @@ pub enum GpuResourceError {
 impl std::fmt::Display for GpuResourceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GpuResourceError::SurfaceCreationError(err) => {
-                write!(f, "Surface creation error: {err}")
-            }
             GpuResourceError::AdapterNotFoundError => {
                 write!(f, "Failed to find a suitable GPU adapter")
             }

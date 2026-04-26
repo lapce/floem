@@ -8,7 +8,6 @@ floem = { path = "../..", default-features = false, features = [
   "editor",
   "default-image-formats",
   "serde",
-  "subduction",
 ] }
 strum = { workspace = true }
 files = { path = "../files/", optional = true, default-features = false }
@@ -24,4 +23,3 @@ vello-cpu = ["floem/vello-cpu"]
 tiny-skia = ["floem/tiny-skia"]
 vello-hybrid = ["floem/vello-hybrid", "files?/vello-hybrid"]
 full = ["dep:files"]
-

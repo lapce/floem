@@ -45,12 +45,27 @@ pub enum FrameWorkload {
     Animation,
 }
 
+/// Coarse dirty-work class used for frame pacing estimates.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FrameDamageClass {
+    /// No window render work is pending.
+    #[default]
+    CompositorOnly,
+    /// Paint/render work without style or layout.
+    PaintOnly,
+    /// Style may affect paint, but layout is not currently dirty.
+    StylePaint,
+    /// Layout or box-tree work is dirty.
+    Layout,
+}
+
 /// Renderer timing observations for scheduler feedback.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct FrameTimingFeedback {
     pub render_cpu: Option<Duration>,
     pub present_cpu: Option<Duration>,
     pub gpu: Option<Duration>,
+    pub damage_class: FrameDamageClass,
 }
 
 /// The presentation interval targeted by the current frame opportunity.

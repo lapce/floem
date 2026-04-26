@@ -60,6 +60,7 @@ rustc-hash = "2.1"
 imaging = { path = "../imaging/imaging", package = "imaging" }
 imaging_wgpu = { path = "../imaging/imaging_wgpu", package = "imaging_wgpu", features = ["wgpu-28"] }
 svg_imaging = { path = "../imaging/svg_imaging", package = "svg_imaging" }
+understory_frame_pacing = { path = "../understory/understory_frame_pacing", package = "understory_frame_pacing" }
 
 [dependencies]
 slotmap = "1.0"
@@ -95,10 +96,8 @@ imaging_vello_cpu = { path = "../imaging/imaging_vello_cpu", optional = true }
 imaging_vello_hybrid = { path = "../imaging/imaging_vello_hybrid", optional = true }
 floem_reactive = { path = "reactive", version = "0.2.0" }
 floem-editor-core = { path = "editor-core", version = "0.2.0", optional = true }
-subduction_core = { path = "../subduction/subduction_core", package = "subduction_core", optional = true, features = ["std"] }
-subduction_platform = { path = "../subduction/subduction_platform", package = "subduction_platform", optional = true }
-subduction_backend_wgpu = { path = "../subduction/subduction_backend_wgpu", package = "subduction_backend_wgpu", optional = true }
-subduction_backend_apple = { path = "../subduction/subduction_backend_apple", package = "subduction_backend_apple", optional = true, default-features = false, features = ["appkit", "cv-display-link", "wgpu"] }
+subduction_core = { path = "../subduction/subduction_core", package = "subduction_core", features = ["std"] }
+subduction_platform = { path = "../subduction/subduction_platform", package = "subduction_platform" }
 copypasta = { version = "0.10", default-features = false, features = [
   "wayland",
   "x11",
@@ -107,7 +106,6 @@ parking_lot = { workspace = true }
 swash = { workspace = true, features = ["scale"] }
 image = { workspace = true }
 softbuffer = "0.4.1"
-pixels = "0.15.0"
 winit = { workspace = true }
 futures = { version = "0.3.31" }
 crossbeam = { version = "0.8", optional = true }
@@ -125,6 +123,7 @@ understory_index = { git = "https://github.com/jrmoulton/understory", rev = "2c2
 understory_focus = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_focus" }
 understory_virtual_list = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_virtual_list" }
 understory_view2d = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_view2d" }
+understory_frame_pacing.workspace = true
 
 # understory_box_tree = { path = "../understory/understory_box_tree", package = "understory_box_tree" }
 # understory_event_state = { path = "../understory/understory_event_state", package = "understory_event_state" }
@@ -145,7 +144,7 @@ wgpu = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 clipboard-win = "5.4"
-subduction_backend_windows = { path = "../subduction/subduction_backend_windows", package = "subduction_backend_windows", optional = true }
+subduction_backend_windows = { path = "../subduction/subduction_backend_windows", package = "subduction_backend_windows" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", default-features = false }
@@ -156,6 +155,7 @@ objc2-app-kit = { version = "0.3", features = [
   "NSView",
 ] }
 dispatch2 = {version = "0.3.0"}
+subduction_backend_apple = { path = "../subduction/subduction_backend_apple", package = "subduction_backend_apple", default-features = false, features = ["appkit", "ca-display-link", "cametal-display-link", "cv-display-link", "wgpu"] }
 
 [features]
 default = [
@@ -208,7 +208,6 @@ tokio = ["dep:tokio"]
 # rfd (file dialog) async runtime
 crossbeam = ["dep:crossbeam"]
 localization = ["dep:fluent-bundle", "dep:unic-langid", "dep:sys-locale", "dep:ouroboros"]
-subduction = ["dep:subduction_core", "dep:subduction_platform", "dep:subduction_backend_wgpu", "dep:subduction_backend_apple", "dep:subduction_backend_windows"]
 
 [dev-dependencies]
 criterion = { version = "0.8.1", features = ["html_reports"] }

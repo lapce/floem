@@ -36,7 +36,7 @@ use crate::{
     window::{WindowConfig, WindowCreation},
 };
 use handle::ApplicationHandle;
-#[cfg(all(feature = "subduction", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 use subduction_core::timing::FrameTick;
 
 pub(crate) type AppEventCallback = dyn Fn(AppEvent);
@@ -182,10 +182,6 @@ pub(crate) enum UserEvent {
         menu: MenuWrapper,
         pos: Option<Point>,
     },
-    FrameReady {
-        window_id: WindowId,
-        frame_id: u64,
-    },
     ExternalSurfaceContent {
         window_id: WindowId,
         surface_id: ExternalSurfaceId,
@@ -200,7 +196,10 @@ pub(crate) enum UserEvent {
         surface_id: ExternalSurfaceId,
         provider: ExternalSurfaceProviderHandle,
     },
-    #[cfg(all(feature = "subduction", target_os = "macos"))]
+    CompositorSceneDrawableReady {
+        window_id: WindowId,
+    },
+    #[cfg(target_os = "macos")]
     SubductionFrameTick {
         window_id: WindowId,
         tick: FrameTick,

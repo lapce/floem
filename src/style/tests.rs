@@ -2,7 +2,8 @@
 
 use super::{Background, Padding, PaddingBottom, PaddingLeft, PaddingRight, Style, TextColor};
 use crate::unit::Length;
-use peniko::{Brush, color::palette::css};
+use imaging::Brush;
+use peniko::color::palette::css;
 
 #[test]
 fn style_override() {

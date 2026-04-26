@@ -6,5 +6,7 @@ license.workspace = true
 
 [dependencies]
 bytemuck = { version = "1.21", features = ["derive"] }
-floem = { path = "../..", default-features = false, features = ["editor", "skia", "subduction"] }
+floem = { path = "../..", default-features = false, features = ["editor", "skia"] }
+subduction_core = { path = "../../../subduction/subduction_core", package = "subduction_core" }
+subduction_platform = { path = "../../../subduction/subduction_platform", package = "subduction_platform" }
 wgpu.workspace = true
