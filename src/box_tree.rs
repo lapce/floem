@@ -1,6 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use rustc_hash::FxHashMap;
+use understory_box_tree::NodeId;
 
 use crate::ViewId;
 
@@ -44,20 +45,18 @@ use crate::ViewId;
 /// // But hit testing can distinguish which specific rectangle was hit
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ElementId(
-    pub(crate) understory_box_tree::NodeId,
-    pub(crate) ViewId,
-    pub(crate) bool,
-);
+pub struct ElementId(pub NodeId, pub u64, pub bool);
 
 impl ElementId {
-    pub fn owning_id(&self) -> crate::ViewId {
-        self.1
+    /// Returns `true` when this is the primary element for its owning view.
+    #[inline]
+    pub const fn is_view(&self) -> bool {
+        self.2
     }
 
-    /// Returns true if the element id is the primary element for a view.
-    pub fn is_view(&self) -> bool {
-        self.2
+    /// The owning view for this element id.
+    pub fn owning_id(&self) -> ViewId {
+        ViewId::from(slotmap::KeyData::from_ffi(self.1))
     }
 }
 

@@ -170,7 +170,7 @@ impl StyleSelectors {
         self.contains(selector.flag())
     }
 
-    pub(crate) const fn responsive(self) -> Self {
+    pub const fn responsive(self) -> Self {
         self.union(StyleSelectors::RESPONSIVE)
     }
 
@@ -209,5 +209,74 @@ impl StyleSelectors {
 impl std::fmt::Debug for StyleSelectors {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "StyleSelectors({})", self.debug_string())
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Selector -> StyleKey plumbing
+// ────────────────────────────────────────────────────────────────────────────
+
+use crate::StyleKey;
+
+/// Helper macro for declaring selector-backed [`StyleKey`]s as static items.
+///
+/// The resulting function returns a `StyleKey` whose `info` points to a
+/// `'static` [`StyleKeyInfo::Selector`] for the given selector set.
+#[macro_export]
+macro_rules! style_key_selector {
+    ($v:vis $name:ident, $sel:expr) => {
+        fn $name() -> $crate::StyleKey {
+            static INFO: $crate::props::StyleKeyInfo = $crate::props::StyleKeyInfo::Selector($sel);
+            $crate::StyleKey { info: &INFO }
+        }
+    };
+}
+
+style_key_selector!(hover, StyleSelectors::empty().set_selector(StyleSelector::Hover, true));
+style_key_selector!(
+    file_hover,
+    StyleSelectors::empty().set_selector(StyleSelector::FileHover, true)
+);
+style_key_selector!(focus, StyleSelectors::empty().set_selector(StyleSelector::Focus, true));
+style_key_selector!(
+    focus_visible,
+    StyleSelectors::empty().set_selector(StyleSelector::FocusVisible, true)
+);
+style_key_selector!(
+    focus_within,
+    StyleSelectors::empty().set_selector(StyleSelector::FocusWithin, true)
+);
+style_key_selector!(
+    disabled,
+    StyleSelectors::empty().set_selector(StyleSelector::Disabled, true)
+);
+style_key_selector!(active, StyleSelectors::empty().set_selector(StyleSelector::Active, true));
+style_key_selector!(
+    dragging,
+    StyleSelectors::empty().set_selector(StyleSelector::Dragging, true)
+);
+style_key_selector!(
+    selected,
+    StyleSelectors::empty().set_selector(StyleSelector::Selected, true)
+);
+style_key_selector!(
+    darkmode,
+    StyleSelectors::empty().set_selector(StyleSelector::DarkMode, true)
+);
+
+impl StyleSelector {
+    pub fn to_key(self) -> StyleKey {
+        match self {
+            StyleSelector::Hover => hover(),
+            StyleSelector::Focus => focus(),
+            StyleSelector::FocusVisible => focus_visible(),
+            StyleSelector::FocusWithin => focus_within(),
+            StyleSelector::Disabled => disabled(),
+            StyleSelector::Active => active(),
+            StyleSelector::Dragging => dragging(),
+            StyleSelector::Selected => selected(),
+            StyleSelector::DarkMode => darkmode(),
+            StyleSelector::FileHover => file_hover(),
+        }
     }
 }

@@ -199,7 +199,7 @@ fn animations_recursive_on_remove(id: ViewId, child_id: ViewId, child_scope: Sco
     let animations = &mut state.animations.stack;
     let mut request_style = false;
     for anim in animations {
-        if anim.run_on_remove && !matches!(anim.repeat_mode, RepeatMode::LoopForever) {
+        if anim.runs_on_remove() && !matches!(anim.repeat_mode(), RepeatMode::LoopForever) {
             anim.reverse_mut();
             request_style = true;
             wait_for += 1;
@@ -230,7 +230,7 @@ fn animations_recursive_on_create(child_id: ViewId) {
     let animations = &mut state.animations.stack;
     let mut request_style = false;
     for anim in animations {
-        if anim.run_on_create && !matches!(anim.repeat_mode, RepeatMode::LoopForever) {
+        if anim.runs_on_create() && !matches!(anim.repeat_mode(), RepeatMode::LoopForever) {
             anim.start_mut();
             request_style = true;
         }

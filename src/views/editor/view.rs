@@ -964,14 +964,18 @@ impl View for EditorView {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        let mut transitioning = false;
         self.editor.with_untracked(|ed| {
             ed.es.update(|s| {
-                if s.read(cx) {
+                if s.read(cx, &mut transitioning) {
                     ed.floem_style_id.update(|val| *val += 1);
                     cx.window_state.request_paint(self.id());
                 }
             })
         });
+        if transitioning {
+            cx.request_transition();
+        }
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {

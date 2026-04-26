@@ -25,6 +25,7 @@ use peniko::{
     kurbo::{Axis, Rect},
 };
 use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
 use taffy::{FlexDirection, Overflow};
 use ui_events::pointer::PointerEvent;
 use understory_box_tree::NodeFlags;
@@ -319,9 +320,13 @@ impl Handle {
             &[ResizableHandleClass::class_ref()],
             self.element_id,
         );
+        let node = cx
+            .window_state
+            .ensure_style_node_for_element(self.element_id);
+        let mut transitioning = false;
         if self
             .handle_style
-            .read_style_for(cx, &resolved, self.element_id)
+            .read_style(cx, &resolved, &mut transitioning)
         {
             let cursor = match axis {
                 Axis::Horizontal => CursorStyle::ColResize,
@@ -330,6 +335,9 @@ impl Handle {
             let cursor = self.handle_style.cursor().unwrap_or(cursor);
             cx.window_state.set_cursor(self.element_id, cursor);
             cx.window_state.request_paint(self.element_id);
+        }
+        if transitioning {
+            cx.request_transition_for(node);
         }
     }
 
@@ -383,8 +391,12 @@ impl View for Resizable {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        let mut transitioning = false;
         if cx.reason.flags != StyleReasonFlags::TARGET {
-            self.re_style.read(cx);
+            self.re_style.read(cx, &mut transitioning);
+        }
+        if transitioning {
+            cx.request_transition();
         }
 
         // If the reason implies nested style maps must be resolved, restyle everything.
@@ -395,9 +407,21 @@ impl View for Resizable {
             return;
         }
 
-        for (element_id, _reason) in cx.targeted_elements.clone() {
-            if let Some(handle) = self.handles.get_mut(&element_id) {
-                handle.style(cx, self.re_style.direction().axis());
+        let handle_nodes: SmallVec<[(ElementId, floem_style::StyleNodeId); 2]> = self
+            .handles
+            .keys()
+            .map(|element_id| {
+                (
+                    *element_id,
+                    cx.window_state.ensure_style_node_for_element(*element_id),
+                )
+            })
+            .collect();
+        for (node, _reason) in cx.targeted_elements.clone() {
+            if let Some((element_id, _)) = handle_nodes.iter().find(|(_, n)| *n == node) {
+                if let Some(handle) = self.handles.get_mut(element_id) {
+                    handle.style(cx, self.re_style.direction().axis());
+                }
             }
         }
     }

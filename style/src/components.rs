@@ -1,70 +1,21 @@
-//! Style component types for borders, shadows, padding, and margins.
+//! Composite style value types.
 //!
-//! This module provides composite style types that represent multi-value
-//! CSS properties like borders and padding.
+//! This module provides multi-value style types like [`Border`], [`Padding`],
+//! [`Margin`], and [`BoxShadow`]. They are data types only. The
+//! `PropDebugView` impls delegate to [`crate::InspectorRender`] for the
+//! actual widget construction, so the view code stays in the `floem` crate.
 
-use floem_renderer::text::FontWeight;
-use parley::style::{OverflowWrap, WordBreakStrength};
+use std::any::Any;
+
 use peniko::color::palette;
 use peniko::kurbo::Stroke;
 use peniko::{Brush, Color};
 
-use crate::theme::StyleThemeExt;
+use crate::debug_view::PropDebugView;
+use crate::inspector_render::InspectorRender;
+use crate::prop_value::StylePropValue;
 use crate::unit::{FontSizeCx, Length, LengthAuto};
-use crate::view::{IntoView, View};
-use crate::views::{ContainerExt, Decorators, Stack, TooltipExt};
-
-use super::values::{StrokeWrap, StylePropValue};
-
-/// Pointer event handling mode
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PointerEvents {
-    Auto,
-    None,
-}
-
-/// Text overflow behavior
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TextOverflow {
-    NoWrap(NoWrapOverflow),
-    Wrap {
-        overflow_wrap: OverflowWrap,
-        word_break: WordBreakStrength,
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NoWrapOverflow {
-    Clip,
-    Ellipsis,
-}
-
-/// Cursor style
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum CursorStyle {
-    #[default]
-    Default,
-    Pointer,
-    Progress,
-    Wait,
-    Crosshair,
-    Text,
-    Move,
-    Grab,
-    Grabbing,
-    ColResize,
-    RowResize,
-    WResize,
-    EResize,
-    SResize,
-    NResize,
-    NwResize,
-    NeResize,
-    SwResize,
-    SeResize,
-    NeswResize,
-    NwseResize,
-}
+use crate::values::StrokeWrap;
 
 /// Structure holding data about the shadow.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -162,6 +113,48 @@ impl Default for BoxShadow {
     }
 }
 
+impl StylePropValue for BoxShadow {
+    fn content_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        self.blur_radius.content_hash().hash(&mut h);
+        self.color.content_hash().hash(&mut h);
+        self.spread.content_hash().hash(&mut h);
+        self.left_offset.content_hash().hash(&mut h);
+        self.right_offset.content_hash().hash(&mut h);
+        self.top_offset.content_hash().hash(&mut h);
+        self.bottom_offset.content_hash().hash(&mut h);
+        h.finish()
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            blur_radius: self
+                .blur_radius
+                .interpolate(&other.blur_radius, value)
+                .unwrap(),
+            color: self.color.interpolate(&other.color, value).unwrap(),
+            spread: self.spread.interpolate(&other.spread, value).unwrap(),
+            left_offset: self
+                .left_offset
+                .interpolate(&other.left_offset, value)
+                .unwrap(),
+            right_offset: self
+                .right_offset
+                .interpolate(&other.right_offset, value)
+                .unwrap(),
+            top_offset: self
+                .top_offset
+                .interpolate(&other.top_offset, value)
+                .unwrap(),
+            bottom_offset: self
+                .bottom_offset
+                .interpolate(&other.bottom_offset, value)
+                .unwrap(),
+        })
+    }
+}
+
 /// Structure holding border widths for all four sides
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Border {
@@ -230,33 +223,6 @@ impl StylePropValue for Border {
         self.right.content_hash().hash(&mut h);
         self.bottom.content_hash().hash(&mut h);
         h.finish()
-    }
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        let border = self.clone();
-        let details_view = move || {
-            let sides = [
-                ("Left:", border.left),
-                ("Top:", border.top),
-                ("Right:", border.right),
-                ("Bottom:", border.bottom),
-            ];
-
-            Stack::vertical_from_iter(
-                sides
-                    .into_iter()
-                    .filter_map(|(l, v)| v.map(|v| (l, v)))
-                    .map(|(label, value)| {
-                        Stack::horizontal((
-                            label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
-                            value.debug_view().unwrap(),
-                        ))
-                        .style(|s| s.items_center().gap(4.0))
-                        .into_any()
-                    }),
-            )
-            .style(|s| s.gap(4.0).padding(8.0))
-        };
-        Some(details_view().into_any())
     }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
@@ -337,32 +303,6 @@ impl StylePropValue for BorderColor {
         self.right.content_hash().hash(&mut h);
         self.bottom.content_hash().hash(&mut h);
         h.finish()
-    }
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        let border_color = self.clone();
-        let details_view = move || {
-            let sides = [
-                ("Left:", border_color.left),
-                ("Top:", border_color.top),
-                ("Right:", border_color.right),
-                ("Bottom:", border_color.bottom),
-            ];
-
-            Stack::vertical_from_iter(
-                sides
-                    .into_iter()
-                    .filter_map(|(l, v)| v.map(|v| (l, v)))
-                    .map(|(label, color)| {
-                        Stack::horizontal((
-                            label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
-                            color.debug_view().unwrap(),
-                        ))
-                        .style(|s| s.items_center().gap(4.0))
-                    }),
-            )
-            .style(|s| s.gap(4.0).padding(8.0))
-        };
-        Some(details_view().into_any())
     }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
@@ -477,32 +417,6 @@ impl StylePropValue for BorderRadius {
         self.bottom_right.content_hash().hash(&mut h);
         h.finish()
     }
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        let border_radius = *self;
-        let details_view = move || {
-            let corners = [
-                ("Top Left:", border_radius.top_left),
-                ("Top Right:", border_radius.top_right),
-                ("Bottom Left:", border_radius.bottom_left),
-                ("Bottom Right:", border_radius.bottom_right),
-            ];
-
-            Stack::vertical_from_iter(
-                corners
-                    .into_iter()
-                    .filter_map(|(l, v)| v.map(|v| (l, v)))
-                    .map(|(label, radius)| {
-                        Stack::horizontal((
-                            label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
-                            radius.debug_view().unwrap(),
-                        ))
-                        .style(|s| s.items_center().gap(4.0))
-                    }),
-            )
-            .style(|s| s.gap(4.0).padding(8.0))
-        };
-        Some(details_view().into_any())
-    }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         Some(Self {
@@ -582,32 +496,6 @@ impl StylePropValue for Padding {
         self.right.content_hash().hash(&mut h);
         self.bottom.content_hash().hash(&mut h);
         h.finish()
-    }
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        let padding = *self;
-        let details_view = move || {
-            let sides = [
-                ("Left:", padding.left),
-                ("Top:", padding.top),
-                ("Right:", padding.right),
-                ("Bottom:", padding.bottom),
-            ];
-
-            Stack::vertical_from_iter(
-                sides
-                    .into_iter()
-                    .filter_map(|(l, v)| v.map(|v| (l, v)))
-                    .map(|(label, padding)| {
-                        Stack::horizontal((
-                            label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
-                            padding.debug_view().unwrap(),
-                        ))
-                        .style(|s| s.items_center().gap(4.0))
-                    }),
-            )
-            .style(|s| s.gap(4.0).padding(8.0))
-        };
-        Some(details_view().into_any())
     }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
@@ -689,32 +577,6 @@ impl StylePropValue for Margin {
         self.bottom.content_hash().hash(&mut h);
         h.finish()
     }
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        let margin = *self;
-        let details_view = move || {
-            let sides = [
-                ("Left:", margin.left),
-                ("Top:", margin.top),
-                ("Right:", margin.right),
-                ("Bottom:", margin.bottom),
-            ];
-
-            Stack::vertical_from_iter(
-                sides
-                    .into_iter()
-                    .filter_map(|(l, v)| v.map(|v| (l, v)))
-                    .map(|(label, margin)| {
-                        Stack::horizontal((
-                            label.style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
-                            margin.debug_view().unwrap(),
-                        ))
-                        .style(|s| s.items_center().gap(4.0))
-                    }),
-            )
-            .style(|s| s.gap(4.0).padding(8.0))
-        };
-        Some(details_view().into_any())
-    }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         Some(Self {
@@ -726,236 +588,38 @@ impl StylePropValue for Margin {
     }
 }
 
-// Simple StylePropValue implementations for enums
-impl StylePropValue for CursorStyle {
-    fn content_hash(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = rustc_hash::FxHasher::default();
-        std::mem::discriminant(self).hash(&mut h);
-        h.finish()
-    }
-}
-impl StylePropValue for TextOverflow {
-    fn content_hash(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = rustc_hash::FxHasher::default();
-        std::mem::discriminant(self).hash(&mut h);
-        h.finish()
-    }
-}
-impl StylePropValue for PointerEvents {
-    fn content_hash(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = rustc_hash::FxHasher::default();
-        std::mem::discriminant(self).hash(&mut h);
-        h.finish()
+impl PropDebugView for Border {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Some(r.border(self))
     }
 }
 
-impl StylePropValue for BoxShadow {
-    fn content_hash(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = rustc_hash::FxHasher::default();
-        self.blur_radius.content_hash().hash(&mut h);
-        self.color.content_hash().hash(&mut h);
-        self.spread.content_hash().hash(&mut h);
-        self.left_offset.content_hash().hash(&mut h);
-        self.right_offset.content_hash().hash(&mut h);
-        self.top_offset.content_hash().hash(&mut h);
-        self.bottom_offset.content_hash().hash(&mut h);
-        h.finish()
-    }
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        // Create a preview container that shows a visual representation of the shadow
-        let shadow = *self;
-
-        // Shadow preview box
-        let shadow_preview =
-            ().style(move |s| s.width(50.0).height(50.0))
-                .container()
-                .style(move |s| {
-                    s.background(Color::TRANSPARENT)
-                        .border(1.)
-                        .apply_box_shadows(vec![shadow])
-                        .margin(10.0)
-                        .with_theme(|s, t| {
-                            s.border_color(t.border()).border_radius(t.border_radius())
-                        })
-                });
-
-        // Create a details section showing the shadow properties
-        let details_view = move || {
-            Stack::vertical((
-                Stack::horizontal((
-                    "Color:".style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
-                    shadow.color.debug_view().unwrap(),
-                ))
-                .style(|s| s.items_center().gap(4.0)),
-                Stack::horizontal((
-                    "Blur:".style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
-                    format!("{:?}", shadow.blur_radius),
-                ))
-                .style(|s| s.items_center().gap(4.0)),
-                Stack::horizontal((
-                    "Spread:".style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
-                    format!("{:?}", shadow.spread),
-                ))
-                .style(|s| s.items_center().gap(4.0)),
-                Stack::horizontal((
-                    "Offset:".style(|s| s.font_weight(FontWeight::BOLD).width(80.0)),
-                    format!(
-                        "L: {:?}, R: {:?}, T: {:?}, B: {:?}",
-                        shadow.left_offset,
-                        shadow.right_offset,
-                        shadow.top_offset,
-                        shadow.bottom_offset
-                    ),
-                ))
-                .style(|s| s.items_center().gap(4.0)),
-            ))
-            .style(|s| s.gap(4.0).padding(8.0))
-        };
-
-        // Combine preview and details
-        let view = shadow_preview.tooltip(details_view);
-
-        Some(view.into_any())
-    }
-
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        Some(Self {
-            blur_radius: self
-                .blur_radius
-                .interpolate(&other.blur_radius, value)
-                .unwrap(),
-            color: self.color.interpolate(&other.color, value).unwrap(),
-            spread: self.spread.interpolate(&other.spread, value).unwrap(),
-            left_offset: self
-                .left_offset
-                .interpolate(&other.left_offset, value)
-                .unwrap(),
-            right_offset: self
-                .right_offset
-                .interpolate(&other.right_offset, value)
-                .unwrap(),
-            top_offset: self
-                .top_offset
-                .interpolate(&other.top_offset, value)
-                .unwrap(),
-            bottom_offset: self
-                .bottom_offset
-                .interpolate(&other.bottom_offset, value)
-                .unwrap(),
-        })
+impl PropDebugView for BorderColor {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Some(r.border_color(self))
     }
 }
 
-/// Controls whether and how a view can receive focus.
-///
-/// Focus determines which element receives keyboard input and is used for accessibility
-/// and keyboard navigation. This enum provides three levels of focus behavior, where
-/// each level includes the capabilities of the previous level. In particular,
-/// [`Focus::Keyboard`] always implies full focusability for pointer and
-/// programmatic focus too.
-///
-/// # Focus Sources
-///
-/// - **Programmatic**: Focus set via code (e.g., `view.request_focus()`)
-/// - **Pointer**: Focus set by clicking or tapping the view
-/// - **Keyboard**: Focus set by sequential navigation (Tab key, arrow keys, etc.)
-///
-/// # Examples
-///
-/// ```rust
-/// # use floem::prelude::*;
-/// // A button that can be focused by any means
-/// let _button = Button::new("Click me")
-///     .style(|s| s.keyboard_navigable());
-///
-/// // A custom scrollable container: focusable for arrow keys, but not in tab order
-/// let _scrollable = Empty::new()
-///     .scroll()
-///     .style(|s| s.focusable());
-///
-/// // A purely decorative element that should never receive focus
-/// let _decorative = Container::new(Empty::new())
-///     .style(|s| s.focus_none());
-/// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum Focus {
-    /// The view cannot receive focus through any means.
-    ///
-    /// Use this for decorative elements, labels, or containers that should never
-    /// be interactive. Clicking the view will not focus it, and programmatic
-    /// focus requests will be ignored.
-    #[default]
-    None,
-
-    /// The view can receive focus programmatically or via pointer, but is not
-    /// included in keyboard navigation order.
-    ///
-    /// Use this for:
-    /// - Custom containers that need focus for scroll or keyboard handling
-    /// - Elements that should be clickable but not tab-able
-    /// - Roving tabindex scenarios where only one item is keyboard navigable
-    /// - Dialog/modal containers that need programmatic focus
-    ///
-    /// The view will not be reachable via Tab or arrow key navigation, but can
-    /// be focused by clicking or calling `request_focus()`.
-    PointerAndProgrammatic,
-
-    /// The view can receive focus through all means: programmatically, via pointer,
-    /// and via keyboard navigation.
-    ///
-    /// Use this for interactive controls like buttons, inputs, links, and custom
-    /// widgets that should be fully accessible via keyboard. The view will be
-    /// included in the sequential focus navigation order (Tab/Shift+Tab) and
-    /// spatial navigation (arrow keys).
-    ///
-    /// This is the recommended setting for all interactive UI elements.
-    Keyboard,
-}
-
-impl Focus {
-    /// Returns `true` if the view can receive focus in any way.
-    ///
-    /// This includes programmatic focus, pointer focus, and keyboard navigation.
-    #[inline]
-    pub fn is_focusable(self) -> bool {
-        !matches!(self, Focus::None)
-    }
-
-    /// Returns `true` if the view can receive focus via pointer (click/tap).
-    #[inline]
-    pub fn allows_pointer_focus(self) -> bool {
-        matches!(self, Focus::PointerAndProgrammatic | Focus::Keyboard)
-    }
-
-    /// Returns `true` if the view can receive focus programmatically (via code).
-    #[inline]
-    pub fn allows_programmatic_focus(self) -> bool {
-        matches!(self, Focus::PointerAndProgrammatic | Focus::Keyboard)
-    }
-
-    /// Returns `true` if the view is included in keyboard navigation order.
-    ///
-    /// This means the view can be reached via Tab, Shift+Tab, or arrow key navigation.
-    #[inline]
-    pub fn allows_keyboard_navigation(self) -> bool {
-        matches!(self, Focus::Keyboard)
-    }
-
-    /// Returns `true` if the view should be excluded from all focus mechanisms.
-    #[inline]
-    pub fn is_none(self) -> bool {
-        matches!(self, Focus::None)
+impl PropDebugView for BorderRadius {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Some(r.border_radius(self))
     }
 }
-impl StylePropValue for Focus {
-    fn content_hash(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = rustc_hash::FxHasher::default();
-        self.hash(&mut h);
-        h.finish()
+
+impl PropDebugView for Padding {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Some(r.padding(self))
+    }
+}
+
+impl PropDebugView for Margin {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Some(r.margin(self))
+    }
+}
+
+impl PropDebugView for BoxShadow {
+    fn debug_view(&self, r: &dyn InspectorRender) -> Option<Box<dyn Any>> {
+        Some(r.box_shadow(self))
     }
 }
