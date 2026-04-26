@@ -768,8 +768,16 @@ impl Animation {
         self.transition(AnimStateCommand::Start)
     }
 
+    pub(crate) fn start_mut_at(&mut self, now: Instant) {
+        self.transition_at(AnimStateCommand::Start, now)
+    }
+
     pub(crate) fn reverse_mut(&mut self) {
         self.transition(AnimStateCommand::Reverse)
+    }
+
+    pub(crate) fn reverse_mut_at(&mut self, now: Instant) {
+        self.transition_at(AnimStateCommand::Reverse, now)
     }
 
     #[allow(unused)]
@@ -792,6 +800,12 @@ impl Animation {
 
     /// Returns the current amount of time that has elapsed since the animation started.
     pub fn elapsed(&self) -> Option<Duration> {
+        self.elapsed_at(Instant::now())
+    }
+
+    /// Returns the current amount of time that has elapsed since the animation
+    /// started, evaluated at `now`.
+    pub fn elapsed_at(&self, now: Instant) -> Option<Duration> {
         match &self.state {
             AnimState::Idle => None,
             AnimState::Stopped => None,
@@ -803,7 +817,7 @@ impl Animation {
                 started_on,
                 elapsed,
             } => {
-                let duration = Instant::now() - *started_on;
+                let duration = now - *started_on;
                 Some(*elapsed + duration)
             }
             AnimState::PassFinished { elapsed, .. } => Some(*elapsed),
@@ -814,6 +828,11 @@ impl Animation {
 
     /// Advance the animation.
     pub fn advance(&mut self) {
+        self.advance_at(Instant::now());
+    }
+
+    /// Advance the animation as if the current frame is targeting `now`.
+    pub fn advance_at(&mut self, now: Instant) {
         let use_delay = self.use_delay();
         match &mut self.state {
             AnimState::Idle => {
@@ -824,7 +843,6 @@ impl Animation {
                 started_on,
                 elapsed,
             } => {
-                let now = Instant::now();
                 let duration = now - *started_on;
                 let og_elapsed = *elapsed;
                 *elapsed = duration;
@@ -857,7 +875,6 @@ impl Animation {
                 started_on,
                 elapsed,
             } => {
-                let now = Instant::now();
                 let duration = now - *started_on;
                 *elapsed = duration;
 
@@ -879,7 +896,7 @@ impl Animation {
                         self.reverse_once.set(true);
                     }
                     self.state = AnimState::PassInProgress {
-                        started_on: Instant::now(),
+                        started_on: now,
                         elapsed: Duration::ZERO,
                     }
                 }
@@ -898,7 +915,7 @@ impl Animation {
                         }
                     } else {
                         self.state = AnimState::PassInProgress {
-                            started_on: Instant::now(),
+                            started_on: now,
                             elapsed: Duration::ZERO,
                         }
                     }
@@ -921,16 +938,20 @@ impl Animation {
     }
 
     pub(crate) fn transition(&mut self, command: AnimStateCommand) {
+        self.transition_at(command, Instant::now());
+    }
+
+    pub(crate) fn transition_at(&mut self, command: AnimStateCommand, now: Instant) {
         match command {
             AnimStateCommand::Pause => {
                 self.state = AnimState::Paused {
-                    elapsed: self.elapsed(),
+                    elapsed: self.elapsed_at(now),
                 }
             }
             AnimStateCommand::Resume => {
                 if let AnimState::Paused { elapsed } = &self.state {
                     self.state = AnimState::PassInProgress {
-                        started_on: Instant::now(),
+                        started_on: now,
                         elapsed: elapsed.unwrap_or(Duration::ZERO),
                     }
                 }
@@ -940,7 +961,7 @@ impl Animation {
                 Rc::make_mut(&mut self.folded_style.map).clear();
                 self.repeat_count = 0;
                 self.state = AnimState::PassInProgress {
-                    started_on: Instant::now(),
+                    started_on: now,
                     elapsed: Duration::ZERO,
                 }
             }
@@ -949,7 +970,7 @@ impl Animation {
                 Rc::make_mut(&mut self.folded_style.map).clear();
                 self.repeat_count = 0;
                 self.state = AnimState::PassInProgress {
-                    started_on: Instant::now(),
+                    started_on: now,
                     elapsed: Duration::ZERO,
                 }
             }
@@ -961,11 +982,16 @@ impl Animation {
     }
 
     /// Get the total time the animation has been running as a percent (0. - 1.)
+    #[allow(dead_code)]
     pub(crate) fn total_time_percent(&self) -> f64 {
+        self.total_time_percent_at(Instant::now())
+    }
+
+    pub(crate) fn total_time_percent_at(&self, now: Instant) -> f64 {
         if self.duration == Duration::ZERO {
             return 0.;
         }
-        let mut elapsed = self.elapsed().unwrap_or(Duration::ZERO);
+        let mut elapsed = self.elapsed_at(now).unwrap_or(Duration::ZERO);
         if self.use_delay() {
             elapsed = elapsed.saturating_sub(self.delay);
         }
@@ -1073,6 +1099,12 @@ impl Animation {
 
     /// While advancing, this function can mutably apply it's animated props to a style.
     pub fn animate_into(&mut self, computed_style: &mut Style) {
+        self.animate_into_at(computed_style, Instant::now());
+    }
+
+    /// Apply animated properties to `computed_style` for a frame targeting
+    /// `now`.
+    pub fn animate_into_at(&mut self, computed_style: &mut Style, now: Instant) {
         // TODO: OPTIMIZE. I've tried to make this efficient, but it would be good to work this over for eficiency because it is called on every frame during an animation.
         // Some work is repeated and could be improved.
 
@@ -1087,7 +1119,7 @@ impl Animation {
         let local_percents: Vec<_> = self
             .props_in_ext_progress
             .iter()
-            .map(|(p, (l, u))| (*p, self.get_local_percent(l.id, u.id)))
+            .map(|(p, (l, u))| (*p, self.get_local_percent_at(l.id, u.id, now)))
             .collect();
 
         self.props_in_ext_progress.retain(|p, (_l, u)| {
@@ -1113,7 +1145,7 @@ impl Animation {
             }
         }
 
-        let percent = self.total_time_percent();
+        let percent = self.total_time_percent_at(now);
         let frame_target = (self.max_key_frame_num as f64 * percent).round() as u16;
 
         let props = self.cache.prop_map.keys();
@@ -1127,7 +1159,7 @@ impl Animation {
             else {
                 continue;
             };
-            let local_percent = self.get_local_percent(prev.id, target.id);
+            let local_percent = self.get_local_percent_at(prev.id, target.id, now);
             let easing = target.easing.clone();
             // TODO: Find a better way to find when an animation should enter ext mode rather than just starting to check after 97%.
             // this could miss getting a prop into ext mode
@@ -1156,7 +1188,17 @@ impl Animation {
     }
 
     /// For a given pair of frame ids, find where the full animation progress is within the subrange of the frame id pair.
+    #[allow(dead_code)]
     pub(crate) fn get_local_percent(&self, prev_frame: u16, target_frame: u16) -> f64 {
+        self.get_local_percent_at(prev_frame, target_frame, Instant::now())
+    }
+
+    pub(crate) fn get_local_percent_at(
+        &self,
+        prev_frame: u16,
+        target_frame: u16,
+        now: Instant,
+    ) -> f64 {
         // undo the frame change that get current key_frame props does so that low is actually lower
         let (low_frame, high_frame) = if self.is_reversing() {
             (target_frame as f64, prev_frame as f64)
@@ -1167,7 +1209,7 @@ impl Animation {
         let low_frame_percent = low_frame / total_num_frames;
         let high_frame_percent = high_frame / total_num_frames;
         let keyframe_range = (high_frame_percent.max(0.001) - low_frame_percent.max(0.001)).abs();
-        let total_time_percent = self.total_time_percent();
+        let total_time_percent = self.total_time_percent_at(now);
         let local = (total_time_percent - low_frame_percent) / keyframe_range;
 
         if self.is_reversing() {

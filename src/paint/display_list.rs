@@ -107,6 +107,17 @@ impl ElementStage {
     pub(crate) fn has_external_surfaces(&self) -> bool {
         !self.external_surfaces.is_empty()
     }
+
+    fn remove_external_surface(&mut self, surface_id: ExternalSurfaceId) -> bool {
+        let old_len = self.external_surfaces.len();
+        self.external_surfaces
+            .retain(|placement| placement.surface_id != surface_id);
+        if self.external_surfaces.len() != old_len {
+            self.content_revision = self.content_revision.wrapping_add(1);
+            return true;
+        }
+        false
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -115,6 +126,12 @@ pub(crate) struct ExternalSurfacePlacement {
     pub surface_id: ExternalSurfaceId,
     pub rect: Rect,
     pub options: ExternalSurfacePaintOptions,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct ExternalSurfaceOwner {
+    pub element_id: ElementId,
+    pub stage: PaintStage,
 }
 
 #[doc(hidden)]
@@ -286,6 +303,7 @@ pub struct RetainedDisplayList {
     nodes: Vec<Option<DisplayNode>>,
     free_list: Vec<DisplayNodeSlot>,
     slot_by_id: FxHashMap<ElementId, DisplayNodeSlot>,
+    external_surface_owner: FxHashMap<ExternalSurfaceId, ExternalSurfaceOwner>,
     inactive_elements: FxHashMap<ElementId, ElementDisplayList>,
     active_count: usize,
 }
@@ -393,6 +411,57 @@ impl RetainedDisplayList {
 
     pub(crate) fn mark_composed_dirty(&mut self, id: ElementId) {
         self.mark_composed_dirty_from_slot(self.find_slot(id));
+    }
+
+    pub(crate) fn reconcile_external_surface_ownership(
+        &mut self,
+        element_id: ElementId,
+        stage: PaintStage,
+    ) {
+        let owner = ExternalSurfaceOwner { element_id, stage };
+        self.dedupe_external_surfaces_in_stage(owner);
+
+        let current_surface_ids = self
+            .stage(owner)
+            .map(|stage| {
+                stage
+                    .external_surfaces
+                    .iter()
+                    .map(|placement| placement.surface_id)
+                    .collect::<FxHashSet<_>>()
+            })
+            .unwrap_or_default();
+
+        let released_surface_ids = self
+            .external_surface_owner
+            .iter()
+            .filter_map(|(surface_id, current_owner)| {
+                (*current_owner == owner && !current_surface_ids.contains(surface_id))
+                    .then_some(*surface_id)
+            })
+            .collect::<Vec<_>>();
+        for surface_id in released_surface_ids {
+            self.external_surface_owner.remove(&surface_id);
+        }
+
+        let mut changed_owners = Vec::new();
+        for surface_id in current_surface_ids {
+            if let Some(previous_owner) = self.external_surface_owner.get(&surface_id).copied()
+                && previous_owner != owner
+            {
+                if self.remove_external_surface_from_owner(previous_owner, surface_id) {
+                    changed_owners.push(previous_owner.element_id);
+                }
+            }
+            self.external_surface_owner.insert(surface_id, owner);
+        }
+
+        if !changed_owners.is_empty() {
+            for element_id in changed_owners {
+                self.mark_composed_dirty(element_id);
+            }
+        }
+        self.refresh_external_surface_counts();
     }
 
     pub(crate) fn ensure_composed_scene(&mut self, slot: DisplayNodeSlot) {
@@ -741,6 +810,8 @@ impl RetainedDisplayList {
         if let Some(node) = self.nodes.get_mut(slot.0).and_then(Option::take) {
             if let Some(element_id) = node.element_id {
                 self.slot_by_id.remove(&element_id);
+                self.external_surface_owner
+                    .retain(|_, owner| owner.element_id != element_id);
             }
             if node.element_id.is_some() && self.active_count > 0 {
                 self.active_count -= 1;
@@ -765,6 +836,78 @@ impl RetainedDisplayList {
             node.composed_dirty = true;
             current = node.parent;
         }
+    }
+
+    fn stage(&self, owner: ExternalSurfaceOwner) -> Option<&ElementStage> {
+        let display = self.element(owner.element_id)?;
+        Some(match owner.stage {
+            PaintStage::Paint => &display.paint,
+            PaintStage::Post => &display.post,
+        })
+    }
+
+    fn stage_mut(&mut self, owner: ExternalSurfaceOwner) -> Option<&mut ElementStage> {
+        let display = self.element_mut(owner.element_id);
+        Some(match owner.stage {
+            PaintStage::Paint => &mut display.paint,
+            PaintStage::Post => &mut display.post,
+        })
+    }
+
+    fn dedupe_external_surfaces_in_stage(&mut self, owner: ExternalSurfaceOwner) {
+        let Some(stage) = self.stage_mut(owner) else {
+            return;
+        };
+        let mut seen = FxHashSet::default();
+        let old_len = stage.external_surfaces.len();
+        let mut deduped = stage
+            .external_surfaces
+            .iter()
+            .rev()
+            .filter(|placement| seen.insert(placement.surface_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        deduped.reverse();
+        stage.external_surfaces = deduped;
+        if stage.external_surfaces.len() != old_len {
+            stage.content_revision = stage.content_revision.wrapping_add(1);
+            self.mark_composed_dirty(owner.element_id);
+        }
+    }
+
+    fn remove_external_surface_from_owner(
+        &mut self,
+        owner: ExternalSurfaceOwner,
+        surface_id: ExternalSurfaceId,
+    ) -> bool {
+        self.stage_mut(owner)
+            .is_some_and(|stage| stage.remove_external_surface(surface_id))
+    }
+
+    fn refresh_external_surface_counts(&mut self) {
+        for slot in self.roots.clone() {
+            self.refresh_external_surface_count(slot);
+        }
+    }
+
+    fn refresh_external_surface_count(&mut self, slot: DisplayNodeSlot) -> usize {
+        let child_slots = self
+            .node(slot)
+            .map(|node| node.children.ordered.clone())
+            .unwrap_or_default();
+        let child_count = child_slots
+            .into_iter()
+            .map(|child| self.refresh_external_surface_count(child))
+            .sum::<usize>();
+        let own_count = self
+            .node(slot)
+            .map(|node| node_external_surface_count(&node.display))
+            .unwrap_or(0);
+        let total = own_count + child_count;
+        if let Some(node) = self.node_mut(slot) {
+            node.subtree_external_surface_count = total;
+        }
+        total
     }
 
     fn append_node_contents_to_scene(
@@ -1458,6 +1601,118 @@ mod tests {
         assert_eq!(stage.scene.commands().len(), 2);
         assert_eq!(stage.external_surfaces.len(), 1);
         assert_eq!(stage.external_surfaces[0].command_index, 1);
+    }
+
+    #[test]
+    fn external_surface_moves_to_new_retained_owner_without_repainting_old_owner() {
+        let surface_id = crate::external_surface::ExternalSurfaceId::test_new(7);
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::IDENTITY, None),
+            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 5.0, 5.0), Affine::IDENTITY)),
+            Scene::new(),
+        );
+        let (_child_slot, child_id) = attach_node(
+            &mut list,
+            Some(root_slot),
+            snapshot(Affine::translate((10.0, 10.0)), None),
+            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 3.0, 3.0), Affine::IDENTITY)),
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        list.element_mut(root_id).paint.external_surfaces = vec![ExternalSurfacePlacement {
+            command_index: 0,
+            surface_id,
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            options: ExternalSurfacePaintOptions::default(),
+        }];
+        list.reconcile_external_surface_ownership(root_id, PaintStage::Paint);
+
+        list.element_mut(child_id).paint.external_surfaces = vec![ExternalSurfacePlacement {
+            command_index: 0,
+            surface_id,
+            rect: Rect::new(1.0, 1.0, 11.0, 11.0),
+            options: ExternalSurfacePaintOptions::default(),
+        }];
+        list.reconcile_external_surface_ownership(child_id, PaintStage::Paint);
+
+        assert!(
+            list.element(root_id)
+                .unwrap()
+                .paint
+                .external_surfaces
+                .is_empty()
+        );
+        assert_eq!(
+            list.element(child_id)
+                .unwrap()
+                .paint
+                .external_surfaces
+                .len(),
+            1
+        );
+        assert_eq!(
+            list.node(root_slot).unwrap().subtree_external_surface_count,
+            1
+        );
+
+        let plan = list.lower_composition_plan();
+        let placements = plan
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                CompositionItem::ExternalSurface(layer) => Some(layer),
+                CompositionItem::Scene(_) => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(placements.len(), 1);
+        assert_eq!(placements[0].surface_id, surface_id);
+        assert_eq!(
+            placements[0].key,
+            CompositionKey::ExternalSurface {
+                owner: child_id,
+                stage: PaintStage::Paint,
+                surface_id,
+                occurrence: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn external_surface_duplicate_in_same_stage_keeps_latest_placement() {
+        let surface_id = crate::external_surface::ExternalSurfaceId::test_new(9);
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::IDENTITY, None),
+            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 5.0, 5.0), Affine::IDENTITY)),
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let first = ExternalSurfacePlacement {
+            command_index: 0,
+            surface_id,
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            options: ExternalSurfacePaintOptions::default(),
+        };
+        let second = ExternalSurfacePlacement {
+            command_index: 1,
+            surface_id,
+            rect: Rect::new(20.0, 20.0, 30.0, 30.0),
+            options: ExternalSurfacePaintOptions::default(),
+        };
+        list.element_mut(root_id).paint.external_surfaces = vec![first, second.clone()];
+        list.reconcile_external_surface_ownership(root_id, PaintStage::Paint);
+
+        assert_eq!(
+            list.element(root_id).unwrap().paint.external_surfaces,
+            vec![second]
+        );
     }
 
     #[test]

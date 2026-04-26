@@ -1,5 +1,8 @@
 use crate::{
-    frame::{FrameTime, PresentationInterval},
+    frame::{
+        DisplayTiming, FrameTime, FrameTimingFeedback, FrameWorkload, PresentPacing,
+        PresentationInterval,
+    },
     platform::{Duration, Instant},
 };
 use winit::window::WindowId;
@@ -20,14 +23,20 @@ use subduction_core::{
     output::OutputId,
     scheduler::{Scheduler, SchedulerConfig},
     time::{Duration as HostDuration, HostTime, Timebase},
-    timing::{FramePlan, FrameTick, PendingFeedback, PresentHints},
+    timing::{
+        DisplayTimingCapabilities, FramePlan, FrameTick, FrameWorkload as SubductionFrameWorkload,
+        PendingFeedback, PresentHints, PresentPacing as SubductionPresentPacing,
+    },
 };
 #[cfg(all(feature = "subduction", target_os = "windows"))]
 use subduction_core::{
     output::OutputId,
     scheduler::{Scheduler, SchedulerConfig},
     time::{Duration as HostDuration, HostTime, Timebase},
-    timing::{FramePlan, FrameTick, PendingFeedback, PresentHints},
+    timing::{
+        DisplayTimingCapabilities, FramePlan, FrameTick, FrameWorkload as SubductionFrameWorkload,
+        PendingFeedback, PresentHints, PresentPacing as SubductionPresentPacing,
+    },
 };
 pub(crate) trait FrameClock {
     fn current_frame_time(
@@ -39,6 +48,7 @@ pub(crate) trait FrameClock {
     fn note_begin_frame_callbacks_ran(&mut self);
     fn refresh_schedule(&mut self, _frame_interval: Duration, _now: Instant) {}
     fn note_frame_prepare_started(&mut self, now: Instant);
+    fn set_frame_workload(&mut self, _workload: FrameWorkload) {}
     fn set_frame_prepared(&mut self, prepared: bool);
     fn needs_frame_prepare(&self, has_next_frame_work: bool) -> bool;
     fn redraw_deadline(
@@ -47,11 +57,7 @@ pub(crate) trait FrameClock {
         now: Instant,
         has_ready_frame: bool,
     ) -> Instant;
-    fn observe_presented(
-        &mut self,
-        draw_cpu_time_excluding_acquire: Duration,
-        presented_at: Instant,
-    );
+    fn observe_presented(&mut self, feedback: FrameTimingFeedback, presented_at: Instant);
     fn set_active(&mut self, _active: bool) {}
     fn has_external_frame_signal(&self) -> bool {
         false
@@ -142,12 +148,17 @@ impl FrameClock for HeuristicFrameClock {
         background_rendering: bool,
     ) -> FrameTime {
         let predicted_present = now.checked_add(frame_interval);
+        let semantic_time = predicted_present.unwrap_or(now);
         FrameTime {
-            now,
+            now: semantic_time,
             interval: PresentationInterval {
                 deadline_min: now,
-                deadline_max: predicted_present.unwrap_or(now),
+                deadline_max: semantic_time,
                 predicted_present,
+                display_timing: DisplayTiming::fixed(frame_interval),
+                present_pacing: predicted_present
+                    .map(PresentPacing::AtTime)
+                    .unwrap_or(PresentPacing::AsSoonAsPossible),
                 background_rendering,
             },
             frame_interval,
@@ -207,17 +218,15 @@ impl FrameClock for HeuristicFrameClock {
             .max(self.earliest_surface_acquire_at())
     }
 
-    fn observe_presented(
-        &mut self,
-        draw_cpu_time_excluding_acquire: Duration,
-        presented_at: Instant,
-    ) {
-        self.update_draw_lead_estimate(draw_cpu_time_excluding_acquire);
+    fn observe_presented(&mut self, feedback: FrameTimingFeedback, presented_at: Instant) {
+        let render_cpu = feedback.render_cpu.unwrap_or_default();
+        let present_cpu = feedback.present_cpu.unwrap_or(render_cpu);
+        self.update_draw_lead_estimate(render_cpu);
         // Surface acquisition may block until the swapchain actually becomes
         // available. If we learn that blocked time into the "ready to present"
         // lead estimate, we wake earlier next frame and recreate the same
         // stall. Learn only the non-blocking present CPU cost here.
-        self.update_present_lead_estimate(draw_cpu_time_excluding_acquire);
+        self.update_present_lead_estimate(present_cpu);
         self.last_presented_at = presented_at;
     }
 }
@@ -257,6 +266,8 @@ struct SubductionPlanState {
     latest_plan: Option<FramePlan>,
     pending_feedback: Option<PendingFeedback>,
     latest_prepare_start: Option<HostTime>,
+    latest_timing_feedback: FrameTimingFeedback,
+    workload: FrameWorkload,
     active: bool,
 }
 
@@ -297,6 +308,8 @@ impl SubductionPlanState {
             latest_plan: None,
             pending_feedback: None,
             latest_prepare_start: None,
+            latest_timing_feedback: FrameTimingFeedback::default(),
+            workload: FrameWorkload::Animation,
             active: false,
         }
     }
@@ -324,6 +337,66 @@ impl SubductionPlanState {
             .unwrap_or(fallback)
     }
 
+    fn display_timing(&self, fallback: Duration) -> DisplayTiming {
+        self.latest_tick
+            .and_then(|tick| tick.display_capabilities)
+            .map(|capabilities| self.display_timing_from_subduction(capabilities))
+            .unwrap_or_else(|| DisplayTiming::fixed(self.latest_frame_interval(fallback)))
+    }
+
+    fn display_timing_from_subduction(
+        &self,
+        capabilities: DisplayTimingCapabilities,
+    ) -> DisplayTiming {
+        let min_frame_interval = Duration::from_nanos(
+            self.timebase
+                .ticks_to_nanos(capabilities.min_frame_interval.0),
+        );
+        let max_frame_interval = Duration::from_nanos(
+            self.timebase
+                .ticks_to_nanos(capabilities.max_frame_interval.0),
+        );
+        if capabilities.is_variable() {
+            DisplayTiming::Variable {
+                min_frame_interval,
+                max_frame_interval,
+            }
+        } else {
+            DisplayTiming::fixed(min_frame_interval)
+        }
+    }
+
+    fn present_pacing_from_subduction(&self, pacing: SubductionPresentPacing) -> PresentPacing {
+        match pacing {
+            SubductionPresentPacing::AsSoonAsPossible => PresentPacing::AsSoonAsPossible,
+            SubductionPresentPacing::AtTime(host_time) => {
+                PresentPacing::AtTime(self.host_to_instant(host_time))
+            }
+            SubductionPresentPacing::AfterMinimumDuration(duration) => {
+                PresentPacing::AfterMinimumDuration(Duration::from_nanos(
+                    self.timebase.ticks_to_nanos(duration.0),
+                ))
+            }
+        }
+    }
+
+    fn workload_for_subduction(&self) -> SubductionFrameWorkload {
+        match self.workload {
+            FrameWorkload::Input => SubductionFrameWorkload::Input,
+            FrameWorkload::Animation => SubductionFrameWorkload::Animation,
+        }
+    }
+
+    fn set_frame_workload(&mut self, workload: FrameWorkload) {
+        self.workload = workload;
+        if let (Some(tick), Some(hints)) = (self.latest_tick, self.latest_hints) {
+            let plan =
+                self.scheduler
+                    .plan_for_workload(&tick, &hints, self.workload_for_subduction());
+            self.latest_plan = Some(plan);
+        }
+    }
+
     fn latest_commit_deadline(&self) -> Option<Instant> {
         self.latest_plan
             .map(|plan| self.host_to_instant(plan.commit_deadline))
@@ -336,16 +409,39 @@ impl SubductionPlanState {
         background_rendering: bool,
     ) -> FrameTime {
         if let Some(plan) = self.latest_plan {
-            let predicted_present = plan
+            let mut semantic_time = self.host_to_instant(plan.semantic_time);
+            let mut commit_deadline = self.host_to_instant(plan.commit_deadline);
+            let mut predicted_present = plan
                 .present_time
                 .map(|present| self.host_to_instant(present));
+            if commit_deadline <= now {
+                let step = self.latest_frame_interval(frame_interval);
+                if !step.is_zero() {
+                    let behind = now.saturating_duration_since(commit_deadline);
+                    let intervals = behind
+                        .as_nanos()
+                        .checked_div(step.as_nanos().max(1))
+                        .unwrap_or(0)
+                        + 1;
+                    let advance = Duration::from_nanos(
+                        step.as_nanos()
+                            .saturating_mul(intervals)
+                            .min(u64::MAX as u128) as u64,
+                    );
+                    semantic_time = semantic_time.checked_add(advance).unwrap_or(now);
+                    commit_deadline = commit_deadline.checked_add(advance).unwrap_or(now);
+                    predicted_present = predicted_present
+                        .map(|present| present.checked_add(advance).unwrap_or(now));
+                }
+            }
             return FrameTime {
-                now: self.host_to_instant(plan.semantic_time),
+                now: semantic_time,
                 interval: PresentationInterval {
                     deadline_min: now,
-                    deadline_max: predicted_present
-                        .unwrap_or_else(|| self.host_to_instant(plan.commit_deadline)),
+                    deadline_max: predicted_present.unwrap_or(commit_deadline),
                     predicted_present,
+                    display_timing: self.display_timing(frame_interval),
+                    present_pacing: self.present_pacing_from_subduction(plan.present_pacing),
                     background_rendering,
                 },
                 frame_interval: self.latest_frame_interval(frame_interval),
@@ -411,26 +507,39 @@ impl SubductionPlanState {
                 return commit_deadline.max(now);
             }
 
-            return commit_deadline.max(now);
+            #[cfg(all(feature = "subduction", target_os = "macos"))]
+            {
+                return self.roll_present_target_forward(commit_deadline, frame_interval, now);
+            }
+
+            #[cfg(all(feature = "subduction", target_os = "windows"))]
+            {
+                return commit_deadline.max(now);
+            }
         }
 
         self.heuristic
             .redraw_deadline(frame_interval, now, has_ready_frame)
     }
 
-    fn observe_presented(
-        &mut self,
-        draw_cpu_time_excluding_acquire: Duration,
-        presented_at: Instant,
-    ) {
-        self.heuristic
-            .observe_presented(draw_cpu_time_excluding_acquire, presented_at);
+    fn observe_presented(&mut self, feedback: FrameTimingFeedback, presented_at: Instant) {
+        self.heuristic.observe_presented(feedback, presented_at);
+        self.latest_timing_feedback = feedback;
 
         if let (Some(hints), Some(build_start)) = (self.latest_hints, self.latest_prepare_start) {
             self.pending_feedback = Some(PendingFeedback {
                 hints,
                 build_start,
                 submitted_at: self.instant_to_host(presented_at),
+                render_cpu: feedback.render_cpu.map(|duration| {
+                    HostDuration::from_nanos(duration.as_nanos() as u64, self.timebase)
+                }),
+                present_cpu: feedback.present_cpu.map(|duration| {
+                    HostDuration::from_nanos(duration.as_nanos() as u64, self.timebase)
+                }),
+                gpu: feedback.gpu.map(|duration| {
+                    HostDuration::from_nanos(duration.as_nanos() as u64, self.timebase)
+                }),
             });
         }
 
@@ -532,6 +641,10 @@ impl FrameClock for SubductionFrameClock {
         self.plan_state.latest_prepare_start = Some(self.plan_state.instant_to_host(now));
     }
 
+    fn set_frame_workload(&mut self, workload: FrameWorkload) {
+        self.plan_state.set_frame_workload(workload);
+    }
+
     fn set_frame_prepared(&mut self, prepared: bool) {
         self.plan_state.heuristic.set_frame_prepared(prepared);
     }
@@ -552,13 +665,8 @@ impl FrameClock for SubductionFrameClock {
             .redraw_deadline(frame_interval, now, has_ready_frame)
     }
 
-    fn observe_presented(
-        &mut self,
-        draw_cpu_time_excluding_acquire: Duration,
-        presented_at: Instant,
-    ) {
-        self.plan_state
-            .observe_presented(draw_cpu_time_excluding_acquire, presented_at);
+    fn observe_presented(&mut self, feedback: FrameTimingFeedback, presented_at: Instant) {
+        self.plan_state.observe_presented(feedback, presented_at);
     }
 
     fn set_active(&mut self, active: bool) {
@@ -596,7 +704,11 @@ impl FrameClock for SubductionFrameClock {
 
         let safety = HostDuration(self.plan_state.scheduler.safety_margin_ticks());
         let hints = compute_present_hints(&tick, safety);
-        let plan = self.plan_state.scheduler.plan(&tick, &hints);
+        let plan = self.plan_state.scheduler.plan_for_workload(
+            &tick,
+            &hints,
+            self.plan_state.workload_for_subduction(),
+        );
         self.plan_state.observe_new_plan(
             FrameTick {
                 output: self.plan_state.output,
@@ -695,7 +807,11 @@ impl FrameClock for WindowsSubductionFrameClock {
             .saturating_mul(u64::from(self.plan_state.timebase.numer))
             / u64::from(self.plan_state.timebase.denom);
         let hints = windows_compute_present_hints(&tick, safety_ns);
-        let plan = self.plan_state.scheduler.plan(&tick, &hints);
+        let plan = self.plan_state.scheduler.plan_for_workload(
+            &tick,
+            &hints,
+            self.plan_state.workload_for_subduction(),
+        );
         self.plan_state.observe_new_plan(
             FrameTick {
                 output: self.plan_state.output,
@@ -708,6 +824,10 @@ impl FrameClock for WindowsSubductionFrameClock {
 
     fn note_frame_prepare_started(&mut self, now: Instant) {
         self.plan_state.latest_prepare_start = Some(self.plan_state.instant_to_host(now));
+    }
+
+    fn set_frame_workload(&mut self, workload: FrameWorkload) {
+        self.plan_state.set_frame_workload(workload);
     }
 
     fn set_frame_prepared(&mut self, prepared: bool) {
@@ -730,17 +850,29 @@ impl FrameClock for WindowsSubductionFrameClock {
             .redraw_deadline(frame_interval, now, has_ready_frame)
     }
 
-    fn observe_presented(
-        &mut self,
-        draw_cpu_time_excluding_acquire: Duration,
-        presented_at: Instant,
-    ) {
+    fn observe_presented(&mut self, feedback: FrameTimingFeedback, presented_at: Instant) {
         self.prev_present_time = Some(self.plan_state.instant_to_host(presented_at));
-        self.plan_state
-            .observe_presented(draw_cpu_time_excluding_acquire, presented_at);
+        self.plan_state.observe_presented(feedback, presented_at);
     }
 
     fn set_active(&mut self, active: bool) {
         self.plan_state.active = active;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn heuristic_frame_time_samples_predicted_present() {
+        let clock = HeuristicFrameClock::default();
+        let now = Instant::now();
+        let interval = Duration::from_millis(8);
+
+        let frame_time = clock.current_frame_time(interval, now, false);
+
+        assert_eq!(frame_time.now, now + interval);
+        assert_eq!(frame_time.interval.predicted_present, Some(now + interval));
     }
 }

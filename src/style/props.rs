@@ -398,7 +398,7 @@ impl<P: StyleProp> StylePropReader for P {
         // there is a previously stored value in state.0. if the values are different, a transition should be started if there is one
         let changed = new != state.0;
         if changed && !prop_animated {
-            state.1.transition(&Self::get(state), &new);
+            state.1.transition_at(&Self::get(state), &new, *now);
             state.0 = new;
         } else if prop_animated {
             state.0 = new;

@@ -42,12 +42,16 @@ impl<T: StylePropValue> TransitionState<T> {
     }
 
     pub(crate) fn transition(&mut self, before: &T, after: &T) {
+        self.transition_at(before, after, Instant::now());
+    }
+
+    pub(crate) fn transition_at(&mut self, before: &T, after: &T, now: Instant) {
         if !self.initial {
             return;
         }
         if self.transition.is_some() {
             self.active = Some(ActiveTransition {
-                start: Instant::now(),
+                start: now,
                 before: before.clone(),
                 current: before.clone(),
                 after: after.clone(),

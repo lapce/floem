@@ -54,7 +54,7 @@ use crate::{
         Event, GlobalEventCx, ImeEvent, WindowEvent, clear_hit_test_cache,
         dropped_file::FileDragEvent,
     },
-    frame::FrameTime,
+    frame::{FrameTime, FrameTimingFeedback, FrameWorkload},
     inspector::{
         self, Capture, CaptureState, CapturedView, TimingKind, TimingReport, profiler::Profile,
     },
@@ -105,6 +105,8 @@ pub(crate) struct WindowHandle {
     last_timing_report: Option<TimingReport>,
     frame_clock: Box<dyn FrameClock>,
     present_immediately_when_ready: bool,
+    active_frame_time: Option<FrameTime>,
+    pending_frame_workload: FrameWorkload,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -483,6 +485,8 @@ impl WindowHandle {
             last_timing_report: None,
             frame_clock: new_window_frame_clock(window_id, output_id),
             present_immediately_when_ready: false,
+            active_frame_time: None,
+            pending_frame_workload: FrameWorkload::Animation,
         };
         if paint_state_initialized {
             window_handle.init_renderer();
@@ -657,6 +661,8 @@ impl WindowHandle {
             last_timing_report: None,
             frame_clock: new_window_frame_clock(window_id, 0),
             present_immediately_when_ready: false,
+            active_frame_time: None,
+            pending_frame_workload: FrameWorkload::Animation,
         };
 
         window_handle
@@ -904,6 +910,7 @@ impl WindowHandle {
 
     fn style(&mut self, timing: &mut FrameTimingAccumulator) {
         let start = Instant::now();
+        let frame_time = self.current_frame_time();
         // Loop until no more views need styling
         // This handles the case where styling a parent marks children dirty
         // (e.g., when inherited properties change)
@@ -916,7 +923,12 @@ impl WindowHandle {
 
             // Style each view in order, passing the global change for first iteration
             for (view_id, traversal_reason) in traversal {
-                let cx = &mut StyleCx::new(&mut self.window_state, view_id, traversal_reason);
+                let cx = &mut StyleCx::new_at(
+                    &mut self.window_state,
+                    view_id,
+                    traversal_reason,
+                    frame_time.now,
+                );
                 cx.style_view();
             }
         }
@@ -1141,6 +1153,7 @@ impl WindowHandle {
         }
 
         self.frame_clock.note_frame_prepare_started(Instant::now());
+        self.active_frame_time = Some(self.current_frame_time());
         self.window_state.promote_next_frame_work();
         self.run_begin_frame_callbacks();
         self.process_update_no_paint();
@@ -1441,6 +1454,10 @@ impl WindowHandle {
     }
 
     fn current_frame_time(&self) -> FrameTime {
+        if let Some(frame_time) = self.active_frame_time {
+            return frame_time;
+        }
+
         let now = Instant::now();
         let frame_interval = self.frame_interval();
         self.frame_clock
@@ -1459,6 +1476,27 @@ impl WindowHandle {
     /// Refreshes frame-clock scheduling using the current monitor cadence.
     pub(crate) fn refresh_frame_clock(&mut self, frame_interval: Duration, now: Instant) {
         self.frame_clock.refresh_schedule(frame_interval, now);
+    }
+
+    pub(crate) fn animation_timer_deadline(&mut self) -> Instant {
+        self.note_animation_frame_workload();
+        let frame_interval = self.frame_interval();
+        let now = Instant::now();
+        self.refresh_frame_clock(frame_interval, now);
+        self.frame_clock.redraw_deadline(frame_interval, now, false)
+    }
+
+    pub(crate) fn note_input_frame_workload(&mut self) {
+        if !self.window_state.has_pending_begin_frame_callbacks() {
+            self.pending_frame_workload = FrameWorkload::Input;
+            self.frame_clock.set_frame_workload(FrameWorkload::Input);
+        }
+    }
+
+    pub(crate) fn note_animation_frame_workload(&mut self) {
+        self.pending_frame_workload = FrameWorkload::Animation;
+        self.frame_clock
+            .set_frame_workload(FrameWorkload::Animation);
     }
 
     #[cfg(all(feature = "subduction", target_os = "macos"))]
@@ -1646,6 +1684,11 @@ impl WindowHandle {
     pub(crate) fn advance_frame(&mut self) -> FrameSchedule {
         let frame_interval = self.frame_interval();
         let now = Instant::now();
+        if self.window_state.has_pending_begin_frame_callbacks() {
+            self.pending_frame_workload = FrameWorkload::Animation;
+        }
+        self.frame_clock
+            .set_frame_workload(self.pending_frame_workload);
         self.refresh_frame_clock(frame_interval, now);
 
         let can_render_now = self.can_render_now();
@@ -1704,19 +1747,33 @@ impl WindowHandle {
         let presented = self.pending_timing.has_kind(TimingKind::Present);
         if presented {
             self.present_immediately_when_ready = false;
+            self.active_frame_time = None;
             let update = mem::take(&mut self.pending_timing);
-            let useful_draw_cpu = update
+            let render_cpu = update.max_duration_for_label("Paint");
+            let present_cpu = update
                 .max_duration_for_label("Present")
                 .saturating_sub(update.max_duration_for_label("AcquireSurface"));
             let frame_end = Instant::now();
             self.record_profile_instant("FramePresented", frame_end);
-            self.frame_clock
-                .observe_presented(useful_draw_cpu, frame_end);
+            self.frame_clock.observe_presented(
+                FrameTimingFeedback {
+                    render_cpu: Some(render_cpu),
+                    present_cpu: Some(present_cpu),
+                    gpu: None,
+                },
+                frame_end,
+            );
             self.last_timing_report = Some(update.build_timing_report());
         }
         let frame_still_underway = self.frame_pipeline.has_frame_underway();
         if presented || !frame_still_underway {
             self.frame_clock.set_frame_prepared(false);
+            self.active_frame_time = None;
+        }
+        if presented {
+            self.pending_frame_workload = FrameWorkload::Animation;
+            self.frame_clock
+                .set_frame_workload(FrameWorkload::Animation);
         }
         let frame_index = self.next_frame_id.saturating_sub(1);
         self.window_state

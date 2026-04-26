@@ -27,7 +27,7 @@ use crate::style::FontSizeCx;
 use crate::view::ViewId;
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
-use composition::CompositionItem;
+use composition::{CompositionItem, PaintStage};
 use display_list::{ElementSnapshot, StageRecorder, replay_scene};
 
 std::thread_local! {
@@ -542,14 +542,27 @@ impl GlobalPaintCx<'_> {
             }
         }
 
-        let element = self.window_state.display_list.element_mut(element_id);
-        let stage = if is_post {
-            &mut element.post
+        {
+            let element = self.window_state.display_list.element_mut(element_id);
+            let stage = if is_post {
+                &mut element.post
+            } else {
+                &mut element.paint
+            };
+            recorder.finish(stage);
+        }
+        let stage_kind = if is_post {
+            PaintStage::Post
         } else {
-            &mut element.paint
+            PaintStage::Paint
         };
-        recorder.finish(stage);
-        element.snapshot = Some(snapshot);
+        self.window_state
+            .display_list
+            .reconcile_external_surface_ownership(element_id, stage_kind);
+        self.window_state
+            .display_list
+            .element_mut(element_id)
+            .snapshot = Some(snapshot);
         self.window_state
             .display_list
             .mark_composed_dirty(element_id);

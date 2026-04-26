@@ -480,10 +480,13 @@ impl ApplicationHandle {
                     mut timer,
                     window_id,
                 } => {
-                    if !self.window_can_render(&window_id) {
+                    let Some(handle) = self.window_handles.get_mut(&window_id) else {
+                        continue;
+                    };
+                    if !handle.can_render_now() {
                         continue;
                     }
-                    timer.deadline = Instant::now() + self.frame_duration_for_window(&window_id);
+                    timer.deadline = handle.animation_timer_deadline();
                     self.request_timer(timer, event_loop);
                 }
                 AppUpdateEvent::RequestAnimationFrame {
@@ -491,6 +494,7 @@ impl ApplicationHandle {
                     callback,
                 } => {
                     if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                        handle.note_animation_frame_workload();
                         handle.window_state.request_animation_frame(callback);
                     }
                 }
@@ -616,6 +620,26 @@ impl ApplicationHandle {
         });
 
         let event_scale = window_handle.window_state.effective_scale();
+        let is_latency_sensitive_input = matches!(
+            event,
+            WindowEvent::KeyboardInput {
+                is_synthetic: false,
+                ..
+            } | WindowEvent::Ime(_)
+                | WindowEvent::MouseWheel { .. }
+                | WindowEvent::PinchGesture { .. }
+                | WindowEvent::PanGesture { .. }
+                | WindowEvent::DoubleTapGesture { .. }
+                | WindowEvent::RotationGesture { .. }
+                | WindowEvent::PointerMoved { .. }
+                | WindowEvent::PointerEntered { .. }
+                | WindowEvent::PointerLeft { .. }
+                | WindowEvent::PointerButton { .. }
+                | WindowEvent::TouchpadPressure { .. }
+        );
+        if is_latency_sensitive_input {
+            window_handle.note_input_frame_workload();
+        }
 
         match window_handle.event_reducer.reduce(event_scale, &event) {
             Some(WindowEventTranslation::Keyboard(ke)) => {
@@ -1138,16 +1162,6 @@ impl ApplicationHandle {
         };
 
         self.apply_window_frame_schedule(window_id, schedule, event_loop);
-    }
-
-    fn frame_duration_for_window(&self, window_id: &winit::window::WindowId) -> Duration {
-        self.window_handles
-            .get(window_id)
-            .and_then(|h| h.window.current_monitor())
-            .and_then(|m| m.current_video_mode())
-            .and_then(|v| v.refresh_rate_millihertz())
-            .map(|mhz| Duration::from_nanos(1_000_000_000_000 / mhz.get() as u64))
-            .unwrap_or(Duration::from_millis(8))
     }
 
     fn window_can_render(&self, window_id: &winit::window::WindowId) -> bool {

@@ -1,3 +1,4 @@
+use crate::platform::Instant;
 use crate::{
     ViewId,
     action::add_update_message,
@@ -516,6 +517,14 @@ impl ViewState {
         &mut self,
         interact_state: &mut crate::style::InteractionState,
     ) -> bool {
+        self.apply_animations_at(interact_state, Instant::now())
+    }
+
+    pub fn apply_animations_at(
+        &mut self,
+        interact_state: &mut crate::style::InteractionState,
+        now: Instant,
+    ) -> bool {
         let mut combined = self.combined_pre_animation_style.clone();
         // ─────────────────────────────────────────────────────────────────────
         // Process animations
@@ -533,8 +542,8 @@ impl ViewState {
             {
                 if animation.can_advance() {
                     has_active_animation = true;
-                    animation.animate_into(&mut combined);
-                    animation.advance();
+                    animation.animate_into_at(&mut combined, now);
+                    animation.advance_at(now);
                 } else {
                     animation.apply_folded(&mut combined);
                 }

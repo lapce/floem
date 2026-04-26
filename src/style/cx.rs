@@ -130,6 +130,15 @@ pub struct StyleCx<'a> {
 
 impl<'a> StyleCx<'a> {
     pub fn new(window_state: &'a mut WindowState, view_id: ViewId, reason: StyleReason) -> Self {
+        Self::new_at(window_state, view_id, reason, Instant::now())
+    }
+
+    pub(crate) fn new_at(
+        window_state: &'a mut WindowState,
+        view_id: ViewId,
+        reason: StyleReason,
+        now: Instant,
+    ) -> Self {
         // Get the style parent: either custom style_cx_parent or DOM parent
         let style_parent = view_id
             .state()
@@ -220,7 +229,7 @@ impl<'a> StyleCx<'a> {
             inherited,
             class_context,
             direct: Default::default(),
-            now: Instant::now(),
+            now,
             view_interact_state,
             reason,
             targeted_elements,
@@ -302,7 +311,7 @@ impl<'a> StyleCx<'a> {
         if self.reason.needs_animation() {
             let has_active_animation = view_state
                 .borrow_mut()
-                .apply_animations(&mut self.view_interact_state);
+                .apply_animations_at(&mut self.view_interact_state, self.now);
             if has_active_animation {
                 self.window_state
                     .schedule_style(view_id, StyleReason::animation());
@@ -487,12 +496,12 @@ impl<'a> StyleCx<'a> {
                 phase.transition(
                     computed_display,
                     || {
-                        let count = animations_on_remove(view_id, Scope::current());
+                        let count = animations_on_remove(view_id, Scope::current(), self.now);
                         view_state.borrow_mut().num_waiting_animations = count;
                         count > 0
                     },
-                    || animations_on_create(view_id),
-                    || stop_reset_remove_animations(view_id),
+                    || animations_on_create(view_id, self.now),
+                    || stop_reset_remove_animations(view_id, self.now),
                     || view_state.borrow().num_waiting_animations,
                 );
 
@@ -754,7 +763,7 @@ impl<'a> StyleCx<'a> {
 
 // Animation helper functions used by StyleCx::style_view
 
-fn animations_on_remove(id: ViewId, scope: Scope) -> u16 {
+fn animations_on_remove(id: ViewId, scope: Scope, now: Instant) -> u16 {
     let mut wait_for = 0;
     let state = id.state();
     let mut state = state.borrow_mut();
@@ -763,7 +772,7 @@ fn animations_on_remove(id: ViewId, scope: Scope) -> u16 {
     let mut request_style = false;
     for anim in animations {
         if anim.run_on_remove && !matches!(anim.repeat_mode, RepeatMode::LoopForever) {
-            anim.reverse_mut();
+            anim.reverse_mut_at(now);
             request_style = true;
             wait_for += 1;
             let trigger = anim.on_visual_complete;
@@ -780,12 +789,12 @@ fn animations_on_remove(id: ViewId, scope: Scope) -> u16 {
         id.request_style(StyleReason::animation());
     }
 
-    id.children()
-        .into_iter()
-        .fold(wait_for, |acc, id| acc + animations_on_remove(id, scope))
+    id.children().into_iter().fold(wait_for, |acc, id| {
+        acc + animations_on_remove(id, scope, now)
+    })
 }
 
-fn stop_reset_remove_animations(id: ViewId) {
+fn stop_reset_remove_animations(id: ViewId, now: Instant) {
     let state = id.state();
     let mut state = state.borrow_mut();
     let animations = &mut state.animations.stack;
@@ -795,7 +804,7 @@ fn stop_reset_remove_animations(id: ViewId) {
             && anim.state_kind() == AnimStateKind::PassInProgress
             && !matches!(anim.repeat_mode, RepeatMode::LoopForever)
         {
-            anim.start_mut();
+            anim.start_mut_at(now);
             request_style = true;
         }
     }
@@ -806,10 +815,10 @@ fn stop_reset_remove_animations(id: ViewId) {
 
     id.children()
         .into_iter()
-        .for_each(stop_reset_remove_animations)
+        .for_each(|id| stop_reset_remove_animations(id, now))
 }
 
-fn animations_on_create(id: ViewId) {
+fn animations_on_create(id: ViewId, now: Instant) {
     let state = id.state();
     let mut state = state.borrow_mut();
     state.num_waiting_animations = 0;
@@ -817,7 +826,7 @@ fn animations_on_create(id: ViewId) {
     let mut request_style = false;
     for anim in animations {
         if anim.run_on_create && !matches!(anim.repeat_mode, RepeatMode::LoopForever) {
-            anim.start_mut();
+            anim.start_mut_at(now);
             request_style = true;
         }
     }
@@ -826,5 +835,7 @@ fn animations_on_create(id: ViewId) {
         id.request_style(StyleReason::animation());
     }
 
-    id.children().into_iter().for_each(animations_on_create);
+    id.children()
+        .into_iter()
+        .for_each(|id| animations_on_create(id, now));
 }

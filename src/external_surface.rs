@@ -20,7 +20,7 @@ use winit::window::WindowId;
 use crate::{
     Application,
     app::UserEvent,
-    frame::{FrameOutcome, PresentationInterval},
+    frame::{DisplayTiming, FrameOutcome, PresentationInterval},
 };
 
 static NEXT_EXTERNAL_SURFACE_ID: AtomicU64 = AtomicU64::new(1);
@@ -209,11 +209,28 @@ impl SubductionWgpuSurface {
                             .to_nanos(timebase),
                     )
             });
+            let display_timing = tick.display_capabilities.map(|capabilities| {
+                let min_frame_interval = Duration::from_nanos(
+                    timebase.ticks_to_nanos(capabilities.min_frame_interval.0),
+                );
+                let max_frame_interval = Duration::from_nanos(
+                    timebase.ticks_to_nanos(capabilities.max_frame_interval.0),
+                );
+                if capabilities.is_variable() {
+                    DisplayTiming::Variable {
+                        min_frame_interval,
+                        max_frame_interval,
+                    }
+                } else {
+                    DisplayTiming::fixed(min_frame_interval)
+                }
+            });
             let _ = tx.try_send(SubductionFrameTick {
                 received_at: Instant::now(),
                 frame_index: tick.frame_index,
                 refresh_interval,
                 predicted_present,
+                display_timing,
             });
         });
         let display_link = DisplayLink::new(
@@ -290,6 +307,7 @@ pub struct SubductionFrameTick {
     pub frame_index: u64,
     pub refresh_interval: Option<Duration>,
     pub predicted_present: Option<Instant>,
+    pub display_timing: Option<DisplayTiming>,
 }
 
 #[cfg(all(feature = "subduction", target_os = "macos"))]

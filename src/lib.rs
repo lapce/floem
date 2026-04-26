@@ -251,7 +251,10 @@ pub use external_surface::{
 #[cfg(feature = "subduction")]
 pub use external_surface::{SubductionWgpuSurface, SubductionWgpuTarget};
 pub use floem_reactive as reactive;
-pub use frame::{FrameOutcome, FrameTime, PresentationInterval};
+pub use frame::{
+    DisplayTiming, FrameOutcome, FrameTime, FrameTimingFeedback, FrameWorkload, PresentPacing,
+    PresentationInterval,
+};
 pub use gpu_resources::GpuResources;
 pub use imbl;
 pub use layout::ScreenLayout;
@@ -288,7 +291,10 @@ pub mod prelude {
     pub use crate::external_surface::{
         ExternalSurface, ExternalSurfaceConfig, ExternalSurfacePaintOptions, ExternalTexture,
     };
-    pub use crate::frame::{FrameOutcome, FrameTime, PresentationInterval};
+    pub use crate::frame::{
+        DisplayTiming, FrameOutcome, FrameTime, FrameTimingFeedback, FrameWorkload, PresentPacing,
+        PresentationInterval,
+    };
     pub use crate::unit::{DurationUnitExt, UnitExt};
     pub use crate::view::IntoViewIter;
     pub use crate::view::ViewTuple;
