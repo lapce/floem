@@ -52,9 +52,10 @@ use crate::{
         Event, GlobalEventCx, ImeEvent, WindowEvent, clear_hit_test_cache,
         dropped_file::FileDragEvent,
     },
-    frame::{FrameDamageClass, FrameTime, FrameTimingFeedback, FrameWorkload},
+    frame::{FrameTime, FrameTimingFeedback, FrameWorkload},
     inspector::{
-        self, Capture, CaptureState, CapturedView, TimingKind, TimingReport, profiler::Profile,
+        self, Capture, CaptureState, CapturedView, TimingKind, TimingReport, TimingThread,
+        profiler::Profile,
     },
     message::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE,
@@ -96,6 +97,7 @@ pub(crate) struct WindowHandle {
     pub(crate) event_reducer: WindowEventReducer,
     pub(crate) gpu_resources: Option<GpuResources>,
     pub(crate) renderer_chooser: crate::paint::renderer::RendererChooser,
+    pub(crate) maximum_drawable_count: u32,
     is_occluded: bool,
     pending_timing: FrameTimingAccumulator,
     next_frame_id: u64,
@@ -103,17 +105,12 @@ pub(crate) struct WindowHandle {
     frame_clock: Box<dyn FrameClock>,
     active_frame_time: Option<FrameTime>,
     pending_frame_workload: FrameWorkload,
+    frame_signal_render_pending: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FrameWakeKind {
     Update,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum FrameAdvanceSource {
-    Event,
-    FrameOpportunity,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -182,12 +179,42 @@ impl FrameTimingAccumulator {
         }
     }
 
+    fn record_renderer_thread_span(
+        &mut self,
+        label: &'static str,
+        span: Option<crate::paint::renderer::TimingSpan>,
+        kind: TimingKind,
+    ) {
+        if let Some(span) = span
+            && span.end > span.start
+        {
+            self.push_absolute_span_on_thread(
+                label,
+                span.start,
+                span.end,
+                kind,
+                TimingThread::Renderer,
+            );
+        }
+    }
+
     fn push_absolute_span(
         &mut self,
         label: &'static str,
         start: Instant,
         end: Instant,
         kind: TimingKind,
+    ) {
+        self.push_absolute_span_on_thread(label, start, end, kind, TimingThread::Main);
+    }
+
+    fn push_absolute_span_on_thread(
+        &mut self,
+        label: &'static str,
+        start: Instant,
+        end: Instant,
+        kind: TimingKind,
+        thread: TimingThread,
     ) {
         if end <= start {
             return;
@@ -209,11 +236,12 @@ impl FrameTimingAccumulator {
             }
         };
 
-        self.spans.push(inspector::TimingSpan::new(
+        self.spans.push(inspector::TimingSpan::new_on_thread(
             label,
             start.saturating_duration_since(anchor),
             end.saturating_duration_since(start),
             kind,
+            thread,
         ));
     }
 
@@ -235,7 +263,7 @@ impl FrameTimingAccumulator {
             .spans
             .iter()
             .filter(|span| {
-                matches!(span.label, "PrepareFrame" | "Paint")
+                matches!(span.label, "PrepareFrame" | "Paint" | "Render")
                     || matches!(
                         span.kind,
                         TimingKind::Style | TimingKind::Layout | TimingKind::BoxTree
@@ -277,18 +305,19 @@ impl FrameTimingAccumulator {
             return TimingReport::default();
         };
 
-        let total = self
-            .spans
-            .iter()
-            .map(|span| span.start.saturating_add(span.duration))
-            .max()
-            .unwrap_or(Duration::ZERO);
-        let mut timings = TimingReport::new(Some(anchor), total);
+        let mut timings = TimingReport::new(Some(anchor), Duration::ZERO);
         for span in self.spans {
             if span.duration > Duration::ZERO {
-                timings.push_span(span.label, span.start, span.duration, span.kind);
+                timings.push_span_on_thread(
+                    span.label,
+                    span.start,
+                    span.duration,
+                    span.kind,
+                    span.thread,
+                );
             }
         }
+        timings.total = timings.thread_total(TimingThread::Main);
         timings
     }
 }
@@ -300,7 +329,20 @@ impl crate::paint::renderer::RendererTimingRecorder for FrameTimingAccumulator {
         span: Option<crate::paint::renderer::TimingSpan>,
         kind: TimingKind,
     ) {
-        self.record_renderer_span(label, span, kind);
+        if label == "Render" {
+            self.record_renderer_thread_span(label, span, kind);
+        } else {
+            self.record_renderer_span(label, span, kind);
+        }
+    }
+
+    fn record_thread_span(
+        &mut self,
+        label: &'static str,
+        span: Option<crate::paint::renderer::TimingSpan>,
+        kind: TimingKind,
+    ) {
+        self.record_renderer_thread_span(label, span, kind);
     }
 }
 
@@ -341,6 +383,7 @@ impl WindowHandle {
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
         transparent: bool,
         apply_default_theme: bool,
+        maximum_drawable_count: u32,
     ) -> Self {
         let id = ViewId::new_root();
         let window_id = window.id();
@@ -390,6 +433,7 @@ impl WindowHandle {
                 transparent,
                 os_scale,
                 frame_size,
+                maximum_drawable_count,
             )
         } else if prefer_gpu_installers {
             Self::new_pending_paint_state(window.clone(), frame_size, required_features, backends)
@@ -435,6 +479,7 @@ impl WindowHandle {
             event_reducer: WindowEventReducer::default(),
             gpu_resources,
             renderer_chooser,
+            maximum_drawable_count,
             is_occluded: false,
             pending_timing: FrameTimingAccumulator::default(),
             next_frame_id: 1,
@@ -442,6 +487,7 @@ impl WindowHandle {
             frame_clock: new_window_frame_clock(window_id, output_id),
             active_frame_time: None,
             pending_frame_workload: FrameWorkload::Animation,
+            frame_signal_render_pending: false,
         };
         if paint_state_initialized {
             window_handle.init_renderer();
@@ -484,6 +530,7 @@ impl WindowHandle {
         transparent: bool,
         os_scale: f64,
         size: Size,
+        maximum_drawable_count: u32,
     ) -> PaintState {
         let surface_caps = subduction_platform::WgpuPresentSurfaceCapabilities {
             formats: vec![wgpu::TextureFormat::Bgra8Unorm],
@@ -503,6 +550,7 @@ impl WindowHandle {
             transparent,
             os_scale,
             size,
+            maximum_drawable_count,
         );
         PaintState::Initialized { backend }
     }
@@ -615,6 +663,7 @@ impl WindowHandle {
             event_reducer: WindowEventReducer::default(),
             gpu_resources: None,
             renderer_chooser: crate::paint::renderer::default_renderer(),
+            maximum_drawable_count: 2,
             is_occluded: false,
             pending_timing: FrameTimingAccumulator::default(),
             next_frame_id: 1,
@@ -622,6 +671,7 @@ impl WindowHandle {
             frame_clock: new_window_frame_clock(window_id, 0),
             active_frame_time: None,
             pending_frame_workload: FrameWorkload::Animation,
+            frame_signal_render_pending: false,
         };
 
         window_handle
@@ -1086,6 +1136,10 @@ impl WindowHandle {
     }
 
     fn render_immediate_current_frame(&mut self) -> bool {
+        if self.paint_state.backend_mut().render_in_flight() {
+            return false;
+        }
+
         let notify_start = Instant::now();
         self.window.pre_present_notify();
         let notify_end = Instant::now();
@@ -1123,10 +1177,26 @@ impl WindowHandle {
             )),
             TimingKind::Renderer,
         );
+        let submitted_at = Instant::now();
+        let presented_at = self.frame_present_time(submitted_at);
         self.pending_timing = timing;
-        self.route_paint_present_event();
-        self.paint_state.backend_mut().discard_pending_frames();
-        self.finish_presented_frame(None)
+        self.route_paint_present_event(presented_at);
+        if !self.paint_state.backend_mut().has_completed_frame() {
+            self.paint_state.backend_mut().discard_pending_frames();
+        }
+        self.finish_presented_frame(Some(submitted_at), presented_at)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn accept_rendered_frame(
+        &mut self,
+        frame: crate::paint::renderer::RenderedFrame,
+        render_span: crate::paint::renderer::TimingSpan,
+    ) -> bool {
+        self.paint_state
+            .backend_mut()
+            .accept_rendered_frame(frame, render_span);
+        self.render_immediate_current_frame()
     }
 
     fn pull_external_surface_frame(&mut self) -> bool {
@@ -1345,10 +1415,12 @@ impl WindowHandle {
             )),
             TimingKind::Renderer,
         );
+        let submitted_at = Instant::now();
+        let presented_at = self.frame_present_time(submitted_at);
         self.pending_timing = timing;
-        self.route_paint_present_event();
+        self.route_paint_present_event(presented_at);
         self.paint_state.backend_mut().discard_pending_frames();
-        self.finish_presented_frame(None)
+        self.finish_presented_frame(Some(submitted_at), presented_at)
     }
 
     fn current_frame_time(&self) -> FrameTime {
@@ -1360,6 +1432,12 @@ impl WindowHandle {
         let frame_interval = self.frame_interval();
         self.frame_clock
             .current_frame_time(frame_interval, now, false)
+    }
+
+    fn frame_present_time(&self, fallback: Instant) -> Instant {
+        self.active_frame_time
+            .and_then(|frame_time| frame_time.interval.predicted_present)
+            .unwrap_or(fallback)
     }
 
     fn frame_interval(&self) -> Duration {
@@ -1403,10 +1481,11 @@ impl WindowHandle {
             .window
             .current_monitor()
             .and_then(|monitor| u32::try_from(monitor.native_id()).ok());
+        let layer = self.window_state.compositor.display_link_layer();
         self.frame_clock.set_native_display_id(display_id);
-        self.frame_clock.set_prefers_metal_display_link(false);
-        self.frame_clock
-            .set_metal_display_link_layer(self.window_state.compositor.display_link_layer());
+        let has_layer = layer.is_some();
+        self.frame_clock.set_metal_display_link_layer(layer);
+        self.frame_clock.set_prefers_metal_display_link(has_layer);
     }
 
     fn run_begin_frame_callbacks(&mut self) {
@@ -1424,6 +1503,7 @@ impl WindowHandle {
     #[cfg(target_os = "macos")]
     pub(crate) fn receive_frame_tick(&mut self, tick: subduction_core::timing::FrameTick) {
         self.frame_clock.receive_frame_tick(tick);
+        self.frame_signal_render_pending = true;
     }
 
     #[cfg(target_os = "macos")]
@@ -1478,6 +1558,15 @@ impl WindowHandle {
 
         let can_render_now = self.can_render_now();
         if !can_render_now {
+            if self.frame_clock.has_external_frame_signal() {
+                self.frame_signal_render_pending = false;
+            }
+            return FrameSchedule::default();
+        }
+
+        let has_frame_opportunity =
+            !self.frame_clock.has_external_frame_signal() || self.frame_signal_render_pending;
+        if !has_frame_opportunity {
             return FrameSchedule::default();
         }
 
@@ -1491,7 +1580,10 @@ impl WindowHandle {
         };
 
         if self.window_state.has_pending_paint() || self.window_state.has_pending_render() {
-            self.render_immediate_current_frame();
+            let presented = self.render_immediate_current_frame();
+            if self.frame_clock.has_external_frame_signal() && presented {
+                self.frame_signal_render_pending = false;
+            }
         }
 
         if prepared && !self.window_state.has_pending_render() {
@@ -1515,27 +1607,35 @@ impl WindowHandle {
             };
         }
 
+        if self.frame_clock.has_external_frame_signal() {
+            self.frame_signal_render_pending = false;
+        }
+
         FrameSchedule::default()
     }
 
-    fn finish_presented_frame(&mut self, submitted_at: Option<Instant>) -> bool {
+    fn finish_presented_frame(
+        &mut self,
+        submitted_at: Option<Instant>,
+        presented_at: Instant,
+    ) -> bool {
         self.window_state.clear_pending_damage();
         let presented = self.pending_timing.has_kind(TimingKind::Present);
         if presented {
             self.active_frame_time = None;
             let update = mem::take(&mut self.pending_timing);
-            let frame_end = Instant::now();
-            let submitted_at = submitted_at.unwrap_or(frame_end);
+            let submitted_at = submitted_at.unwrap_or(presented_at);
             let render_cpu = update.active_frame_work_duration();
             let present_cpu = update
                 .max_duration_for_label("Present")
                 .saturating_sub(update.max_duration_for_label("AcquireSurface"));
             if crate::frame_clock::frame_pacing_diag_enabled() {
                 eprintln!(
-                    "floem frame pacing window feedback active_cpu={:.3}ms prepare={:.3}ms paint={:.3}ms style_sum={:.3}ms layout_sum={:.3}ms boxtree_sum={:.3}ms present={:.3}ms acquire={:.3}ms compose={:.3}ms present_call={:.3}ms",
+                    "floem frame pacing window feedback active_cpu={:.3}ms prepare={:.3}ms paint={:.3}ms render={:.3}ms style_sum={:.3}ms layout_sum={:.3}ms boxtree_sum={:.3}ms present={:.3}ms acquire={:.3}ms compose={:.3}ms present_call={:.3}ms",
                     render_cpu.as_secs_f64() * 1000.0,
                     update.max_duration_for_label("PrepareFrame").as_secs_f64() * 1000.0,
                     update.max_duration_for_label("Paint").as_secs_f64() * 1000.0,
+                    update.max_duration_for_label("Render").as_secs_f64() * 1000.0,
                     update
                         .sum_duration_for_kind(TimingKind::Style)
                         .as_secs_f64()
@@ -1557,7 +1657,7 @@ impl WindowHandle {
                     update.max_duration_for_label("PresentCall").as_secs_f64() * 1000.0,
                 );
             }
-            self.record_profile_instant("FramePresented", frame_end);
+            self.record_profile_instant("FramePresented", presented_at);
             self.frame_clock.observe_presented(
                 FrameTimingFeedback {
                     render_cpu: Some(render_cpu),
@@ -1565,9 +1665,20 @@ impl WindowHandle {
                     gpu: None,
                 },
                 submitted_at,
-                frame_end,
+                presented_at,
             );
-            self.last_timing_report = Some(update.build_timing_report());
+            let timing_report = update.build_timing_report();
+            if self.profile.is_some() {
+                let queued_events = self.take_profile_events();
+                if let Some(profile) = self.profile.as_mut() {
+                    profile.current.events.extend(queued_events);
+                    profile.current.timing = Some(timing_report);
+                    profile.next_frame();
+                }
+                self.last_timing_report = None;
+            } else {
+                self.last_timing_report = Some(timing_report);
+            }
         }
         if presented {
             self.frame_clock.set_frame_prepared(false);
@@ -1593,9 +1704,11 @@ impl WindowHandle {
         self.last_timing_report.take()
     }
 
-    fn route_paint_present_event(&mut self) {
+    fn route_paint_present_event(&mut self, presented_at: Instant) {
         let root_element_id = self.window_state.root_view_id.get_element_id();
-        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent));
+        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent(
+            presented_at,
+        )));
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
     }
 
@@ -2487,7 +2600,7 @@ mod tests {
     use crate::{
         event::{Event, WindowEvent, listener},
         view::HasViewId,
-        views::{Decorators, Empty},
+        views::{Decorators, Empty, Stack},
     };
     use std::{cell::Cell, rc::Rc};
 
@@ -2697,6 +2810,42 @@ mod tests {
         assert!(
             window_handle.window_state.has_pending_render(),
             "pending box-tree damage alone should keep render submission active"
+        );
+    }
+
+    #[test]
+    fn test_layout_recompute_without_layout_diff_does_not_dirty_paint_tree() {
+        let root_id = ViewId::new_root();
+        set_current_view(root_id);
+
+        let first = Empty::new().style(|s| s.size(100.0, 100.0));
+        let first_id = first.view_id().get_element_id();
+        let second = Empty::new().style(|s| s.size(100.0, 100.0));
+        let second_id = second.view_id().get_element_id();
+        let view = Stack::new((first, second)).style(|s| s.size(300.0, 100.0));
+
+        let mut window_handle =
+            WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
+        window_handle.process_update_no_paint();
+        window_handle.window_state.clear_pending_paint();
+        window_handle.window_state.clear_pending_damage();
+
+        window_handle.window_state.request_layout();
+        window_handle.process_update_no_paint();
+
+        assert!(
+            !window_handle
+                .window_state
+                .dirty_paint_elements
+                .contains(&first_id),
+            "unchanged first child should not be paint-dirtied by a no-op layout recompute"
+        );
+        assert!(
+            !window_handle
+                .window_state
+                .dirty_paint_elements
+                .contains(&second_id),
+            "unchanged second child should not be paint-dirtied by a no-op layout recompute"
         );
     }
 

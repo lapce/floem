@@ -77,14 +77,15 @@ impl GpuResources {
                     ],
                     nonblocking_acquire: true,
                 };
+                let request_result = adapter
+                    .request_device(&wgpu::DeviceDescriptor {
+                        label: None,
+                        required_features,
+                        ..Default::default()
+                    })
+                    .await;
                 tx.send(
-                    adapter
-                        .request_device(&wgpu::DeviceDescriptor {
-                            label: None,
-                            required_features,
-                            ..Default::default()
-                        })
-                        .await
+                    request_result
                         .map_err(GpuResourceError::DeviceRequestError)
                         .map(|(device, queue)| {
                             (

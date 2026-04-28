@@ -44,6 +44,23 @@ pub(crate) struct FocusNavCache {
     entries: SmallVec<[FocusEntry<ElementId>; 128]>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct TaffyLayoutSnapshot {
+    location: taffy::geometry::Point<f32>,
+    size: taffy::geometry::Size<f32>,
+    content_size: taffy::geometry::Size<f32>,
+}
+
+impl From<taffy::tree::Layout> for TaffyLayoutSnapshot {
+    fn from(layout: taffy::tree::Layout) -> Self {
+        Self {
+            location: layout.location,
+            size: layout.size,
+            content_size: layout.content_size,
+        }
+    }
+}
+
 fn build_focus_space_for_scope<'a>(
     tree: &BoxTree,
     scope_root: ElementId,
@@ -197,6 +214,7 @@ pub struct WindowState {
     pub(crate) needs_layout: bool,
     pub(crate) needs_box_tree_from_layout: bool,
     pub(crate) needs_box_tree_commit: bool,
+    taffy_layout_snapshots: FxHashMap<NodeId, TaffyLayoutSnapshot>,
     /// Views that need their box tree node updated (e.g., after transform or scroll changes).
     /// These are processed after layout and before commit.
     pub(crate) views_needing_box_tree_update: FxHashSet<ViewId>,
@@ -282,6 +300,7 @@ impl WindowState {
             needs_layout: true,
             needs_box_tree_from_layout: true,
             needs_box_tree_commit: true,
+            taffy_layout_snapshots: FxHashMap::default(),
             listeners: FxHashMap::default(),
             views_needing_box_tree_update: FxHashSet::default(),
             focus_nav_cache: FocusNavCache::default(),
@@ -927,9 +946,11 @@ impl WindowState {
     // 1) local-space sync (cheap to batch)
     // 2) commit-time world-space resolution (global/cross-parent corrections)
     //
-    // 1. update_box_tree_from_layout() - Full tree walk after layout
+    // 1. update_box_tree_from_layout() - Taffy layout diff after layout
     //    - Called automatically after layout completes
-    //    - Writes local bounds/clip/local transforms for every view
+    //    - Walks cheap Taffy layout output, but only recomputes view box
+    //      properties for nodes whose layout changed or whose inherited scroll
+    //      context changed
     //    - Uses logical layout parent semantics (taffy/view tree)
     //
     // 2. update_box_tree_for_view(view_id) - Single view update (non-recursive)
@@ -949,10 +970,11 @@ impl WindowState {
     // world-space resolve. The `needs_box_tree_commit` flag tracks whether commit
     // is still required.
 
-    /// Update the box tree from the layout tree by walking the entire tree.
+    /// Update the box tree from the layout tree by diffing Taffy layout output.
     ///
-    /// This pass performs a full local-space sync from layout/view state into the box tree.
-    /// It recursively updates every view's:
+    /// This pass walks the cheap Taffy layout tree and compares the current layout output
+    /// against the previous pass. It only recomputes expensive view box properties for
+    /// changed nodes or nodes whose inherited scroll context changed:
     /// - local bounds (from layout size)
     /// - local clip (from style transform props)
     /// - local transform (layout position + parent scroll + view/style transforms)
@@ -968,19 +990,30 @@ impl WindowState {
         self.invalidate_focus_nav_cache();
         let box_tree = self.box_tree.clone();
         let layout_tree = self.layout_tree.clone();
+        let mut changed_elements = FxHashSet::default();
+        let mut visited_nodes = FxHashSet::default();
         VIEW_STORAGE.with_borrow(|s| {
-            compute_absolute_transforms_and_boxes(
+            diff_absolute_transforms_and_boxes(
                 s,
                 layout_tree,
                 box_tree,
                 self.root_layout_node,
                 Vec2::ZERO, // parent_scroll - root has no parent scroll
+                false,
+                &mut self.taffy_layout_snapshots,
+                &mut visited_nodes,
+                &mut changed_elements,
             );
         });
+        self.taffy_layout_snapshots
+            .retain(|node, _| visited_nodes.contains(node));
+        self.dirty_paint_elements.extend(changed_elements);
         // Clear pending individual updates since the full tree walk handled everything
         self.views_needing_box_tree_update.clear();
         self.needs_box_tree_from_layout = false;
-        self.needs_box_tree_commit = true;
+        if !self.dirty_paint_elements.is_empty() {
+            self.needs_box_tree_commit = true;
+        }
     }
 
     /// Update the box tree for a specific view only (non-recursive).
@@ -1658,54 +1691,77 @@ fn compute_view_box_properties(
     }
 }
 
-fn compute_absolute_transforms_and_boxes(
+fn diff_absolute_transforms_and_boxes(
     s: &ViewStorage,
     layout_tree: Rc<RefCell<taffy::TaffyTree<LayoutNodeCx>>>,
     box_tree: Rc<RefCell<BoxTree>>,
     node: NodeId,
     parent_scroll: Vec2,
+    parent_context_changed: bool,
+    snapshots: &mut FxHashMap<NodeId, TaffyLayoutSnapshot>,
+    visited_nodes: &mut FxHashSet<NodeId>,
+    changed_elements: &mut FxHashSet<ElementId>,
 ) {
     let taffy = layout_tree.borrow();
-    let layout = *taffy.layout(node).unwrap();
+    let Ok(layout_ref) = taffy.layout(node) else {
+        return;
+    };
+    let layout = *layout_ref;
+    let snapshot = TaffyLayoutSnapshot::from(layout);
+    let layout_changed = snapshots.get(&node).copied() != Some(snapshot);
+    snapshots.insert(node, snapshot);
+    visited_nodes.insert(node);
     let children = taffy.children(node).ok().map(|c| c.to_vec());
     drop(taffy);
 
+    let mut child_parent_scroll = parent_scroll;
+    let mut child_context_changed = parent_context_changed;
+
     if let Some(&view_id) = s.taffy_to_view.get(&node) {
-        let props = compute_view_box_properties(s, view_id, layout, parent_scroll);
+        let state = s.states.get(view_id);
+        let previous_scroll = state
+            .as_ref()
+            .map(|state| state.borrow().child_translation)
+            .unwrap_or(Vec2::ZERO);
 
-        // Update box tree
-        props
-            .element_id
-            .set_local_bounds_without_paint(props.local_rect);
-        props.element_id.set_local_clip_without_paint(props.clip);
-        box_tree
-            .borrow_mut()
-            .set_local_transform(props.element_id.0, props.local_transform);
+        if layout_changed || parent_context_changed {
+            let props = compute_view_box_properties(s, view_id, layout, parent_scroll);
+            let scroll_changed = previous_scroll != props.scroll_offset;
 
-        // Recurse with this view's scroll offset
-        if let Some(children) = children {
-            for &child in &children {
-                compute_absolute_transforms_and_boxes(
-                    s,
-                    layout_tree.clone(),
-                    box_tree.clone(),
-                    child,
-                    props.scroll_offset,
-                );
+            let (bounds_changed, clip_changed, transform_changed) = {
+                let mut box_tree = box_tree.borrow_mut();
+                (
+                    box_tree.set_local_bounds(props.element_id.0, props.local_rect),
+                    box_tree.set_local_clip(props.element_id.0, props.clip),
+                    box_tree.set_local_transform(props.element_id.0, props.local_transform),
+                )
+            };
+
+            if bounds_changed || clip_changed || transform_changed {
+                changed_elements.insert(props.element_id);
             }
+
+            child_parent_scroll = props.scroll_offset;
+            child_context_changed = scroll_changed;
+        } else {
+            child_parent_scroll = previous_scroll;
+            child_context_changed = false;
         }
-    } else {
-        // No view for this layout node, just recurse with parent's values
-        if let Some(children) = children {
-            for &child in &children {
-                compute_absolute_transforms_and_boxes(
-                    s,
-                    layout_tree.clone(),
-                    box_tree.clone(),
-                    child,
-                    parent_scroll,
-                );
-            }
+    }
+
+    if let Some(children) = children {
+        for &child in &children {
+            diff_absolute_transforms_and_boxes(
+                s,
+                layout_tree.clone(),
+                box_tree.clone(),
+                child,
+                child_parent_scroll,
+                child_context_changed,
+                snapshots,
+                visited_nodes,
+                changed_elements,
+            );
         }
     }
 }

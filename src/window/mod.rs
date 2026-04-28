@@ -55,6 +55,7 @@ pub struct WindowConfig {
     pub(crate) win_os_config: Option<WinOSWindowConfig>,
     pub(crate) web_config: Option<WebWindowConfig>,
     pub(crate) renderer_chooser: Option<crate::paint::renderer::RendererChooser>,
+    pub(crate) maximum_drawable_count: u32,
 }
 
 impl Default for WindowConfig {
@@ -83,6 +84,7 @@ impl Default for WindowConfig {
             win_os_config: None,
             web_config: None,
             renderer_chooser: None,
+            maximum_drawable_count: 2,
         }
     }
 }
@@ -241,6 +243,17 @@ impl WindowConfig {
         + 'static,
     ) -> Self {
         self.renderer_chooser = Some(Arc::new(renderer_chooser));
+        self
+    }
+
+    /// Sets the preferred native drawable pool size for the window surface.
+    ///
+    /// On Metal this maps to `CAMetalLayer.maximumDrawableCount`. Values are
+    /// clamped by the backend to the supported range. `2` minimizes latency;
+    /// `3` gives the compositor more buffering headroom.
+    #[inline]
+    pub fn maximum_drawable_count(mut self, count: u32) -> Self {
+        self.maximum_drawable_count = count;
         self
     }
 

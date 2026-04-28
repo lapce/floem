@@ -26,6 +26,8 @@ use winit::{
     window::{Theme, WindowId},
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::paint::renderer::{RenderedFrame, TimingSpan};
 use crate::{
     action::{Timer, TimerToken},
     external_surface::{ExternalSurfaceContent, ExternalSurfaceId, ExternalSurfaceProviderHandle},
@@ -198,6 +200,12 @@ pub(crate) enum UserEvent {
     },
     CompositorSceneDrawableReady {
         window_id: WindowId,
+    },
+    #[cfg(not(target_arch = "wasm32"))]
+    RenderFrameReady {
+        window_id: WindowId,
+        frame: RenderedFrame,
+        render_span: TimingSpan,
     },
     #[cfg(target_os = "macos")]
     SubductionFrameTick {

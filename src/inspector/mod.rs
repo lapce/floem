@@ -635,6 +635,15 @@ pub enum TimingKind {
     Paint,
     Present,
     Renderer,
+    #[allow(dead_code, reason = "Reserved for backend GPU timestamp spans.")]
+    Gpu,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TimingThread {
+    Main,
+    Renderer,
+    Gpu,
 }
 
 #[derive(Clone, Debug)]
@@ -643,16 +652,24 @@ pub struct TimingSpan {
     pub start: Duration,
     pub duration: Duration,
     pub kind: TimingKind,
+    pub thread: TimingThread,
     pub children: Vec<TimingSpan>,
 }
 
 impl TimingSpan {
-    pub fn new(label: &'static str, start: Duration, duration: Duration, kind: TimingKind) -> Self {
+    pub fn new_on_thread(
+        label: &'static str,
+        start: Duration,
+        duration: Duration,
+        kind: TimingKind,
+        thread: TimingThread,
+    ) -> Self {
         Self {
             label,
             start,
             duration,
             kind,
+            thread,
             children: Vec::new(),
         }
     }
@@ -690,14 +707,17 @@ impl TimingReport {
         }
     }
 
-    pub fn push_span(
+    pub fn push_span_on_thread(
         &mut self,
         label: &'static str,
         start: Duration,
         duration: Duration,
         kind: TimingKind,
+        thread: TimingThread,
     ) {
-        self.push_timing_span(TimingSpan::new(label, start, duration, kind));
+        self.push_timing_span(TimingSpan::new_on_thread(
+            label, start, duration, kind, thread,
+        ));
     }
 
     pub fn push_timing_span(&mut self, span: TimingSpan) {
@@ -709,6 +729,18 @@ impl TimingReport {
         flatten_timing_spans(&self.spans, 0, &mut spans);
         spans
     }
+
+    pub fn flattened_spans_for_thread(&self, thread: TimingThread) -> Vec<FlattenedTimingSpan> {
+        let mut spans = Vec::new();
+        flatten_timing_spans_for_thread(&self.spans, thread, 0, &mut spans);
+        spans
+    }
+
+    pub fn thread_total(&self, thread: TimingThread) -> Duration {
+        let mut intervals = Vec::new();
+        collect_thread_intervals(&self.spans, thread, &mut intervals);
+        union_duration(intervals)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -718,6 +750,7 @@ pub struct FlattenedTimingSpan {
     pub duration: Duration,
     pub depth: usize,
     pub kind: TimingKind,
+    pub thread: TimingThread,
 }
 
 fn insert_timing_span(spans: &mut Vec<TimingSpan>, mut new_span: TimingSpan) {
@@ -749,6 +782,89 @@ fn insert_timing_span(spans: &mut Vec<TimingSpan>, mut new_span: TimingSpan) {
     spans.insert(insert_at, new_span);
 }
 
+fn span_duration_for_thread(span: &TimingSpan, thread: TimingThread) -> Duration {
+    if span.thread != thread {
+        return Duration::ZERO;
+    }
+
+    let mut covered: Vec<(Duration, Duration)> = span
+        .children
+        .iter()
+        .filter(|child| child.thread != thread)
+        .map(|child| (child.start.max(span.start), child.end().min(span.end())))
+        .filter(|(start, end)| end > start)
+        .collect();
+
+    if covered.is_empty() {
+        return span.duration;
+    }
+
+    covered.sort_by_key(|(start, _)| *start);
+    let mut covered_duration = Duration::ZERO;
+    let (mut current_start, mut current_end) = covered[0];
+    for (start, end) in covered.into_iter().skip(1) {
+        if start <= current_end {
+            current_end = current_end.max(end);
+        } else {
+            covered_duration += current_end.saturating_sub(current_start);
+            current_start = start;
+            current_end = end;
+        }
+    }
+    covered_duration += current_end.saturating_sub(current_start);
+    span.duration.saturating_sub(covered_duration)
+}
+
+fn collect_thread_intervals(
+    spans: &[TimingSpan],
+    thread: TimingThread,
+    out: &mut Vec<(Duration, Duration)>,
+) {
+    for span in spans {
+        if span.thread == thread {
+            let mut cursor = span.start;
+            let mut blockers: Vec<(Duration, Duration)> = span
+                .children
+                .iter()
+                .filter(|child| child.thread != thread)
+                .map(|child| (child.start.max(span.start), child.end().min(span.end())))
+                .filter(|(start, end)| end > start)
+                .collect();
+            blockers.sort_by_key(|(start, _)| *start);
+            for (start, end) in blockers {
+                if start > cursor {
+                    out.push((cursor, start));
+                }
+                cursor = cursor.max(end);
+            }
+            if cursor < span.end() {
+                out.push((cursor, span.end()));
+            }
+        }
+        collect_thread_intervals(&span.children, thread, out);
+    }
+}
+
+fn union_duration(mut intervals: Vec<(Duration, Duration)>) -> Duration {
+    if intervals.is_empty() {
+        return Duration::ZERO;
+    }
+
+    intervals.sort_by_key(|(start, _)| *start);
+    let mut total = Duration::ZERO;
+    let (mut current_start, mut current_end) = intervals[0];
+    for (start, end) in intervals.into_iter().skip(1) {
+        if start <= current_end {
+            current_end = current_end.max(end);
+        } else {
+            total += current_end.saturating_sub(current_start);
+            current_start = start;
+            current_end = end;
+        }
+    }
+    total + current_end.saturating_sub(current_start)
+}
+
 fn flatten_timing_spans(spans: &[TimingSpan], depth: usize, out: &mut Vec<FlattenedTimingSpan>) {
     for span in spans {
         out.push(FlattenedTimingSpan {
@@ -757,8 +873,32 @@ fn flatten_timing_spans(spans: &[TimingSpan], depth: usize, out: &mut Vec<Flatte
             duration: span.duration,
             depth,
             kind: span.kind,
+            thread: span.thread,
         });
         flatten_timing_spans(&span.children, depth + 1, out);
+    }
+}
+
+fn flatten_timing_spans_for_thread(
+    spans: &[TimingSpan],
+    thread: TimingThread,
+    depth: usize,
+    out: &mut Vec<FlattenedTimingSpan>,
+) {
+    for span in spans {
+        if span.thread == thread {
+            out.push(FlattenedTimingSpan {
+                label: span.label,
+                start: span.start,
+                duration: span_duration_for_thread(span, thread),
+                depth,
+                kind: span.kind,
+                thread: span.thread,
+            });
+            flatten_timing_spans_for_thread(&span.children, thread, depth + 1, out);
+        } else {
+            flatten_timing_spans_for_thread(&span.children, thread, depth, out);
+        }
     }
 }
 
@@ -926,6 +1066,7 @@ fn timing_color(kind: TimingKind, theme: &DesignSystem) -> Color {
         TimingKind::Renderer => theme
             .primary()
             .map_lightness(|l| l + if theme.is_dark { -0.06 } else { -0.10 }),
+        TimingKind::Gpu => Color::from_rgb8(121, 104, 218),
     }
 }
 
@@ -974,9 +1115,13 @@ fn timing_section_button(
     .action(move || expanded.update(|value| *value = !*value))
 }
 
-fn timing_preview(report: &TimingReport) -> impl View + use<> {
-    let spans = report.flattened_spans();
-    let total_secs = report.total.as_secs_f64().max(f64::EPSILON);
+fn timing_preview(
+    report: &TimingReport,
+    thread: TimingThread,
+    total: Duration,
+) -> impl View + use<> {
+    let spans = report.flattened_spans_for_thread(thread);
+    let total_secs = total.as_secs_f64().max(f64::EPSILON);
     Stack::vertical_from_iter(spans.into_iter().map(|span| {
         let left = span.start.as_secs_f64() / total_secs * 100.0;
         let width = (span.duration.as_secs_f64() / total_secs * 100.0).max(0.125);
@@ -1062,8 +1207,8 @@ fn timing_preview(report: &TimingReport) -> impl View + use<> {
     .debug_name("Timing Timeline")
 }
 
-fn timing_details(report: &TimingReport) -> impl View + use<> {
-    let spans = report.flattened_spans();
+fn timing_details(report: &TimingReport, thread: TimingThread) -> impl View + use<> {
+    let spans = report.flattened_spans_for_thread(thread);
     Stack::vertical((
         Stack::horizontal((
             (Stack::horizontal((
@@ -1143,10 +1288,73 @@ fn timing_details(report: &TimingReport) -> impl View + use<> {
     .debug_name("Timing Details")
 }
 
+fn timing_thread_breakdown(
+    title: &'static str,
+    subtitle: &'static str,
+    report: TimingReport,
+    thread: TimingThread,
+    total: Duration,
+    details_mode: RwSignal<usize>,
+) -> impl View + use<> {
+    Stack::vertical((
+        Stack::horizontal((
+            Stack::vertical((
+                Label::new(title).style(|s| {
+                    s.font_size(13.0)
+                        .font_bold()
+                        .with_theme(|s, t| s.color(t.text()))
+                }),
+                Label::new(subtitle)
+                    .style(|s| s.font_size(11.0).with_theme(|s, t| s.color(t.text_muted()))),
+            ))
+            .style(|s| s.gap(2.0).min_width(0.0).flex_grow(1.0)),
+            Label::new(format_duration_ms(total)).style(|s| {
+                s.font_bold()
+                    .font_size(12.0)
+                    .padding_horiz(10.0)
+                    .padding_vert(5.0)
+                    .border_radius(999.0)
+                    .with_theme(|s, t| {
+                        s.background(
+                            t.def(|t| timing_color(TimingKind::Total, &t).with_alpha(0.10)),
+                        )
+                        .color(t.def(|t| timing_color(TimingKind::Total, &t)))
+                    })
+            }),
+        ))
+        .style(|s| s.items_center().gap(12.0)),
+        tab(
+            move || Some(details_mode.get()),
+            move || [0, 1],
+            |it| *it,
+            {
+                let report = report.clone();
+                move |it| match it {
+                    0 => timing_preview(&report, thread, total).into_any(),
+                    1 => timing_details(&report, thread).into_any(),
+                    _ => panic!(),
+                }
+            },
+        )
+        .style(|s| s.width_full()),
+    ))
+    .style(|s| {
+        s.width_full()
+            .gap(TIMING_ROW_GAP)
+            .padding(10.0)
+            .border_radius(16.0)
+            .with_theme(|s, t| s.background(t.bg_overlay()))
+    })
+}
+
 fn timing_report_view(report: TimingReport) -> AnyView {
     let details_open = RwSignal::new(false);
-    let details_mode = RwSignal::new(0);
+    let details_mode = RwSignal::new(0usize);
     let details_report = report.clone();
+    let renderer_total = report.thread_total(TimingThread::Renderer);
+    let gpu_total = report.thread_total(TimingThread::Gpu);
+    let has_renderer_spans = renderer_total > Duration::ZERO;
+    let has_gpu_spans = gpu_total > Duration::ZERO;
 
     Stack::vertical((
         Stack::horizontal((
@@ -1156,7 +1364,7 @@ fn timing_report_view(report: TimingReport) -> AnyView {
                         .font_bold()
                         .with_theme(|s, t| s.color(t.text()))
                 }),
-                Label::new("Nested intervals, cleaner totals, and clearer handoff phases.")
+                Label::new("Thread-aware intervals. The headline total is main-thread frame time.")
                     .style(|s| s.font_size(12.0).with_theme(|s, t| s.color(t.text_muted()))),
             ))
             .style(|s| s.gap(2.0).min_width(0.0).flex_grow(1.0)),
@@ -1200,20 +1408,53 @@ fn timing_report_view(report: TimingReport) -> AnyView {
                             ))
                             .style(|s| s.gap(TIMING_ROW_GAP))
                             .debug_name("Timing Details Mode Switch"),
-                            tab(
-                                move || Some(details_mode.get()),
-                                move || [0, 1],
-                                |it| *it,
-                                {
+                            Stack::vertical((
+                                timing_thread_breakdown(
+                                    "Main thread",
+                                    "Frame update, paint recording, and present work",
+                                    details_report.clone(),
+                                    TimingThread::Main,
+                                    details_report.total,
+                                    details_mode,
+                                ),
+                                dyn_container(move || has_renderer_spans, {
                                     let details_report = details_report.clone();
-                                    move |it| match it {
-                                        0 => timing_preview(&details_report).into_any(),
-                                        1 => timing_details(&details_report).into_any(),
-                                        _ => panic!(),
+                                    move |has_renderer_spans| {
+                                        if has_renderer_spans {
+                                            timing_thread_breakdown(
+                                                "Renderer thread",
+                                                "Renderer conversion and backend CPU work",
+                                                details_report.clone(),
+                                                TimingThread::Renderer,
+                                                renderer_total,
+                                                details_mode,
+                                            )
+                                            .into_any()
+                                        } else {
+                                            ().into_any()
+                                        }
                                     }
-                                },
-                            )
-                            .style(|s| s.width_full())
+                                }),
+                                dyn_container(move || has_gpu_spans, {
+                                    let details_report = details_report.clone();
+                                    move |has_gpu_spans| {
+                                        if has_gpu_spans {
+                                            timing_thread_breakdown(
+                                                "GPU",
+                                                "Resolved GPU command execution intervals",
+                                                details_report.clone(),
+                                                TimingThread::Gpu,
+                                                gpu_total,
+                                                details_mode,
+                                            )
+                                            .into_any()
+                                        } else {
+                                            ().into_any()
+                                        }
+                                    }
+                                }),
+                            ))
+                            .style(|s| s.width_full().gap(TIMING_SECTION_GAP))
                             .debug_name("Timing Details Mode Content"),
                         ))
                         .style(|s| s.width_full().gap(TIMING_SECTION_GAP))
@@ -1834,8 +2075,9 @@ impl RelativeViewId {
 
 #[cfg(test)]
 mod tests {
-    use super::{box_model_data, resolve_length};
+    use super::{TimingKind, TimingReport, TimingThread, box_model_data, resolve_length};
     use crate::{
+        platform::Duration,
         style::{FontSizeCx, Style},
         unit::UnitExt,
     };
@@ -1867,5 +2109,37 @@ mod tests {
 
         assert_eq!(data.content_width, 84.0);
         assert_eq!(data.content_height, 68.0);
+    }
+
+    #[test]
+    fn timing_report_totals_are_thread_exclusive() {
+        let mut report = TimingReport::new(None, Duration::ZERO);
+        report.push_span_on_thread(
+            "Paint",
+            Duration::ZERO,
+            Duration::from_millis(10),
+            TimingKind::Paint,
+            TimingThread::Main,
+        );
+        report.push_span_on_thread(
+            "Render",
+            Duration::from_millis(2),
+            Duration::from_millis(5),
+            TimingKind::Renderer,
+            TimingThread::Renderer,
+        );
+
+        assert_eq!(
+            report.thread_total(TimingThread::Main),
+            Duration::from_millis(5)
+        );
+        assert_eq!(
+            report.thread_total(TimingThread::Renderer),
+            Duration::from_millis(5)
+        );
+
+        let main_spans = report.flattened_spans_for_thread(TimingThread::Main);
+        assert_eq!(main_spans[0].label, "Paint");
+        assert_eq!(main_spans[0].duration, Duration::from_millis(5));
     }
 }

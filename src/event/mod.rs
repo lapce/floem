@@ -28,6 +28,7 @@ pub use path::clear_hit_test_cache;
 pub use dispatch::*;
 
 use crate::ElementId;
+use crate::platform::Instant;
 
 use std::any::Any;
 
@@ -685,10 +686,12 @@ pub enum UpdatePhaseEvent {
     /// is ready for painting if needed.
     Complete,
 
-    /// Update cycle complete.
-    /// This phase signals that all updates have been processed and the window
-    /// is ready for painting if needed.
-    PaintPresent,
+    /// Painting was presented for this update cycle.
+    ///
+    /// The timestamp is Floem's best presentation timestamp for the frame. When
+    /// available, this is the display-link/subduction predicted present time;
+    /// otherwise it falls back to the submit-side timestamp.
+    PaintPresent(Instant),
 }
 
 /// Events related to the application window state.
@@ -2096,7 +2099,7 @@ impl Event {
             Self::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Complete)) => {
                 UpdatePhaseComplete::listener_key()
             }
-            Self::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent)) => {
+            Self::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent(_))) => {
                 UpdatePhasePaintPresent::listener_key()
             }
             Self::Interaction(InteractionEvent::Click) => Click::listener_key(),

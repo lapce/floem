@@ -1,4 +1,4 @@
-use super::{TimingKind, TimingReport};
+use super::{TimingKind, TimingReport, TimingThread};
 use crate::app::{AppUpdateEvent, add_app_update_event};
 use crate::context::{LayoutChanged, LayoutChangedListener, PaintCx, StyleCx};
 use crate::event::{Event, EventPropagation, PointerScrollEventExt, listener};
@@ -159,6 +159,7 @@ fn timeline_item_color(item: &TimelineItem) -> Color {
         TimelineItemKind::Timing(TimingKind::Paint) => Color::from_rgb8(203, 92, 73),
         TimelineItemKind::Timing(TimingKind::Present) => Color::from_rgb8(64, 157, 163),
         TimelineItemKind::Timing(TimingKind::Renderer) => Color::from_rgb8(62, 126, 214),
+        TimelineItemKind::Timing(TimingKind::Gpu) => Color::from_rgb8(121, 104, 218),
     }
 }
 
@@ -241,7 +242,11 @@ fn build_timeline_lanes(profile: &Profile) -> Vec<Vec<TimelineItem>> {
                 .into_iter()
                 .map(|span| TimelineItem {
                     label: span.label.to_string(),
-                    source: "Timing Span",
+                    source: match span.thread {
+                        TimingThread::Main => "Main Thread",
+                        TimingThread::Renderer => "Renderer Thread",
+                        TimingThread::Gpu => "GPU",
+                    },
                     start: anchor.saturating_duration_since(origin) + span.start,
                     duration: span.duration,
                     depth: span.depth,
@@ -258,6 +263,7 @@ fn build_timeline_lanes(profile: &Profile) -> Vec<Vec<TimelineItem>> {
             .then_with(|| a.label.cmp(&b.label))
     });
 
+    let mut lane_threads: Vec<&'static str> = Vec::new();
     let mut lane_ends: Vec<Duration> = Vec::new();
     let mut lanes: Vec<Vec<TimelineItem>> = Vec::new();
 
@@ -266,11 +272,12 @@ fn build_timeline_lanes(profile: &Profile) -> Vec<Vec<TimelineItem>> {
         if let Some((lane_idx, lane_end)) = lane_ends
             .iter_mut()
             .enumerate()
-            .find(|(_, lane_end)| **lane_end <= item.start)
+            .find(|(idx, lane_end)| lane_threads[*idx] == item.source && **lane_end <= item.start)
         {
             *lane_end = item_end;
             lanes[lane_idx].push(item);
         } else {
+            lane_threads.push(item.source);
             lane_ends.push(item_end);
             lanes.push(vec![item]);
         }

@@ -1,6 +1,6 @@
 use crate::{
     frame::{
-        DisplayTiming, FrameDamageClass, FrameTime, FrameTimingFeedback, FrameWorkload, PresentPacing,
+        DisplayTiming, FrameTime, FrameTimingFeedback, FrameWorkload, PresentPacing,
         PresentationInterval,
     },
     platform::{Duration, Instant},
@@ -40,7 +40,6 @@ pub(crate) trait FrameClock {
     fn refresh_schedule(&mut self, _frame_interval: Duration, _now: Instant) {}
     fn note_frame_prepare_started(&mut self, now: Instant);
     fn set_frame_workload(&mut self, _workload: FrameWorkload) {}
-    fn set_frame_damage_class(&mut self, _damage_class: FrameDamageClass) {}
     fn set_frame_prepared(&mut self, prepared: bool);
     fn needs_frame_prepare(&self, has_next_frame_work: bool) -> bool;
     fn redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant;
@@ -132,8 +131,7 @@ pub(crate) struct HeuristicFrameClock {
     frame_counter: u64,
     frame_prepared: bool,
     workload: FrameWorkload,
-    damage_class: FrameDamageClass,
-    estimates: PacingEstimates,
+    estimate: PacingEstimate,
 }
 
 impl Default for HeuristicFrameClock {
@@ -147,8 +145,7 @@ impl Default for HeuristicFrameClock {
             frame_counter: 0,
             frame_prepared: false,
             workload: FrameWorkload::Animation,
-            damage_class: FrameDamageClass::PaintOnly,
-            estimates: PacingEstimates::default(),
+            estimate: PacingEstimate::default(),
         }
     }
 }
@@ -189,10 +186,6 @@ impl FrameClock for HeuristicFrameClock {
         self.workload = workload;
     }
 
-    fn set_frame_damage_class(&mut self, damage_class: FrameDamageClass) {
-        self.damage_class = damage_class;
-    }
-
     fn set_frame_prepared(&mut self, prepared: bool) {
         self.frame_prepared = prepared;
     }
@@ -216,14 +209,13 @@ impl FrameClock for HeuristicFrameClock {
         let render_cpu = feedback.render_cpu.unwrap_or_default();
         let present_cpu = feedback.present_cpu.unwrap_or(render_cpu);
         self.update_draw_lead_estimate(render_cpu);
-        let estimate = self.estimates.for_class_mut(feedback.damage_class);
-        estimate.pre_surface_work = self.estimated_draw_lead_time;
+        self.estimate.pre_surface_work = self.estimated_draw_lead_time;
         // Surface acquisition may block until the swapchain actually becomes
         // available. If we learn that blocked time into the "ready to present"
         // lead estimate, we wake earlier next frame and recreate the same
         // stall. Learn only the non-blocking present CPU cost here.
         self.update_present_lead_estimate(present_cpu);
-        estimate.surface_work = self.estimated_present_lead_time;
+        self.estimate.surface_work = self.estimated_present_lead_time;
         self.last_presented_at = presented_at;
     }
 }
@@ -233,10 +225,9 @@ impl HeuristicFrameClock {
         let now_time = self.instant_to_pacing_time(now);
         let predicted_present_time =
             self.instant_to_pacing_time(now.checked_add(frame_interval).unwrap_or(now));
-        let estimate = self.estimates.for_class(self.damage_class);
         let decision = pacing_plan_frame(
             PacingDisplayTiming::fixed(pacing_duration(frame_interval)),
-            pacing_estimate(estimate),
+            pacing_estimate(self.estimate),
             pacing_demand(self.workload),
             PacingFrameOpportunity {
                 now: now_time,
@@ -323,34 +314,6 @@ impl Default for PacingEstimate {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-struct PacingEstimates {
-    compositor_only: PacingEstimate,
-    paint_only: PacingEstimate,
-    style_paint: PacingEstimate,
-    layout: PacingEstimate,
-}
-
-impl PacingEstimates {
-    fn for_class(&self, damage_class: FrameDamageClass) -> PacingEstimate {
-        match damage_class {
-            FrameDamageClass::CompositorOnly => self.compositor_only,
-            FrameDamageClass::PaintOnly => self.paint_only,
-            FrameDamageClass::StylePaint => self.style_paint,
-            FrameDamageClass::Layout => self.layout,
-        }
-    }
-
-    fn for_class_mut(&mut self, damage_class: FrameDamageClass) -> &mut PacingEstimate {
-        match damage_class {
-            FrameDamageClass::CompositorOnly => &mut self.compositor_only,
-            FrameDamageClass::PaintOnly => &mut self.paint_only,
-            FrameDamageClass::StylePaint => &mut self.style_paint,
-            FrameDamageClass::Layout => &mut self.layout,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 struct HeuristicPacingPlan {
     target_present_time: Instant,
@@ -398,8 +361,7 @@ struct SubductionPlanState {
     latest_plan: Option<ActivePacingPlan>,
     latest_prepare_start: Option<HostTime>,
     workload: FrameWorkload,
-    damage_class: FrameDamageClass,
-    estimates: PacingEstimates,
+    estimate: PacingEstimate,
     last_present_time: Option<HostTime>,
     pending_animation_target: Option<HostTime>,
     active: bool,
@@ -418,8 +380,7 @@ impl SubductionPlanState {
             latest_plan: None,
             latest_prepare_start: None,
             workload: FrameWorkload::Animation,
-            damage_class: FrameDamageClass::PaintOnly,
-            estimates: PacingEstimates::default(),
+            estimate: PacingEstimate::default(),
             last_present_time: None,
             pending_animation_target: None,
             active: false,

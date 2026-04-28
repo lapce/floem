@@ -67,6 +67,8 @@ use winit::window::{Window, WindowId};
 
 use crate::inspector::TimingKind;
 use crate::platform::{Duration, Instant};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::{Application, app::UserEvent};
 
 #[derive(Clone, Copy, Debug)]
 pub struct TimingSpan {
@@ -86,6 +88,34 @@ impl TimingSpan {
 
 pub(crate) trait RendererTimingRecorder {
     fn record_span(&mut self, label: &'static str, span: Option<TimingSpan>, kind: TimingKind);
+
+    fn record_thread_span(
+        &mut self,
+        label: &'static str,
+        span: Option<TimingSpan>,
+        kind: TimingKind,
+    ) {
+        self.record_span(label, span, kind);
+    }
+}
+
+struct TimedRenderSource<'a> {
+    source: &'a mut dyn RenderSource,
+    span: Option<TimingSpan>,
+}
+
+impl TimedRenderSource<'_> {
+    fn new(source: &mut dyn RenderSource) -> TimedRenderSource<'_> {
+        TimedRenderSource { source, span: None }
+    }
+}
+
+impl RenderSource for TimedRenderSource<'_> {
+    fn paint_into(&mut self, sink: &mut dyn PaintSink) {
+        let start = Instant::now();
+        self.source.paint_into(sink);
+        self.span = Some(TimingSpan::new(start, Instant::now()));
+    }
 }
 
 pub(crate) type WindowBackend = Box<dyn WindowRenderer>;
@@ -98,6 +128,7 @@ pub struct NewRendererCx {
     pub transparent: bool,
     pub size: Size,
     pub scale: f64,
+    pub maximum_drawable_count: u32,
 }
 
 impl NewRendererCx {
@@ -233,6 +264,7 @@ impl NewRendererCx {
         transparent: bool,
         scale: f64,
         size: Size,
+        maximum_drawable_count: u32,
     ) -> WindowBackend {
         let cx = Self {
             window,
@@ -241,6 +273,7 @@ impl NewRendererCx {
             transparent,
             size,
             scale,
+            maximum_drawable_count,
         };
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -272,6 +305,7 @@ impl NewRendererCx {
             transparent: false,
             size,
             scale,
+            maximum_drawable_count: 2,
         };
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -404,6 +438,17 @@ pub(crate) trait WindowRenderer {
     /// window frame.
     fn discard_pending_frames(&mut self) {}
 
+    #[cfg(not(target_arch = "wasm32"))]
+    fn accept_rendered_frame(&mut self, _frame: RenderedFrame, _render_span: TimingSpan) {}
+
+    fn render_in_flight(&self) -> bool {
+        false
+    }
+
+    fn has_completed_frame(&self) -> bool {
+        false
+    }
+
     /// Renders an offscreen scene using this renderer's existing backend.
     ///
     /// Threaded renderers execute this on their render worker, reusing the same
@@ -462,8 +507,11 @@ struct ImageWindowRenderer {
 #[cfg(not(target_arch = "wasm32"))]
 struct ThreadedWindowRenderer {
     name: &'static str,
+    window_id: WindowId,
     presenter: ThreadedRendererPresenter,
     worker: OffscreenRenderWorker,
+    async_render_in_flight: bool,
+    completed_frame: Option<(RenderedFrame, TimingSpan)>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -545,6 +593,11 @@ enum RenderWorkerCommand {
         size: Size,
         response: mpsc::Sender<Option<RenderedFrame>>,
     },
+    RenderAsync {
+        window_id: WindowId,
+        scene: Scene,
+        size: Size,
+    },
     Capture {
         scene: Scene,
         size: Size,
@@ -581,6 +634,7 @@ fn build_window_renderer(spec: RendererSpec, cx: NewRendererCx) -> Result<Window
                 cx.scale,
                 cx.transparent,
                 cx.gpu_resources.as_ref(),
+                cx.maximum_drawable_count,
             )?,
         })),
         RendererSpecInner::Gpu {
@@ -601,6 +655,7 @@ fn build_window_renderer(spec: RendererSpec, cx: NewRendererCx) -> Result<Window
                     cx.scale,
                     cx.transparent,
                     Some(surface_format),
+                    cx.maximum_drawable_count,
                 )?,
             }))
         }
@@ -613,8 +668,10 @@ impl ThreadedWindowRenderer {
         let width = cx.size.width.max(1.0) as u32;
         let height = cx.size.height.max(1.0) as u32;
         let scale = cx.scale;
+        let window_id = cx.window.id();
         let window = Arc::clone(&cx.window);
         let transparent = cx.transparent;
+        let maximum_drawable_count = cx.maximum_drawable_count;
         let gpu_resources = cx.gpu_resources.clone();
         let (worker, init) = OffscreenRenderWorker::spawn(cx.window.id(), chooser, cx)?;
         let presenter = match init {
@@ -625,6 +682,7 @@ impl ThreadedWindowRenderer {
                 scale,
                 transparent,
                 gpu_resources.as_ref(),
+                maximum_drawable_count,
             )?),
             RendererInit::Gpu { surface_format, .. } => {
                 let gpu_resources =
@@ -637,20 +695,25 @@ impl ThreadedWindowRenderer {
                     scale,
                     transparent,
                     Some(surface_format),
+                    maximum_drawable_count,
                 )?)
             }
         };
         Ok(Self {
             name: init.name(),
+            window_id,
             presenter,
             worker,
+            async_render_in_flight: false,
+            completed_frame: None,
         })
     }
 
-    fn record_scene(source: &mut dyn RenderSource) -> Scene {
+    fn record_scene(source: &mut dyn RenderSource) -> (Scene, TimingSpan) {
         let mut scene = Scene::new();
+        let start = Instant::now();
         source.paint_into(&mut scene);
-        scene
+        (scene, TimingSpan::new(start, Instant::now()))
     }
 
     fn present_frame(
@@ -700,31 +763,23 @@ impl ThreadedWindowRenderer {
         }
     }
 
-    fn render_sync_and_present(
-        &mut self,
-        size: Size,
-        source: &mut dyn RenderSource,
-        timing: &mut dyn RendererTimingRecorder,
-    ) -> bool {
-        let total_start = Instant::now();
-        let scene_start = total_start;
-        let scene = Self::record_scene(source);
-        let render = match self.worker.render_sync(scene, size) {
-            Some(render) => render,
-            None => return false,
+    fn submit_async_render(&mut self, window_id: WindowId, scene: Scene, size: Size) {
+        self.async_render_in_flight = true;
+        self.worker.render_async(window_id, scene, size);
+    }
+
+    fn present_completed_frame(&mut self, timing: &mut dyn RendererTimingRecorder) -> bool {
+        let Some((frame, render_span)) = self.completed_frame.take() else {
+            return false;
         };
-        let render_end = Instant::now();
-        timing.record_span(
-            "Paint",
-            Some(TimingSpan::new(total_start, render_end)),
-            TimingKind::Paint,
-        );
-        timing.record_span(
-            "Scene",
-            Some(TimingSpan::new(scene_start, render_end)),
-            TimingKind::Paint,
-        );
-        self.present_frame(render, timing).is_ok()
+        timing.record_thread_span("Render", Some(render_span), TimingKind::Renderer);
+        match self.present_frame(frame, timing) {
+            Ok(()) => true,
+            Err(frame) => {
+                self.completed_frame = Some((frame, render_span));
+                false
+            }
+        }
     }
 }
 
@@ -753,6 +808,20 @@ impl OffscreenRenderWorker {
                             response,
                         } => {
                             let _ = response.send(render_offscreen(&mut backend, &mut scene, size));
+                        }
+                        RenderWorkerCommand::RenderAsync {
+                            window_id,
+                            mut scene,
+                            size,
+                        } => {
+                            let start = Instant::now();
+                            if let Some(frame) = render_offscreen(&mut backend, &mut scene, size) {
+                                Application::send_proxy_event(UserEvent::RenderFrameReady {
+                                    window_id,
+                                    frame,
+                                    render_span: TimingSpan::new(start, Instant::now()),
+                                });
+                            }
                         }
                         RenderWorkerCommand::Capture {
                             mut scene,
@@ -805,6 +874,16 @@ impl OffscreenRenderWorker {
         response_rx
             .recv()
             .expect("render worker thread stopped during sync render")
+    }
+
+    fn render_async(&mut self, window_id: WindowId, scene: Scene, size: Size) {
+        self.sender
+            .send(RenderWorkerCommand::RenderAsync {
+                window_id,
+                scene,
+                size,
+            })
+            .expect("render worker thread stopped unexpectedly");
     }
 }
 
@@ -1036,6 +1115,7 @@ impl GpuWindowTarget {
         scale: f64,
         transparent: bool,
         preferred_texture_format: Option<wgpu::TextureFormat>,
+        maximum_drawable_count: u32,
     ) -> Result<Self, String> {
         let latency = match gpu_resources.adapter.get_info().backend {
             wgpu::Backend::Vulkan => 2,
@@ -1051,6 +1131,7 @@ impl GpuWindowTarget {
         config.scale = scale;
         config.transparent = transparent;
         config.desired_maximum_frame_latency = latency;
+        config.maximum_drawable_count = maximum_drawable_count;
         let surface = subduction_platform::WgpuPresentSurface::from_window(
             window,
             &gpu_resources.instance,
@@ -1087,7 +1168,7 @@ impl GpuWindowTarget {
         }
     }
 
-    fn copy_texture_to_surface(&self, source: &wgpu::Texture, target: &wgpu::Texture) {
+    fn copy_texture_to_surface(&mut self, source: &wgpu::Texture, target: &wgpu::Texture) {
         let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
         let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
@@ -1109,6 +1190,7 @@ impl CpuWgpuWindowTarget {
         height: u32,
         scale: f64,
         transparent: bool,
+        maximum_drawable_count: u32,
     ) -> Result<Self, String> {
         let gpu = GpuWindowTarget::new(
             gpu_resources,
@@ -1118,6 +1200,7 @@ impl CpuWgpuWindowTarget {
             scale,
             transparent,
             Some(wgpu::TextureFormat::Bgra8Unorm),
+            maximum_drawable_count,
         )?;
         let upload_texture = Self::create_upload_texture(&gpu.device, width, height);
         Ok(Self {
@@ -1291,6 +1374,7 @@ impl CpuWindowTarget<Arc<dyn Window>> {
         scale: f64,
         transparent: bool,
         gpu_resources: Option<&GpuResources>,
+        maximum_drawable_count: u32,
     ) -> Result<Self, String> {
         if let Some(gpu_resources) = gpu_resources {
             return Ok(Self::Wgpu(CpuWgpuWindowTarget::new(
@@ -1300,6 +1384,7 @@ impl CpuWindowTarget<Arc<dyn Window>> {
                 height,
                 scale,
                 transparent,
+                maximum_drawable_count,
             )?));
         }
 
@@ -1355,16 +1440,15 @@ impl WindowRenderer for ThreadedWindowRenderer {
         _frame_id: u64,
         timing: &mut dyn RendererTimingRecorder,
     ) -> bool {
-        let scene_start = Instant::now();
-        let rendered = self
-            .worker
-            .render_sync(Self::record_scene(source), size)
-            .is_some();
+        let (scene, scene_span) = Self::record_scene(source);
+        let render_start = Instant::now();
+        let rendered = self.worker.render_sync(scene, size).is_some();
         let end = Instant::now();
-        timing.record_span(
-            "Scene",
-            Some(TimingSpan::new(scene_start, end)),
-            TimingKind::Paint,
+        timing.record_span("Scene", Some(scene_span), TimingKind::Paint);
+        timing.record_thread_span(
+            "Render",
+            Some(TimingSpan::new(render_start, end)),
+            TimingKind::Renderer,
         );
         rendered
     }
@@ -1375,7 +1459,18 @@ impl WindowRenderer for ThreadedWindowRenderer {
         source: &mut dyn RenderSource,
         timing: &mut dyn RendererTimingRecorder,
     ) -> bool {
-        self.render_sync_and_present(size, source, timing)
+        if self.present_completed_frame(timing) {
+            return true;
+        }
+        if self.async_render_in_flight {
+            return false;
+        }
+
+        let (scene, scene_span) = Self::record_scene(source);
+        timing.record_span("Paint", Some(scene_span), TimingKind::Paint);
+        timing.record_span("Scene", Some(scene_span), TimingKind::Paint);
+        self.submit_async_render(self.window_id, scene, size);
+        false
     }
 
     fn render_offscreen_frame(&mut self, scene: Scene, size: Size) -> Option<RenderedFrame> {
@@ -1384,7 +1479,7 @@ impl WindowRenderer for ThreadedWindowRenderer {
 
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {
         self.worker.capture(OffscreenRenderJob {
-            scene: Self::record_scene(source),
+            scene: Self::record_scene(source).0,
             size,
         })
     }
@@ -1395,6 +1490,20 @@ impl WindowRenderer for ThreadedWindowRenderer {
             ThreadedRendererPresenter::Gpu(_) => "subduction present surface",
         };
         format!("Renderer: {} (threaded, {presenter})", self.name)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn accept_rendered_frame(&mut self, frame: RenderedFrame, render_span: TimingSpan) {
+        self.async_render_in_flight = false;
+        self.completed_frame = Some((frame, render_span));
+    }
+
+    fn render_in_flight(&self) -> bool {
+        self.async_render_in_flight
+    }
+
+    fn has_completed_frame(&self) -> bool {
+        self.completed_frame.is_some()
     }
 }
 
@@ -1411,13 +1520,15 @@ impl WindowRenderer for TargetGpuWindowRenderer {
         _frame_id: u64,
         timing: &mut dyn RendererTimingRecorder,
     ) -> bool {
-        let prepare_start = Instant::now();
-        let rendered = self.render_texture(size, source).is_some();
+        let mut source = TimedRenderSource::new(source);
+        let render_start = Instant::now();
+        let rendered = self.render_texture(size, &mut source).is_some();
         let end = Instant::now();
+        timing.record_span("Scene", source.span, TimingKind::Paint);
         timing.record_span(
-            "Scene",
-            Some(TimingSpan::new(prepare_start, end)),
-            TimingKind::Paint,
+            "Render",
+            Some(TimingSpan::new(render_start, end)),
+            TimingKind::Renderer,
         );
         rendered
     }
@@ -1428,20 +1539,18 @@ impl WindowRenderer for TargetGpuWindowRenderer {
         source: &mut dyn RenderSource,
         timing: &mut dyn RendererTimingRecorder,
     ) -> bool {
-        let prepare_start = Instant::now();
-        let Some(texture) = self.render_texture(size, source) else {
+        let mut source = TimedRenderSource::new(source);
+        let render_start = Instant::now();
+        let Some(texture) = self.render_texture(size, &mut source) else {
             return false;
         };
         let render_end = Instant::now();
+        timing.record_span("Paint", source.span, TimingKind::Paint);
+        timing.record_span("Scene", source.span, TimingKind::Paint);
         timing.record_span(
-            "Paint",
-            Some(TimingSpan::new(prepare_start, render_end)),
-            TimingKind::Paint,
-        );
-        timing.record_span(
-            "Scene",
-            Some(TimingSpan::new(prepare_start, render_end)),
-            TimingKind::Paint,
+            "Render",
+            Some(TimingSpan::new(render_start, render_end)),
+            TimingKind::Renderer,
         );
 
         let start = Instant::now();
@@ -1568,13 +1677,15 @@ impl WindowRenderer for ImageWindowRenderer {
         _frame_id: u64,
         timing: &mut dyn RendererTimingRecorder,
     ) -> bool {
-        let scene_start = Instant::now();
-        let rendered = self.render_image(size, source);
+        let mut source = TimedRenderSource::new(source);
+        let render_start = Instant::now();
+        let rendered = self.render_image(size, &mut source);
         let end = Instant::now();
+        timing.record_span("Scene", source.span, TimingKind::Paint);
         timing.record_span(
-            "Scene",
-            Some(TimingSpan::new(scene_start, end)),
-            TimingKind::Paint,
+            "Render",
+            Some(TimingSpan::new(render_start, end)),
+            TimingKind::Renderer,
         );
         rendered.is_some()
     }
@@ -1585,20 +1696,18 @@ impl WindowRenderer for ImageWindowRenderer {
         source: &mut dyn RenderSource,
         timing: &mut dyn RendererTimingRecorder,
     ) -> bool {
-        let scene_start = Instant::now();
-        let Some(image) = self.render_image(size, source) else {
+        let mut source = TimedRenderSource::new(source);
+        let render_start = Instant::now();
+        let Some(image) = self.render_image(size, &mut source) else {
             return false;
         };
         let render_end = Instant::now();
+        timing.record_span("Paint", source.span, TimingKind::Paint);
+        timing.record_span("Scene", source.span, TimingKind::Paint);
         timing.record_span(
-            "Paint",
-            Some(TimingSpan::new(scene_start, render_end)),
-            TimingKind::Paint,
-        );
-        timing.record_span(
-            "Scene",
-            Some(TimingSpan::new(scene_start, render_end)),
-            TimingKind::Paint,
+            "Render",
+            Some(TimingSpan::new(render_start, render_end)),
+            TimingKind::Renderer,
         );
         self.target.present_rgba(&image, timing);
         true

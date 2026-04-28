@@ -243,6 +243,7 @@ impl ApplicationHandle {
                         handle.transparent,
                         handle.window_state.effective_scale(),
                         handle.window_state.root_size * handle.window_state.os_scale,
+                        handle.maximum_drawable_count,
                     );
                     self.gpu_resources = Some(gpu_resources);
                     handle.paint_state = PaintState::Initialized { backend };
@@ -313,6 +314,24 @@ impl ApplicationHandle {
                 }
                 self.refresh_window_frame_schedule(window_id, event_loop);
             }
+            #[cfg(not(target_arch = "wasm32"))]
+            UserEvent::RenderFrameReady {
+                window_id,
+                frame,
+                render_span,
+            } => {
+                if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                    let presented = handle.accept_rendered_frame(frame, render_span);
+                    if !presented {
+                        handle.advance_frame();
+                    }
+                    handle.refresh_frame_activity();
+                    if handle.has_frame_work() {
+                        self.request_update();
+                    }
+                }
+                self.update_control_flow(event_loop);
+            }
             #[cfg(target_os = "macos")]
             UserEvent::SubductionFrameTick { window_id, tick } => {
                 self.timing_diag.record_tick(tick.frame_index);
@@ -330,12 +349,12 @@ impl ApplicationHandle {
                 }
 
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    let drove_external_surfaces =
-                        handle.drive_external_surfaces_from_frame_signal();
-                    if !drove_external_surfaces {
-                        handle.advance_frame();
-                    }
+                    handle.drive_external_surfaces_from_frame_signal();
+                    handle.advance_frame();
                     handle.refresh_frame_activity();
+                    if handle.has_frame_work() {
+                        self.request_update();
+                    }
                 }
             }
         }
@@ -427,7 +446,9 @@ impl ApplicationHandle {
                             profile.set(handle.profile.take().map(|mut profile| {
                                 profile.current.events.extend(handle.take_profile_events());
                                 handle.window_state.profile_events_enabled = false;
-                                if profile.current.timing.is_some() {
+                                if !profile.current.events.is_empty()
+                                    || profile.current.timing.is_some()
+                                {
                                     profile.next_frame();
                                 }
                                 Rc::new(profile)
@@ -760,6 +781,7 @@ impl ApplicationHandle {
             win_os_config,
             web_config,
             renderer_chooser,
+            maximum_drawable_count,
         }: WindowConfig,
     ) {
         let renderer_chooser =
@@ -949,6 +971,7 @@ impl ApplicationHandle {
             view_fn,
             transparent,
             apply_default_theme,
+            maximum_drawable_count,
         );
         self.window_handles.insert(window_id, window_handle);
     }

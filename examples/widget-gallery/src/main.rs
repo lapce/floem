@@ -366,8 +366,8 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             }
         },
     )
-    .on_event_stop(listener::UpdatePhasePaintPresent, move |_, _| {
-        let now = Instant::now();
+    .on_event_stop(listener::UpdatePhasePaintPresent, move |_, presented_at| {
+        let now = *presented_at;
         if let Some(previous) = last_presented_at.get() {
             let dt = now.saturating_duration_since(previous);
             if !dt.is_zero() {
