@@ -27,7 +27,7 @@ use crate::style::FontSizeCx;
 use crate::view::ViewId;
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
-use composition::{CompositionItem, PaintStage};
+use composition::CompositionItem;
 use display_list::{ElementSnapshot, StageRecorder, replay_scene};
 
 std::thread_local! {
@@ -160,6 +160,10 @@ impl GlobalPaintCx<'_> {
     pub(crate) fn paint_with_traversal_into(&mut self, root_id: ViewId, sink: &mut dyn PaintSink) {
         self.prepare_display_list(root_id);
 
+        if self.window_state.compositor.has_layer_host() {
+            return;
+        }
+
         if self.window_state.composition_plan.has_external_surfaces() {
             Self::replay_composition_prefix_to_sink(self.window_state, sink, Point::ZERO, None);
             return;
@@ -253,12 +257,11 @@ impl GlobalPaintCx<'_> {
     }
 
     fn apply_composition_plan(&mut self) {
-        self.window_state.composition_plan =
-            self.window_state.display_list.lower_composition_plan();
         let effective_scale = self.window_state.effective_scale();
-        self.window_state
-            .external_surfaces
-            .update_providers(&self.window_state.composition_plan, effective_scale);
+        self.window_state.composition_plan = self
+            .window_state
+            .display_list
+            .lower_composition_plan(effective_scale);
         let _composition_diff = self.window_state.compositor.apply_plan(
             &self.window_state.composition_plan,
             self.window_state.external_surfaces.entries(),
@@ -552,14 +555,6 @@ impl GlobalPaintCx<'_> {
             };
             recorder.finish(stage);
         }
-        let stage_kind = if is_post {
-            PaintStage::Post
-        } else {
-            PaintStage::Paint
-        };
-        self.window_state
-            .display_list
-            .reconcile_external_surface_ownership(element_id, stage_kind);
         self.window_state
             .display_list
             .element_mut(element_id)
@@ -571,15 +566,22 @@ impl GlobalPaintCx<'_> {
 }
 
 impl<'a> PaintCx<'a> {
-    pub fn draw_external_surface(
+    pub fn push_color_effect(&mut self, effect: crate::effects::ColorEffect) {
+        self.painter.sink_mut().push_color_effect(effect);
+    }
+
+    pub fn pop_color_effect(&mut self) {
+        self.painter.sink_mut().pop_color_effect();
+    }
+
+    pub fn with_color_effect(
         &mut self,
-        surface: &crate::external_surface::ExternalSurface,
-        rect: peniko::kurbo::Rect,
-        options: crate::external_surface::ExternalSurfacePaintOptions,
+        effect: crate::effects::ColorEffect,
+        f: impl FnOnce(&mut Self),
     ) {
-        self.painter
-            .sink_mut()
-            .draw_external_surface(surface.id(), rect, options);
+        self.push_color_effect(effect);
+        f(self);
+        self.pop_color_effect();
     }
 
     /// Allows a `View` to determine if it is being called in order to
@@ -608,13 +610,7 @@ pub(crate) enum PaintState {
     PendingGpuResources {
         window: Arc<dyn Window>,
         rx: Receiver<
-            Result<
-                (
-                    GpuResources,
-                    subduction_platform::WgpuPresentSurfaceCapabilities,
-                ),
-                GpuResourceError,
-            >,
+            Result<(GpuResources, subduction::wgpu::ExternalSurfaceCapabilities), GpuResourceError>,
         >,
         backend: renderer::WindowBackend,
     },
@@ -626,13 +622,7 @@ impl PaintState {
     pub fn new_pending(
         window: Arc<dyn Window>,
         rx: Receiver<
-            Result<
-                (
-                    GpuResources,
-                    subduction_platform::WgpuPresentSurfaceCapabilities,
-                ),
-                GpuResourceError,
-            >,
+            Result<(GpuResources, subduction::wgpu::ExternalSurfaceCapabilities), GpuResourceError>,
         >,
         _size: Size,
     ) -> Self {

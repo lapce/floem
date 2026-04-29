@@ -102,6 +102,7 @@ pub enum UpdateMessage {
         id: ViewId,
     },
     Inspect,
+    CaptureMetalFrame,
     ScrollTo {
         id: ElementId,
         rect: Option<Rect>,

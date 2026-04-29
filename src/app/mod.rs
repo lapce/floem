@@ -198,9 +198,6 @@ pub(crate) enum UserEvent {
         surface_id: ExternalSurfaceId,
         provider: ExternalSurfaceProviderHandle,
     },
-    CompositorSceneDrawableReady {
-        window_id: WindowId,
-    },
     #[cfg(not(target_arch = "wasm32"))]
     RenderFrameReady {
         window_id: WindowId,
@@ -228,6 +225,9 @@ pub(crate) enum AppUpdateEvent {
     CaptureWindow {
         window_id: WindowId,
         capture: WriteSignal<Option<Rc<Capture>>>,
+    },
+    CaptureMetalFrame {
+        window_id: WindowId,
     },
     ProfileWindow {
         window_id: WindowId,

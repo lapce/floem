@@ -7,22 +7,26 @@
 
 use crate::text::GlyphRunRef;
 use imaging::{
-    BlurredRoundedRect, ClipRef, FillRef, GeometryRef, GroupRef, PaintSink, StrokeRef,
+    BlurredRoundedRect, Brush, ClipRef, FillRef, GeometryRef, GroupRef, PaintSink, StrokeRef,
     record::{
         Clip, Command, Draw, DrawId, Geometry, Glyph as ImagingGlyph, Scene, replay_transformed,
     },
 };
-use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape as _, Size};
+use peniko::{
+    BlendMode, Fill,
+    kurbo::{Affine, Point, Rect, RoundedRect, Shape as _, Size},
+};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::mem;
 use understory_box_tree::NodeFlags;
 
 use crate::{
     BoxTree, ElementId,
-    external_surface::{ExternalSurfaceId, ExternalSurfacePaintOptions},
+    effects::ColorEffect,
+    external_surface::ExternalSurfaceId,
     paint::composition::{
         CompositionItem, CompositionKey, CompositionPlan, ExternalSurfaceLayer, PaintStage,
-        SceneLayer,
+        SceneExternalImage, SceneLayer,
     },
     view::stacking::{StackingContextItem, collect_stacking_context_items_into},
 };
@@ -78,64 +82,126 @@ pub(crate) fn transform_diff_class(original: Affine, current: Affine) -> Transfo
 #[derive(Clone)]
 pub(crate) struct ElementStage {
     pub scene: Scene,
-    pub external_surfaces: Vec<ExternalSurfacePlacement>,
+    pub color_effects: Vec<ColorEffectCommand>,
     pub transform_class: TransformClass,
     pub content_revision: u64,
+    stack_index: StageStackIndex,
 }
 
 impl Default for ElementStage {
     fn default() -> Self {
         Self {
             scene: Scene::new(),
-            external_surfaces: Vec::new(),
+            color_effects: Vec::new(),
             transform_class: TransformClass::Affine,
             content_revision: 0,
+            stack_index: StageStackIndex::default(),
         }
     }
 }
 
 impl ElementStage {
-    pub(crate) fn set_scene(
-        &mut self,
-        scene: Scene,
-        external_surfaces: Vec<ExternalSurfacePlacement>,
-    ) {
+    pub(crate) fn set_scene(&mut self, scene: Scene, color_effects: Vec<ColorEffectCommand>) {
         self.transform_class = scene_transform_class(&scene);
+        self.stack_index = StageStackIndex::build(&scene);
+        self.stack_index.apply_effect_commands(&color_effects);
         self.scene = scene;
-        self.external_surfaces = external_surfaces;
+        self.color_effects = color_effects;
         self.content_revision = self.content_revision.wrapping_add(1);
     }
+}
 
-    fn remove_external_surface(&mut self, surface_id: ExternalSurfaceId) -> bool {
-        let old_len = self.external_surfaces.len();
-        self.external_surfaces
-            .retain(|placement| placement.surface_id != surface_id);
-        if self.external_surfaces.len() != old_len {
-            self.content_revision = self.content_revision.wrapping_add(1);
-            return true;
+#[derive(Clone, Default)]
+struct StageStackIndex {
+    group_depth_before_command: Vec<u16>,
+    clip_depth_before_command: Vec<u16>,
+    effect_depth_before_command: Vec<u16>,
+}
+
+impl StageStackIndex {
+    fn build(scene: &Scene) -> Self {
+        let mut group_depth = 0u16;
+        let mut clip_depth = 0u16;
+        let mut group_depth_before_command = Vec::with_capacity(scene.commands().len() + 1);
+        let mut clip_depth_before_command = Vec::with_capacity(scene.commands().len() + 1);
+        let effect_depth_before_command = vec![0; scene.commands().len() + 1];
+
+        for command in scene.commands() {
+            group_depth_before_command.push(group_depth);
+            clip_depth_before_command.push(clip_depth);
+            match command {
+                Command::PushGroup(_) => group_depth = group_depth.saturating_add(1),
+                Command::PopGroup => group_depth = group_depth.saturating_sub(1),
+                Command::PushClip(_) => clip_depth = clip_depth.saturating_add(1),
+                Command::PopClip => clip_depth = clip_depth.saturating_sub(1),
+                Command::PushContext(_) | Command::PopContext | Command::Draw(_) => {}
+            }
         }
-        false
+
+        group_depth_before_command.push(group_depth);
+        clip_depth_before_command.push(clip_depth);
+
+        Self {
+            group_depth_before_command,
+            clip_depth_before_command,
+            effect_depth_before_command,
+        }
+    }
+
+    fn apply_effect_commands(&mut self, effects: &[ColorEffectCommand]) {
+        self.effect_depth_before_command.fill(0);
+        let mut events = effects.iter().collect::<Vec<_>>();
+        events.sort_by_key(|event| event.command_index);
+        let mut event_index = 0usize;
+        let mut depth = 0u16;
+        for command_index in 0..self.effect_depth_before_command.len() {
+            while event_index < events.len() && events[event_index].command_index == command_index {
+                match &events[event_index].kind {
+                    ColorEffectCommandKind::Push(_) => depth = depth.saturating_add(1),
+                    ColorEffectCommandKind::Pop => depth = depth.saturating_sub(1),
+                }
+                event_index += 1;
+            }
+            self.effect_depth_before_command[command_index] = depth;
+        }
+    }
+
+    fn has_active_group_or_clip(&self, command_index: usize) -> bool {
+        let group_depth = self
+            .group_depth_before_command
+            .get(command_index)
+            .copied()
+            .unwrap_or(0);
+        let clip_depth = self
+            .clip_depth_before_command
+            .get(command_index)
+            .copied()
+            .unwrap_or(0);
+        let effect_depth = self
+            .effect_depth_before_command
+            .get(command_index)
+            .copied()
+            .unwrap_or(0);
+        group_depth > 0 || clip_depth > 0 || effect_depth > 0
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ExternalSurfacePlacement {
+pub(crate) struct ColorEffectCommand {
     pub command_index: usize,
-    pub surface_id: ExternalSurfaceId,
-    pub rect: Rect,
-    pub options: ExternalSurfacePaintOptions,
+    pub kind: ColorEffectCommandKind,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct ExternalSurfaceOwner {
-    pub element_id: ElementId,
-    pub stage: PaintStage,
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum ColorEffectCommandKind {
+    Push(ColorEffect),
+    Pop,
 }
 
 #[doc(hidden)]
 pub struct StageRecorder {
     scene: Scene,
-    external_surfaces: Vec<ExternalSurfacePlacement>,
+    color_effects: Vec<ColorEffectCommand>,
     command_count: usize,
 }
 
@@ -145,32 +211,32 @@ impl StageRecorder {
         let command_count = scene.commands().len();
         Self {
             scene,
-            external_surfaces: mem::take(&mut stage.external_surfaces),
+            color_effects: mem::take(&mut stage.color_effects),
             command_count,
         }
     }
 
     pub(crate) fn finish(self, stage: &mut ElementStage) {
-        stage.set_scene(self.scene, self.external_surfaces);
+        stage.set_scene(self.scene, self.color_effects);
     }
 
     pub(crate) fn clear(&mut self) {
         self.scene.clear();
-        self.external_surfaces.clear();
+        self.color_effects.clear();
         self.command_count = 0;
     }
 
-    pub fn draw_external_surface(
-        &mut self,
-        surface_id: ExternalSurfaceId,
-        rect: Rect,
-        options: ExternalSurfacePaintOptions,
-    ) {
-        self.external_surfaces.push(ExternalSurfacePlacement {
+    pub fn push_color_effect(&mut self, effect: ColorEffect) {
+        self.color_effects.push(ColorEffectCommand {
             command_index: self.command_count,
-            surface_id,
-            rect,
-            options,
+            kind: ColorEffectCommandKind::Push(effect),
+        });
+    }
+
+    pub fn pop_color_effect(&mut self) {
+        self.color_effects.push(ColorEffectCommand {
+            command_index: self.command_count,
+            kind: ColorEffectCommandKind::Pop,
         });
     }
 
@@ -191,7 +257,8 @@ impl PaintSink for StageRecorder {
     }
 
     fn push_clip(&mut self, clip: ClipRef<'_>) {
-        self.scene.push_clip(clip.to_owned());
+        let clip = clip.to_owned();
+        self.scene.push_clip(clip);
         self.refresh_command_count();
     }
 
@@ -292,7 +359,6 @@ struct DisplayNode {
     composed_scene: Scene,
     composed_dirty: bool,
     subtree_size: usize,
-    subtree_external_surface_count: usize,
 }
 
 #[derive(Default)]
@@ -301,8 +367,6 @@ pub struct RetainedDisplayList {
     nodes: Vec<Option<DisplayNode>>,
     free_list: Vec<DisplayNodeSlot>,
     slot_by_id: FxHashMap<ElementId, DisplayNodeSlot>,
-    external_surface_owner: FxHashMap<ExternalSurfaceId, ExternalSurfaceOwner>,
-    external_surfaces_by_owner: FxHashMap<ExternalSurfaceOwner, FxHashSet<ExternalSurfaceId>>,
     inactive_elements: FxHashMap<ElementId, ElementDisplayList>,
     active_count: usize,
 }
@@ -412,92 +476,6 @@ impl RetainedDisplayList {
         self.mark_composed_dirty_from_slot(self.find_slot(id));
     }
 
-    pub(crate) fn reconcile_external_surface_ownership(
-        &mut self,
-        element_id: ElementId,
-        stage: PaintStage,
-    ) {
-        let owner = ExternalSurfaceOwner { element_id, stage };
-        self.dedupe_external_surfaces_in_stage(owner);
-        let mut affected_elements = vec![element_id];
-
-        let current_surface_ids = self
-            .stage(owner)
-            .map(|stage| {
-                stage
-                    .external_surfaces
-                    .iter()
-                    .map(|placement| placement.surface_id)
-                    .collect::<FxHashSet<_>>()
-            })
-            .unwrap_or_default();
-
-        let previous_surface_ids = self
-            .external_surfaces_by_owner
-            .get(&owner)
-            .cloned()
-            .unwrap_or_default();
-        if current_surface_ids.is_empty() && previous_surface_ids.is_empty() {
-            return;
-        }
-
-        let released_surface_ids = previous_surface_ids
-            .difference(&current_surface_ids)
-            .copied()
-            .collect::<Vec<_>>();
-        for surface_id in released_surface_ids {
-            self.external_surface_owner.remove(&surface_id);
-        }
-
-        let mut changed_owners = Vec::new();
-        for surface_id in current_surface_ids {
-            if let Some(previous_owner) = self.external_surface_owner.get(&surface_id).copied()
-                && previous_owner != owner
-            {
-                if self.remove_external_surface_from_owner(previous_owner, surface_id) {
-                    changed_owners.push(previous_owner.element_id);
-                    if !affected_elements.contains(&previous_owner.element_id) {
-                        affected_elements.push(previous_owner.element_id);
-                    }
-                }
-                if let Some(previous_surfaces) =
-                    self.external_surfaces_by_owner.get_mut(&previous_owner)
-                {
-                    previous_surfaces.remove(&surface_id);
-                    if previous_surfaces.is_empty() {
-                        self.external_surfaces_by_owner.remove(&previous_owner);
-                    }
-                }
-            }
-            self.external_surface_owner.insert(surface_id, owner);
-        }
-        let current_surface_ids = self
-            .stage(owner)
-            .map(|stage| {
-                stage
-                    .external_surfaces
-                    .iter()
-                    .map(|placement| placement.surface_id)
-                    .collect::<FxHashSet<_>>()
-            })
-            .unwrap_or_default();
-        if current_surface_ids.is_empty() {
-            self.external_surfaces_by_owner.remove(&owner);
-        } else {
-            self.external_surfaces_by_owner
-                .insert(owner, current_surface_ids);
-        }
-
-        if !changed_owners.is_empty() {
-            for element_id in changed_owners {
-                self.mark_composed_dirty(element_id);
-            }
-        }
-        for element_id in affected_elements {
-            self.refresh_external_surface_counts_from(element_id);
-        }
-    }
-
     pub(crate) fn ensure_composed_scene(&mut self, slot: DisplayNodeSlot) {
         if !self.slot_has_composed_scene(slot) {
             return;
@@ -560,23 +538,33 @@ impl RetainedDisplayList {
             .is_some_and(DisplayNode::caches_composed_scene)
     }
 
-    pub(crate) fn lower_composition_plan(&self) -> CompositionPlan {
-        let mut plan = CompositionPlan::new();
+    pub(crate) fn lower_composition_plan(&self, effective_scale: f64) -> CompositionPlan {
         let mut chunk_index = 0;
         let mut external_occurrence = 0;
+        let mut chunks = Vec::new();
         for slot in &self.roots {
-            self.lower_slot_into_plan(*slot, &mut plan, &mut chunk_index, &mut external_occurrence);
+            self.lower_slot_into_chunks(
+                *slot,
+                &mut chunks,
+                &mut chunk_index,
+                &mut external_occurrence,
+                effective_scale,
+                0,
+            );
         }
+        let mut plan = chunks_into_composition_plan(chunks);
         mark_promoted_scene_layers(&mut plan);
         plan
     }
 
-    fn lower_slot_into_plan(
+    fn lower_slot_into_chunks(
         &self,
         slot: DisplayNodeSlot,
-        plan: &mut CompositionPlan,
+        chunks: &mut Vec<LoweredChunk>,
         chunk_index: &mut u32,
         external_occurrence: &mut u32,
+        effective_scale: f64,
+        active_stack_depth: usize,
     ) {
         let Some(node) = self.node(slot) else {
             return;
@@ -588,18 +576,38 @@ impl RetainedDisplayList {
             return;
         };
 
+        let active_stack_depth = if let Some(clip) = snapshot.clip {
+            chunks.push(LoweredChunk::PushClip(ClipScope {
+                clip,
+                transform: snapshot.world_transform,
+                bounds: snapshot.local_bounds,
+            }));
+            active_stack_depth + 1
+        } else {
+            active_stack_depth
+        };
+
         self.lower_stage_into_plan(
             element_id,
             PaintStage::Paint,
             &node.display.paint,
             snapshot,
-            plan,
+            chunks,
             chunk_index,
             external_occurrence,
+            effective_scale,
+            active_stack_depth,
         );
 
         for child in &node.children.ordered {
-            self.lower_slot_into_plan(*child, plan, chunk_index, external_occurrence);
+            self.lower_slot_into_chunks(
+                *child,
+                chunks,
+                chunk_index,
+                external_occurrence,
+                effective_scale,
+                active_stack_depth,
+            );
         }
 
         self.lower_stage_into_plan(
@@ -607,93 +615,101 @@ impl RetainedDisplayList {
             PaintStage::Post,
             &node.display.post,
             snapshot,
-            plan,
+            chunks,
             chunk_index,
             external_occurrence,
+            effective_scale,
+            active_stack_depth,
         );
+
+        if snapshot.clip.is_some() {
+            chunks.push(LoweredChunk::PopClip);
+        }
     }
 
     fn lower_stage_into_plan(
         &self,
-        element_id: ElementId,
-        stage_kind: PaintStage,
+        _element_id: ElementId,
+        _stage_kind: PaintStage,
         stage: &ElementStage,
         snapshot: ElementSnapshot,
-        plan: &mut CompositionPlan,
+        chunks: &mut Vec<LoweredChunk>,
         chunk_index: &mut u32,
         external_occurrence: &mut u32,
+        effective_scale: f64,
+        active_stack_depth: usize,
     ) {
-        if stage.scene.is_empty() && stage.external_surfaces.is_empty() {
+        if stage.scene.is_empty() {
             return;
         }
 
-        let mut sorted_surfaces = stage.external_surfaces.clone();
-        sorted_surfaces.sort_by_key(|surface| surface.command_index);
-
+        let command_count = stage.scene.commands().len();
         let mut range_start = 0;
-        for surface in sorted_surfaces {
-            let range_end = surface.command_index.min(stage.scene.commands().len());
-            if let Some(scene) = scene_command_range(&stage.scene, range_start, range_end) {
-                let content_bounds =
-                    scene_command_range_bounds(&stage.scene, range_start, range_end);
-                plan.items.push(CompositionItem::Scene(SceneLayer {
-                    key: CompositionKey::SceneChunk {
-                        owner: element_id,
-                        stage: stage_kind,
-                        chunk_index: *chunk_index,
-                    },
-                    scene,
-                    content_revision: stage.content_revision,
-                    transform: snapshot.world_transform,
-                    clip: snapshot.clip,
-                    bounds: snapshot.local_bounds,
-                    content_bounds,
-                    opacity: 1.0,
-                    promoted: false,
-                }));
-                *chunk_index += 1;
+        let mut effect_index = 0usize;
+
+        for command_index in 0..=command_count {
+            while effect_index < stage.color_effects.len()
+                && stage.color_effects[effect_index]
+                    .command_index
+                    .min(command_count)
+                    == command_index
+            {
+                push_scene_range(
+                    chunks,
+                    chunk_index,
+                    stage,
+                    range_start,
+                    command_index,
+                    effective_scale,
+                    snapshot,
+                );
+                range_start = command_index;
+                match &stage.color_effects[effect_index].kind {
+                    ColorEffectCommandKind::Push(effect) => {
+                        chunks.push(LoweredChunk::PushColorEffect(effect.clone()));
+                    }
+                    ColorEffectCommandKind::Pop => chunks.push(LoweredChunk::PopColorEffect),
+                }
+                effect_index += 1;
             }
 
-            plan.items
-                .push(CompositionItem::ExternalSurface(ExternalSurfaceLayer {
-                    key: CompositionKey::ExternalSurface {
-                        owner: element_id,
-                        stage: stage_kind,
-                        surface_id: surface.surface_id,
-                        occurrence: *external_occurrence,
-                    },
-                    surface_id: surface.surface_id,
-                    rect: surface.rect,
-                    transform: snapshot.world_transform,
-                    clip: snapshot.clip,
-                    opacity: surface.options.opacity,
-                }));
-            *external_occurrence += 1;
-            range_start = range_end;
+            let Some(command) = stage.scene.commands().get(command_index) else {
+                continue;
+            };
+            if active_stack_depth == 0
+                && !stage.stack_index.has_active_group_or_clip(command_index)
+                && let Some(external) = promotable_external_image_fill(
+                    &stage.scene,
+                    command,
+                    *external_occurrence,
+                    effective_scale,
+                    snapshot.world_transform,
+                )
+            {
+                push_scene_range(
+                    chunks,
+                    chunk_index,
+                    stage,
+                    range_start,
+                    command_index,
+                    effective_scale,
+                    snapshot,
+                );
+                chunks.push(LoweredChunk::External(external));
+                *external_occurrence += 1;
+                range_start = command_index + 1;
+            }
         }
 
-        if let Some(scene) =
-            scene_command_range(&stage.scene, range_start, stage.scene.commands().len())
-        {
-            let content_bounds =
-                scene_command_range_bounds(&stage.scene, range_start, stage.scene.commands().len());
-            plan.items.push(CompositionItem::Scene(SceneLayer {
-                key: CompositionKey::SceneChunk {
-                    owner: element_id,
-                    stage: stage_kind,
-                    chunk_index: *chunk_index,
-                },
-                scene,
-                content_revision: stage.content_revision,
-                transform: snapshot.world_transform,
-                clip: snapshot.clip,
-                bounds: snapshot.local_bounds,
-                content_bounds,
-                opacity: 1.0,
-                promoted: false,
-            }));
-            *chunk_index += 1;
-        }
+        push_scene_range(
+            chunks,
+            chunk_index,
+            stage,
+            range_start,
+            command_count,
+            effective_scale,
+            snapshot,
+        );
     }
 
     fn sync_branch(
@@ -765,34 +781,14 @@ impl RetainedDisplayList {
                         .unwrap_or(0)
                 })
                 .sum::<usize>();
-            let own_external_surface_count = inactive_display
-                .as_ref()
-                .map(node_external_surface_count)
-                .or_else(|| {
-                    self.node(slot)
-                        .map(|node| node_external_surface_count(&node.display))
-                })
-                .unwrap_or(0);
-            let subtree_external_surface_count = own_external_surface_count
-                + children
-                    .ordered
-                    .iter()
-                    .map(|child| {
-                        self.node(*child)
-                            .map(|child_node| child_node.subtree_external_surface_count)
-                            .unwrap_or(0)
-                    })
-                    .sum::<usize>();
             let node = self.node_mut(slot).expect("display list node missing");
             let structure_changed = node.parent != parent
                 || node.children.ordered != children.ordered
-                || node.subtree_size != subtree_size
-                || node.subtree_external_surface_count != subtree_external_surface_count;
+                || node.subtree_size != subtree_size;
             node.element_id = Some(element_id);
             node.parent = parent;
             node.children = children;
             node.subtree_size = subtree_size;
-            node.subtree_external_surface_count = subtree_external_surface_count;
             if let Some(display) = inactive_display {
                 node.display = display;
             }
@@ -853,10 +849,6 @@ impl RetainedDisplayList {
         if let Some(node) = self.nodes.get_mut(slot.0).and_then(Option::take) {
             if let Some(element_id) = node.element_id {
                 self.slot_by_id.remove(&element_id);
-                self.external_surface_owner
-                    .retain(|_, owner| owner.element_id != element_id);
-                self.external_surfaces_by_owner
-                    .retain(|owner, _| owner.element_id != element_id);
             }
             if node.element_id.is_some() && self.active_count > 0 {
                 self.active_count -= 1;
@@ -880,78 +872,6 @@ impl RetainedDisplayList {
             };
             node.composed_dirty = true;
             current = node.parent;
-        }
-    }
-
-    fn stage(&self, owner: ExternalSurfaceOwner) -> Option<&ElementStage> {
-        let display = self.element(owner.element_id)?;
-        Some(match owner.stage {
-            PaintStage::Paint => &display.paint,
-            PaintStage::Post => &display.post,
-        })
-    }
-
-    fn stage_mut(&mut self, owner: ExternalSurfaceOwner) -> Option<&mut ElementStage> {
-        let display = self.element_mut(owner.element_id);
-        Some(match owner.stage {
-            PaintStage::Paint => &mut display.paint,
-            PaintStage::Post => &mut display.post,
-        })
-    }
-
-    fn dedupe_external_surfaces_in_stage(&mut self, owner: ExternalSurfaceOwner) {
-        let Some(stage) = self.stage_mut(owner) else {
-            return;
-        };
-        let mut seen = FxHashSet::default();
-        let old_len = stage.external_surfaces.len();
-        let mut deduped = stage
-            .external_surfaces
-            .iter()
-            .rev()
-            .filter(|placement| seen.insert(placement.surface_id))
-            .cloned()
-            .collect::<Vec<_>>();
-        deduped.reverse();
-        stage.external_surfaces = deduped;
-        if stage.external_surfaces.len() != old_len {
-            stage.content_revision = stage.content_revision.wrapping_add(1);
-            self.mark_composed_dirty(owner.element_id);
-        }
-    }
-
-    fn remove_external_surface_from_owner(
-        &mut self,
-        owner: ExternalSurfaceOwner,
-        surface_id: ExternalSurfaceId,
-    ) -> bool {
-        self.stage_mut(owner)
-            .is_some_and(|stage| stage.remove_external_surface(surface_id))
-    }
-
-    fn refresh_external_surface_counts_from(&mut self, element_id: ElementId) {
-        let mut current = self.find_slot(element_id);
-        while let Some(slot) = current {
-            let Some(node) = self.node(slot) else {
-                break;
-            };
-            let child_count = node
-                .children
-                .ordered
-                .iter()
-                .map(|child| {
-                    self.node(*child)
-                        .map(|child_node| child_node.subtree_external_surface_count)
-                        .unwrap_or(0)
-                })
-                .sum::<usize>();
-            let own_count = node_external_surface_count(&node.display);
-            let total = own_count + child_count;
-            let parent = node.parent;
-            if let Some(node) = self.node_mut(slot) {
-                node.subtree_external_surface_count = total;
-            }
-            current = parent;
         }
     }
 
@@ -1007,13 +927,326 @@ impl RetainedDisplayList {
 
 impl DisplayNode {
     fn caches_composed_scene(&self) -> bool {
-        self.subtree_external_surface_count == 0
-            && self.subtree_size >= COMPOSED_SCENE_MIN_SUBTREE_SIZE
+        self.subtree_size >= COMPOSED_SCENE_MIN_SUBTREE_SIZE
     }
 }
 
-fn node_external_surface_count(display: &ElementDisplayList) -> usize {
-    display.paint.external_surfaces.len() + display.post.external_surfaces.len()
+#[derive(Clone)]
+enum LoweredChunk {
+    PushClip(ClipScope),
+    PopClip,
+    PushColorEffect(ColorEffect),
+    PopColorEffect,
+    Scene(LoweredSceneChunk),
+    External(ExternalSurfaceLayer),
+}
+
+#[derive(Clone)]
+struct ClipScope {
+    clip: RoundedRect,
+    transform: Affine,
+    bounds: Rect,
+}
+
+#[derive(Clone)]
+struct LoweredSceneChunk {
+    scene: Scene,
+    external_images: Vec<SceneExternalImage>,
+    color_effects: Vec<ColorEffect>,
+    content_revision: u64,
+    transform: Affine,
+    bounds: Rect,
+}
+
+fn chunks_into_composition_plan(chunks: Vec<LoweredChunk>) -> CompositionPlan {
+    let mut plan = CompositionPlan::new();
+    let mut pending = SceneRunBuilder::default();
+    let mut run_index = 0u32;
+
+    for chunk in chunks {
+        match chunk {
+            LoweredChunk::PushClip(clip) => pending.push_clip(clip),
+            LoweredChunk::PopClip => pending.pop_clip(),
+            LoweredChunk::PushColorEffect(effect) => {
+                pending.flush(&mut plan, &mut run_index);
+                pending.push_color_effect(effect);
+            }
+            LoweredChunk::PopColorEffect => {
+                pending.flush(&mut plan, &mut run_index);
+                pending.pop_color_effect();
+            }
+            LoweredChunk::Scene(scene) => pending.push(scene),
+            LoweredChunk::External(external) => {
+                pending.flush(&mut plan, &mut run_index);
+                plan.items.push(CompositionItem::ExternalSurface(external));
+            }
+        }
+    }
+
+    pending.flush(&mut plan, &mut run_index);
+    plan
+}
+
+#[derive(Default)]
+struct SceneRunBuilder {
+    scene: Scene,
+    external_images: Vec<SceneExternalImage>,
+    color_effects: Vec<ColorEffect>,
+    content_revision: u64,
+    bounds: Option<Rect>,
+    content_chunks: usize,
+}
+
+impl SceneRunBuilder {
+    fn push_clip(&mut self, clip: ClipScope) {
+        push_snapshot_clip(&mut self.scene, clip.clip, clip.transform, clip.bounds);
+        let clip_bounds = transform_rect_bbox(clip.transform, clip.bounds);
+        self.bounds = Some(match self.bounds {
+            Some(bounds) => union_rects(bounds, clip_bounds),
+            None => clip_bounds,
+        });
+    }
+
+    fn pop_clip(&mut self) {
+        self.scene.pop_clip();
+    }
+
+    fn push_color_effect(&mut self, effect: ColorEffect) {
+        self.color_effects.push(effect);
+    }
+
+    fn pop_color_effect(&mut self) {
+        let _ = self.color_effects.pop();
+    }
+
+    fn push(&mut self, chunk: LoweredSceneChunk) {
+        debug_assert_eq!(self.color_effects, chunk.color_effects);
+        self.scene.reserve_like(&chunk.scene);
+        self.scene.append_transformed(&chunk.scene, chunk.transform);
+        self.external_images.extend(chunk.external_images);
+        self.content_revision = self.content_revision.wrapping_add(chunk.content_revision);
+        self.content_chunks += 1;
+        let chunk_bounds = transform_rect_bbox(chunk.transform, chunk.bounds);
+        self.bounds = Some(match self.bounds {
+            Some(bounds) => union_rects(bounds, chunk_bounds),
+            None => chunk_bounds,
+        });
+    }
+
+    fn flush(&mut self, plan: &mut CompositionPlan, run_index: &mut u32) {
+        if self.content_chunks == 0 {
+            self.scene.clear();
+            self.bounds = None;
+            return;
+        }
+
+        let source_scene = mem::take(&mut self.scene);
+        let content_bounds =
+            scene_command_range_bounds(&source_scene, 0, source_scene.commands().len());
+        let bounds = match (self.bounds, content_bounds) {
+            (Some(bounds), Some(content_bounds)) => union_rects(bounds, content_bounds),
+            (Some(bounds), None) => bounds,
+            (None, Some(content_bounds)) => content_bounds,
+            (None, None) => Rect::ZERO,
+        };
+        let mut scene = Scene::new();
+        scene.reserve_like(&source_scene);
+        scene.append_transformed(&source_scene, Affine::translate((-bounds.x0, -bounds.y0)));
+        let local_content_bounds = content_bounds.map(|rect| rect - bounds.origin().to_vec2());
+        plan.items.push(CompositionItem::Scene(SceneLayer {
+            key: CompositionKey::SceneRun {
+                run_index: *run_index,
+            },
+            scene,
+            external_images: mem::take(&mut self.external_images),
+            color_effects: self.color_effects.clone(),
+            content_revision: self.content_revision,
+            transform: Affine::translate(bounds.origin().to_vec2()),
+            clip: None,
+            bounds: Rect::from_origin_size(Point::ZERO, bounds.size()),
+            content_bounds: local_content_bounds,
+            opacity: 1.0,
+            promoted: false,
+        }));
+        self.content_revision = 0;
+        self.bounds = None;
+        self.content_chunks = 0;
+        *run_index += 1;
+    }
+}
+
+fn push_scene_range(
+    chunks: &mut Vec<LoweredChunk>,
+    chunk_index: &mut u32,
+    stage: &ElementStage,
+    start: usize,
+    end: usize,
+    effective_scale: f64,
+    snapshot: ElementSnapshot,
+) {
+    let Some(scene) = scene_command_range(&stage.scene, start, end) else {
+        return;
+    };
+    let external_images =
+        external_images_in_command_range(&stage.scene, start, end, effective_scale);
+    chunks.push(LoweredChunk::Scene(LoweredSceneChunk {
+        scene,
+        external_images,
+        color_effects: active_color_effects_at(stage, start),
+        content_revision: stage.content_revision,
+        transform: snapshot.world_transform,
+        bounds: snapshot.local_bounds,
+    }));
+    *chunk_index += 1;
+}
+
+fn push_snapshot_clip(scene: &mut Scene, clip: RoundedRect, transform: Affine, bounds: Rect) {
+    let clip = constrain_infinite_rounded_rect(clip, Affine::IDENTITY, bounds.size());
+    let _ = scene.push_clip(Clip::Fill {
+        transform,
+        shape: Geometry::RoundedRect(clip),
+        fill_rule: Fill::NonZero,
+    });
+}
+
+fn active_color_effects_at(stage: &ElementStage, command_index: usize) -> Vec<ColorEffect> {
+    let mut effects = Vec::new();
+    for command in &stage.color_effects {
+        if command.command_index > command_index {
+            break;
+        }
+        match &command.kind {
+            ColorEffectCommandKind::Push(effect) => effects.push(effect.clone()),
+            ColorEffectCommandKind::Pop => {
+                let _ = effects.pop();
+            }
+        }
+    }
+    effects
+}
+
+fn external_images_in_command_range(
+    scene: &Scene,
+    start: usize,
+    end: usize,
+    effective_scale: f64,
+) -> Vec<SceneExternalImage> {
+    scene.commands()[start..end]
+        .iter()
+        .flat_map(|command| external_images_in_command(scene, command, effective_scale))
+        .collect()
+}
+
+fn promotable_external_image_fill(
+    scene: &Scene,
+    command: &Command,
+    occurrence: u32,
+    effective_scale: f64,
+    transform: Affine,
+) -> Option<ExternalSurfaceLayer> {
+    let Command::Draw(draw_id) = command else {
+        return None;
+    };
+    let Draw::Fill {
+        transform: draw_transform,
+        fill_rule,
+        brush,
+        brush_transform,
+        shape,
+        composite,
+    } = scene.draw_op(*draw_id)
+    else {
+        return None;
+    };
+    if *fill_rule != Fill::NonZero
+        || brush_transform.is_some()
+        || composite.blend != BlendMode::default()
+    {
+        return None;
+    }
+    let Geometry::Rect(rect) = shape else {
+        return None;
+    };
+    let Brush::Image(image) = brush else {
+        return None;
+    };
+    if image.sampler.x_extend != peniko::Extend::Pad
+        || image.sampler.y_extend != peniko::Extend::Pad
+    {
+        return None;
+    }
+    let imaging::Image::External(external) = image.image else {
+        return None;
+    };
+    let surface_id = ExternalSurfaceId::from_image_id(external.id)?;
+    let promoted_rect = transform_rect_bbox(*draw_transform, *rect);
+    let scale = effective_scale.max(f64::EPSILON);
+    let source_size = Size::new(
+        f64::from(external.width) / scale,
+        f64::from(external.height) / scale,
+    );
+    let opacity = (composite.alpha * image.sampler.alpha).clamp(0.0, 1.0);
+    Some(ExternalSurfaceLayer {
+        key: CompositionKey::ExternalSurface {
+            surface_id,
+            occurrence,
+        },
+        surface_id,
+        rect: promoted_rect,
+        source_size,
+        transform,
+        clip: None,
+        opacity,
+    })
+}
+
+fn external_images_in_command(
+    scene: &Scene,
+    command: &Command,
+    effective_scale: f64,
+) -> Vec<SceneExternalImage> {
+    let Command::Draw(draw_id) = command else {
+        return Vec::new();
+    };
+    match scene.draw_op(*draw_id) {
+        Draw::Fill { brush, .. } | Draw::Stroke { brush, .. } => {
+            let Some(bounds) = draw_op_bounds(scene, *draw_id) else {
+                return Vec::new();
+            };
+            external_images_in_brush(brush, bounds, effective_scale)
+                .into_iter()
+                .collect()
+        }
+        Draw::GlyphRun(run) => glyph_run_bounds(run)
+            .and_then(|bounds| external_images_in_brush(&run.brush, bounds, effective_scale))
+            .into_iter()
+            .collect(),
+        Draw::BlurredRoundedRect(_) | Draw::ScenePicture { .. } => Vec::new(),
+    }
+}
+
+fn external_images_in_brush(
+    brush: &Brush,
+    rect: Rect,
+    effective_scale: f64,
+) -> Option<SceneExternalImage> {
+    let Brush::Image(image) = brush else {
+        return None;
+    };
+    let imaging::Image::External(external) = image.image else {
+        return None;
+    };
+    let surface_id = ExternalSurfaceId::from_image_id(external.id)?;
+    let scale = effective_scale.max(f64::EPSILON);
+    Some(SceneExternalImage {
+        image_id: external.id,
+        surface_id,
+        rect,
+        source_size: Size::new(
+            f64::from(external.width) / scale,
+            f64::from(external.height) / scale,
+        ),
+    })
 }
 
 fn mark_promoted_scene_layers(plan: &mut CompositionPlan) {
@@ -1121,8 +1354,36 @@ fn draw_op_bounds(scene: &Scene, draw_id: DrawId) -> Option<Rect> {
         Draw::ScenePicture { transform, picture } => {
             Some(transform_rect_bbox(*transform, picture.bounds()))
         }
-        Draw::GlyphRun(_) => None,
+        Draw::GlyphRun(run) => glyph_run_bounds(run),
     }
+}
+
+fn glyph_run_bounds(run: &imaging::record::GlyphRun) -> Option<Rect> {
+    if run.glyphs.is_empty() {
+        return None;
+    }
+
+    let mut min_x = f64::INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    let advance_pad = f64::from(run.font_size) * 0.75;
+    let ascent = f64::from(run.font_size);
+    let descent = f64::from(run.font_size) * 0.25;
+
+    for glyph in &run.glyphs {
+        let x = f64::from(glyph.x);
+        let y = f64::from(glyph.y);
+        min_x = min_x.min(x);
+        min_y = min_y.min(y - ascent);
+        max_x = max_x.max(x + advance_pad);
+        max_y = max_y.max(y + descent);
+    }
+
+    Some(transform_rect_bbox(
+        run.transform,
+        Rect::new(min_x, min_y, max_x, max_y),
+    ))
 }
 
 fn geometry_bounds(geometry: &Geometry) -> Rect {
@@ -1157,8 +1418,41 @@ fn scene_command_range(scene: &Scene, start: usize, end: usize) -> Option<Scene>
     }
 
     let mut out = Scene::new();
+    let mut active_commands = Vec::new();
+    for command in &scene.commands()[..start] {
+        match command {
+            Command::PushContext(_) | Command::PushClip(_) | Command::PushGroup(_) => {
+                active_commands.push(command);
+            }
+            Command::PopContext | Command::PopClip | Command::PopGroup => {
+                let _ = active_commands.pop();
+            }
+            Command::Draw(_) => {}
+        }
+    }
+    for command in &active_commands {
+        append_scene_command(scene, &mut out, command);
+    }
+    let mut open_commands = active_commands;
     for command in &scene.commands()[start..end] {
         append_scene_command(scene, &mut out, command);
+        match command {
+            Command::PushContext(_) | Command::PushClip(_) | Command::PushGroup(_) => {
+                open_commands.push(command);
+            }
+            Command::PopContext | Command::PopClip | Command::PopGroup => {
+                let _ = open_commands.pop();
+            }
+            Command::Draw(_) => {}
+        }
+    }
+    for command in open_commands.iter().rev() {
+        match command {
+            Command::PushContext(_) => out.pop_context(),
+            Command::PushClip(_) => out.pop_clip(),
+            Command::PushGroup(_) => out.pop_group(),
+            Command::PopContext | Command::PopClip | Command::PopGroup | Command::Draw(_) => {}
+        }
     }
     (!out.is_empty()).then_some(out)
 }
@@ -1592,7 +1886,7 @@ fn constrain_infinite_rect(rect: Rect, transform: Affine, render_size: Size) -> 
 mod tests {
     use super::*;
     use crate::ViewId;
-    use imaging::Composite;
+    use imaging::{Composite, ImageBrush};
     use peniko::{Color, Fill};
 
     fn fill_draw(rect: Rect, transform: Affine) -> Draw {
@@ -1611,6 +1905,29 @@ mod tests {
             transform,
             fill_rule: Fill::NonZero,
             brush: color.into(),
+            brush_transform: None,
+            shape: Geometry::Rect(rect),
+            composite: Composite::default(),
+        }
+    }
+
+    fn external_image_fill_draw(
+        surface_id: crate::external_surface::ExternalSurfaceId,
+        rect: Rect,
+        effective_scale: f64,
+    ) -> Draw {
+        let width = (rect.width() * effective_scale).ceil().max(1.0) as u32;
+        let height = (rect.height() * effective_scale).ceil().max(1.0) as u32;
+        let image = imaging::ExternalImage::new(
+            surface_id.image_id(),
+            width,
+            height,
+            peniko::ImageAlphaType::AlphaPremultiplied,
+        );
+        Draw::Fill {
+            transform: Affine::IDENTITY,
+            fill_rule: Fill::NonZero,
+            brush: Brush::Image(ImageBrush::from(image)),
             brush_transform: None,
             shape: Geometry::Rect(rect),
             composite: Composite::default(),
@@ -1763,83 +2080,62 @@ mod tests {
     }
 
     #[test]
-    fn stage_recorder_places_external_surface_at_current_command_index() {
-        let mut stage = ElementStage::default();
-        let mut recorder = StageRecorder::from_stage(&mut stage);
-        let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
-
-        PaintSink::fill(&mut recorder, FillRef::new(rect, Color::BLACK));
-        recorder.draw_external_surface(
-            crate::external_surface::ExternalSurfaceId::test_new(7),
-            rect,
-            ExternalSurfacePaintOptions::default(),
-        );
-        let stroke = peniko::kurbo::Stroke::new(1.0);
-        PaintSink::stroke(&mut recorder, StrokeRef::new(rect, &stroke, Color::WHITE));
-        recorder.finish(&mut stage);
-
-        assert_eq!(stage.scene.commands().len(), 2);
-        assert_eq!(stage.external_surfaces.len(), 1);
-        assert_eq!(stage.external_surfaces[0].command_index, 1);
-    }
-
-    #[test]
-    fn external_surface_moves_to_new_retained_owner_without_repainting_old_owner() {
+    fn lower_composition_plan_promotes_simple_external_image_fill() {
         let surface_id = crate::external_surface::ExternalSurfaceId::test_new(7);
         let mut list = RetainedDisplayList::default();
-        let (root_slot, root_id) = attach_node(
+        let rect = Rect::new(4.0, 5.0, 24.0, 25.0);
+        let (root_slot, _root_id) = attach_node(
             &mut list,
             None,
-            snapshot(Affine::IDENTITY, None),
-            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 5.0, 5.0), Affine::IDENTITY)),
-            Scene::new(),
-        );
-        let (_child_slot, child_id) = attach_node(
-            &mut list,
-            Some(root_slot),
-            snapshot(Affine::translate((10.0, 10.0)), None),
-            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 3.0, 3.0), Affine::IDENTITY)),
+            snapshot(Affine::translate((10.0, 20.0)), None),
+            scene_with_draw(external_image_fill_draw(surface_id, rect, 2.0)),
             Scene::new(),
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        list.element_mut(root_id).paint.external_surfaces = vec![ExternalSurfacePlacement {
-            command_index: 0,
-            surface_id,
-            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
-            options: ExternalSurfacePaintOptions::default(),
-        }];
-        list.reconcile_external_surface_ownership(root_id, PaintStage::Paint);
-
-        list.element_mut(child_id).paint.external_surfaces = vec![ExternalSurfacePlacement {
-            command_index: 0,
-            surface_id,
-            rect: Rect::new(1.0, 1.0, 11.0, 11.0),
-            options: ExternalSurfacePaintOptions::default(),
-        }];
-        list.reconcile_external_surface_ownership(child_id, PaintStage::Paint);
-
-        assert!(
-            list.element(root_id)
-                .unwrap()
-                .paint
-                .external_surfaces
-                .is_empty()
-        );
+        let plan = list.lower_composition_plan(2.0);
+        assert_eq!(plan.items.len(), 1);
+        let CompositionItem::ExternalSurface(layer) = &plan.items[0] else {
+            panic!("expected promoted external image fill");
+        };
+        assert_eq!(layer.surface_id, surface_id);
+        assert_eq!(layer.rect, rect);
+        assert_eq!(layer.source_size, rect.size());
+        assert_eq!(layer.transform, Affine::translate((10.0, 20.0)));
         assert_eq!(
-            list.element(child_id)
-                .unwrap()
-                .paint
-                .external_surfaces
-                .len(),
-            1
+            layer.key,
+            CompositionKey::ExternalSurface {
+                surface_id,
+                occurrence: 0,
+            }
         );
-        assert_eq!(
-            list.node(root_slot).unwrap().subtree_external_surface_count,
-            1
-        );
+    }
 
-        let plan = list.lower_composition_plan();
+    #[test]
+    fn lower_composition_plan_keeps_repeated_external_image_fills_as_distinct_layers() {
+        let surface_id = crate::external_surface::ExternalSurfaceId::test_new(9);
+        let mut scene = Scene::new();
+        let _ = scene.draw(external_image_fill_draw(
+            surface_id,
+            Rect::new(0.0, 0.0, 10.0, 10.0),
+            1.0,
+        ));
+        let _ = scene.draw(external_image_fill_draw(
+            surface_id,
+            Rect::new(20.0, 20.0, 30.0, 30.0),
+            1.0,
+        ));
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::IDENTITY, None),
+            scene,
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let plan = list.lower_composition_plan(1.0);
         let placements = plan
             .items
             .iter()
@@ -1848,50 +2144,569 @@ mod tests {
                 CompositionItem::Scene(_) => None,
             })
             .collect::<Vec<_>>();
-        assert_eq!(placements.len(), 1);
-        assert_eq!(placements[0].surface_id, surface_id);
+        assert_eq!(placements.len(), 2);
         assert_eq!(
             placements[0].key,
             CompositionKey::ExternalSurface {
-                owner: child_id,
-                stage: PaintStage::Paint,
                 surface_id,
-                occurrence: 0,
+                occurrence: 0
+            }
+        );
+        assert_eq!(
+            placements[1].key,
+            CompositionKey::ExternalSurface {
+                surface_id,
+                occurrence: 1
             }
         );
     }
 
     #[test]
-    fn external_surface_duplicate_in_same_stage_keeps_latest_placement() {
-        let surface_id = crate::external_surface::ExternalSurfaceId::test_new(9);
+    fn lower_composition_plan_coalesces_adjacent_scene_layers_across_elements() {
         let mut list = RetainedDisplayList::default();
-        let (root_slot, root_id) = attach_node(
+        let (root_slot, _root_id) = attach_node(
             &mut list,
             None,
             snapshot(Affine::IDENTITY, None),
-            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 5.0, 5.0), Affine::IDENTITY)),
+            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 10.0, 10.0), Affine::IDENTITY)),
+            Scene::new(),
+        );
+        let (_label_slot, _label_id) = attach_node(
+            &mut list,
+            Some(root_slot),
+            snapshot(Affine::translate((20.0, 0.0)), None),
+            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 8.0, 8.0), Affine::IDENTITY)),
+            Scene::new(),
+        );
+        let (_canvas_slot, _canvas_id) = attach_node(
+            &mut list,
+            Some(root_slot),
+            snapshot(Affine::translate((0.0, 20.0)), None),
+            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 12.0, 12.0), Affine::IDENTITY)),
             Scene::new(),
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let first = ExternalSurfacePlacement {
-            command_index: 0,
-            surface_id,
-            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
-            options: ExternalSurfacePaintOptions::default(),
+        let plan = list.lower_composition_plan(1.0);
+        assert_eq!(plan.items.len(), 1);
+        let CompositionItem::Scene(layer) = &plan.items[0] else {
+            panic!("expected coalesced scene layer");
         };
-        let second = ExternalSurfacePlacement {
-            command_index: 1,
-            surface_id,
-            rect: Rect::new(20.0, 20.0, 30.0, 30.0),
-            options: ExternalSurfacePaintOptions::default(),
-        };
-        list.element_mut(root_id).paint.external_surfaces = vec![first, second.clone()];
-        list.reconcile_external_surface_ownership(root_id, PaintStage::Paint);
+        assert_eq!(layer.key, CompositionKey::SceneRun { run_index: 0 });
+        assert_eq!(layer.scene.commands().len(), 3);
+        assert_eq!(layer.transform, Affine::IDENTITY);
+        assert_eq!(layer.bounds, Rect::new(0.0, 0.0, 120.0, 120.0));
+        assert_eq!(layer.content_bounds, Some(Rect::new(0.0, 0.0, 28.0, 32.0)));
+        assert!(layer.external_images.is_empty());
+        assert!(!layer.promoted);
+    }
 
+    #[test]
+    fn lower_composition_plan_coalesces_paint_children_and_post_into_one_scene_run() {
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::IDENTITY, None),
+            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 10.0, 10.0), Affine::IDENTITY)),
+            scene_with_draw(fill_draw(
+                Rect::new(40.0, 0.0, 50.0, 10.0),
+                Affine::IDENTITY,
+            )),
+        );
+        let (_child_slot, _child_id) = attach_node(
+            &mut list,
+            Some(root_slot),
+            snapshot(Affine::translate((20.0, 0.0)), None),
+            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 10.0, 10.0), Affine::IDENTITY)),
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let plan = list.lower_composition_plan(1.0);
+        assert_eq!(plan.items.len(), 1);
+        let CompositionItem::Scene(layer) = &plan.items[0] else {
+            panic!("expected one scene run");
+        };
+        assert_eq!(layer.key, CompositionKey::SceneRun { run_index: 0 });
+        assert_eq!(layer.scene.commands().len(), 3);
+        assert_eq!(layer.transform, Affine::IDENTITY);
+        assert_eq!(layer.bounds, Rect::new(0.0, 0.0, 120.0, 100.0));
+        assert_eq!(layer.content_bounds, Some(Rect::new(0.0, 0.0, 50.0, 10.0)));
+        assert!(layer.external_images.is_empty());
+    }
+
+    #[test]
+    fn lower_composition_plan_scene_run_target_is_local_to_content_bounds() {
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::translate((40.0, 30.0)), None),
+            scene_with_draw(fill_draw(
+                Rect::new(10.0, 20.0, 30.0, 50.0),
+                Affine::IDENTITY,
+            )),
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let plan = list.lower_composition_plan(1.0);
+        assert_eq!(plan.items.len(), 1);
+        let CompositionItem::Scene(layer) = &plan.items[0] else {
+            panic!("expected one scene run");
+        };
+        assert_eq!(layer.transform, Affine::translate((40.0, 30.0)));
+        assert_eq!(layer.bounds, Rect::new(0.0, 0.0, 100.0, 100.0));
         assert_eq!(
-            list.element(root_id).unwrap().paint.external_surfaces,
-            vec![second]
+            layer.content_bounds,
+            Some(Rect::new(10.0, 20.0, 30.0, 50.0))
+        );
+        assert_eq!(
+            scene_command_range_bounds(&layer.scene, 0, layer.scene.commands().len()),
+            Some(Rect::new(10.0, 20.0, 30.0, 50.0))
+        );
+    }
+
+    #[test]
+    fn lower_composition_plan_replays_snapshot_clip_inside_scene_run() {
+        let clip = RoundedRect::from_rect(Rect::new(5.0, 6.0, 25.0, 26.0), 3.0);
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::translate((10.0, 20.0)), Some(clip)),
+            scene_with_draw(fill_draw(
+                Rect::new(0.0, 0.0, 100.0, 100.0),
+                Affine::IDENTITY,
+            )),
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let plan = list.lower_composition_plan(1.0);
+        assert_eq!(plan.items.len(), 1);
+        let CompositionItem::Scene(layer) = &plan.items[0] else {
+            panic!("expected one scene run");
+        };
+        assert_eq!(layer.clip, None);
+        assert!(matches!(
+            layer.scene.commands(),
+            [Command::PushClip(_), Command::Draw(_), Command::PopClip]
+        ));
+        let Command::PushClip(clip_id) = layer.scene.commands()[0] else {
+            panic!("expected clip");
+        };
+        let Clip::Fill {
+            transform, shape, ..
+        } = layer.scene.clip(clip_id)
+        else {
+            panic!("expected fill clip");
+        };
+        assert_eq!(*transform, Affine::IDENTITY);
+        assert_eq!(*shape, Geometry::RoundedRect(clip));
+    }
+
+    #[test]
+    fn lower_composition_plan_sanitizes_infinite_snapshot_clip_inside_scene_run() {
+        let clip =
+            RoundedRect::from_rect(Rect::new(f64::NEG_INFINITY, 6.0, f64::INFINITY, 26.0), 3.0);
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::translate((10.0, 20.0)), Some(clip)),
+            scene_with_draw(fill_draw(
+                Rect::new(0.0, 0.0, 100.0, 100.0),
+                Affine::IDENTITY,
+            )),
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let plan = list.lower_composition_plan(1.0);
+        assert_eq!(plan.items.len(), 1);
+        let CompositionItem::Scene(layer) = &plan.items[0] else {
+            panic!("expected one scene run");
+        };
+        assert_eq!(layer.clip, None);
+        let Command::PushClip(clip_id) = layer.scene.commands()[0] else {
+            panic!("expected clip");
+        };
+        let Clip::Fill {
+            transform, shape, ..
+        } = layer.scene.clip(clip_id)
+        else {
+            panic!("expected fill clip");
+        };
+        assert_eq!(*transform, Affine::IDENTITY);
+        assert_eq!(
+            *shape,
+            Geometry::RoundedRect(RoundedRect::from_rect(
+                Rect::new(0.0, 6.0, 100.0, 26.0),
+                3.0
+            ))
+        );
+    }
+
+    #[test]
+    fn lower_composition_plan_applies_sanitized_ancestor_scroll_clip_to_child_scene_run() {
+        let clip =
+            RoundedRect::from_rect(Rect::new(f64::NEG_INFINITY, 6.0, f64::INFINITY, 26.0), 3.0);
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::translate((10.0, 20.0)), Some(clip)),
+            Scene::new(),
+            Scene::new(),
+        );
+        let (_child_slot, _child_id) = attach_node(
+            &mut list,
+            Some(root_slot),
+            snapshot(Affine::translate((15.0, 30.0)), None),
+            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 20.0, 20.0), Affine::IDENTITY)),
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let plan = list.lower_composition_plan(1.0);
+        assert_eq!(plan.items.len(), 1);
+        let CompositionItem::Scene(layer) = &plan.items[0] else {
+            panic!("expected one scene run");
+        };
+        assert_eq!(layer.clip, None);
+        assert!(matches!(
+            layer.scene.commands(),
+            [Command::PushClip(_), Command::Draw(_), Command::PopClip]
+        ));
+        let Command::PushClip(clip_id) = layer.scene.commands()[0] else {
+            panic!("expected ancestor clip");
+        };
+        let Clip::Fill {
+            transform, shape, ..
+        } = layer.scene.clip(clip_id)
+        else {
+            panic!("expected fill clip");
+        };
+        assert_eq!(*transform, Affine::IDENTITY);
+        assert_eq!(
+            *shape,
+            Geometry::RoundedRect(RoundedRect::from_rect(
+                Rect::new(0.0, 6.0, 100.0, 26.0),
+                3.0
+            ))
+        );
+    }
+
+    #[test]
+    fn lower_composition_plan_flattens_external_surface_under_ancestor_clip() {
+        let surface_id = crate::external_surface::ExternalSurfaceId::test_new(19);
+        let clip = RoundedRect::from_rect(Rect::new(0.0, 0.0, 50.0, 50.0), 0.0);
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::IDENTITY, Some(clip)),
+            Scene::new(),
+            Scene::new(),
+        );
+        let (_child_slot, _child_id) = attach_node(
+            &mut list,
+            Some(root_slot),
+            snapshot(Affine::translate((10.0, 10.0)), None),
+            {
+                let mut scene = Scene::new();
+                let _ = scene.draw(fill_draw(Rect::new(0.0, 0.0, 20.0, 20.0), Affine::IDENTITY));
+                let _ = scene.draw(external_image_fill_draw(
+                    surface_id,
+                    Rect::new(20.0, 0.0, 40.0, 20.0),
+                    1.0,
+                ));
+                scene
+            },
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let plan = list.lower_composition_plan(1.0);
+        assert_eq!(plan.items.len(), 1);
+        let CompositionItem::Scene(layer) = &plan.items[0] else {
+            panic!("expected flattened scene run");
+        };
+        assert_eq!(layer.external_images.len(), 1);
+        assert_eq!(layer.external_images[0].surface_id, surface_id);
+        assert!(matches!(
+            layer.scene.commands(),
+            [
+                Command::PushClip(_),
+                Command::Draw(_),
+                Command::Draw(_),
+                Command::PopClip
+            ]
+        ));
+    }
+
+    #[test]
+    fn lower_composition_plan_coalesces_cube_like_scene_runs_around_external_surface() {
+        let surface_id = crate::external_surface::ExternalSurfaceId::test_new(10);
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::IDENTITY, None),
+            scene_with_draw(fill_draw(
+                Rect::new(0.0, 0.0, 100.0, 40.0),
+                Affine::IDENTITY,
+            )),
+            Scene::new(),
+        );
+        let (_label_slot, _label_id) = attach_node(
+            &mut list,
+            Some(root_slot),
+            snapshot(Affine::translate((0.0, 50.0)), None),
+            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 80.0, 20.0), Affine::IDENTITY)),
+            Scene::new(),
+        );
+        let (_canvas_slot, _canvas_id) = attach_node(
+            &mut list,
+            Some(root_slot),
+            snapshot(Affine::translate((0.0, 100.0)), None),
+            {
+                let mut scene = Scene::new();
+                let _ = scene.draw(fill_draw(
+                    Rect::new(0.0, 0.0, 100.0, 100.0),
+                    Affine::IDENTITY,
+                ));
+                let _ = scene.draw(external_image_fill_draw(
+                    surface_id,
+                    Rect::new(20.0, 20.0, 80.0, 80.0),
+                    1.0,
+                ));
+                let _ = scene.draw(fill_draw(
+                    Rect::new(10.0, 10.0, 90.0, 90.0),
+                    Affine::IDENTITY,
+                ));
+                scene
+            },
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let plan = list.lower_composition_plan(1.0);
+        assert_eq!(plan.items.len(), 3);
+        let CompositionItem::Scene(before) = &plan.items[0] else {
+            panic!("expected scene before external surface");
+        };
+        let CompositionItem::ExternalSurface(external) = &plan.items[1] else {
+            panic!("expected external surface");
+        };
+        let CompositionItem::Scene(after) = &plan.items[2] else {
+            panic!("expected scene after external surface");
+        };
+        assert_eq!(before.key, CompositionKey::SceneRun { run_index: 0 });
+        assert_eq!(after.key, CompositionKey::SceneRun { run_index: 1 });
+        assert_eq!(external.clip, None);
+
+        let scene_command_counts = plan
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                CompositionItem::Scene(layer) => Some(layer.scene.commands().len()),
+                CompositionItem::ExternalSurface(_) => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(scene_command_counts, vec![3, 1]);
+    }
+
+    #[test]
+    fn lower_composition_plan_does_not_put_snapshot_clip_on_direct_external_layer() {
+        let surface_id = crate::external_surface::ExternalSurfaceId::test_new(17);
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::translate((10.0, 20.0)), None),
+            scene_with_draw(external_image_fill_draw(
+                surface_id,
+                Rect::new(4.0, 5.0, 24.0, 25.0),
+                1.0,
+            )),
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let plan = list.lower_composition_plan(1.0);
+        assert_eq!(plan.items.len(), 1);
+        let CompositionItem::ExternalSurface(layer) = &plan.items[0] else {
+            panic!("expected direct external surface");
+        };
+        assert_eq!(layer.surface_id, surface_id);
+        assert_eq!(layer.transform, Affine::translate((10.0, 20.0)));
+        assert_eq!(layer.clip, None);
+    }
+
+    #[test]
+    fn lower_composition_plan_flattens_group_spanning_external_surface() {
+        let surface_id = crate::external_surface::ExternalSurfaceId::test_new(18);
+        let mut scene = Scene::new();
+        let _ = scene.push_group(imaging::record::Group::default());
+        let _ = scene.draw(fill_draw(Rect::new(0.0, 0.0, 20.0, 20.0), Affine::IDENTITY));
+        let _ = scene.draw(external_image_fill_draw(
+            surface_id,
+            Rect::new(20.0, 0.0, 40.0, 20.0),
+            1.0,
+        ));
+        let _ = scene.draw(fill_draw(
+            Rect::new(40.0, 0.0, 60.0, 20.0),
+            Affine::IDENTITY,
+        ));
+        scene.pop_group();
+
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::IDENTITY, None),
+            scene,
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let plan = list.lower_composition_plan(1.0);
+        assert_eq!(plan.items.len(), 1);
+        let CompositionItem::Scene(layer) = &plan.items[0] else {
+            panic!("expected flattened scene layer");
+        };
+        assert_eq!(layer.external_images.len(), 1);
+        assert_eq!(layer.external_images[0].surface_id, surface_id);
+        assert!(matches!(
+            layer.scene.commands(),
+            [
+                Command::PushGroup(_),
+                Command::Draw(_),
+                Command::Draw(_),
+                Command::Draw(_),
+                Command::PopGroup,
+            ]
+        ));
+        let Command::Draw(external_draw_id) = layer.scene.commands()[2] else {
+            panic!("expected inserted external image draw");
+        };
+        let Draw::Fill { brush, .. } = layer.scene.draw_op(external_draw_id) else {
+            panic!("expected fill draw");
+        };
+        assert!(
+            matches!(brush, Brush::Image(image) if matches!(image.image, imaging::Image::External(_)))
+        );
+    }
+
+    #[test]
+    fn lower_composition_plan_keeps_each_external_surface_as_split_boundary() {
+        let first_surface = crate::external_surface::ExternalSurfaceId::test_new(14);
+        let second_surface = crate::external_surface::ExternalSurfaceId::test_new(15);
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::IDENTITY, None),
+            {
+                let mut scene = Scene::new();
+                let _ = scene.draw(fill_draw(Rect::new(0.0, 0.0, 10.0, 10.0), Affine::IDENTITY));
+                let _ = scene.draw(external_image_fill_draw(
+                    first_surface,
+                    Rect::new(12.0, 0.0, 18.0, 10.0),
+                    1.0,
+                ));
+                let _ = scene.draw(fill_draw(
+                    Rect::new(20.0, 0.0, 30.0, 10.0),
+                    Affine::IDENTITY,
+                ));
+                let _ = scene.draw(external_image_fill_draw(
+                    second_surface,
+                    Rect::new(32.0, 0.0, 38.0, 10.0),
+                    1.0,
+                ));
+                let _ = scene.draw(fill_draw(
+                    Rect::new(40.0, 0.0, 50.0, 10.0),
+                    Affine::IDENTITY,
+                ));
+                scene
+            },
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let plan = list.lower_composition_plan(1.0);
+        assert_eq!(plan.items.len(), 5);
+        assert!(matches!(plan.items[0], CompositionItem::Scene(_)));
+        assert!(matches!(plan.items[1], CompositionItem::ExternalSurface(_)));
+        assert!(matches!(plan.items[2], CompositionItem::Scene(_)));
+        assert!(matches!(plan.items[3], CompositionItem::ExternalSurface(_)));
+        assert!(matches!(plan.items[4], CompositionItem::Scene(_)));
+    }
+
+    #[test]
+    fn lower_composition_plan_flattens_active_clip_spanning_external_surface() {
+        let surface_id = crate::external_surface::ExternalSurfaceId::test_new(16);
+        let clip = RoundedRect::from_rect(Rect::new(0.0, 0.0, 50.0, 50.0), 0.0);
+        let mut scene = Scene::new();
+        let _ = scene.push_clip(Clip::Fill {
+            transform: Affine::IDENTITY,
+            shape: Geometry::RoundedRect(clip),
+            fill_rule: Fill::NonZero,
+        });
+        let _ = scene.draw(fill_draw(Rect::new(4.0, 4.0, 12.0, 12.0), Affine::IDENTITY));
+        let _ = scene.draw(external_image_fill_draw(
+            surface_id,
+            Rect::new(14.0, 14.0, 30.0, 30.0),
+            1.0,
+        ));
+        let _ = scene.draw(fill_draw(
+            Rect::new(20.0, 20.0, 28.0, 28.0),
+            Affine::IDENTITY,
+        ));
+        scene.pop_clip();
+
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::translate((10.0, 20.0)), None),
+            scene,
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let plan = list.lower_composition_plan(1.0);
+        assert_eq!(plan.items.len(), 1);
+
+        let CompositionItem::Scene(layer) = &plan.items[0] else {
+            panic!("expected flattened scene");
+        };
+        assert_eq!(layer.transform, Affine::translate((10.0, 20.0)));
+        assert_eq!(layer.clip, None);
+        assert_eq!(layer.external_images.len(), 1);
+        assert_eq!(layer.external_images[0].surface_id, surface_id);
+        let [
+            Command::PushClip(clip_id),
+            Command::Draw(_),
+            Command::Draw(_),
+            Command::Draw(_),
+            Command::PopClip,
+        ] = layer.scene.commands()
+        else {
+            panic!("expected clipped flattened scene with inserted external image");
+        };
+        assert!(matches!(layer.scene.clip(*clip_id), Clip::Fill { .. }));
+        let Command::Draw(external_draw_id) = layer.scene.commands()[2] else {
+            panic!("expected inserted external image draw");
+        };
+        let Draw::Fill { brush, .. } = layer.scene.draw_op(external_draw_id) else {
+            panic!("expected fill draw");
+        };
+        assert!(
+            matches!(brush, Brush::Image(image) if matches!(image.image, imaging::Image::External(_)))
         );
     }
 
@@ -1899,34 +2714,29 @@ mod tests {
     fn lower_composition_plan_promotes_only_scene_chunks_overlapping_earlier_external_surface() {
         let surface_id = crate::external_surface::ExternalSurfaceId::test_new(11);
         let mut list = RetainedDisplayList::default();
-        let (root_slot, root_id) = attach_node(
+        let (root_slot, _root_id) = attach_node(
             &mut list,
             None,
             snapshot(Affine::IDENTITY, None),
-            Scene::new(),
+            {
+                let mut scene = Scene::new();
+                let _ = scene.draw(fill_draw(Rect::new(0.0, 0.0, 10.0, 10.0), Affine::IDENTITY));
+                let _ = scene.draw(external_image_fill_draw(
+                    surface_id,
+                    Rect::new(20.0, 20.0, 40.0, 40.0),
+                    1.0,
+                ));
+                let _ = scene.draw(fill_draw(
+                    Rect::new(100.0, 100.0, 110.0, 110.0),
+                    Affine::IDENTITY,
+                ));
+                scene
+            },
             Scene::new(),
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let mut scene = Scene::new();
-        let _ = scene.draw(fill_draw(Rect::new(0.0, 0.0, 10.0, 10.0), Affine::IDENTITY));
-        let _ = scene.draw(fill_draw(
-            Rect::new(100.0, 100.0, 110.0, 110.0),
-            Affine::IDENTITY,
-        ));
-        let element = list.element_mut(root_id);
-        element.paint.set_scene(
-            scene,
-            vec![ExternalSurfacePlacement {
-                command_index: 1,
-                surface_id,
-                rect: Rect::new(20.0, 20.0, 40.0, 40.0),
-                options: ExternalSurfacePaintOptions::default(),
-            }],
-        );
-        list.reconcile_external_surface_ownership(root_id, PaintStage::Paint);
-
-        let plan = list.lower_composition_plan();
+        let plan = list.lower_composition_plan(1.0);
         let scene_promotions = plan
             .items
             .iter()
@@ -1942,34 +2752,29 @@ mod tests {
     fn lower_composition_plan_promotes_scene_chunk_overlapping_earlier_external_surface() {
         let surface_id = crate::external_surface::ExternalSurfaceId::test_new(12);
         let mut list = RetainedDisplayList::default();
-        let (root_slot, root_id) = attach_node(
+        let (root_slot, _root_id) = attach_node(
             &mut list,
             None,
             snapshot(Affine::IDENTITY, None),
-            Scene::new(),
+            {
+                let mut scene = Scene::new();
+                let _ = scene.draw(fill_draw(Rect::new(0.0, 0.0, 10.0, 10.0), Affine::IDENTITY));
+                let _ = scene.draw(external_image_fill_draw(
+                    surface_id,
+                    Rect::new(20.0, 20.0, 40.0, 40.0),
+                    1.0,
+                ));
+                let _ = scene.draw(fill_draw(
+                    Rect::new(25.0, 25.0, 35.0, 35.0),
+                    Affine::IDENTITY,
+                ));
+                scene
+            },
             Scene::new(),
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let mut scene = Scene::new();
-        let _ = scene.draw(fill_draw(Rect::new(0.0, 0.0, 10.0, 10.0), Affine::IDENTITY));
-        let _ = scene.draw(fill_draw(
-            Rect::new(25.0, 25.0, 35.0, 35.0),
-            Affine::IDENTITY,
-        ));
-        let element = list.element_mut(root_id);
-        element.paint.set_scene(
-            scene,
-            vec![ExternalSurfacePlacement {
-                command_index: 1,
-                surface_id,
-                rect: Rect::new(20.0, 20.0, 40.0, 40.0),
-                options: ExternalSurfacePaintOptions::default(),
-            }],
-        );
-        list.reconcile_external_surface_ownership(root_id, PaintStage::Paint);
-
-        let plan = list.lower_composition_plan();
+        let plan = list.lower_composition_plan(1.0);
         let scene_promotions = plan
             .items
             .iter()
@@ -1982,47 +2787,41 @@ mod tests {
     }
 
     #[test]
-    fn lower_composition_plan_uses_clip_for_overlap_promotion() {
+    fn lower_composition_plan_flattens_snapshot_clip_spanning_external_surface() {
         let surface_id = crate::external_surface::ExternalSurfaceId::test_new(13);
         let clip = RoundedRect::from_rect(Rect::new(100.0, 100.0, 120.0, 120.0), 0.0);
         let mut list = RetainedDisplayList::default();
-        let (root_slot, root_id) = attach_node(
+        let (root_slot, _root_id) = attach_node(
             &mut list,
             None,
             snapshot(Affine::IDENTITY, Some(clip)),
-            Scene::new(),
+            {
+                let mut scene = Scene::new();
+                let _ = scene.draw(fill_draw(Rect::new(0.0, 0.0, 10.0, 10.0), Affine::IDENTITY));
+                let _ = scene.draw(external_image_fill_draw(
+                    surface_id,
+                    Rect::new(20.0, 20.0, 40.0, 40.0),
+                    1.0,
+                ));
+                let _ = scene.draw(fill_draw(
+                    Rect::new(25.0, 25.0, 35.0, 35.0),
+                    Affine::IDENTITY,
+                ));
+                scene
+            },
             Scene::new(),
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let mut scene = Scene::new();
-        let _ = scene.draw(fill_draw(Rect::new(0.0, 0.0, 10.0, 10.0), Affine::IDENTITY));
-        let _ = scene.draw(fill_draw(
-            Rect::new(25.0, 25.0, 35.0, 35.0),
-            Affine::IDENTITY,
-        ));
-        let element = list.element_mut(root_id);
-        element.paint.set_scene(
-            scene,
-            vec![ExternalSurfacePlacement {
-                command_index: 1,
-                surface_id,
-                rect: Rect::new(20.0, 20.0, 40.0, 40.0),
-                options: ExternalSurfacePaintOptions::default(),
-            }],
-        );
-        list.reconcile_external_surface_ownership(root_id, PaintStage::Paint);
-
-        let plan = list.lower_composition_plan();
-        let scene_promotions = plan
-            .items
-            .iter()
-            .filter_map(|item| match item {
-                CompositionItem::Scene(layer) => Some(layer.promoted),
-                CompositionItem::ExternalSurface(_) => None,
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(scene_promotions, vec![false, false]);
+        let plan = list.lower_composition_plan(1.0);
+        assert_eq!(plan.items.len(), 1);
+        let CompositionItem::Scene(layer) = &plan.items[0] else {
+            panic!("expected flattened scene");
+        };
+        assert_eq!(layer.external_images.len(), 1);
+        assert_eq!(layer.external_images[0].surface_id, surface_id);
+        assert_eq!(layer.clip, None);
+        assert!(!layer.promoted);
     }
 
     #[test]

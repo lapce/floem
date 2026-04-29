@@ -297,6 +297,12 @@ fn brush_summary_view(brush: &imaging::Brush) -> AnyView {
                         scene.height()
                     )
                 }
+                imaging::Image::External(image) => {
+                    format!(
+                        "external image #{}  {}×{}",
+                        image.id.0, image.width, image.height
+                    )
+                }
             };
             let mut rows = vec![
                 Stack::horizontal((
@@ -337,6 +343,9 @@ fn brush_summary_view(brush: &imaging::Brush) -> AnyView {
                     ));
                 }
                 imaging::Image::Raster(image) => {
+                    rows.push(raw_debug_section("Image Metadata", format!("{:?}", image)));
+                }
+                imaging::Image::External(image) => {
                     rows.push(raw_debug_section("Image Metadata", format!("{:?}", image)));
                 }
             }

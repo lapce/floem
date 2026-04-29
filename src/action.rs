@@ -82,6 +82,13 @@ pub fn inspect() {
     add_update_message(UpdateMessage::Inspect);
 }
 
+/// Capture the next Metal frame for this window.
+///
+/// This is only supported on macOS. On other platforms this action is a no-op.
+pub fn capture_metal() {
+    add_update_message(UpdateMessage::CaptureMetalFrame);
+}
+
 /// Set the **global** app theme in all windows.
 ///
 /// Toggles both floem and window themes.

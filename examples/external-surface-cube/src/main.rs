@@ -5,46 +5,46 @@ use std::{
 
 use bytemuck::{Pod, Zeroable};
 use floem::{
-    Application, ExternalSurface, ExternalSurfacePaintOptions, GpuResources,
-    action::inspect,
-    kurbo::{Circle, Point, Rect, Size, Stroke},
+    Application, ColorEffect, ColorEffectId, ExternalSurface, GpuResources,
+    RenderableExternalSurface, RenderableExternalSurfaceConfig,
+    action::{capture_metal, inspect},
+    imaging::{Brush, ClipRef, GroupRef, ImageBrush},
+    kurbo::{Affine, Circle, Point, Rect, Size, Stroke},
     peniko::Color,
     prelude::*,
-    text::FontWeight,
+    style::Position,
+    text::{Alignment, FontWeight},
     window::{WindowConfig, WindowId},
 };
-use subduction_core::time::HostTime;
-use subduction_core::timing::PresentPacing;
-use subduction_platform::{ExternalWgpuSurface, WgpuDrawableFrame, WgpuDrawableTargetThread};
 use wgpu::util::DeviceExt;
 
 const CUBE_SIZE: u32 = 640;
 
 fn app_view(window_id: WindowId) -> impl IntoView {
-    let (surface, producer_surface) = ExternalSurface::new_subduction_wgpu(
+    let (surface, producer_surface) = ExternalSurface::new_renderable(
         window_id,
         Size::new(f64::from(CUBE_SIZE), f64::from(CUBE_SIZE)),
+        RenderableExternalSurfaceConfig::default(),
     );
     let producer_surface = Arc::new(Mutex::new(Some(producer_surface)));
-    let drawable_target = Arc::new(Mutex::new(None::<WgpuDrawableTargetThread>));
     let paint_surface = surface.clone();
 
     (
-        "Subduction Cube".style(|s| {
+        "External Surface as Image Brush".style(|s| {
             s.font_size(30.0)
                 .font_weight(FontWeight::BOLD)
                 .color(Color::from_rgb8(246, 241, 226))
         }),
-        "Below: Floem paint. Middle: system-composited external surface. Above: Floem paint on a compositor-owned layer."
-            .style(|s| s.font_size(14.0).color(Color::from_rgb8(155, 169, 177))),
-        cube_canvas(paint_surface).style(|s| {
-            s.width(780.0)
-                .height(520.0)
-                .margin_top(22.0)
-                .border_radius(32.0)
-                .border(1.0)
-                .border_color(Color::from_rgba8(241, 219, 167, 55))
-        }),
+        "The cube is rendered by an external producer into a Subduction-owned wgpu texture. Floem can publish that frame as a compositor layer, or sample the same submitted frame as an imaging external image. This example uses the cube texture as an image brush for the large glyph fill, then flattens the surrounding clip, blur, and checkerboard color effect into one ordered render pass when direct layer promotion is not legal. Press F11 for the inspector or F12 to capture the next Metal frame."
+            .style(|s| {
+                s.font_size(14.0)
+                    .line_height(1.35)
+                    .text_wrap()
+                    .text_align(Alignment::Center)
+                    .max_width(760.0)
+                    .color(Color::from_rgb8(155, 169, 177))
+            }),
+        cube_panel(paint_surface),
     )
         .style(|s| {
             s.width_full()
@@ -58,44 +58,47 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         .on_event_stop(
             listener::WindowGpuResourcesReady,
             move |_cx, gpu_resources| {
+                if cube_diag_enabled() {
+                    eprintln!("external-surface-cube: gpu resources ready");
+                }
                 let Some(producer_surface) = producer_surface.lock().unwrap().take() else {
+                    if cube_diag_enabled() {
+                        eprintln!("external-surface-cube: producer surface already started");
+                    }
                     return;
                 };
-                let Ok(target) = start_cube_target(producer_surface, gpu_resources.clone()) else {
-                    eprintln!("external-surface-cube: failed to start subduction drawable target");
-                    return;
-                };
-                *drawable_target.lock().unwrap() = Some(target);
+                if let Err(err) = start_cube_target(producer_surface, gpu_resources.clone()) {
+                    eprintln!("external-surface-cube: failed to start renderable target: {err}");
+                }
             },
         )
         .on_event_stop(listener::KeyUp, |_, KeyboardEvent { key, .. }| {
-            if *key == Key::Named(NamedKey::F11) {
-                inspect();
+            match *key {
+                Key::Named(NamedKey::F11) => inspect(),
+                Key::Named(NamedKey::F12) => capture_metal(),
+                _ => {}
             }
         })
+}
+
+fn cube_panel(surface: ExternalSurface) -> impl IntoView {
+    cube_canvas(surface).style(|s| {
+        s.width(780.0)
+            .height(520.0)
+            .margin_top(22.0)
+            .position(Position::Relative)
+            .border_radius(32.0)
+            .border(1.0)
+            .border_color(Color::from_rgba8(241, 219, 167, 55))
+    })
 }
 
 fn cube_canvas(surface: ExternalSurface) -> impl IntoView {
     canvas(move |cx, size| {
         let canvas = Rect::ZERO.with_size(size);
         let cube_rect = centered_rect(size, Size::new(440.0, 330.0));
-
-        // Content below the external surface.
         cx.painter
             .fill(canvas.to_rounded_rect(32.0), Color::from_rgb8(19, 28, 30))
-            .draw();
-        cx.painter
-            .fill(
-                Rect::new(72.0, 76.0, size.width - 72.0, size.height - 76.0).to_rounded_rect(30.0),
-                Color::from_rgb8(25, 47, 50),
-            )
-            .draw();
-        cx.painter
-            .stroke(
-                cube_rect.inflate(28.0, 24.0).to_rounded_rect(28.0),
-                &Stroke::new(2.0),
-                Color::from_rgba8(104, 154, 148, 150),
-            )
             .draw();
 
         for index in 0..6 {
@@ -108,24 +111,67 @@ fn cube_canvas(surface: ExternalSurface) -> impl IntoView {
                 .draw();
         }
 
-        let options = ExternalSurfacePaintOptions::default();
-        cx.painter
-            .sink_mut()
-            .draw_external_surface(surface.id(), cube_rect, options);
+        let checkerboard_effect = ColorEffect::wgsl(
+            ColorEffectId(1),
+            r#"
+let sampled = textureSample(input_texture, input_sampler, uv);
+let cell = floor(position / vec2<f32>(28.0, 28.0));
+let checker = (cell.x + cell.y) - 2.0 * floor((cell.x + cell.y) * 0.5);
+let tint_a = vec3<f32>(1.12, 0.94, 0.72);
+let tint_b = vec3<f32>(0.72, 1.03, 1.12);
+let tint = mix(tint_a, tint_b, checker);
+return vec4<f32>(sampled.rgb * tint, sampled.a);
+"#,
+        )
+        .with_label("cube checkerboard color effect")
+        .with_color_space(subduction::wgpu::SurfaceColorSpace::ExtendedLinearSrgb);
+        cx.with_color_effect(checkerboard_effect, |cx| {
+            cx.painter.with_group(
+                GroupRef::new().with_clip(ClipRef::Fill {
+                    transform: Affine::IDENTITY,
+                    shape: floem::imaging::GeometryRef::RoundedRect(
+                        Rect::new(72.0, 76.0, size.width - 72.0, size.height - 76.0)
+                            .to_rounded_rect(30.0),
+                    ),
+                    fill_rule: floem::peniko::Fill::NonZero,
+                }),
+                |cx| {
+                    cx.fill(
+                        Rect::new(72.0, 76.0, size.width - 72.0, size.height - 76.0)
+                            .to_rounded_rect(30.0),
+                        Color::from_rgb8(25, 47, 50),
+                    )
+                    .draw();
 
-        // Content above the external surface.
-        cx.painter
-            .fill(
-                Rect::new(
-                    cube_rect.x0 - 18.0,
-                    cube_rect.y0 + 34.0,
-                    cube_rect.x1 + 18.0,
-                    cube_rect.y0 + 88.0,
-                )
-                .to_rounded_rect(20.0),
-                Color::from_rgba8(247, 226, 164, 230),
-            )
-            .draw();
+                    cx.stroke(
+                        cube_rect.inflate(28.0, 24.0).to_rounded_rect(28.0),
+                        &Stroke::new(2.0),
+                        Color::from_rgba8(104, 154, 148, 150),
+                    )
+                    .draw();
+
+                    let image_width = cube_rect.width().ceil().max(1.0) as u32;
+                    let image_height = cube_rect.height().ceil().max(1.0) as u32;
+                    let brush =
+                        Brush::Image(ImageBrush::from(surface.image(image_width, image_height)));
+
+                    cx.fill_rect(cube_rect, &brush);
+
+                    cx.fill(
+                        Rect::new(
+                            cube_rect.x0 - 18.0,
+                            cube_rect.y0 + 34.0,
+                            cube_rect.x1 + 18.0,
+                            cube_rect.y0 + 88.0,
+                        )
+                        .to_rounded_rect(20.0),
+                        Color::from_rgba8(247, 226, 164, 230),
+                    )
+                    .draw();
+                },
+            );
+        });
+
         cx.painter
             .fill(
                 Rect::new(
@@ -169,9 +215,12 @@ fn centered_rect(container: Size, size: Size) -> Rect {
 }
 
 fn start_cube_target(
-    surface: Arc<ExternalWgpuSurface>,
+    surface: RenderableExternalSurface,
     gpu_resources: GpuResources,
-) -> Result<WgpuDrawableTargetThread, String> {
+) -> Result<(), String> {
+    if cube_diag_enabled() {
+        eprintln!("external-surface-cube: installing render callback");
+    }
     let renderer = Arc::new(Mutex::new(CubeRenderer::new(
         gpu_resources.clone(),
         CUBE_SIZE,
@@ -179,39 +228,71 @@ fn start_cube_target(
         wgpu::TextureFormat::Bgra8Unorm,
     )?));
     let diag = Arc::new(Mutex::new(CubeRenderDiagnostics::new()));
-    let animation_origin = Arc::new(Mutex::new(None::<HostTime>));
+    let animation_origin = Arc::new(Mutex::new(None::<Instant>));
     let renderer_for_callback = renderer.clone();
     let diag_for_callback = diag.clone();
     let origin_for_callback = animation_origin.clone();
-    surface
-        .start_drawable_target(gpu_resources.device.clone(), move |frame| {
-            let mut diag = diag_for_callback.lock().unwrap();
-            diag.record_recv(&frame);
-            if std::env::var_os("FLOEM_RESIZE_DIAG").is_some() {
-                eprintln!(
-                    "cube resize drawable t={:?} frame_index={} drawable={}x{} target={:?} refresh={:?}",
-                    Instant::now(),
-                    frame.tick.frame_index,
-                    frame.width,
-                    frame.height,
-                    frame.tick.predicted_present,
-                    frame.tick.refresh_interval,
-                );
+    surface.set_frame_callback(move |mut cx| {
+        if cube_diag_enabled() {
+            eprintln!(
+                "external-surface-cube: frame callback frame_index={}",
+                cx.opportunity().frame_index,
+            );
+        }
+        let opportunity = cx.opportunity();
+        let completion_tx = cx.completion_sender();
+        let lease = match cx.acquire_target() {
+            Ok(lease) => lease,
+            Err(subduction::wgpu::SurfaceFrameError::NoTargetAvailable) => {
+                if cube_diag_enabled() {
+                    eprintln!("external-surface-cube: target unavailable");
+                }
+                return Ok(subduction::wgpu::SurfaceFrameDecision::Skip(
+                    subduction::wgpu::SurfaceSkipReason::ProducerBusy,
+                ));
             }
-            let target_time = frame.target_presentation_time();
-            let mut origin = origin_for_callback.lock().unwrap();
-            let origin = *origin.get_or_insert(target_time);
-            let seconds = frame.target_presentation_seconds_since(origin);
-            if let Err(err) = renderer_for_callback
-                .lock()
-                .unwrap()
-                .render(seconds, frame, &mut diag)
-            {
+            Err(err) => return Err(err),
+        };
+        let mut diag = diag_for_callback.lock().unwrap();
+        diag.record_recv(opportunity);
+        if cube_diag_enabled() {
+            eprintln!(
+                "cube renderable lease t={:?} frame_index={} target={}x{} target={:?} refresh={:?}",
+                Instant::now(),
+                opportunity.frame_index,
+                lease.size.width,
+                lease.size.height,
+                opportunity.target_present,
+                opportunity.refresh_interval,
+            );
+        }
+        let mut origin = origin_for_callback.lock().unwrap();
+        let origin = *origin.get_or_insert_with(Instant::now);
+        let seconds = origin.elapsed().as_secs_f32();
+        match renderer_for_callback
+            .lock()
+            .unwrap()
+            .render(seconds, lease, &mut diag)
+        {
+            Ok(completion) => {
+                let _ = completion_tx.send(completion);
+            }
+            Err(err) => {
                 eprintln!("external-surface-cube: {err}");
             }
-            diag.maybe_report();
-        })
-        .map_err(|err| format!("failed to start drawable target: {err}"))
+        }
+        diag.maybe_report();
+        Ok(subduction::wgpu::SurfaceFrameDecision::Deferred)
+    });
+    if cube_diag_enabled() {
+        eprintln!("external-surface-cube: render callback installed");
+    }
+    Ok(())
+}
+
+fn cube_diag_enabled() -> bool {
+    std::env::var_os("FLOEM_CUBE_DIAG").is_some()
+        || std::env::var_os("FLOEM_FRAME_PACING_DIAG").is_some()
 }
 
 struct CubeRenderer {
@@ -333,13 +414,13 @@ impl CubeRenderer {
     fn render(
         &mut self,
         seconds: f32,
-        frame: WgpuDrawableFrame,
+        frame: subduction::wgpu::SurfaceFrameLease,
         diag: &mut CubeRenderDiagnostics,
-    ) -> Result<(), String> {
+    ) -> Result<subduction::wgpu::SurfaceFrameCompletion, String> {
         let frame_start = Instant::now();
-        if self.width != frame.width || self.height != frame.height {
-            self.width = frame.width.max(1);
-            self.height = frame.height.max(1);
+        if self.width != frame.size.width || self.height != frame.size.height {
+            self.width = frame.size.width.max(1);
+            self.height = frame.size.height.max(1);
             self.depth = create_depth_texture(&self.gpu_resources.device, self.width, self.height);
         }
         let aspect = self.width as f32 / self.height as f32;
@@ -359,13 +440,10 @@ impl CubeRenderer {
                 });
 
         {
-            let Some(frame_view) = frame.view.as_ref() else {
-                return Err("drawable frame was already consumed".to_string());
-            };
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("cube render pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: frame_view,
+                    view: &frame.view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -399,11 +477,12 @@ impl CubeRenderer {
 
         let submit_start = Instant::now();
         self.gpu_resources.queue.submit(Some(encoder.finish()));
+        let _ = self.gpu_resources.device.poll(wgpu::PollType::Poll);
         diag.record_submit(submit_start.elapsed());
         let present_start = Instant::now();
-        frame.present_after_submit(&self.gpu_resources.queue, PresentPacing::AsSoonAsPossible);
+        let completion = frame.submit();
         diag.record_present(present_start.elapsed(), frame_start.elapsed());
-        Ok(())
+        Ok(completion)
     }
 }
 
@@ -439,7 +518,7 @@ impl CubeRenderDiagnostics {
         }
     }
 
-    fn record_recv(&mut self, frame: &WgpuDrawableFrame) {
+    fn record_recv(&mut self, opportunity: subduction::wgpu::SurfaceFrameOpportunity) {
         if !self.enabled {
             return;
         }
@@ -448,13 +527,13 @@ impl CubeRenderDiagnostics {
             self.max_recv_gap = self.max_recv_gap.max(now.duration_since(last_recv));
         }
         if let Some(last_frame_index) = self.last_frame_index {
-            let gap = frame.tick.frame_index.saturating_sub(last_frame_index);
+            let gap = opportunity.frame_index.saturating_sub(last_frame_index);
             if gap > 1 {
                 self.dropped_ticks = self.dropped_ticks.saturating_add(gap - 1);
             }
         }
         self.last_recv = Some(now);
-        self.last_frame_index = Some(frame.tick.frame_index);
+        self.last_frame_index = Some(opportunity.frame_index);
         self.recv = self.recv.saturating_add(1);
     }
 
@@ -509,7 +588,10 @@ fn create_depth_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu:
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         })
-        .create_view(&wgpu::TextureViewDescriptor::default())
+        .create_view(&wgpu::TextureViewDescriptor {
+            label: Some("cube depth texture view"),
+            ..Default::default()
+        })
 }
 
 #[repr(C)]

@@ -195,6 +195,7 @@ pub mod animate;
 mod app;
 mod box_tree;
 pub mod context;
+pub mod effects;
 pub mod event;
 pub mod ext_event;
 pub mod external_surface;
@@ -241,11 +242,15 @@ pub mod gpu_resources;
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use box_tree::{BoxTree, ElementId, ElementMeta, FocusNavMeta};
 pub(crate) use box_tree::{bump_focus_nav_meta_revision, focus_nav_meta_revision};
+pub use effects::{
+    ColorEffect, ColorEffectArgs, ColorEffectFrameUniform, ColorEffectId, ColorEffectShader,
+};
 pub use external_surface::{
     ExternalSurface, ExternalSurfaceAlphaMode, ExternalSurfaceConfig, ExternalSurfaceContent,
     ExternalSurfaceFrameArgs, ExternalSurfaceFrameUpdate, ExternalSurfaceHandle, ExternalSurfaceId,
-    ExternalSurfaceKind, ExternalSurfaceOutcome, ExternalSurfacePaintOptions,
-    ExternalSurfaceProvider, ExternalSurfaceProviderHandle, ExternalTexture,
+    ExternalSurfaceKind, ExternalSurfaceOutcome, ExternalSurfaceProvider,
+    ExternalSurfaceProviderHandle, ExternalTexture, RenderableExternalSurface,
+    RenderableExternalSurfaceConfig, RenderableExternalSurfaceFrameCx,
 };
 pub use floem_reactive as reactive;
 pub use frame::{
@@ -285,9 +290,7 @@ pub mod prelude {
     pub use crate::event::listener as el;
     pub use crate::event::listener;
     pub use crate::event::listener::EventListenerTrait;
-    pub use crate::external_surface::{
-        ExternalSurface, ExternalSurfaceConfig, ExternalSurfacePaintOptions, ExternalTexture,
-    };
+    pub use crate::external_surface::{ExternalSurface, ExternalSurfaceConfig, ExternalTexture};
     pub use crate::frame::{
         DisplayTiming, FrameOutcome, FrameTime, FrameTimingFeedback, FrameWorkload, PresentPacing,
         PresentationInterval,

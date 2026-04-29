@@ -307,13 +307,6 @@ impl ApplicationHandle {
                 }
                 self.request_update();
             }
-            UserEvent::CompositorSceneDrawableReady { window_id } => {
-                if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    handle.render_compositor_scene_layers();
-                    handle.refresh_frame_activity();
-                }
-                self.refresh_window_frame_schedule(window_id, event_loop);
-            }
             #[cfg(not(target_arch = "wasm32"))]
             UserEvent::RenderFrameReady {
                 window_id,
@@ -334,12 +327,19 @@ impl ApplicationHandle {
             }
             #[cfg(target_os = "macos")]
             UserEvent::SubductionFrameTick { window_id, tick } => {
+                if crate::frame_clock::frame_pacing_diag_enabled() {
+                    eprintln!(
+                        "floem frame pacing app tick window={:?} tick={} predicted={:?} refresh={:?}",
+                        window_id, tick.frame_index, tick.predicted_present, tick.refresh_interval,
+                    );
+                }
                 self.timing_diag.record_tick(tick.frame_index);
                 self.timing_diag.maybe_report();
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
                     handle.record_profile_instant("VSync", Instant::now());
                     handle.refresh_frame_clock_display_link_layer();
                     handle.receive_frame_tick(tick);
+                    handle.begin_metal_capture_on_frame_tick();
                 }
 
                 Application::clear_update_posted();
@@ -435,6 +435,14 @@ impl ApplicationHandle {
                 }
                 AppUpdateEvent::CaptureWindow { window_id, capture } => {
                     capture.set(self.capture_window(window_id).map(Rc::new));
+                }
+                AppUpdateEvent::CaptureMetalFrame { window_id } => {
+                    #[cfg(target_os = "macos")]
+                    if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                        handle.capture_next_metal_frame();
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    let _ = window_id;
                 }
                 AppUpdateEvent::ProfileWindow {
                     window_id,
@@ -571,7 +579,7 @@ impl ApplicationHandle {
             None => {}
         }
 
-        let mut frame_presented = false;
+        let frame_presented = false;
 
         match event {
             WindowEvent::ActivationTokenDone { .. } => {}
@@ -592,10 +600,6 @@ impl ApplicationHandle {
                     );
                 }
                 window_handle.size(size);
-                #[cfg(target_os = "macos")]
-                {
-                    frame_presented = window_handle.present_resize_sync_immediately(surface_size);
-                }
                 self.request_update();
             }
             WindowEvent::Moved(position) => {
@@ -1018,10 +1022,11 @@ impl ApplicationHandle {
         for (window_id, handle) in self.window_handles.iter_mut() {
             let done = handle.process_update_budgeted(start, budget);
             handle.refresh_frame_activity();
+            let schedule = handle.advance_frame();
             if !done {
                 any_work_remaining = true;
             }
-            schedules.push((*window_id, handle.advance_frame()));
+            schedules.push((*window_id, schedule));
 
             if !done || start.elapsed() >= budget {
                 any_work_remaining = true;
@@ -1046,28 +1051,6 @@ impl ApplicationHandle {
         }
 
         any_work_remaining
-    }
-
-    /// Re-runs one window's frame advancement and applies the resulting
-    /// schedule to the event loop.
-    ///
-    /// This is used after platform events that may have changed readiness so
-    /// the app loop can refresh timers from window-owned frame state.
-    fn refresh_window_frame_schedule(
-        &mut self,
-        window_id: WindowId,
-        event_loop: &dyn ActiveEventLoop,
-    ) {
-        let Some(schedule) = self
-            .window_handles
-            .get_mut(&window_id)
-            .map(|handle| handle.advance_frame())
-        else {
-            self.cancel_paced_wake_timer(window_id, event_loop);
-            return;
-        };
-
-        self.apply_window_frame_schedule(window_id, schedule, event_loop);
     }
 
     fn window_can_render(&self, window_id: &winit::window::WindowId) -> bool {

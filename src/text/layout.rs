@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::text::{AttrsList, GlyphRunRef, TextBrush};
-use imaging::{Composite, Painter, record::Glyph as ImagingGlyph};
+use imaging::{Brush, Composite, Painter, record::Glyph as ImagingGlyph};
 use parking_lot::Mutex;
 use parley::swash::{FontRef, StringId, Tag, scale::ScaleContext, tag_from_bytes, zeno};
 use parley::{
@@ -886,6 +886,7 @@ impl TextLayout {
                     normalized_coords: normalized_coords.as_ref(),
                     style: &style,
                     brush: glyph_run.style().brush.0.into(),
+                    brush_transform: None,
                     composite: Composite::default(),
                 };
                 let brush = run.brush.to_owned().multiply_alpha(run.composite.alpha);
@@ -904,6 +905,55 @@ impl TextLayout {
                     .hint(run.hint)
                     .normalized_coords(run.normalized_coords)
                     .draw(run.style, glyphs);
+            }
+        }
+    }
+
+    pub fn draw_with_painter_brush(
+        &self,
+        mut painter: Painter<'_>,
+        origin: impl Into<Point>,
+        font_embolden: peniko::kurbo::Vec2,
+        effective_scale: f64,
+        brush: &Brush,
+        brush_transform: Option<Affine>,
+    ) {
+        let origin = origin.into();
+        for line in self.layout.lines() {
+            for item in line.items() {
+                let parley::layout::PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                    continue;
+                };
+
+                let run = glyph_run.run();
+                let synthesis = run.synthesis();
+                let glyph_transform = synthesis
+                    .skew()
+                    .map(|angle| Affine::skew((angle as f64).to_radians().tan(), 0.0));
+
+                let style = peniko::Style::Fill(Fill::NonZero);
+                let normalized_coords = effective_normalized_coords(
+                    run.font(),
+                    run.font_size(),
+                    effective_scale,
+                    run.normalized_coords(),
+                );
+                let glyphs = glyph_run.positioned_glyphs().map(|glyph| ImagingGlyph {
+                    id: glyph.id,
+                    x: glyph.x,
+                    y: glyph.y,
+                });
+
+                painter
+                    .glyphs(run.font(), brush)
+                    .transform(Affine::translate(origin.to_vec2()))
+                    .glyph_transform(glyph_transform)
+                    .font_size(run.font_size())
+                    .font_embolden(font_embolden)
+                    .hint(false)
+                    .normalized_coords(normalized_coords.as_ref())
+                    .brush_transform(brush_transform)
+                    .draw(&style, glyphs);
             }
         }
     }

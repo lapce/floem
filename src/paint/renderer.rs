@@ -58,11 +58,12 @@ use imaging::{
     BlurredRoundedRect, ClipRef, FillRef, GlyphRunRef, GroupRef, ImageBufferTarget, ImageRenderer,
     PaintSink, RenderSource, RgbaImage, StrokeRef, record::Scene,
 };
-use imaging_wgpu::{TextureRenderer, TextureViewTarget};
+use imaging_wgpu::{
+    ExternalImageResolver, ResolvedExternalImage, TextureRenderer, TextureViewTarget,
+};
 use peniko::ImageData;
 use peniko::kurbo::Size;
 use softbuffer::{Context, Surface};
-use wgpu::util::TextureBlitter;
 use winit::window::{Window, WindowId};
 
 use crate::inspector::TimingKind;
@@ -118,13 +119,57 @@ impl RenderSource for TimedRenderSource<'_> {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ExternalImageResources {
+    images: Vec<ExternalImageResource>,
+}
+
+impl ExternalImageResources {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.images.is_empty()
+    }
+
+    pub(crate) fn insert(&mut self, id: imaging::ExternalImageId, image: ResolvedExternalImage) {
+        self.images.push(ExternalImageResource { id, image });
+    }
+}
+
+#[derive(Clone, Debug)]
+struct ExternalImageResource {
+    id: imaging::ExternalImageId,
+    image: ResolvedExternalImage,
+}
+
+struct ExternalImageResourceResolver {
+    images: ExternalImageResources,
+}
+
+impl ExternalImageResourceResolver {
+    fn new(images: ExternalImageResources) -> Self {
+        Self { images }
+    }
+}
+
+impl ExternalImageResolver for ExternalImageResourceResolver {
+    fn resolve_external_image(
+        &mut self,
+        image: imaging::ExternalImage,
+    ) -> Option<ResolvedExternalImage> {
+        self.images
+            .images
+            .iter()
+            .find(|resource| resource.id == image.id)
+            .map(|resource| resource.image.clone())
+    }
+}
+
 pub(crate) type WindowBackend = Box<dyn WindowRenderer>;
 pub(crate) type RendererChooser = Arc<dyn Fn(NewRendererCx) -> RendererSpec + Send + Sync>;
 
 pub struct NewRendererCx {
     pub window: Arc<dyn Window>,
     pub gpu_resources: Option<GpuResources>,
-    pub surface_caps: Option<subduction_platform::WgpuPresentSurfaceCapabilities>,
+    pub surface_caps: Option<subduction::wgpu::ExternalSurfaceCapabilities>,
     pub transparent: bool,
     pub size: Size,
     pub scale: f64,
@@ -236,7 +281,7 @@ impl NewRendererCx {
 
 pub struct GpuRendererChooserCx<'a> {
     pub gpu_resources: &'a GpuResources,
-    pub surface_caps: &'a subduction_platform::WgpuPresentSurfaceCapabilities,
+    pub surface_caps: &'a subduction::wgpu::ExternalSurfaceCapabilities,
 }
 
 impl GpuRendererChooserCx<'_> {
@@ -255,12 +300,88 @@ fn rgba_image_into_image_data(image: RgbaImage) -> ImageData {
     }
 }
 
+fn read_texture_into_rgba_image(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    format: wgpu::TextureFormat,
+    image: &mut RgbaImage,
+) -> Result<(), String> {
+    let width = image.width;
+    let height = image.height;
+    let width_bytes = width.saturating_mul(4);
+    let padded_row_bytes = width_bytes.div_ceil(256) * 256;
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("floem inspector compositor capture readback"),
+        size: u64::from(padded_row_bytes) * u64::from(height),
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("floem inspector compositor capture readback"),
+    });
+    encoder.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(padded_row_bytes),
+                rows_per_image: None,
+            },
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+    queue.submit([encoder.finish()]);
+
+    let slice = readback.slice(..);
+    let (tx, rx) = mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |result| {
+        let _ = tx.send(result);
+    });
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .map_err(|_| "wgpu device poll failed during compositor capture".to_owned())?;
+    rx.recv()
+        .map_err(|_| "wgpu readback callback dropped during compositor capture".to_owned())?
+        .map_err(|_| "wgpu readback buffer map failed during compositor capture".to_owned())?;
+
+    let mapped = slice.get_mapped_range();
+    let row_bytes = width_bytes as usize;
+    for (source, dest) in mapped
+        .chunks_exact(padded_row_bytes as usize)
+        .zip(image.data.chunks_exact_mut(row_bytes))
+    {
+        dest.copy_from_slice(&source[..row_bytes]);
+        if matches!(
+            format,
+            wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
+        ) {
+            for pixel in dest.chunks_exact_mut(4) {
+                pixel.swap(0, 2);
+            }
+        }
+    }
+    drop(mapped);
+    readback.unmap();
+    Ok(())
+}
+
 impl NewRendererCx {
     pub(crate) fn build(
         chooser: &RendererChooser,
         window: Arc<dyn Window>,
         gpu_resources: Option<GpuResources>,
-        surface_caps: Option<subduction_platform::WgpuPresentSurfaceCapabilities>,
+        surface_caps: Option<subduction::wgpu::ExternalSurfaceCapabilities>,
         transparent: bool,
         scale: f64,
         size: Size,
@@ -365,13 +486,19 @@ enum CpuWindowTarget<W> {
 }
 
 struct GpuWindowTarget {
-    blitter: TextureBlitter,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    surface: subduction_platform::WgpuPresentSurface,
+    surface: wgpu::Surface<'static>,
+    surface_config: wgpu::SurfaceConfiguration,
+    texture_blit: Option<TextureBlit>,
+    _window: Arc<dyn Window>,
     width: u32,
     height: u32,
     scale: f64,
+}
+
+struct TextureBlit {
+    blitter: wgpu::util::TextureBlitter,
 }
 
 struct CpuWgpuWindowTarget {
@@ -400,6 +527,101 @@ pub struct CaptureOutput {
     pub timing: CaptureTiming,
 }
 
+pub(crate) fn capture_source_with_external_images(
+    backend: &mut dyn WindowRenderer,
+    gpu_resources: &GpuResources,
+    size: Size,
+    source: &mut dyn RenderSource,
+    external_images: ExternalImageResources,
+) -> CaptureOutput {
+    let total_start = Instant::now();
+    let width = size.width.ceil().max(1.0) as u32;
+    let height = size.height.ceil().max(1.0) as u32;
+    let Some(format) = backend.compositor_texture_format() else {
+        return CaptureOutput {
+            error: Some("renderer has no compositor texture format".to_owned()),
+            timing: CaptureTiming {
+                total: total_start.elapsed(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+    };
+
+    let texture = gpu_resources
+        .device
+        .create_texture(&wgpu::TextureDescriptor {
+            label: Some("floem inspector compositor capture target"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+
+    let mut timing = NoopRendererTimingRecorder;
+    let rendered = backend.render_into_texture_with_external_images(
+        size,
+        source,
+        &texture,
+        external_images,
+        &mut timing,
+    );
+    if !rendered {
+        return CaptureOutput {
+            error: Some("renderer could not render compositor capture texture".to_owned()),
+            timing: CaptureTiming {
+                total: total_start.elapsed(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+    }
+
+    let readback_start = Instant::now();
+    let mut image = RgbaImage::new(width, height);
+    let error = read_texture_into_rgba_image(
+        &gpu_resources.device,
+        &gpu_resources.queue,
+        &texture,
+        format,
+        &mut image,
+    )
+    .err();
+    let readback = readback_start.elapsed();
+    CaptureOutput {
+        image: error.is_none().then(|| rgba_image_into_image_data(image)),
+        error,
+        timing: CaptureTiming {
+            total: total_start.elapsed(),
+            readback,
+            ..Default::default()
+        },
+    }
+}
+
+struct NoopRendererTimingRecorder;
+
+impl RendererTimingRecorder for NoopRendererTimingRecorder {
+    fn record_span(&mut self, _label: &'static str, _span: Option<TimingSpan>, _kind: TimingKind) {}
+
+    fn record_thread_span(
+        &mut self,
+        _label: &'static str,
+        _span: Option<TimingSpan>,
+        _kind: TimingKind,
+    ) {
+    }
+}
+
 pub(crate) trait WindowRenderer {
     /// Updates backend-owned presentation resources to the requested window
     /// size.
@@ -424,6 +646,31 @@ pub(crate) trait WindowRenderer {
         timing: &mut dyn RendererTimingRecorder,
     ) -> bool;
 
+    fn render_into_texture(
+        &mut self,
+        _size: Size,
+        _source: &mut dyn RenderSource,
+        _texture: &wgpu::Texture,
+        _timing: &mut dyn RendererTimingRecorder,
+    ) -> bool {
+        false
+    }
+
+    fn render_into_texture_with_external_images(
+        &mut self,
+        _size: Size,
+        _source: &mut dyn RenderSource,
+        _texture: &wgpu::Texture,
+        _external_images: ExternalImageResources,
+        _timing: &mut dyn RendererTimingRecorder,
+    ) -> bool {
+        false
+    }
+
+    fn compositor_texture_format(&self) -> Option<wgpu::TextureFormat> {
+        None
+    }
+
     /// Renders and presents a frame synchronously in the current call stack.
     fn render_immediate_and_present(
         &mut self,
@@ -441,21 +688,17 @@ pub(crate) trait WindowRenderer {
     #[cfg(not(target_arch = "wasm32"))]
     fn accept_rendered_frame(&mut self, _frame: RenderedFrame, _render_span: TimingSpan) {}
 
+    #[cfg(target_os = "macos")]
+    fn metal_display_link_layer(&self) -> Option<subduction_backend_apple::DisplayLinkLayer> {
+        None
+    }
+
     fn render_in_flight(&self) -> bool {
         false
     }
 
     fn has_completed_frame(&self) -> bool {
         false
-    }
-
-    /// Renders an offscreen scene using this renderer's existing backend.
-    ///
-    /// Threaded renderers execute this on their render worker, reusing the same
-    /// renderer instance and caches as the main window.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn render_offscreen_frame(&mut self, _scene: Scene, _size: Size) -> Option<RenderedFrame> {
-        None
     }
 
     /// Captures output from the supplied scene source without going through the
@@ -507,6 +750,7 @@ struct ImageWindowRenderer {
 #[cfg(not(target_arch = "wasm32"))]
 struct ThreadedWindowRenderer {
     name: &'static str,
+    compositor_texture_format: Option<wgpu::TextureFormat>,
     window_id: WindowId,
     presenter: ThreadedRendererPresenter,
     worker: OffscreenRenderWorker,
@@ -540,7 +784,7 @@ pub(crate) struct RenderedImageFrame {
 #[cfg(not(target_arch = "wasm32"))]
 enum ThreadedRendererPresenter {
     Cpu(CpuWindowTarget<Arc<dyn Window>>),
-    Gpu(GpuWindowTarget),
+    CompositorOnly,
 }
 
 pub struct RendererSpec(RendererSpecInner);
@@ -597,6 +841,13 @@ enum RenderWorkerCommand {
         window_id: WindowId,
         scene: Scene,
         size: Size,
+    },
+    RenderIntoTexture {
+        scene: Scene,
+        size: Size,
+        texture: wgpu::Texture,
+        external_images: Option<ExternalImageResources>,
+        response: mpsc::Sender<bool>,
     },
     Capture {
         scene: Scene,
@@ -674,6 +925,11 @@ impl ThreadedWindowRenderer {
         let maximum_drawable_count = cx.maximum_drawable_count;
         let gpu_resources = cx.gpu_resources.clone();
         let (worker, init) = OffscreenRenderWorker::spawn(cx.window.id(), chooser, cx)?;
+        let name = init.name();
+        let compositor_texture_format = match &init {
+            RendererInit::Gpu { surface_format, .. } => Some(*surface_format),
+            RendererInit::Cpu { .. } => None,
+        };
         let presenter = match init {
             RendererInit::Cpu { .. } => ThreadedRendererPresenter::Cpu(CpuWindowTarget::new(
                 window,
@@ -684,23 +940,21 @@ impl ThreadedWindowRenderer {
                 gpu_resources.as_ref(),
                 maximum_drawable_count,
             )?),
-            RendererInit::Gpu { surface_format, .. } => {
-                let gpu_resources =
-                    gpu_resources.ok_or_else(|| "renderer requires GPU resources".to_string())?;
-                ThreadedRendererPresenter::Gpu(GpuWindowTarget::new(
-                    &gpu_resources,
+            RendererInit::Gpu { .. } => {
+                let _ = (
                     window,
                     width,
                     height,
                     scale,
                     transparent,
-                    Some(surface_format),
                     maximum_drawable_count,
-                )?)
+                );
+                ThreadedRendererPresenter::CompositorOnly
             }
         };
         Ok(Self {
-            name: init.name(),
+            name,
+            compositor_texture_format,
             window_id,
             presenter,
             worker,
@@ -729,34 +983,8 @@ impl ThreadedWindowRenderer {
                 target.present_rgba(&frame.image, timing);
                 Ok(())
             }
-            (ThreadedRendererPresenter::Gpu(target), RenderedFrame::Gpu(texture)) => {
-                let start = Instant::now();
-                let Some(surface_frame) = target.surface.try_acquire_frame() else {
-                    return Err(RenderedFrame::Gpu(texture));
-                };
-                let compose_start = Instant::now();
-                target.copy_texture_to_surface(&texture, surface_frame.texture());
-                let present_call_start = Instant::now();
-                surface_frame.present_after_submit(
-                    &target.queue,
-                    subduction_core::timing::PresentPacing::AsSoonAsPossible,
-                );
-                let end = Instant::now();
-                timing.record_span(
-                    "Present",
-                    Some(TimingSpan::new(start, end)),
-                    TimingKind::Present,
-                );
-                timing.record_span(
-                    "Compose",
-                    Some(TimingSpan::new(compose_start, present_call_start)),
-                    TimingKind::Present,
-                );
-                timing.record_span(
-                    "PresentCall",
-                    Some(TimingSpan::new(present_call_start, end)),
-                    TimingKind::Present,
-                );
+            (ThreadedRendererPresenter::CompositorOnly, RenderedFrame::Gpu(texture)) => {
+                drop(texture);
                 Ok(())
             }
             (_, frame) => Err(frame),
@@ -823,6 +1051,31 @@ impl OffscreenRenderWorker {
                                 });
                             }
                         }
+                        RenderWorkerCommand::RenderIntoTexture {
+                            mut scene,
+                            size,
+                            texture,
+                            external_images,
+                            response,
+                        } => {
+                            let rendered = if let Some(external_images) = external_images {
+                                render_into_existing_texture_with_external_images(
+                                    &mut backend,
+                                    &mut scene,
+                                    size,
+                                    &texture,
+                                    external_images,
+                                )
+                            } else {
+                                render_into_existing_texture(
+                                    &mut backend,
+                                    &mut scene,
+                                    size,
+                                    &texture,
+                                )
+                            };
+                            let _ = response.send(rendered);
+                        }
                         RenderWorkerCommand::Capture {
                             mut scene,
                             size,
@@ -874,6 +1127,49 @@ impl OffscreenRenderWorker {
         response_rx
             .recv()
             .expect("render worker thread stopped during sync render")
+    }
+
+    fn render_into_texture_sync(
+        &mut self,
+        scene: Scene,
+        size: Size,
+        texture: wgpu::Texture,
+    ) -> bool {
+        let (response_tx, response_rx) = mpsc::channel();
+        self.sender
+            .send(RenderWorkerCommand::RenderIntoTexture {
+                scene,
+                size,
+                texture,
+                external_images: None,
+                response: response_tx,
+            })
+            .expect("render worker thread stopped unexpectedly");
+        response_rx
+            .recv()
+            .expect("render worker thread stopped during texture render")
+    }
+
+    fn render_into_texture_with_external_images_sync(
+        &mut self,
+        scene: Scene,
+        size: Size,
+        texture: wgpu::Texture,
+        external_images: ExternalImageResources,
+    ) -> bool {
+        let (response_tx, response_rx) = mpsc::channel();
+        self.sender
+            .send(RenderWorkerCommand::RenderIntoTexture {
+                scene,
+                size,
+                texture,
+                external_images: Some(external_images),
+                response: response_tx,
+            })
+            .expect("render worker thread stopped unexpectedly");
+        response_rx
+            .recv()
+            .expect("render worker thread stopped during texture render")
     }
 
     fn render_async(&mut self, window_id: WindowId, scene: Scene, size: Size) {
@@ -995,9 +1291,10 @@ impl GpuRenderer {
         width: u32,
         height: u32,
         format: wgpu::TextureFormat,
+        label: &'static str,
     ) -> wgpu::Texture {
         device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("floem offscreen frame"),
+            label: Some(label),
             size: wgpu::Extent3d {
                 width,
                 height,
@@ -1038,17 +1335,30 @@ fn render_offscreen(
             let device = backend.device.clone();
             let texture = match (&mut backend.backend, &backend.output) {
                 (GpuRendererBackend::Texture(renderer), GpuOutputMode::ProvidedTarget) => {
-                    let texture =
-                        GpuRenderer::create_render_texture(&device, width, height, *surface_format);
+                    let texture = GpuRenderer::create_render_texture(
+                        &device,
+                        width,
+                        height,
+                        *surface_format,
+                        "floem threaded gpu offscreen frame texture",
+                    );
                     renderer
                         .render_source_into_texture(source, texture.clone())
                         .expect("failed to render gpu target");
                     texture
                 }
                 (GpuRendererBackend::TextureView(renderer), GpuOutputMode::ProvidedTarget) => {
-                    let texture =
-                        GpuRenderer::create_render_texture(&device, width, height, *surface_format);
-                    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                    let texture = GpuRenderer::create_render_texture(
+                        &device,
+                        width,
+                        height,
+                        *surface_format,
+                        "floem threaded gpu offscreen frame texture",
+                    );
+                    let view = texture.create_view(&wgpu::TextureViewDescriptor {
+                        label: Some("floem threaded gpu offscreen frame texture view"),
+                        ..Default::default()
+                    });
                     renderer
                         .render_source_into_texture(
                             source,
@@ -1068,6 +1378,75 @@ fn render_offscreen(
             };
             Some(RenderedFrame::Gpu(texture))
         }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn render_into_existing_texture(
+    backend: &mut RendererSpec,
+    source: &mut dyn RenderSource,
+    size: Size,
+    texture: &wgpu::Texture,
+) -> bool {
+    let width = size.width.max(1.0) as u32;
+    let height = size.height.max(1.0) as u32;
+    match &mut backend.0 {
+        RendererSpecInner::Cpu(_) => false,
+        RendererSpecInner::Gpu { backend, .. } => match &mut backend.backend {
+            GpuRendererBackend::Texture(renderer) => renderer
+                .render_source_into_texture(source, texture.clone())
+                .is_ok(),
+            GpuRendererBackend::TextureView(renderer) => {
+                let view = texture.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("floem render existing texture target view"),
+                    ..Default::default()
+                });
+                renderer
+                    .render_source_into_texture(
+                        source,
+                        TextureViewTarget::new(&view, width, height),
+                    )
+                    .is_ok()
+            }
+        },
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn render_into_existing_texture_with_external_images(
+    backend: &mut RendererSpec,
+    source: &mut dyn RenderSource,
+    size: Size,
+    texture: &wgpu::Texture,
+    external_images: ExternalImageResources,
+) -> bool {
+    let width = size.width.max(1.0) as u32;
+    let height = size.height.max(1.0) as u32;
+    let mut resolver = ExternalImageResourceResolver::new(external_images);
+    match &mut backend.0 {
+        RendererSpecInner::Cpu(_) => false,
+        RendererSpecInner::Gpu { backend, .. } => match &mut backend.backend {
+            GpuRendererBackend::Texture(renderer) => renderer
+                .render_source_into_texture_with_external_images(
+                    source,
+                    texture.clone(),
+                    &mut resolver,
+                )
+                .is_ok(),
+            GpuRendererBackend::TextureView(renderer) => {
+                let view = texture.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("floem render existing texture external-image target view"),
+                    ..Default::default()
+                });
+                renderer
+                    .render_source_into_texture_with_external_images(
+                        source,
+                        TextureViewTarget::new(&view, width, height),
+                        &mut resolver,
+                    )
+                    .is_ok()
+            }
+        },
     }
 }
 
@@ -1117,41 +1496,62 @@ impl GpuWindowTarget {
         preferred_texture_format: Option<wgpu::TextureFormat>,
         maximum_drawable_count: u32,
     ) -> Result<Self, String> {
-        let latency = match gpu_resources.adapter.get_info().backend {
-            wgpu::Backend::Vulkan => 2,
-            _ => 1,
-        };
-        let texture_format = preferred_texture_format
-            .ok_or_else(|| "renderer requires surface format".to_string())?;
-        let mut config = subduction_platform::WgpuPresentSurfaceConfig::new(
-            width.max(1),
-            height.max(1),
-            texture_format,
-        );
-        config.scale = scale;
-        config.transparent = transparent;
-        config.desired_maximum_frame_latency = latency;
-        config.maximum_drawable_count = maximum_drawable_count;
-        let surface = subduction_platform::WgpuPresentSurface::from_window(
-            window,
-            &gpu_resources.instance,
-            &gpu_resources.adapter,
-            gpu_resources.device.clone(),
-            config,
-        )
-        .map_err(|err| err.to_string())?;
-        let capabilities = surface.capabilities();
-        if !capabilities.formats.contains(&texture_format) {
-            return Err(format!(
-                "renderer surface format {texture_format:?} is not supported"
-            ));
+        let raw_display_handle = window
+            .rwh_06_display_handle()
+            .display_handle()
+            .map_err(|err| err.to_string())?
+            .as_raw();
+        let raw_window_handle = window
+            .rwh_06_window_handle()
+            .window_handle()
+            .map_err(|err| err.to_string())?
+            .as_raw();
+        let surface = unsafe {
+            gpu_resources
+                .instance
+                .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
+                    raw_display_handle,
+                    raw_window_handle,
+                })
         }
+        .map_err(|err| err.to_string())?;
+        let capabilities = surface.get_capabilities(&gpu_resources.adapter);
+        let alpha_mode = if transparent
+            && capabilities
+                .alpha_modes
+                .contains(&wgpu::CompositeAlphaMode::PreMultiplied)
+        {
+            wgpu::CompositeAlphaMode::PreMultiplied
+        } else {
+            wgpu::CompositeAlphaMode::Opaque
+        };
+        let mut surface_config = surface
+            .get_default_config(&gpu_resources.adapter, width.max(1), height.max(1))
+            .ok_or_else(|| "renderer surface is not compatible with adapter".to_string())?;
+        let texture_format = if let Some(texture_format) = preferred_texture_format {
+            if !capabilities.formats.contains(&texture_format) {
+                return Err(format!(
+                    "renderer surface format {texture_format:?} is not supported"
+                ));
+            }
+            texture_format
+        } else {
+            surface_config.format
+        };
+        surface_config.format = texture_format;
+        surface_config.usage =
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST;
+        surface_config.alpha_mode = alpha_mode;
+        surface_config.desired_maximum_frame_latency = maximum_drawable_count.max(1);
+        surface.configure(&gpu_resources.device, &surface_config);
 
         Ok(Self {
-            blitter: TextureBlitter::new(&gpu_resources.device, texture_format),
             device: gpu_resources.device.clone(),
             queue: gpu_resources.queue.clone(),
             surface,
+            surface_config,
+            texture_blit: None,
+            _window: window,
             width,
             height,
             scale,
@@ -1164,21 +1564,89 @@ impl GpuWindowTarget {
             self.width = width;
             self.height = height;
             self.scale = scale;
-            self.surface.resize(width.max(1), height.max(1), scale);
+            self.surface_config.width = width.max(1);
+            self.surface_config.height = height.max(1);
+            self.surface.configure(&self.device, &self.surface_config);
         }
     }
 
-    fn copy_texture_to_surface(&mut self, source: &wgpu::Texture, target: &wgpu::Texture) {
-        let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
-        let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    fn copy_texture_to_surface_and_present(&mut self, source: &wgpu::Texture) {
+        let surface_frame = match self.surface.get_current_texture() {
+            Ok(frame) => frame,
+            Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost) => {
+                self.surface.configure(&self.device, &self.surface_config);
+                return;
+            }
+            Err(wgpu::SurfaceError::Timeout) => return,
+            Err(wgpu::SurfaceError::OutOfMemory) => return,
+            Err(wgpu::SurfaceError::Other) => return,
+        };
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("floem window texture copy"),
+                label: Some("floem compositor texture upload"),
             });
-        self.blitter
-            .copy(&self.device, &mut encoder, &source_view, &target_view);
+        if source.format() == self.surface_config.format {
+            encoder.copy_texture_to_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: source,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyTextureInfo {
+                    texture: &surface_frame.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::Extent3d {
+                    width: self.width.max(1),
+                    height: self.height.max(1),
+                    depth_or_array_layers: 1,
+                },
+            );
+        } else {
+            self.blit_texture_to_surface(source, &surface_frame.texture, &mut encoder);
+        }
+
         self.queue.submit([encoder.finish()]);
+        let _ = self.device.poll(wgpu::PollType::Poll);
+        surface_frame.present();
+    }
+
+    fn blit_texture_to_surface(
+        &mut self,
+        source: &wgpu::Texture,
+        destination: &wgpu::Texture,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        if self.texture_blit.is_none() {
+            self.texture_blit = Some(TextureBlit::new(&self.device, self.surface_config.format));
+        }
+        let blit = self
+            .texture_blit
+            .as_ref()
+            .expect("texture blit is initialized");
+        let source_view = source.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("floem present blit source texture view"),
+            ..Default::default()
+        });
+        let destination_view = destination.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("floem present blit destination surface texture view"),
+            ..Default::default()
+        });
+        blit.blitter
+            .copy(&self.device, encoder, &source_view, &destination_view);
+    }
+}
+
+impl TextureBlit {
+    fn new(device: &wgpu::Device, output_format: wgpu::TextureFormat) -> Self {
+        Self {
+            blitter: wgpu::util::TextureBlitter::new(device, output_format),
+        }
     }
 }
 
@@ -1237,6 +1705,13 @@ impl CpuWgpuWindowTarget {
 
     fn present_rgba(&mut self, image: &RgbaImage, timing: &mut dyn RendererTimingRecorder) {
         let start = Instant::now();
+        let width = self.gpu.width;
+        let height = self.gpu.height;
+        if self.width != width || self.height != height {
+            self.width = width;
+            self.height = height;
+            self.upload_texture = Self::create_upload_texture(&self.gpu.device, width, height);
+        }
         self.gpu.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &self.upload_texture,
@@ -1257,16 +1732,9 @@ impl CpuWgpuWindowTarget {
             },
         );
         let compose_start = Instant::now();
-        let Some(surface_frame) = self.gpu.surface.try_acquire_frame() else {
-            return;
-        };
-        self.gpu
-            .copy_texture_to_surface(&self.upload_texture, surface_frame.texture());
         let present_call_start = Instant::now();
-        surface_frame.present_after_submit(
-            &self.gpu.queue,
-            subduction_core::timing::PresentPacing::AsSoonAsPossible,
-        );
+        self.gpu
+            .copy_texture_to_surface_and_present(&self.upload_texture);
         let end = Instant::now();
         timing.record_span(
             "Present",
@@ -1429,7 +1897,7 @@ impl WindowRenderer for ThreadedWindowRenderer {
             ThreadedRendererPresenter::Cpu(target) => {
                 target.resize_with_scale(width, height, scale)
             }
-            ThreadedRendererPresenter::Gpu(target) => target.resize(width, height, scale),
+            ThreadedRendererPresenter::CompositorOnly => {}
         }
     }
 
@@ -1453,14 +1921,75 @@ impl WindowRenderer for ThreadedWindowRenderer {
         rendered
     }
 
-    fn render_immediate_and_present(
+    fn render_into_texture(
         &mut self,
         size: Size,
         source: &mut dyn RenderSource,
+        texture: &wgpu::Texture,
         timing: &mut dyn RendererTimingRecorder,
     ) -> bool {
-        if self.present_completed_frame(timing) {
+        let (scene, scene_span) = Self::record_scene(source);
+        let render_start = Instant::now();
+        let rendered = self
+            .worker
+            .render_into_texture_sync(scene, size, texture.clone());
+        let end = Instant::now();
+        timing.record_span("Scene", Some(scene_span), TimingKind::Paint);
+        timing.record_thread_span(
+            "Render",
+            Some(TimingSpan::new(render_start, end)),
+            TimingKind::Renderer,
+        );
+        rendered
+    }
+
+    fn render_into_texture_with_external_images(
+        &mut self,
+        size: Size,
+        source: &mut dyn RenderSource,
+        texture: &wgpu::Texture,
+        external_images: ExternalImageResources,
+        timing: &mut dyn RendererTimingRecorder,
+    ) -> bool {
+        if external_images.is_empty() {
+            return self.render_into_texture(size, source, texture, timing);
+        }
+        let (scene, scene_span) = Self::record_scene(source);
+        let render_start = Instant::now();
+        let rendered = self.worker.render_into_texture_with_external_images_sync(
+            scene,
+            size,
+            texture.clone(),
+            external_images,
+        );
+        let end = Instant::now();
+        timing.record_span("Scene", Some(scene_span), TimingKind::Paint);
+        timing.record_thread_span(
+            "Render",
+            Some(TimingSpan::new(render_start, end)),
+            TimingKind::Renderer,
+        );
+        rendered
+    }
+
+    fn compositor_texture_format(&self) -> Option<wgpu::TextureFormat> {
+        self.compositor_texture_format
+    }
+
+    fn render_immediate_and_present(
+        &mut self,
+        _size: Size,
+        source: &mut dyn RenderSource,
+        timing: &mut dyn RendererTimingRecorder,
+    ) -> bool {
+        if matches!(self.presenter, ThreadedRendererPresenter::CompositorOnly) {
+            let (_scene, scene_span) = Self::record_scene(source);
+            timing.record_span("Paint", Some(scene_span), TimingKind::Paint);
+            timing.record_span("Scene", Some(scene_span), TimingKind::Paint);
             return true;
+        }
+        if self.completed_frame.is_some() {
+            return self.present_completed_frame(timing);
         }
         if self.async_render_in_flight {
             return false;
@@ -1469,12 +1998,8 @@ impl WindowRenderer for ThreadedWindowRenderer {
         let (scene, scene_span) = Self::record_scene(source);
         timing.record_span("Paint", Some(scene_span), TimingKind::Paint);
         timing.record_span("Scene", Some(scene_span), TimingKind::Paint);
-        self.submit_async_render(self.window_id, scene, size);
+        self.submit_async_render(self.window_id, scene, _size);
         false
-    }
-
-    fn render_offscreen_frame(&mut self, scene: Scene, size: Size) -> Option<RenderedFrame> {
-        self.worker.render_sync(scene, size)
     }
 
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {
@@ -1487,7 +2012,7 @@ impl WindowRenderer for ThreadedWindowRenderer {
     fn debug_info(&mut self) -> String {
         let presenter = match &self.presenter {
             ThreadedRendererPresenter::Cpu(target) => target.presenter_name(),
-            ThreadedRendererPresenter::Gpu(_) => "subduction present surface",
+            ThreadedRendererPresenter::CompositorOnly => "subduction compositor",
         };
         format!("Renderer: {} (threaded, {presenter})", self.name)
     }
@@ -1498,12 +2023,21 @@ impl WindowRenderer for ThreadedWindowRenderer {
         self.completed_frame = Some((frame, render_span));
     }
 
+    fn discard_pending_frames(&mut self) {
+        self.completed_frame = None;
+    }
+
     fn render_in_flight(&self) -> bool {
         self.async_render_in_flight
     }
 
     fn has_completed_frame(&self) -> bool {
         self.completed_frame.is_some()
+    }
+
+    #[cfg(target_os = "macos")]
+    fn metal_display_link_layer(&self) -> Option<subduction_backend_apple::DisplayLinkLayer> {
+        None
     }
 }
 
@@ -1535,13 +2069,17 @@ impl WindowRenderer for TargetGpuWindowRenderer {
 
     fn render_immediate_and_present(
         &mut self,
-        size: Size,
+        _size: Size,
         source: &mut dyn RenderSource,
         timing: &mut dyn RendererTimingRecorder,
     ) -> bool {
+        let start = Instant::now();
+        let width = self.target.width;
+        let height = self.target.height;
+        let render_size = Size::new(f64::from(width), f64::from(height));
         let mut source = TimedRenderSource::new(source);
         let render_start = Instant::now();
-        let Some(texture) = self.render_texture(size, &mut source) else {
+        let Some(texture) = self.render_texture(render_size, &mut source) else {
             return false;
         };
         let render_end = Instant::now();
@@ -1553,18 +2091,9 @@ impl WindowRenderer for TargetGpuWindowRenderer {
             TimingKind::Renderer,
         );
 
-        let start = Instant::now();
-        let Some(surface_frame) = self.target.surface.try_acquire_frame() else {
-            return false;
-        };
         let compose_start = Instant::now();
-        self.target
-            .copy_texture_to_surface(&texture, surface_frame.texture());
         let present_call_start = Instant::now();
-        surface_frame.present_after_submit(
-            &self.target.queue,
-            subduction_core::timing::PresentPacing::AsSoonAsPossible,
-        );
+        self.target.copy_texture_to_surface_and_present(&texture);
         let end = Instant::now();
         timing.record_span(
             "Present",
@@ -1642,7 +2171,10 @@ impl TargetGpuWindowRenderer {
                 Some(texture)
             }
             (GpuRendererBackend::TextureView(backend), GpuOutputMode::ProvidedTarget) => {
-                let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                let texture_view = texture.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("floem wasm gpu window render texture view"),
+                    ..Default::default()
+                });
                 backend
                     .render_source_into_texture(
                         source,
@@ -1698,7 +2230,7 @@ impl WindowRenderer for ImageWindowRenderer {
     ) -> bool {
         let mut source = TimedRenderSource::new(source);
         let render_start = Instant::now();
-        let Some(image) = self.render_image(size, &mut source) else {
+        let Some(image) = self.render_image_for_current_target(size, &mut source) else {
             return false;
         };
         let render_end = Instant::now();
@@ -1711,12 +2243,6 @@ impl WindowRenderer for ImageWindowRenderer {
         );
         self.target.present_rgba(&image, timing);
         true
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    fn render_offscreen_frame(&mut self, mut scene: Scene, size: Size) -> Option<RenderedFrame> {
-        self.render_image(size, &mut scene)
-            .map(|image| RenderedFrame::Cpu(RenderedImageFrame { image }))
     }
 
     fn capture(&mut self, size: Size, source: &mut dyn RenderSource) -> CaptureOutput {
@@ -1760,6 +2286,20 @@ impl ImageWindowRenderer {
             .render_source_into(source, ImageBufferTarget::from_rgba_image(&mut image))
             .ok()
             .map(|_| image)
+    }
+
+    fn render_image_for_current_target(
+        &mut self,
+        size: Size,
+        source: &mut dyn RenderSource,
+    ) -> Option<RgbaImage> {
+        let size = match &self.target {
+            CpuWindowTarget::Softbuffer(_) => size,
+            CpuWindowTarget::Wgpu(target) => {
+                Size::new(f64::from(target.width), f64::from(target.height))
+            }
+        };
+        self.render_image(size, source)
     }
 }
 
@@ -1866,12 +2406,12 @@ fn choose_default_renderer(cx: NewRendererCx) -> Result<RendererSpec, String> {
             let queue = gpu.gpu_resources.queue.clone();
             let backend = imaging_skia::SkiaRenderer::new(adapter, device, queue)
                 .map_err(|err| err.to_string())?;
-            // if let Some(surface_format) = pick_supported_texture_format(
-            //     gpu.surface_formats(),
-            //     &backend.supported_texture_formats(),
-            // ) {
-            //     return Ok(cx.provided_texture_renderer(backend, surface_format, "Skia GPU"));
-            // }
+            if let Some(surface_format) = pick_supported_texture_format(
+                gpu.surface_formats(),
+                &backend.supported_texture_formats(),
+            ) {
+                return Ok(cx.provided_texture_renderer(backend, surface_format, "Skia GPU"));
+            }
             if let Some(surface_format) = fallback_surface_format {
                 return Ok(cx.owned_texture_renderer(backend, surface_format, "Skia GPU"));
             }

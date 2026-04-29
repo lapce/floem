@@ -97,7 +97,8 @@ imaging_vello_hybrid = { path = "../imaging/imaging_vello_hybrid", optional = tr
 floem_reactive = { path = "reactive", version = "0.2.0" }
 floem-editor-core = { path = "editor-core", version = "0.2.0", optional = true }
 subduction_core = { path = "../subduction/subduction_core", package = "subduction_core", features = ["std"] }
-subduction_platform = { path = "../subduction/subduction_platform", package = "subduction_platform" }
+subduction_render = { path = "../subduction/subduction_render", package = "subduction_render", features = ["std"] }
+subduction = { path = "../subduction/subduction", package = "subduction" }
 copypasta = { version = "0.10", default-features = false, features = [
   "wayland",
   "x11",
@@ -153,6 +154,7 @@ objc2-app-kit = { version = "0.3", features = [
   "NSApplication",
   "NSResponder",
   "NSView",
+  "objc2-quartz-core",
 ] }
 dispatch2 = {version = "0.3.0"}
 subduction_backend_apple = { path = "../subduction/subduction_backend_apple", package = "subduction_backend_apple", default-features = false, features = ["appkit", "ca-display-link", "cametal-display-link", "cv-display-link", "wgpu"] }

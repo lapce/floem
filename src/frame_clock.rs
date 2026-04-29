@@ -11,7 +11,8 @@ use winit::window::WindowId;
 use crate::{Application, app::UserEvent};
 #[cfg(target_os = "macos")]
 use subduction_backend_apple::{
-    CaDisplayLinkThread, DisplayLinkLayer, MetalDisplayLinkThread, now as subduction_now, timebase,
+    DisplayLinkLayer, DisplayLinkThread as CaDisplayLinkThread, DisplayLinkView,
+    now as subduction_now, timebase,
 };
 #[cfg(target_os = "windows")]
 use subduction_backend_windows::{
@@ -21,7 +22,7 @@ use subduction_backend_windows::{
 use subduction_core::{
     output::OutputId,
     time::{Duration as HostDuration, HostTime, Timebase},
-    timing::{DisplayTimingCapabilities, FrameTick, PresentPacing as SubductionPresentPacing},
+    timing::FrameTick,
 };
 use understory_frame_pacing::{
     DisplayTiming as PacingDisplayTiming, Duration as PacingDuration,
@@ -36,6 +37,14 @@ pub(crate) trait FrameClock {
         now: Instant,
         background_rendering: bool,
     ) -> FrameTime;
+    fn current_external_frame_time(
+        &mut self,
+        frame_interval: Duration,
+        now: Instant,
+        background_rendering: bool,
+    ) -> FrameTime {
+        self.current_frame_time(frame_interval, now, background_rendering)
+    }
     fn note_begin_frame_callbacks_ran(&mut self);
     fn refresh_schedule(&mut self, _frame_interval: Duration, _now: Instant) {}
     fn note_frame_prepare_started(&mut self, now: Instant);
@@ -59,6 +68,8 @@ pub(crate) trait FrameClock {
     fn set_native_display_id(&mut self, _display_id: Option<u32>) {}
     #[cfg(target_os = "macos")]
     fn set_metal_display_link_layer(&mut self, _layer: Option<DisplayLinkLayer>) {}
+    #[cfg(target_os = "macos")]
+    fn set_display_link_view(&mut self, _view: Option<DisplayLinkView>) {}
     #[cfg(target_os = "macos")]
     fn set_prefers_metal_display_link(&mut self, _prefers_metal: bool) {}
 }
@@ -291,7 +302,7 @@ struct ActivePacingPlan {
     present_time: HostTime,
     pre_surface_work_start: HostTime,
     acquire_surface_at: HostTime,
-    present_pacing: SubductionPresentPacing,
+    present_pacing: PresentPacing,
     frame_index: u64,
 }
 
@@ -411,57 +422,7 @@ impl SubductionPlanState {
     }
 
     fn display_timing(&self, fallback: Duration) -> DisplayTiming {
-        self.latest_tick
-            .and_then(|tick| {
-                let capabilities = tick.display_capabilities?;
-                Some(self.display_timing_from_subduction(capabilities, tick.refresh_interval))
-            })
-            .unwrap_or_else(|| DisplayTiming::fixed(self.latest_frame_interval(fallback)))
-    }
-
-    fn display_timing_from_subduction(
-        &self,
-        capabilities: DisplayTimingCapabilities,
-        refresh_interval: Option<u64>,
-    ) -> DisplayTiming {
-        if !capabilities.is_variable()
-            && let Some(refresh_interval) = refresh_interval
-        {
-            return DisplayTiming::fixed(Duration::from_nanos(
-                self.timebase.ticks_to_nanos(refresh_interval),
-            ));
-        }
-
-        let min_frame_interval = Duration::from_nanos(
-            self.timebase
-                .ticks_to_nanos(capabilities.min_frame_interval.0),
-        );
-        let max_frame_interval = Duration::from_nanos(
-            self.timebase
-                .ticks_to_nanos(capabilities.max_frame_interval.0),
-        );
-        if capabilities.is_variable() {
-            DisplayTiming::Variable {
-                min_frame_interval,
-                max_frame_interval,
-            }
-        } else {
-            DisplayTiming::fixed(min_frame_interval)
-        }
-    }
-
-    fn present_pacing_from_subduction(&self, pacing: SubductionPresentPacing) -> PresentPacing {
-        match pacing {
-            SubductionPresentPacing::AsSoonAsPossible => PresentPacing::AsSoonAsPossible,
-            SubductionPresentPacing::AtTime(host_time) => {
-                PresentPacing::AtTime(self.host_to_instant(host_time))
-            }
-            SubductionPresentPacing::AfterMinimumDuration(duration) => {
-                PresentPacing::AfterMinimumDuration(Duration::from_nanos(
-                    self.timebase.ticks_to_nanos(duration.0),
-                ))
-            }
-        }
+        DisplayTiming::fixed(self.latest_frame_interval(fallback))
     }
 
     fn set_frame_workload(&mut self, workload: FrameWorkload) {
@@ -479,30 +440,8 @@ impl SubductionPlanState {
             .map(|plan| self.host_to_instant(plan.acquire_surface_at))
     }
 
-    fn pacing_display_timing(
-        &self,
-        capabilities: DisplayTimingCapabilities,
-        refresh_interval: Option<HostDuration>,
-    ) -> PacingDisplayTiming {
-        if !capabilities.is_variable()
-            && let Some(refresh_interval) = refresh_interval
-        {
-            return PacingDisplayTiming::fixed(self.host_duration_to_pacing(refresh_interval));
-        }
-
-        let min_frame_interval = PacingDuration::from_nanos(
-            self.timebase
-                .ticks_to_nanos(capabilities.min_frame_interval.0),
-        );
-        let max_frame_interval = PacingDuration::from_nanos(
-            self.timebase
-                .ticks_to_nanos(capabilities.max_frame_interval.0),
-        );
-        if capabilities.is_variable() {
-            PacingDisplayTiming::variable(min_frame_interval, max_frame_interval, None)
-        } else {
-            PacingDisplayTiming::fixed(min_frame_interval)
-        }
+    fn pacing_display_timing(&self, refresh_interval: HostDuration) -> PacingDisplayTiming {
+        PacingDisplayTiming::fixed(self.host_duration_to_pacing(refresh_interval))
     }
 
     fn host_to_pacing_time(&self, host: HostTime) -> PacingTime {
@@ -536,45 +475,35 @@ impl SubductionPlanState {
         }
     }
 
-    fn present_pacing_from_decision(
-        &self,
-        decision: FramePacingDecision,
-        capabilities: DisplayTimingCapabilities,
-    ) -> SubductionPresentPacing {
+    fn present_pacing_from_decision(&self, decision: FramePacingDecision) -> PresentPacing {
         match decision.presentation {
-            PacingPresentation::AsSoonAsReady => SubductionPresentPacing::AsSoonAsPossible,
+            PacingPresentation::AsSoonAsReady => PresentPacing::AsSoonAsPossible,
             PacingPresentation::At(time) => {
-                SubductionPresentPacing::AtTime(self.pacing_time_to_host(time))
+                PresentPacing::AtTime(self.host_to_instant(self.pacing_time_to_host(time)))
             }
             PacingPresentation::AfterMinimumDuration(duration) => {
-                if capabilities.is_variable() {
-                    SubductionPresentPacing::AfterMinimumDuration(
-                        self.pacing_duration_to_host(duration),
-                    )
-                } else {
-                    SubductionPresentPacing::AtTime(
-                        self.pacing_time_to_host(decision.target_present_time),
-                    )
-                }
+                let _ = duration;
+                PresentPacing::AtTime(
+                    self.host_to_instant(self.pacing_time_to_host(decision.target_present_time)),
+                )
             }
         }
     }
 
     fn plan_for_tick(&mut self, tick: FrameTick) -> Option<ActivePacingPlan> {
-        let capabilities = tick.display_capabilities?;
         let predicted_present = tick.predicted_present?;
         let refresh_interval = tick
             .refresh_interval
             .or_else(|| self.latest_tick.and_then(|tick| tick.refresh_interval))
             .map(HostDuration)
-            .unwrap_or(capabilities.min_frame_interval);
+            .unwrap_or_else(|| HostDuration::from_nanos(16_666_667, self.timebase));
         let pending_target = if self.workload == FrameWorkload::Animation {
             self.pending_animation_target
         } else {
             None
         };
         let decision = pacing_plan_frame(
-            self.pacing_display_timing(capabilities, Some(refresh_interval)),
+            self.pacing_display_timing(refresh_interval),
             pacing_estimate(self.estimate),
             pacing_demand(self.workload),
             PacingFrameOpportunity {
@@ -590,8 +519,8 @@ impl SubductionPlanState {
         );
         let frame_interval = self.pacing_duration_to_host(decision.frame_interval);
         let present_time = self.pacing_time_to_host(decision.target_present_time);
-        let present_pacing = self.present_pacing_from_decision(decision, capabilities);
-        if frame_pacing_diag_enabled() && !capabilities.is_variable() {
+        let present_pacing = self.present_pacing_from_decision(decision);
+        if frame_pacing_diag_enabled() {
             eprintln!(
                 "floem frame pacing plan fixed tick={} workload={:?} now_to_pred={:.3}ms refresh={:.3}ms estimate_pre={:.3}ms estimate_surface={:.3}ms estimate_gpu={:.3}ms safety={:.3}ms selected={:.3}ms target_from_now={:.3}ms pre_start_from_now={:.3}ms acquire_from_now={:.3}ms submit_deadline_from_now={:.3}ms pending_in={:?} pending_out={} pacing={:?}",
                 tick.frame_index,
@@ -649,7 +578,7 @@ impl SubductionPlanState {
                     deadline_max: predicted_present,
                     predicted_present: Some(predicted_present),
                     display_timing: self.display_timing(frame_interval),
-                    present_pacing: self.present_pacing_from_subduction(plan.present_pacing),
+                    present_pacing: plan.present_pacing,
                     background_rendering,
                 },
                 frame_interval: self.latest_frame_interval(frame_interval),
@@ -661,15 +590,41 @@ impl SubductionPlanState {
             .current_frame_time(frame_interval, now, background_rendering)
     }
 
+    fn current_external_frame_time(
+        &mut self,
+        frame_interval: Duration,
+        now: Instant,
+        background_rendering: bool,
+    ) -> FrameTime {
+        let Some(tick) = self.latest_tick else {
+            return self.current_frame_time(frame_interval, now, background_rendering);
+        };
+        let Some(plan) = self.plan_for_tick(tick) else {
+            return self
+                .heuristic
+                .current_frame_time(frame_interval, now, background_rendering);
+        };
+        let semantic_time = self.host_to_instant(plan.semantic_time);
+        let predicted_present = self.host_to_instant(plan.present_time);
+        FrameTime {
+            now: semantic_time,
+            interval: PresentationInterval {
+                deadline_min: now,
+                deadline_max: predicted_present,
+                predicted_present: Some(predicted_present),
+                display_timing: self.display_timing(frame_interval),
+                present_pacing: plan.present_pacing,
+                background_rendering,
+            },
+            frame_interval: self.latest_frame_interval(frame_interval),
+            frame_index: plan.frame_index,
+        }
+    }
+
     fn redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
         if let Some(plan) = self.latest_plan {
             let target = self.host_to_instant(plan.pre_surface_work_start);
-            if frame_pacing_diag_enabled()
-                && self
-                    .latest_tick
-                    .and_then(|tick| tick.display_capabilities)
-                    .is_some_and(|capabilities| !capabilities.is_variable())
-            {
+            if frame_pacing_diag_enabled() {
                 eprintln!(
                     "floem frame pacing wake fixed tick={} phase={} target_in={:.3}ms now_to_present={:.3}ms now_to_pre={:.3}ms now_to_acquire={:.3}ms pacing={:?}",
                     plan.frame_index,
@@ -717,12 +672,7 @@ impl SubductionPlanState {
         self.estimate.gpu_work =
             smooth_work_estimate(self.estimate.gpu_work, feedback.gpu, Duration::ZERO);
         let presented_host = self.instant_to_host(presented_at);
-        if frame_pacing_diag_enabled()
-            && self
-                .latest_tick
-                .and_then(|tick| tick.display_capabilities)
-                .is_some_and(|capabilities| !capabilities.is_variable())
-        {
+        if frame_pacing_diag_enabled() {
             let last_gap = self
                 .last_present_time
                 .map(|last| self.host_duration_ms(presented_host.saturating_duration_since(last)));
@@ -772,7 +722,6 @@ impl SubductionPlanState {
 #[cfg(target_os = "macos")]
 #[derive(Debug)]
 enum AppleFrameDisplayLink {
-    Metal(MetalDisplayLinkThread),
     Ca(CaDisplayLinkThread),
 }
 
@@ -780,9 +729,6 @@ enum AppleFrameDisplayLink {
 impl AppleFrameDisplayLink {
     fn keep_alive(&self) {
         match self {
-            Self::Metal(link) => {
-                let _ = link;
-            }
             Self::Ca(link) => {
                 let _ = link;
             }
@@ -797,6 +743,7 @@ struct SubductionFrameClock {
     window_id: WindowId,
     native_display_id: Option<u32>,
     display_link: Option<AppleFrameDisplayLink>,
+    display_link_view: Option<DisplayLinkView>,
     display_link_layer: Option<DisplayLinkLayer>,
     prefers_metal_display_link: bool,
 }
@@ -809,6 +756,7 @@ impl SubductionFrameClock {
             window_id,
             native_display_id: None,
             display_link: None,
+            display_link_view: None,
             display_link_layer: None,
             prefers_metal_display_link: false,
         }
@@ -821,38 +769,33 @@ impl SubductionFrameClock {
 
         let output = self.plan_state.output;
         let window_id = self.window_id;
-        let callback = move |tick| {
+        let callback = move |tick: FrameTick| {
+            if frame_pacing_diag_enabled() {
+                eprintln!(
+                    "floem frame pacing display link callback window={:?} tick={} predicted={:?} refresh={:?}",
+                    window_id, tick.frame_index, tick.predicted_present, tick.refresh_interval,
+                );
+            }
             Application::send_proxy_event(UserEvent::SubductionFrameTick { window_id, tick });
         };
-        let display_link = if self.prefers_metal_display_link {
-            if let Some(layer) = self.display_link_layer.clone() {
-                if frame_pacing_diag_enabled() {
-                    eprintln!("floem frame pacing display link source=CAMetalDisplayLink");
+        if frame_pacing_diag_enabled() {
+            eprintln!(
+                "floem frame pacing display link source={} mode=NSRunLoopCommonModes",
+                if self.display_link_view.is_some() {
+                    "AppKitCADisplayLinkThread"
+                } else {
+                    "CADisplayLinkThread"
                 }
-                AppleFrameDisplayLink::Metal(MetalDisplayLinkThread::spawn(callback, output, layer))
-            } else {
-                if frame_pacing_diag_enabled() {
-                    eprintln!(
-                        "floem frame pacing display link source=CADisplayLink reason=no_metal_layer"
-                    );
-                }
-                AppleFrameDisplayLink::Ca(CaDisplayLinkThread::spawn(callback, output))
-            }
+            );
+        }
+        let display_link = if let Some(view) = self.display_link_view.clone() {
+            CaDisplayLinkThread::spawn_for_view(callback, output, view)
         } else {
-            if frame_pacing_diag_enabled() {
-                eprintln!("floem frame pacing display link source=CADisplayLink reason=preferred");
-            }
-            AppleFrameDisplayLink::Ca(CaDisplayLinkThread::spawn(callback, output))
+            CaDisplayLinkThread::spawn(callback, output)
         };
+        let display_link = AppleFrameDisplayLink::Ca(display_link);
         display_link.keep_alive();
         self.display_link = Some(display_link);
-    }
-
-    fn recreate_display_link(&mut self) {
-        self.display_link = None;
-        if self.plan_state.active {
-            self.ensure_display_link();
-        }
     }
 }
 
@@ -866,6 +809,16 @@ impl FrameClock for SubductionFrameClock {
     ) -> FrameTime {
         self.plan_state
             .current_frame_time(frame_interval, now, background_rendering)
+    }
+
+    fn current_external_frame_time(
+        &mut self,
+        frame_interval: Duration,
+        now: Instant,
+        background_rendering: bool,
+    ) -> FrameTime {
+        self.plan_state
+            .current_external_frame_time(frame_interval, now, background_rendering)
     }
 
     fn note_begin_frame_callbacks_ran(&mut self) {
@@ -962,17 +915,28 @@ impl FrameClock for SubductionFrameClock {
             return;
         }
         self.display_link_layer = layer;
-        if self.prefers_metal_display_link {
-            self.recreate_display_link();
+    }
+
+    fn set_display_link_view(&mut self, view: Option<DisplayLinkView>) {
+        let changed = match (&self.display_link_view, &view) {
+            (Some(old), Some(new)) => !old.is_same_view(new),
+            (None, None) => false,
+            _ => true,
+        };
+        if !changed {
+            return;
+        }
+        self.display_link_view = view;
+        if self.display_link.is_some() {
+            self.display_link = None;
+            if self.plan_state.active {
+                self.ensure_display_link();
+            }
         }
     }
 
     fn set_prefers_metal_display_link(&mut self, prefers_metal: bool) {
-        if self.prefers_metal_display_link == prefers_metal {
-            return;
-        }
         self.prefers_metal_display_link = prefers_metal;
-        self.recreate_display_link();
     }
 }
 
@@ -1005,6 +969,16 @@ impl FrameClock for WindowsSubductionFrameClock {
     ) -> FrameTime {
         self.plan_state
             .current_frame_time(frame_interval, now, background_rendering)
+    }
+
+    fn current_external_frame_time(
+        &mut self,
+        frame_interval: Duration,
+        now: Instant,
+        background_rendering: bool,
+    ) -> FrameTime {
+        self.plan_state
+            .current_external_frame_time(frame_interval, now, background_rendering)
     }
 
     fn note_begin_frame_callbacks_ran(&mut self) {

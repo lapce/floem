@@ -11,6 +11,16 @@ use crate::style::{StyleSelector, StyleSelectors};
 use muda::MenuTheme as MudaMenuTheme;
 
 use crate::platform::{Duration, Instant};
+#[cfg(target_os = "macos")]
+use objc2::rc::Retained;
+#[cfg(target_os = "macos")]
+use objc2_app_kit::NSView;
+#[cfg(target_os = "macos")]
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+#[cfg(target_os = "macos")]
+use subduction_backend_apple::{
+    DisplayLinkView, MetalCaptureScopeGuard, request_next_metal_capture,
+};
 use ui_events::keyboard::{Key, KeyboardEvent, Modifiers, NamedKey};
 use ui_events::pointer::PointerEvent;
 use ui_events_winit::WindowEventReducer;
@@ -106,6 +116,11 @@ pub(crate) struct WindowHandle {
     active_frame_time: Option<FrameTime>,
     pending_frame_workload: FrameWorkload,
     frame_signal_render_pending: bool,
+    compositor_scene_render_pending: bool,
+    #[cfg(target_os = "macos")]
+    current_frame_signal_index: Option<u64>,
+    #[cfg(target_os = "macos")]
+    last_compositor_commit_signal_index: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -488,6 +503,11 @@ impl WindowHandle {
             active_frame_time: None,
             pending_frame_workload: FrameWorkload::Animation,
             frame_signal_render_pending: false,
+            compositor_scene_render_pending: false,
+            #[cfg(target_os = "macos")]
+            current_frame_signal_index: None,
+            #[cfg(target_os = "macos")]
+            last_compositor_commit_signal_index: None,
         };
         if paint_state_initialized {
             window_handle.init_renderer();
@@ -499,7 +519,7 @@ impl WindowHandle {
         window_handle
             .window_state
             .compositor
-            .ensure_platform_presenter(window_id, window_handle.window.as_ref());
+            .ensure_platform_presenter(window_handle.window.as_ref());
         #[cfg(target_os = "macos")]
         window_handle.refresh_frame_clock_display_link_layer();
         window_handle
@@ -532,15 +552,22 @@ impl WindowHandle {
         size: Size,
         maximum_drawable_count: u32,
     ) -> PaintState {
-        let surface_caps = subduction_platform::WgpuPresentSurfaceCapabilities {
-            formats: vec![wgpu::TextureFormat::Bgra8Unorm],
-            present_modes: vec![wgpu::PresentMode::AutoVsync],
+        let surface_caps = subduction::wgpu::ExternalSurfaceCapabilities {
+            formats: vec![
+                wgpu::TextureFormat::Rgba8Unorm,
+                wgpu::TextureFormat::Bgra8Unorm,
+            ],
+            color_spaces: vec![subduction::wgpu::SurfaceColorSpace::Srgb],
+            dynamic_ranges: vec![subduction::wgpu::SurfaceDynamicRange::Standard],
             alpha_modes: vec![
                 wgpu::CompositeAlphaMode::PreMultiplied,
-                wgpu::CompositeAlphaMode::PostMultiplied,
                 wgpu::CompositeAlphaMode::Opaque,
             ],
-            nonblocking_acquire: true,
+            usages: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            max_size: None,
+            supports_frame_opportunities: true,
+            supports_render_targets: true,
+            supports_submitted_textures: true,
         };
         let backend = crate::paint::renderer::NewRendererCx::build(
             renderer_chooser,
@@ -672,6 +699,11 @@ impl WindowHandle {
             active_frame_time: None,
             pending_frame_workload: FrameWorkload::Animation,
             frame_signal_render_pending: false,
+            compositor_scene_render_pending: false,
+            #[cfg(target_os = "macos")]
+            current_frame_signal_index: None,
+            #[cfg(target_os = "macos")]
+            last_compositor_commit_signal_index: None,
         };
 
         window_handle
@@ -841,8 +873,29 @@ impl WindowHandle {
         self.commit_box_tree(&mut timing);
         self.pending_timing = timing;
         self.process_update_no_paint();
-        // self.window_state
-        //     .request_paint(self.window_state.root_view_id);
+        self.resize_present_surface_to_window();
+        self.window_state
+            .request_paint(self.window_state.root_view_id);
+        self.frame_signal_render_pending = true;
+        self.schedule_repaint();
+    }
+
+    fn resize_present_surface_to_window(&mut self) {
+        if !matches!(self.paint_state, PaintState::Initialized { .. }) {
+            return;
+        }
+
+        let extent = surface_extent(self.window_state.root_size, self.window_state.os_scale);
+        self.paint_state.backend_mut().resize(
+            extent.width,
+            extent.height,
+            self.window_state.effective_scale(),
+        );
+        self.window_state.compositor.invalidate_scene_content();
+        self.paint_state.backend_mut().discard_pending_frames();
+        self.frame_clock.set_frame_prepared(false);
+        #[cfg(target_os = "macos")]
+        self.refresh_frame_clock_display_link_layer();
     }
 
     pub(crate) fn position(&mut self, point: Point) {
@@ -1135,7 +1188,7 @@ impl WindowHandle {
         true
     }
 
-    fn render_immediate_current_frame(&mut self) -> bool {
+    fn render_immediate_current_frame(&mut self, compositor_commit_reason: &'static str) -> bool {
         if self.paint_state.backend_mut().render_in_flight() {
             return false;
         }
@@ -1151,6 +1204,7 @@ impl WindowHandle {
                 self.current_frame_time(),
                 &self.window_state.composition_plan,
             );
+        self.pull_external_surfaces_for_window_present();
         let Some(immediate) = self.render_scene(|paint_state, frame_size, source| {
             paint_state
                 .backend_mut()
@@ -1165,9 +1219,8 @@ impl WindowHandle {
             return false;
         }
 
-        self.render_compositor_scene_layers();
-        #[cfg(target_os = "macos")]
-        self.refresh_frame_clock_display_link_layer();
+        self.commit_compositor_frame(compositor_commit_reason);
+        self.compositor_scene_render_pending = false;
 
         timing.record_renderer_span(
             "PrePresentNotify",
@@ -1196,22 +1249,73 @@ impl WindowHandle {
         self.paint_state
             .backend_mut()
             .accept_rendered_frame(frame, render_span);
-        self.render_immediate_current_frame()
+        self.render_immediate_current_frame("render-ready")
     }
 
     fn pull_external_surface_frame(&mut self) -> bool {
         let effective_scale = self.window_state.effective_scale();
-        self.window_state.external_surfaces.pull_frame(
-            self.current_frame_time(),
+        let frame_time = self.current_external_frame_time();
+        self.active_frame_time = Some(frame_time);
+        let update = self.window_state.external_surfaces.pull_frame(
+            frame_time,
             &self.window_state.composition_plan,
             &mut self.window_state.compositor,
             effective_scale,
             self.gpu_resources.as_ref(),
         );
-        #[cfg(target_os = "macos")]
-        self.refresh_frame_clock_display_link_layer();
-        self.retire_compositor_only_frame(true);
+        if update.content_changed {
+            for surface_id in &update.changed_surfaces {
+                self.window_state
+                    .compositor
+                    .invalidate_external_surface_content(*surface_id);
+            }
+            self.compositor_scene_render_pending = true;
+        }
+        if crate::frame_clock::frame_pacing_diag_enabled() {
+            eprintln!(
+                "floem frame pacing external update window={:?} content_changed={} changed_surfaces={} request_next_frame={}",
+                self.window_id,
+                update.content_changed,
+                update.changed_surfaces.len(),
+                update.request_next_frame,
+            );
+        }
         true
+    }
+
+    fn pull_external_surfaces_for_window_present(&mut self) {
+        if !self.window_state.composition_plan.has_external_surfaces()
+            || !self.window_state.external_surfaces.has_frame_pull()
+        {
+            return;
+        }
+
+        let effective_scale = self.window_state.effective_scale();
+        let frame_time = self.current_external_frame_time();
+        let update = self.window_state.external_surfaces.pull_frame(
+            frame_time,
+            &self.window_state.composition_plan,
+            &mut self.window_state.compositor,
+            effective_scale,
+            self.gpu_resources.as_ref(),
+        );
+        if update.content_changed {
+            for surface_id in &update.changed_surfaces {
+                self.window_state
+                    .compositor
+                    .invalidate_external_surface_content(*surface_id);
+            }
+            self.compositor_scene_render_pending = true;
+        }
+        if crate::frame_clock::frame_pacing_diag_enabled() {
+            eprintln!(
+                "floem frame pacing external present-update window={:?} content_changed={} changed_surfaces={} request_next_frame={}",
+                self.window_id,
+                update.content_changed,
+                update.changed_surfaces.len(),
+                update.request_next_frame,
+            );
+        }
     }
 
     fn retire_compositor_only_frame(&mut self, presented: bool) {
@@ -1226,23 +1330,53 @@ impl WindowHandle {
             });
     }
 
-    pub(crate) fn render_compositor_scene_layers(&mut self) {
+    pub(crate) fn render_compositor_scene_layers(&mut self, reason: &'static str) {
         let Some(gpu_resources) = self.gpu_resources.as_ref() else {
             return;
         };
         if !matches!(self.paint_state, PaintState::Initialized { .. }) {
             return;
         }
-        if !self.window_state.composition_plan.has_external_surfaces() {
-            return;
-        }
-
+        let frame_index = self.current_frame_time().frame_index;
         let plan = self.window_state.composition_plan.clone();
+        if crate::frame_clock::frame_pacing_diag_enabled() {
+            eprintln!(
+                "floem window render_compositor_scene_layers reason={} window={:?} frame={} pending_paint={} pending_render={} root_size={:?} plan_items={}",
+                reason,
+                self.window_id,
+                frame_index,
+                self.window_state.has_pending_paint(),
+                self.window_state.has_pending_render(),
+                self.window_state.root_size,
+                plan.items.len(),
+            );
+        }
         self.window_state.compositor.render_scene_layers(
             &plan,
+            self.window_state.external_surfaces.entries(),
             gpu_resources,
             self.paint_state.backend_mut(),
+            self.window_state.effective_scale(),
         );
+    }
+
+    fn commit_compositor_frame(&mut self, reason: &'static str) {
+        #[cfg(target_os = "macos")]
+        if let Some(signal_index) = self.current_frame_signal_index {
+            if self.last_compositor_commit_signal_index == Some(signal_index) {
+                if crate::frame_clock::frame_pacing_diag_enabled() {
+                    eprintln!(
+                        "floem compositor commit skip reason={} window={:?} signal={} already_committed=true",
+                        reason, self.window_id, signal_index,
+                    );
+                }
+                return;
+            }
+            self.last_compositor_commit_signal_index = Some(signal_index);
+        }
+        self.render_compositor_scene_layers(reason);
+        #[cfg(target_os = "macos")]
+        self.refresh_frame_clock_display_link_layer();
     }
 
     /// Builds the scene source for a paint/capture operation and runs a single
@@ -1262,11 +1396,6 @@ impl WindowHandle {
 
         let extent = surface_extent(self.window_state.root_size, self.window_state.os_scale);
         let frame_size = Size::new(extent.width as f64, extent.height as f64);
-        self.paint_state.backend_mut().resize(
-            extent.width,
-            extent.height,
-            self.window_state.effective_scale(),
-        );
 
         let background = if self.transparent {
             None
@@ -1332,9 +1461,6 @@ impl WindowHandle {
         let total_start = Instant::now();
         let resize_start = Instant::now();
         let mut timing = std::mem::take(&mut self.pending_timing);
-        if !self.frame_clock.has_external_frame_signal() {
-            self.window_state.external_surfaces.take_frame_pull();
-        }
         self.window_state
             .external_surfaces
             .begin_composition_update(
@@ -1349,78 +1475,13 @@ impl WindowHandle {
             self.pending_timing = timing;
             return false;
         };
-        self.render_compositor_scene_layers();
-        #[cfg(target_os = "macos")]
-        self.refresh_frame_clock_display_link_layer();
+        self.pull_external_surfaces_for_window_present();
         let total_end = Instant::now();
 
         timing.push_absolute_span("Paint", total_start, total_end, TimingKind::Paint);
         let _resize = resize_start.elapsed();
         self.pending_timing = timing;
         rendered
-    }
-
-    #[cfg(target_os = "macos")]
-    pub(crate) fn present_resize_sync_immediately(
-        &mut self,
-        target_extent: PhysicalSize<u32>,
-    ) -> bool {
-        if !self.can_render_now() || !matches!(self.paint_state, PaintState::Initialized { .. }) {
-            return false;
-        }
-
-        self.paint_state.backend_mut().resize(
-            target_extent.width,
-            target_extent.height,
-            self.window_state.effective_scale(),
-        );
-
-        let notify_start = Instant::now();
-        self.set_presents_with_transaction_now(true);
-        self.window.pre_present_notify();
-        let notify_end = Instant::now();
-
-        let mut timing = std::mem::take(&mut self.pending_timing);
-        self.window_state
-            .external_surfaces
-            .begin_composition_update(
-                self.current_frame_time(),
-                &self.window_state.composition_plan,
-            );
-        let Some(immediate) = self.render_scene(|paint_state, frame_size, source| {
-            paint_state
-                .backend_mut()
-                .render_immediate_and_present(frame_size, source, &mut timing)
-        }) else {
-            self.set_presents_with_transaction_now(false);
-            self.pending_timing = timing;
-            return false;
-        };
-
-        self.set_presents_with_transaction_now(false);
-
-        if !immediate {
-            self.pending_timing = timing;
-            return false;
-        }
-        self.render_compositor_scene_layers();
-        #[cfg(target_os = "macos")]
-        self.refresh_frame_clock_display_link_layer();
-
-        timing.record_renderer_span(
-            "PrePresentNotify",
-            Some(crate::paint::renderer::TimingSpan::new(
-                notify_start,
-                notify_end,
-            )),
-            TimingKind::Renderer,
-        );
-        let submitted_at = Instant::now();
-        let presented_at = self.frame_present_time(submitted_at);
-        self.pending_timing = timing;
-        self.route_paint_present_event(presented_at);
-        self.paint_state.backend_mut().discard_pending_frames();
-        self.finish_presented_frame(Some(submitted_at), presented_at)
     }
 
     fn current_frame_time(&self) -> FrameTime {
@@ -1432,6 +1493,13 @@ impl WindowHandle {
         let frame_interval = self.frame_interval();
         self.frame_clock
             .current_frame_time(frame_interval, now, false)
+    }
+
+    fn current_external_frame_time(&mut self) -> FrameTime {
+        let now = Instant::now();
+        let frame_interval = self.frame_interval();
+        self.frame_clock
+            .current_external_frame_time(frame_interval, now, false)
     }
 
     fn frame_present_time(&self, fallback: Instant) -> Instant {
@@ -1476,13 +1544,52 @@ impl WindowHandle {
     }
 
     #[cfg(target_os = "macos")]
+    pub(crate) fn capture_next_metal_frame(&mut self) {
+        request_next_metal_capture();
+        self.window_state
+            .request_paint(self.window_state.root_view_id);
+        self.note_animation_frame_workload();
+        self.schedule_repaint();
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(crate) fn begin_metal_capture_on_frame_tick(&mut self) {
+        if self
+            .gpu_resources
+            .as_ref()
+            .and_then(|resources| MetalCaptureScopeGuard::begin_frame(&resources.queue))
+            .is_some()
+        {
+            self.window_state.compositor.mark_metal_capture_active();
+        }
+    }
+
+    #[cfg(target_os = "macos")]
     pub(crate) fn refresh_frame_clock_display_link_layer(&mut self) {
         let display_id = self
             .window
             .current_monitor()
             .and_then(|monitor| u32::try_from(monitor.native_id()).ok());
-        let layer = self.window_state.compositor.display_link_layer();
+        let display_link_view =
+            self.window
+                .window_handle()
+                .ok()
+                .and_then(|handle| match handle.as_raw() {
+                    RawWindowHandle::AppKit(handle) => {
+                        // SAFETY: raw-window-handle guarantees this is a valid
+                        // NSView pointer for the lifetime of the window handle.
+                        unsafe { Retained::retain(handle.ns_view.as_ptr().cast::<NSView>()) }
+                            .map(DisplayLinkView::new)
+                    }
+                    _ => None,
+                });
+        let layer = if matches!(self.paint_state, PaintState::Initialized { .. }) {
+            self.paint_state.backend_mut().metal_display_link_layer()
+        } else {
+            None
+        };
         self.frame_clock.set_native_display_id(display_id);
+        self.frame_clock.set_display_link_view(display_link_view);
         let has_layer = layer.is_some();
         self.frame_clock.set_metal_display_link_layer(layer);
         self.frame_clock.set_prefers_metal_display_link(has_layer);
@@ -1502,20 +1609,53 @@ impl WindowHandle {
 
     #[cfg(target_os = "macos")]
     pub(crate) fn receive_frame_tick(&mut self, tick: subduction_core::timing::FrameTick) {
+        if crate::frame_clock::frame_pacing_diag_enabled() {
+            eprintln!(
+                "floem frame pacing window tick window={:?} tick={} before_pending={}",
+                self.window_id, tick.frame_index, self.frame_signal_render_pending,
+            );
+        }
+        self.current_frame_signal_index = Some(tick.frame_index);
         self.frame_clock.receive_frame_tick(tick);
         self.frame_signal_render_pending = true;
     }
 
     #[cfg(target_os = "macos")]
     pub(crate) fn drive_external_surfaces_from_frame_signal(&mut self) -> bool {
+        if self.window_state.has_pending_paint() || self.window_state.has_pending_render() {
+            if crate::frame_clock::frame_pacing_diag_enabled() {
+                eprintln!(
+                    "floem frame pacing external skip window={:?} reason=pending_window_render",
+                    self.window_id,
+                );
+            }
+            return false;
+        }
+
         if !self.can_render_now()
             || !self.window_state.composition_plan.has_external_surfaces()
             || !self.window_state.external_surfaces.has_frame_pull()
         {
+            if crate::frame_clock::frame_pacing_diag_enabled() {
+                eprintln!(
+                    "floem frame pacing external skip window={:?} can_render={} has_external={} has_pull={}",
+                    self.window_id,
+                    self.can_render_now(),
+                    self.window_state.composition_plan.has_external_surfaces(),
+                    self.window_state.external_surfaces.has_frame_pull(),
+                );
+            }
             return false;
         }
 
-        self.pull_external_surface_frame()
+        let pulled = self.pull_external_surface_frame();
+        if crate::frame_clock::frame_pacing_diag_enabled() {
+            eprintln!(
+                "floem frame pacing external pull window={:?} pulled={}",
+                self.window_id, pulled,
+            );
+        }
+        pulled
     }
 
     /// Refreshes the frame clock's active/inactive state from window-owned
@@ -1549,6 +1689,19 @@ impl WindowHandle {
     pub(crate) fn advance_frame(&mut self) -> FrameSchedule {
         let frame_interval = self.frame_interval();
         let now = Instant::now();
+        if crate::frame_clock::frame_pacing_diag_enabled() {
+            eprintln!(
+                "floem frame advance begin window={:?} next_work={} begin_callbacks={} pending_paint={} pending_render={} signal_pending={} can_render={} workload={:?}",
+                self.window_id,
+                self.window_state.has_next_frame_work(),
+                self.window_state.has_pending_begin_frame_callbacks(),
+                self.window_state.has_pending_paint(),
+                self.window_state.has_pending_render(),
+                self.frame_signal_render_pending,
+                self.can_render_now(),
+                self.pending_frame_workload,
+            );
+        }
         if self.window_state.has_pending_begin_frame_callbacks() {
             self.pending_frame_workload = FrameWorkload::Animation;
         }
@@ -1561,12 +1714,24 @@ impl WindowHandle {
             if self.frame_clock.has_external_frame_signal() {
                 self.frame_signal_render_pending = false;
             }
+            if crate::frame_clock::frame_pacing_diag_enabled() {
+                eprintln!(
+                    "floem frame advance blocked window={:?} reason=can_render_now_false",
+                    self.window_id,
+                );
+            }
             return FrameSchedule::default();
         }
 
         let has_frame_opportunity =
             !self.frame_clock.has_external_frame_signal() || self.frame_signal_render_pending;
         if !has_frame_opportunity {
+            if crate::frame_clock::frame_pacing_diag_enabled() {
+                eprintln!(
+                    "floem frame advance blocked window={:?} reason=no_frame_opportunity",
+                    self.window_id,
+                );
+            }
             return FrameSchedule::default();
         }
 
@@ -1580,10 +1745,35 @@ impl WindowHandle {
         };
 
         if self.window_state.has_pending_paint() || self.window_state.has_pending_render() {
-            let presented = self.render_immediate_current_frame();
+            let presented = self.render_immediate_current_frame("frame");
+            if crate::frame_clock::frame_pacing_diag_enabled() {
+                eprintln!(
+                    "floem frame advance rendered window={:?} presented={} pending_paint={} pending_render={}",
+                    self.window_id,
+                    presented,
+                    self.window_state.has_pending_paint(),
+                    self.window_state.has_pending_render(),
+                );
+            }
             if self.frame_clock.has_external_frame_signal() && presented {
                 self.frame_signal_render_pending = false;
             }
+        } else if self.compositor_scene_render_pending {
+            self.commit_compositor_frame("external");
+            self.compositor_scene_render_pending = false;
+            self.retire_compositor_only_frame(true);
+            self.active_frame_time = None;
+            if crate::frame_clock::frame_pacing_diag_enabled() {
+                eprintln!(
+                    "floem frame advance compositor-only window={:?} pending_paint=false pending_render=false",
+                    self.window_id,
+                );
+            }
+        } else if crate::frame_clock::frame_pacing_diag_enabled() {
+            eprintln!(
+                "floem frame advance no_render window={:?} prepared={} pending_paint=false pending_render=false",
+                self.window_id, prepared,
+            );
         }
 
         if prepared && !self.window_state.has_pending_render() {
@@ -1609,6 +1799,18 @@ impl WindowHandle {
 
         if self.frame_clock.has_external_frame_signal() {
             self.frame_signal_render_pending = false;
+        }
+
+        if crate::frame_clock::frame_pacing_diag_enabled() {
+            eprintln!(
+                "floem frame advance end window={:?} prepared={} next_work={} pending_paint={} pending_render={} signal_pending={} schedule=none",
+                self.window_id,
+                prepared,
+                self.window_state.has_next_frame_work(),
+                self.window_state.has_pending_paint(),
+                self.window_state.has_pending_render(),
+                self.frame_signal_render_pending,
+            );
         }
 
         FrameSchedule::default()
@@ -1714,6 +1916,11 @@ impl WindowHandle {
 
     fn capture_image(&mut self) -> crate::paint::renderer::CaptureOutput {
         let total_start = Instant::now();
+        if let Some(mut output) = self.capture_composited_image(total_start) {
+            output.timing.total = total_start.elapsed();
+            return output;
+        }
+
         let resize_start = Instant::now();
         let Some(mut output) = self.render_scene(|paint_state, frame_size, source| {
             paint_state.backend_mut().capture(frame_size, source)
@@ -1725,6 +1932,83 @@ impl WindowHandle {
         output.timing.pre_present_notify = Duration::ZERO;
         output.timing.total = total_start.elapsed();
         output
+    }
+
+    fn capture_composited_image(
+        &mut self,
+        total_start: Instant,
+    ) -> Option<crate::paint::renderer::CaptureOutput> {
+        if !self.window_state.compositor.has_layer_host() {
+            return None;
+        }
+        let gpu_resources = self.gpu_resources.clone()?;
+        if !matches!(self.paint_state, PaintState::Initialized { .. }) {
+            return None;
+        }
+
+        self.render_compositor_scene_layers("capture");
+        let extent = surface_extent(self.window_state.root_size, self.window_state.os_scale);
+        let frame_size = Size::new(f64::from(extent.width), f64::from(extent.height));
+        let background = self.capture_background();
+        let capture = match self.window_state.compositor.capture_scene(
+            &self.window_state.composition_plan,
+            frame_size,
+            self.window_state.effective_scale(),
+            background,
+        ) {
+            Ok(capture) => capture,
+            Err(error) => {
+                return Some(crate::paint::renderer::CaptureOutput {
+                    error: Some(error),
+                    timing: crate::paint::renderer::CaptureTiming {
+                        total: total_start.elapsed(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                });
+            }
+        };
+
+        struct CaptureSceneSource {
+            scene: imaging::record::Scene,
+            frame_size: Size,
+        }
+
+        impl RenderSource for CaptureSceneSource {
+            fn paint_into(&mut self, sink: &mut dyn PaintSink) {
+                crate::paint::display_list::replay_scene(
+                    &self.scene,
+                    sink,
+                    kurbo::Affine::IDENTITY,
+                    self.frame_size,
+                );
+            }
+        }
+
+        let mut source = CaptureSceneSource {
+            scene: capture.scene,
+            frame_size,
+        };
+        Some(crate::paint::renderer::capture_source_with_external_images(
+            self.paint_state.backend_mut(),
+            &gpu_resources,
+            frame_size,
+            &mut source,
+            capture.resources,
+        ))
+    }
+
+    fn capture_background(&self) -> Option<Brush> {
+        if self.transparent {
+            None
+        } else {
+            Some(
+                self.default_theme
+                    .as_ref()
+                    .and_then(|theme| theme.get(crate::style::Background))
+                    .unwrap_or(Brush::Solid(palette::css::WHITE)),
+            )
+        }
     }
 
     pub(crate) fn capture(&mut self) -> Capture {
@@ -2181,6 +2465,10 @@ impl WindowHandle {
                     UpdateMessage::Inspect => {
                         inspector::capture(self.window_id);
                     }
+                    UpdateMessage::CaptureMetalFrame => {
+                        #[cfg(target_os = "macos")]
+                        self.capture_next_metal_frame();
+                    }
                     UpdateMessage::AddOverlay { view } => {
                         self.id.add_child(view);
                         self.id.request_all();
@@ -2558,9 +2846,6 @@ impl WindowHandle {
         // will still be considered a "known root" when the ViewId slot is reused.
         remove_window_id_mapping(&self.id, &self.window_id);
     }
-
-    #[cfg(target_os = "macos")]
-    fn set_presents_with_transaction_now(&mut self, _value: bool) {}
 }
 
 pub(crate) fn get_current_view() -> ViewId {

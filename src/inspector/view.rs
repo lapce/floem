@@ -232,6 +232,8 @@ fn capture_view(
             capture: capture_s.write_only(),
         })
     });
+    let metal_capture = Button::new("Capture Metal")
+        .action(move || add_app_update_event(AppUpdateEvent::CaptureMetalFrame { window_id }));
 
     let make_toggle_button = |signal: RwSignal<bool>, label: &'static str| {
         Stack::new((
@@ -295,6 +297,7 @@ fn capture_view(
     let tabs = Stack::vertical((
         Stack::horizontal((
             recapture,
+            metal_capture,
             tree_button,
             selected_button,
             clear,

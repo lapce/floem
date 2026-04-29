@@ -1,6 +1,6 @@
 use peniko::kurbo::{Affine, Rect, RoundedRect};
 
-use crate::{ElementId, external_surface::ExternalSurfaceId};
+use crate::{effects::ColorEffect, external_surface::ExternalSurfaceId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum PaintStage {
@@ -10,14 +10,10 @@ pub(crate) enum PaintStage {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum CompositionKey {
-    SceneChunk {
-        owner: ElementId,
-        stage: PaintStage,
-        chunk_index: u32,
+    SceneRun {
+        run_index: u32,
     },
     ExternalSurface {
-        owner: ElementId,
-        stage: PaintStage,
         surface_id: ExternalSurfaceId,
         occurrence: u32,
     },
@@ -34,9 +30,10 @@ impl CompositionPlan {
     }
 
     pub(crate) fn has_external_surfaces(&self) -> bool {
-        self.items
-            .iter()
-            .any(|item| matches!(item, CompositionItem::ExternalSurface(_)))
+        self.items.iter().any(|item| match item {
+            CompositionItem::ExternalSurface(_) => true,
+            CompositionItem::Scene(layer) => !layer.external_images.is_empty(),
+        })
     }
 
     pub(crate) fn window_prefix_fingerprint(&self) -> WindowPrefixFingerprint {
@@ -53,6 +50,8 @@ impl CompositionPlan {
                         content_bounds: layer.content_bounds,
                         opacity: layer.opacity,
                         command_count: layer.scene.commands().len(),
+                        external_image_count: layer.external_images.len(),
+                        color_effect_count: layer.color_effects.len(),
                     });
                 }
                 CompositionItem::Scene(_) | CompositionItem::ExternalSurface(_) => {}
@@ -77,6 +76,8 @@ struct SceneFingerprint {
     content_bounds: Option<Rect>,
     opacity: f32,
     command_count: usize,
+    external_image_count: usize,
+    color_effect_count: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -89,6 +90,8 @@ pub(crate) enum CompositionItem {
 pub(crate) struct SceneLayer {
     pub key: CompositionKey,
     pub scene: imaging::record::Scene,
+    pub external_images: Vec<SceneExternalImage>,
+    pub color_effects: Vec<ColorEffect>,
     pub content_revision: u64,
     pub transform: Affine,
     pub clip: Option<RoundedRect>,
@@ -98,11 +101,20 @@ pub(crate) struct SceneLayer {
     pub promoted: bool,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SceneExternalImage {
+    pub image_id: imaging::ExternalImageId,
+    pub surface_id: ExternalSurfaceId,
+    pub rect: Rect,
+    pub source_size: peniko::kurbo::Size,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct ExternalSurfaceLayer {
     pub key: CompositionKey,
     pub surface_id: ExternalSurfaceId,
     pub rect: Rect,
+    pub source_size: peniko::kurbo::Size,
     pub transform: Affine,
     pub clip: Option<RoundedRect>,
     pub opacity: f32,

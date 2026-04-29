@@ -41,9 +41,8 @@ impl GpuResources {
         required_features: wgpu::Features,
         backends: Option<Backends>,
         window: Arc<dyn Window>,
-    ) -> Receiver<
-        Result<(Self, subduction_platform::WgpuPresentSurfaceCapabilities), GpuResourceError>,
-    > {
+    ) -> Receiver<Result<(Self, subduction::wgpu::ExternalSurfaceCapabilities), GpuResourceError>>
+    {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: Backends::from_env().or(backends).unwrap_or(Backends::all()),
             flags: InstanceFlags::from_env_or_default(),
@@ -67,19 +66,27 @@ impl GpuResources {
                     return;
                 };
 
-                let surface_caps = subduction_platform::WgpuPresentSurfaceCapabilities {
-                    formats: vec![wgpu::TextureFormat::Bgra8Unorm],
-                    present_modes: vec![wgpu::PresentMode::AutoVsync],
+                let surface_caps = subduction::wgpu::ExternalSurfaceCapabilities {
+                    formats: vec![
+                        wgpu::TextureFormat::Rgba8Unorm,
+                        wgpu::TextureFormat::Bgra8Unorm,
+                    ],
+                    color_spaces: vec![subduction::wgpu::SurfaceColorSpace::Srgb],
+                    dynamic_ranges: vec![subduction::wgpu::SurfaceDynamicRange::Standard],
                     alpha_modes: vec![
                         wgpu::CompositeAlphaMode::PreMultiplied,
-                        wgpu::CompositeAlphaMode::PostMultiplied,
                         wgpu::CompositeAlphaMode::Opaque,
                     ],
-                    nonblocking_acquire: true,
+                    usages: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                    max_size: None,
+                    supports_frame_opportunities: true,
+                    supports_render_targets: true,
+                    supports_submitted_textures: true,
                 };
                 let request_result = adapter
                     .request_device(&wgpu::DeviceDescriptor {
-                        label: None,
+                        label: Some("floem shared wgpu device"),
                         required_features,
                         ..Default::default()
                     })
