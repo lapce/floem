@@ -793,7 +793,7 @@ pub(crate) fn scene_debug_view_with_size(
     let preview_height = content_size.height.max(1.0);
 
     let preview = canvas(move |cx, _size| {
-        replay(&preview_scene, cx.painter.sink_mut());
+        replay(&preview_scene, cx.painter.as_imaging_painter().sink_mut());
     })
     .style(move |s| s.width(preview_width).height(preview_height));
 

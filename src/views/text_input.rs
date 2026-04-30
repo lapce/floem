@@ -1497,7 +1497,7 @@ impl View for TextInput {
                 .borrow()
                 .with_effective_text_layout(|text_layout| {
                     text_layout.draw_with_painter(
-                        p.as_dyn(),
+                        p.as_imaging_dyn(),
                         Point::new(text_start_point.x - self.scroll_offset, text_start_point.y),
                         cx.font_embolden,
                         cx.window_state.effective_scale(),
@@ -1538,9 +1538,10 @@ impl View for TextInput {
                         .is_some_and(|p| p.cursor.is_some_and(|c| c.0 != c.1));
 
                 if has_selection {
-                    let sink: &mut dyn imaging::PaintSink = p.sink_mut();
-                    let mut painter = imaging::Painter::new(sink);
-                    self.paint_selection_rect_with_painter(cx.effective_scale, &mut painter);
+                    self.paint_selection_rect_with_painter(
+                        cx.effective_scale,
+                        &mut p.as_imaging_dyn(),
+                    );
                 }
             }
         });

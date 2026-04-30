@@ -384,7 +384,7 @@ impl View for SatValuePicker {
         }
 
         if let Some(scene) = self.retained_draw.as_ref() {
-            cx.painter.replay(scene.as_ref());
+            cx.painter.as_imaging_painter().replay(scene.as_ref());
         }
 
         if size.width > 0.0 && size.height > 0.0 {
@@ -517,7 +517,7 @@ impl View for HuePicker {
         }
 
         if let Some(scene) = self.retained_draw.as_ref() {
-            cx.painter.replay(scene.as_ref());
+            cx.painter.as_imaging_painter().replay(scene.as_ref());
         }
         if size.width > 0.0 {
             let hue = self.current_color.components[2];

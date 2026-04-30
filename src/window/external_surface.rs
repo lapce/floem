@@ -1,4 +1,4 @@
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::{
@@ -272,31 +272,41 @@ struct PlannedExternalSurface {
 
 fn planned_external_surfaces(plan: &CompositionPlan) -> Vec<PlannedExternalSurface> {
     let mut surfaces = Vec::new();
-    let mut requested = FxHashSet::default();
+    let mut requested = FxHashMap::default();
     for item in &plan.items {
         match item {
             CompositionItem::ExternalSurface(layer) => {
-                let source_size = layer.source_size;
-                if requested.insert((layer.surface_id, size_key(source_size))) {
+                let request_key = (layer.surface_id, size_key(layer.source_size));
+                if let Some(index) = requested.get(&request_key).copied() {
+                    let planned: &mut PlannedExternalSurface = &mut surfaces[index];
+                    if planned.key.is_none() {
+                        planned.key = Some(layer.key.clone());
+                        planned.rect = layer.rect;
+                    }
+                } else {
+                    requested.insert(request_key, surfaces.len());
                     surfaces.push(PlannedExternalSurface {
                         surface_id: layer.surface_id,
                         rect: layer.rect,
-                        source_size,
-                        key: None,
+                        source_size: layer.source_size,
+                        key: Some(layer.key.clone()),
                     });
                 }
             }
             CompositionItem::Scene(layer) => {
-                surfaces.extend(layer.external_images.iter().filter_map(|image| {
-                    requested
-                        .insert((image.surface_id, size_key(image.source_size)))
-                        .then(|| PlannedExternalSurface {
-                            surface_id: image.surface_id,
-                            rect: image.rect,
-                            source_size: image.source_size,
-                            key: None,
-                        })
-                }));
+                for image in &layer.external_images {
+                    let request_key = (image.surface_id, size_key(image.source_size));
+                    if requested.contains_key(&request_key) {
+                        continue;
+                    }
+                    requested.insert(request_key, surfaces.len());
+                    surfaces.push(PlannedExternalSurface {
+                        surface_id: image.surface_id,
+                        rect: image.rect,
+                        source_size: image.source_size,
+                        key: None,
+                    });
+                }
             }
         }
     }
@@ -312,7 +322,9 @@ mod tests {
     use super::*;
     use crate::{
         external_surface::ExternalSurfaceId,
-        paint::composition::{CompositionKey, ExternalSurfaceLayer},
+        paint::composition::{
+            CompositionKey, ExternalSurfaceLayer, SceneExternalImage, SceneLayer,
+        },
     };
 
     #[test]
@@ -350,7 +362,61 @@ mod tests {
         assert_eq!(planned.len(), 1);
         assert_eq!(planned[0].surface_id, surface_id);
         assert_eq!(planned[0].source_size, Size::new(100.0, 50.0));
-        assert_eq!(planned[0].key, None);
+        assert_eq!(
+            planned[0].key,
+            Some(CompositionKey::ExternalSurface {
+                surface_id,
+                occurrence: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn planned_external_surfaces_upgrades_scene_request_to_direct_layer_request() {
+        let surface_id = ExternalSurfaceId::test_new(43);
+        let mut plan = CompositionPlan::new();
+        plan.items.push(CompositionItem::Scene(SceneLayer {
+            key: CompositionKey::SceneRun { run_index: 0 },
+            scene: imaging::record::Scene::new(),
+            external_images: vec![SceneExternalImage {
+                image_id: imaging::ExternalImageId(43),
+                surface_id,
+                rect: Rect::new(0.0, 0.0, 100.0, 50.0),
+                source_size: Size::new(100.0, 50.0),
+            }],
+            color_effects: Vec::new(),
+            content_revision: 0,
+            transform: peniko::kurbo::Affine::IDENTITY,
+            clip: None,
+            bounds: Rect::new(0.0, 0.0, 100.0, 50.0),
+            content_bounds: None,
+            opacity: 1.0,
+            promoted: false,
+        }));
+        plan.items
+            .push(CompositionItem::ExternalSurface(ExternalSurfaceLayer {
+                key: CompositionKey::ExternalSurface {
+                    surface_id,
+                    occurrence: 0,
+                },
+                surface_id,
+                rect: Rect::new(200.0, 0.0, 300.0, 50.0),
+                source_size: Size::new(100.0, 50.0),
+                transform: peniko::kurbo::Affine::IDENTITY,
+                clip: None,
+                opacity: 1.0,
+            }));
+
+        let planned = planned_external_surfaces(&plan);
+        assert_eq!(planned.len(), 1);
+        assert_eq!(
+            planned[0].key,
+            Some(CompositionKey::ExternalSurface {
+                surface_id,
+                occurrence: 0,
+            })
+        );
+        assert_eq!(planned[0].rect, Rect::new(200.0, 0.0, 300.0, 50.0));
     }
 }
 

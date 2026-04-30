@@ -1,10 +1,92 @@
 use std::sync::Arc;
 
+use imaging::{Composite, Filter, GroupRef};
 use subduction::wgpu::SurfaceColorSpace;
+
+/// A Floem group filter.
+///
+/// Standard Imaging filters are forwarded to renderers unchanged. Floem-only filters are consumed
+/// during Floem's compositor lowering step and are not exposed to renderer backends that do not
+/// understand them.
+#[derive(Clone, Debug, PartialEq)]
+pub enum EffectFilter {
+    Imaging(Filter),
+    ColorEffect(ColorEffect),
+    SourceEffect(SourceEffect),
+}
+
+/// An executable compositor shader pass.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CompositorEffect {
+    Color(ColorEffect),
+    Source(SourceEffect),
+}
+
+impl From<Filter> for EffectFilter {
+    fn from(filter: Filter) -> Self {
+        Self::Imaging(filter)
+    }
+}
+
+impl From<ColorEffect> for EffectFilter {
+    fn from(effect: ColorEffect) -> Self {
+        Self::ColorEffect(effect)
+    }
+}
+
+impl From<SourceEffect> for EffectFilter {
+    fn from(effect: SourceEffect) -> Self {
+        Self::SourceEffect(effect)
+    }
+}
+
+/// A Floem group composite operation.
+///
+/// This currently wraps Imaging's composite type and leaves room for compositor-only shader
+/// compositing without changing renderer-facing Imaging APIs.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum EffectComposite {
+    Imaging(Composite),
+    Shader(CompositeEffect),
+}
+
+impl Default for EffectComposite {
+    fn default() -> Self {
+        Self::Imaging(Composite::default())
+    }
+}
+
+impl From<Composite> for EffectComposite {
+    fn from(composite: Composite) -> Self {
+        Self::Imaging(composite)
+    }
+}
+
+impl From<CompositeEffect> for EffectComposite {
+    fn from(effect: CompositeEffect) -> Self {
+        Self::Shader(effect)
+    }
+}
+
+pub type EffectGroupRef<'a> = GroupRef<'a, EffectFilter, EffectComposite>;
+
+#[must_use]
+pub fn group_ref<'a>() -> EffectGroupRef<'a> {
+    EffectGroupRef {
+        clip: None,
+        mask: None,
+        filters: &[],
+        composite: EffectComposite::default(),
+    }
+}
 
 /// Stable identifier for a reusable compositor effect program.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ColorEffectId(pub u64);
+
+/// Stable identifier for reusable compositor source/effect programs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ShaderEffectId(pub u64);
 
 /// A SwiftUI-style color/layer effect applied to an isolated compositor subtree.
 ///
@@ -22,6 +104,7 @@ pub struct ColorEffect {
     pub shader: ColorEffectShader,
     pub args: ColorEffectArgs,
     pub color_space: SurfaceColorSpace,
+    pub needs_time: bool,
 }
 
 impl ColorEffect {
@@ -35,6 +118,7 @@ impl ColorEffect {
             },
             args: ColorEffectArgs::default(),
             color_space: SurfaceColorSpace::ExtendedLinearSrgb,
+            needs_time: false,
         }
     }
 
@@ -57,6 +141,107 @@ impl ColorEffect {
         self.color_space = color_space;
         self
     }
+
+    /// Mark this effect as depending on frame time.
+    ///
+    /// Timeless effects are not invalidated solely because the display frame advances. Time is
+    /// still bound in the generated WGSL frame uniform for source compatibility, but callers should
+    /// only read `frame.time_seconds`, `frame.delta_seconds`, or `frame.frame_index` after setting
+    /// this flag.
+    #[must_use]
+    pub fn needs_time(mut self) -> Self {
+        self.needs_time = true;
+        self
+    }
+}
+
+/// A no-input shader that generates a compositor texture from position, uv, args, and frame data.
+///
+/// This is useful for SwiftUI-style generated visual content: procedural gradients, noise,
+/// checkerboards, animated backgrounds, or any shader-backed image that does not sample an input
+/// layer. Like [`ColorEffect`], `position` is in logical pixels and `uv` is normalized texture
+/// space. Use `frame.effective_scale` to convert to physical pixels.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SourceEffect {
+    pub id: ShaderEffectId,
+    pub shader: SourceEffectShader,
+    pub args: ColorEffectArgs,
+    pub color_space: SurfaceColorSpace,
+    pub needs_time: bool,
+}
+
+impl SourceEffect {
+    #[must_use]
+    pub fn wgsl(id: ShaderEffectId, fragment_body: impl Into<Arc<str>>) -> Self {
+        Self {
+            id,
+            shader: SourceEffectShader::Wgsl {
+                label: None,
+                fragment_body: fragment_body.into(),
+            },
+            args: ColorEffectArgs::default(),
+            color_space: SurfaceColorSpace::ExtendedLinearSrgb,
+            needs_time: false,
+        }
+    }
+
+    #[must_use]
+    pub fn with_label(mut self, label: impl Into<Arc<str>>) -> Self {
+        match &mut self.shader {
+            SourceEffectShader::Wgsl { label: slot, .. } => *slot = Some(label.into()),
+        }
+        self
+    }
+
+    #[must_use]
+    pub fn with_args(mut self, args: impl Into<Vec<u8>>) -> Self {
+        self.args = ColorEffectArgs { bytes: args.into() };
+        self
+    }
+
+    #[must_use]
+    pub fn with_color_space(mut self, color_space: SurfaceColorSpace) -> Self {
+        self.color_space = color_space;
+        self
+    }
+
+    #[must_use]
+    pub fn needs_time(mut self) -> Self {
+        self.needs_time = true;
+        self
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SourceEffectShader {
+    /// WGSL function body for the generated `source_effect` function.
+    ///
+    /// The generated wrapper provides `ColorEffectArgs` and `ColorEffectFrame` uniforms and calls:
+    ///
+    /// ```wgsl
+    /// fn source_effect(
+    ///     position: vec2<f32>, // logical pixels, top-left origin
+    ///     uv: vec2<f32>,
+    ///     args: ColorEffectArgs,
+    ///     frame: ColorEffectFrame,
+    /// ) -> vec4<f32> {
+    ///     // fragment_body
+    /// }
+    /// ```
+    Wgsl {
+        label: Option<Arc<str>>,
+        fragment_body: Arc<str>,
+    },
+}
+
+/// A future compositor shader blend between source and backdrop.
+///
+/// This is intentionally separate from filters: a composite shader needs both the isolated source
+/// layer and the already-rendered backdrop. The current compositor can carry this in the generic
+/// group API, but execution requires a backdrop render pass and currently fails loudly if used.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct CompositeEffect {
+    pub id: ShaderEffectId,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -1,7 +1,7 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
-    effects::ColorEffect,
+    effects::CompositorEffect,
     external_surface::{ExternalSurfaceContent, ExternalSurfaceId, ExternalTexture},
     gpu_resources::GpuResources,
     paint::{
@@ -289,12 +289,6 @@ impl WindowCompositor {
             return;
         };
         for resource_key in releases.drain(..) {
-            if std::env::var_os("SUBDUCTION_SURFACE_POOL_DIAG").is_some() {
-                eprintln!(
-                    "floem surface pool drain_release resource_key={}",
-                    resource_key,
-                );
-            }
             layer_host.release_wgpu_surface_resource(resource_key);
         }
     }
@@ -433,8 +427,20 @@ impl WindowCompositor {
                 }
                 continue;
             };
-            let signature =
-                scene_render_signature(layer, external_surfaces, effective_scale, format, size);
+            let target_origin = (layer.transform * bounds.origin()).to_vec2() * effective_scale;
+            let base_transform = layer
+                .transform
+                .then_scale(effective_scale)
+                .then_translate(-target_origin);
+            let signature = scene_render_signature(
+                layer,
+                external_surfaces,
+                effective_scale,
+                format,
+                size,
+                base_transform,
+                render_call_id,
+            );
             if self.scene_render_signatures.get(&layer.key) == Some(&signature)
                 && self.scene_content_by_key.contains_key(&layer.key)
             {
@@ -483,8 +489,9 @@ impl WindowCompositor {
             let scene_texture = if layer.color_effects.is_empty() {
                 None
             } else {
-                let texture = create_effect_intermediate_texture(
+                let texture = self.effect_renderer.intermediate_texture(
                     &gpu_resources.device,
+                    EffectIntermediateTextureRole::SceneInput,
                     size,
                     format,
                     "floem compositor effect scene input",
@@ -498,11 +505,6 @@ impl WindowCompositor {
                 Some(texture)
             };
             let render_texture = scene_texture.as_ref().unwrap_or(&lease.texture);
-            let target_origin = (layer.transform * bounds.origin()).to_vec2() * effective_scale;
-            let base_transform = layer
-                .transform
-                .then_scale(effective_scale)
-                .then_translate(-target_origin);
             let render_size = Size::new(f64::from(width), f64::from(height));
             let mut source = SceneLayerSource {
                 scene: &layer.scene,
@@ -561,7 +563,7 @@ impl WindowCompositor {
                     format,
                     size,
                     &layer.color_effects,
-                    layer.content_revision,
+                    render_call_id,
                     effective_scale,
                 )
             {
@@ -756,7 +758,7 @@ impl WindowCompositor {
     fn commit_layer_tree_and_publications(
         &mut self,
         publications: &[(subduction::SubmittedContentInfo, subduction::ResourceKey)],
-        queue: &wgpu::Queue,
+        _queue: &wgpu::Queue,
     ) {
         let Some(layer_host) = &mut self.layer_host else {
             return;
@@ -766,7 +768,6 @@ impl WindowCompositor {
         #[cfg(target_os = "macos")]
         if self.metal_capture_active {
             self.metal_capture_active = false;
-            let _ = queue;
             subduction_backend_apple::stop_active_metal_capture();
         }
     }
@@ -790,7 +791,7 @@ impl WindowCompositor {
                             .payload
                             .downcast_ref::<subduction::wgpu::SubmittedSurfaceFrame>()
                         {
-                            publications.extend(publication_for_frame(frame));
+                            publications.extend(publication_for_frame_surface(frame, surface_id));
                         } else {
                             let failure = UnsupportedPublication::ExternalTexture {
                                 key: key.clone(),
@@ -863,10 +864,17 @@ fn merge_frame_changes(target: &mut FrameChanges, source: FrameChanges) {
 fn publication_for_frame(
     frame: &subduction::wgpu::SubmittedSurfaceFrame,
 ) -> Option<(subduction::SubmittedContentInfo, subduction::ResourceKey)> {
+    publication_for_frame_surface(frame, frame.opportunity.surface_id)
+}
+
+fn publication_for_frame_surface(
+    frame: &subduction::wgpu::SubmittedSurfaceFrame,
+    surface_id: SurfaceId,
+) -> Option<(subduction::SubmittedContentInfo, subduction::ResourceKey)> {
     let resource_key = frame.resource_key?;
     Some((
         subduction::SubmittedContentInfo {
-            surface_id: frame.opportunity.surface_id,
+            surface_id,
             revision: subduction_render::SurfaceContentRevision(frame.opportunity.frame_index),
             width: frame.size.width,
             height: frame.size.height,
@@ -964,9 +972,8 @@ struct SceneRenderSignature {
     command_count: usize,
     bounds: Rect,
     content_bounds: Option<Rect>,
-    transform: Affine,
+    render_transform: Affine,
     clip: Option<peniko::kurbo::RoundedRect>,
-    opacity: f32,
     effective_scale_bits: u64,
     format: wgpu::TextureFormat,
     target_size: wgpu::Extent3d,
@@ -980,15 +987,16 @@ fn scene_render_signature(
     effective_scale: f64,
     format: wgpu::TextureFormat,
     target_size: wgpu::Extent3d,
+    render_transform: Affine,
+    frame_index: u64,
 ) -> SceneRenderSignature {
     SceneRenderSignature {
         content_revision: layer.content_revision,
         command_count: layer.scene.commands().len(),
         bounds: layer.bounds,
         content_bounds: layer.content_bounds,
-        transform: layer.transform,
+        render_transform,
         clip: layer.clip,
-        opacity: layer.opacity,
         effective_scale_bits: effective_scale.to_bits(),
         format,
         target_size,
@@ -1008,7 +1016,7 @@ fn scene_render_signature(
         color_effect_hashes: layer
             .color_effects
             .iter()
-            .map(color_effect_shader_hash)
+            .map(|effect| compositor_effect_dependency_hash(effect, frame_index))
             .collect(),
     }
 }
@@ -1016,9 +1024,39 @@ fn scene_render_signature(
 #[derive(Default)]
 struct ColorEffectRenderer {
     pipelines: FxHashMap<ColorEffectPipelineKey, ColorEffectPipeline>,
+    intermediate_textures: FxHashMap<EffectIntermediateTextureRole, EffectIntermediateTexture>,
 }
 
 impl ColorEffectRenderer {
+    fn intermediate_texture(
+        &mut self,
+        device: &wgpu::Device,
+        role: EffectIntermediateTextureRole,
+        size: wgpu::Extent3d,
+        format: wgpu::TextureFormat,
+        label: &'static str,
+    ) -> wgpu::Texture {
+        let key = EffectIntermediateTextureKey {
+            width: size.width,
+            height: size.height,
+            format,
+        };
+        let entry =
+            self.intermediate_textures
+                .entry(role)
+                .or_insert_with(|| EffectIntermediateTexture {
+                    key,
+                    texture: create_effect_intermediate_texture(device, size, format, label),
+                });
+        if entry.key != key {
+            *entry = EffectIntermediateTexture {
+                key,
+                texture: create_effect_intermediate_texture(device, size, format, label),
+            };
+        }
+        entry.texture.clone()
+    }
+
     fn render_effect_chain(
         &mut self,
         device: &wgpu::Device,
@@ -1029,7 +1067,7 @@ impl ColorEffectRenderer {
         output: &wgpu::Texture,
         format: wgpu::TextureFormat,
         size: wgpu::Extent3d,
-        effects: &[ColorEffect],
+        effects: &[CompositorEffect],
         frame_index: u64,
         effective_scale: f64,
     ) -> Result<(), String> {
@@ -1051,15 +1089,17 @@ impl ColorEffectRenderer {
         let mut input_texture = input.clone();
         let mut ping_pong = Vec::new();
         if !leading.is_empty() {
-            ping_pong.push(create_effect_intermediate_texture(
+            ping_pong.push(self.intermediate_texture(
                 device,
+                EffectIntermediateTextureRole::Ping,
                 size,
                 format,
                 "floem compositor color effect ping",
             ));
             if leading.len() > 1 {
-                ping_pong.push(create_effect_intermediate_texture(
+                ping_pong.push(self.intermediate_texture(
                     device,
+                    EffectIntermediateTextureRole::Pong,
                     size,
                     format,
                     "floem compositor color effect pong",
@@ -1107,7 +1147,7 @@ impl ColorEffectRenderer {
         output: &wgpu::Texture,
         format: wgpu::TextureFormat,
         size: wgpu::Extent3d,
-        effect: &ColorEffect,
+        effect: &CompositorEffect,
         frame_index: u64,
         effective_scale: f64,
     ) -> Result<(), String> {
@@ -1120,7 +1160,7 @@ impl ColorEffectRenderer {
             label: Some("floem compositor color effect output view"),
             ..Default::default()
         });
-        let args = padded_uniform_bytes(&effect.args.bytes);
+        let args = padded_uniform_bytes(effect_args(effect));
         let args_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("floem compositor color effect args"),
             size: args.len() as u64,
@@ -1197,11 +1237,11 @@ impl ColorEffectRenderer {
         &mut self,
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
-        effect: &ColorEffect,
+        effect: &CompositorEffect,
     ) -> Result<&ColorEffectPipeline, String> {
         let shader_hash = color_effect_shader_hash(effect);
         let key = ColorEffectPipelineKey {
-            id: effect.id,
+            id: compositor_effect_id(effect),
             shader_hash,
             format,
         };
@@ -1225,7 +1265,7 @@ impl ColorEffectPipeline {
     fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
-        effect: &ColorEffect,
+        effect: &CompositorEffect,
     ) -> Result<Self, String> {
         let shader_source = color_effect_shader_source(effect)?;
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1323,8 +1363,27 @@ impl ColorEffectPipeline {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct ColorEffectPipelineKey {
-    id: crate::effects::ColorEffectId,
+    id: crate::effects::ShaderEffectId,
     shader_hash: u64,
+    format: wgpu::TextureFormat,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum EffectIntermediateTextureRole {
+    SceneInput,
+    Ping,
+    Pong,
+}
+
+struct EffectIntermediateTexture {
+    key: EffectIntermediateTextureKey,
+    texture: wgpu::Texture,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct EffectIntermediateTextureKey {
+    width: u32,
+    height: u32,
     format: wgpu::TextureFormat,
 }
 
@@ -1379,32 +1438,135 @@ fn initialize_texture_for_external_writer(
     queue.submit([encoder.finish()]);
 }
 
-fn color_effect_shader_hash(effect: &ColorEffect) -> u64 {
+fn color_effect_shader_hash(effect: &CompositorEffect) -> u64 {
     let mut hasher = DefaultHasher::new();
-    effect.id.hash(&mut hasher);
-    match &effect.shader {
-        crate::effects::ColorEffectShader::Wgsl {
-            label,
-            fragment_body,
-        } => {
-            label.hash(&mut hasher);
-            fragment_body.hash(&mut hasher);
+    compositor_effect_id(effect).hash(&mut hasher);
+    match effect {
+        CompositorEffect::Color(effect) => {
+            "color".hash(&mut hasher);
+            match &effect.shader {
+                crate::effects::ColorEffectShader::Wgsl {
+                    label,
+                    fragment_body,
+                } => {
+                    label.hash(&mut hasher);
+                    fragment_body.hash(&mut hasher);
+                }
+            }
+            effect.args.bytes.hash(&mut hasher);
+            format!("{:?}", effect.color_space).hash(&mut hasher);
+            effect.needs_time.hash(&mut hasher);
+        }
+        CompositorEffect::Source(effect) => {
+            "source".hash(&mut hasher);
+            match &effect.shader {
+                crate::effects::SourceEffectShader::Wgsl {
+                    label,
+                    fragment_body,
+                } => {
+                    label.hash(&mut hasher);
+                    fragment_body.hash(&mut hasher);
+                }
+            }
+            effect.args.bytes.hash(&mut hasher);
+            format!("{:?}", effect.color_space).hash(&mut hasher);
+            effect.needs_time.hash(&mut hasher);
         }
     }
-    effect.args.bytes.hash(&mut hasher);
     hasher.finish()
 }
 
-fn color_effect_label(effect: &ColorEffect) -> &str {
-    match &effect.shader {
-        crate::effects::ColorEffectShader::Wgsl { label, .. } => {
-            label.as_deref().unwrap_or("floem compositor color effect")
-        }
+fn compositor_effect_dependency_hash(effect: &CompositorEffect, frame_index: u64) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    color_effect_shader_hash(effect).hash(&mut hasher);
+    if compositor_effect_needs_time(effect) {
+        frame_index.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+fn compositor_effect_id(effect: &CompositorEffect) -> crate::effects::ShaderEffectId {
+    match effect {
+        CompositorEffect::Color(effect) => crate::effects::ShaderEffectId(effect.id.0),
+        CompositorEffect::Source(effect) => effect.id,
     }
 }
 
-fn color_effect_shader_source(effect: &ColorEffect) -> Result<String, String> {
-    let crate::effects::ColorEffectShader::Wgsl { fragment_body, .. } = &effect.shader;
+fn compositor_effect_needs_time(effect: &CompositorEffect) -> bool {
+    match effect {
+        CompositorEffect::Color(effect) => effect.needs_time,
+        CompositorEffect::Source(effect) => effect.needs_time,
+    }
+}
+
+fn effect_args(effect: &CompositorEffect) -> &[u8] {
+    match effect {
+        CompositorEffect::Color(effect) => &effect.args.bytes,
+        CompositorEffect::Source(effect) => &effect.args.bytes,
+    }
+}
+
+fn color_effect_label(effect: &CompositorEffect) -> &str {
+    match effect {
+        CompositorEffect::Color(effect) => match &effect.shader {
+            crate::effects::ColorEffectShader::Wgsl { label, .. } => {
+                label.as_deref().unwrap_or("floem compositor color effect")
+            }
+        },
+        CompositorEffect::Source(effect) => match &effect.shader {
+            crate::effects::SourceEffectShader::Wgsl { label, .. } => {
+                label.as_deref().unwrap_or("floem compositor source effect")
+            }
+        },
+    }
+}
+
+fn color_effect_shader_source(effect: &CompositorEffect) -> Result<String, String> {
+    let fragment_body = match effect {
+        CompositorEffect::Color(effect) => match &effect.shader {
+            crate::effects::ColorEffectShader::Wgsl { fragment_body, .. } => fragment_body,
+        },
+        CompositorEffect::Source(effect) => match &effect.shader {
+            crate::effects::SourceEffectShader::Wgsl { fragment_body, .. } => fragment_body,
+        },
+    };
+    let effect_function = match effect {
+        CompositorEffect::Color(_) => format!(
+            r#"
+fn color_effect(
+    position: vec2<f32>,
+    uv: vec2<f32>,
+    color: vec4<f32>,
+    args: ColorEffectArgs,
+    frame: ColorEffectFrame,
+) -> vec4<f32> {{
+{}
+}}
+"#,
+            fragment_body
+        ),
+        CompositorEffect::Source(_) => format!(
+            r#"
+fn source_effect(
+    position: vec2<f32>,
+    uv: vec2<f32>,
+    args: ColorEffectArgs,
+    frame: ColorEffectFrame,
+) -> vec4<f32> {{
+{}
+}}
+"#,
+            fragment_body
+        ),
+    };
+    let fragment_return = match effect {
+        CompositorEffect::Color(_) => {
+            "let color = textureSample(input_texture, input_sampler, in.uv);\n    return color_effect(logical_position, in.uv, color, args, frame);"
+        }
+        CompositorEffect::Source(_) => {
+            "return source_effect(logical_position, in.uv, args, frame);"
+        }
+    };
     Ok(format!(
         r#"
 struct ColorEffectArgs {{
@@ -1442,24 +1604,15 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {{
     return out;
 }}
 
-fn color_effect(
-    position: vec2<f32>,
-    uv: vec2<f32>,
-    color: vec4<f32>,
-    args: ColorEffectArgs,
-    frame: ColorEffectFrame,
-) -> vec4<f32> {{
 {}
-}}
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {{
-    let color = textureSample(input_texture, input_sampler, in.uv);
     let logical_position = in.position.xy / vec2<f32>(frame.effective_scale);
-    return color_effect(logical_position, in.uv, color, args, frame);
+    {}
 }}
 "#,
-        fragment_body
+        effect_function, fragment_return
     ))
 }
 
@@ -1584,7 +1737,7 @@ impl CompositorLayerState {
 pub(crate) struct SceneCompositorLayer {
     pub key: CompositionKey,
     pub external_images: Vec<SceneExternalImageCompositorLayer>,
-    pub color_effects: Vec<ColorEffect>,
+    pub color_effects: Vec<CompositorEffect>,
     pub transform: peniko::kurbo::Affine,
     pub clip: Option<peniko::kurbo::RoundedRect>,
     pub bounds: peniko::kurbo::Rect,
@@ -1738,4 +1891,165 @@ pub(crate) struct CompositorDiff {
     pub updated: Vec<CompositionKey>,
     pub removed: Vec<CompositionKey>,
     pub order_changed: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::effects::{ColorEffect, ColorEffectId, ShaderEffectId, SourceEffect};
+
+    fn layer_with_effect(effect: CompositorEffect) -> SceneLayer {
+        SceneLayer {
+            key: CompositionKey::SceneRun { run_index: 0 },
+            scene: Scene::new(),
+            external_images: Vec::new(),
+            color_effects: vec![effect],
+            content_revision: 1,
+            transform: Affine::IDENTITY,
+            clip: None,
+            bounds: Rect::new(0.0, 0.0, 100.0, 80.0),
+            content_bounds: None,
+            opacity: 1.0,
+            promoted: false,
+        }
+    }
+
+    fn extent(width: u32, height: u32) -> wgpu::Extent3d {
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        }
+    }
+
+    #[test]
+    fn timeless_effect_signature_ignores_frame_index() {
+        let effect = ColorEffect::wgsl(ColorEffectId(1), "return color;");
+        let layer = layer_with_effect(CompositorEffect::Color(effect));
+        let external_surfaces = FxHashMap::default();
+        let a = scene_render_signature(
+            &layer,
+            &external_surfaces,
+            2.0,
+            wgpu::TextureFormat::Bgra8Unorm,
+            extent(200, 160),
+            Affine::IDENTITY,
+            10,
+        );
+        let b = scene_render_signature(
+            &layer,
+            &external_surfaces,
+            2.0,
+            wgpu::TextureFormat::Bgra8Unorm,
+            extent(200, 160),
+            Affine::IDENTITY,
+            11,
+        );
+
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn time_dependent_effect_signature_tracks_frame_index() {
+        let effect = ColorEffect::wgsl(ColorEffectId(1), "return color;").needs_time();
+        let layer = layer_with_effect(CompositorEffect::Color(effect));
+        let external_surfaces = FxHashMap::default();
+        let a = scene_render_signature(
+            &layer,
+            &external_surfaces,
+            2.0,
+            wgpu::TextureFormat::Bgra8Unorm,
+            extent(200, 160),
+            Affine::IDENTITY,
+            10,
+        );
+        let b = scene_render_signature(
+            &layer,
+            &external_surfaces,
+            2.0,
+            wgpu::TextureFormat::Bgra8Unorm,
+            extent(200, 160),
+            Affine::IDENTITY,
+            11,
+        );
+
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn effect_signature_tracks_target_size() {
+        let effect = ColorEffect::wgsl(ColorEffectId(1), "return color;");
+        let layer = layer_with_effect(CompositorEffect::Color(effect));
+        let external_surfaces = FxHashMap::default();
+        let a = scene_render_signature(
+            &layer,
+            &external_surfaces,
+            2.0,
+            wgpu::TextureFormat::Bgra8Unorm,
+            extent(200, 160),
+            Affine::IDENTITY,
+            10,
+        );
+        let b = scene_render_signature(
+            &layer,
+            &external_surfaces,
+            2.0,
+            wgpu::TextureFormat::Bgra8Unorm,
+            extent(220, 160),
+            Affine::IDENTITY,
+            10,
+        );
+
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn source_effect_time_dependency_tracks_frame_index_only_when_requested() {
+        let timeless = SourceEffect::wgsl(ShaderEffectId(2), "return vec4<f32>(uv, 0.0, 1.0);");
+        let timed =
+            SourceEffect::wgsl(ShaderEffectId(3), "return vec4<f32>(uv, 0.0, 1.0);").needs_time();
+        let external_surfaces = FxHashMap::default();
+
+        let timeless_layer = layer_with_effect(CompositorEffect::Source(timeless));
+        let timeless_a = scene_render_signature(
+            &timeless_layer,
+            &external_surfaces,
+            2.0,
+            wgpu::TextureFormat::Bgra8Unorm,
+            extent(200, 160),
+            Affine::IDENTITY,
+            10,
+        );
+        let timeless_b = scene_render_signature(
+            &timeless_layer,
+            &external_surfaces,
+            2.0,
+            wgpu::TextureFormat::Bgra8Unorm,
+            extent(200, 160),
+            Affine::IDENTITY,
+            11,
+        );
+        assert_eq!(timeless_a, timeless_b);
+
+        let timed_layer = layer_with_effect(CompositorEffect::Source(timed));
+        let timed_a = scene_render_signature(
+            &timed_layer,
+            &external_surfaces,
+            2.0,
+            wgpu::TextureFormat::Bgra8Unorm,
+            extent(200, 160),
+            Affine::IDENTITY,
+            10,
+        );
+        let timed_b = scene_render_signature(
+            &timed_layer,
+            &external_surfaces,
+            2.0,
+            wgpu::TextureFormat::Bgra8Unorm,
+            extent(200, 160),
+            Affine::IDENTITY,
+            11,
+        );
+        assert_ne!(timed_a, timed_b);
+    }
 }

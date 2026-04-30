@@ -962,6 +962,11 @@ impl TextLayout {
     pub fn draw(&self, cx: &mut crate::paint::PaintCx<'_>, origin: impl Into<Point>) {
         let font_embolden = cx.font_embolden;
         let effective_scale = cx.effective_scale;
-        self.draw_with_painter(cx.painter.as_dyn(), origin, font_embolden, effective_scale);
+        self.draw_with_painter(
+            cx.painter.as_imaging_dyn(),
+            origin,
+            font_embolden,
+            effective_scale,
+        );
     }
 }

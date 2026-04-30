@@ -1,6 +1,6 @@
 use peniko::kurbo::{Affine, Rect, RoundedRect};
 
-use crate::{effects::ColorEffect, external_surface::ExternalSurfaceId};
+use crate::{effects::CompositorEffect, external_surface::ExternalSurfaceId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum PaintStage {
@@ -91,7 +91,7 @@ pub(crate) struct SceneLayer {
     pub key: CompositionKey,
     pub scene: imaging::record::Scene,
     pub external_images: Vec<SceneExternalImage>,
-    pub color_effects: Vec<ColorEffect>,
+    pub color_effects: Vec<CompositorEffect>,
     pub content_revision: u64,
     pub transform: Affine,
     pub clip: Option<RoundedRect>,

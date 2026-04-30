@@ -399,7 +399,10 @@ impl View for Svg {
                         },
                     );
                 } else {
-                    let _ = document.render(&mut cx.painter, &RenderOptions { transform });
+                    let _ = document.render(
+                        &mut cx.painter.as_imaging_painter(),
+                        &RenderOptions { transform },
+                    );
                 }
             }
         }

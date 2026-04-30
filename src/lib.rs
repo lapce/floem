@@ -244,6 +244,8 @@ pub use box_tree::{BoxTree, ElementId, ElementMeta, FocusNavMeta};
 pub(crate) use box_tree::{bump_focus_nav_meta_revision, focus_nav_meta_revision};
 pub use effects::{
     ColorEffect, ColorEffectArgs, ColorEffectFrameUniform, ColorEffectId, ColorEffectShader,
+    CompositeEffect, CompositorEffect, EffectComposite, EffectFilter, EffectGroupRef,
+    ShaderEffectId, SourceEffect, SourceEffectShader, group_ref,
 };
 pub use external_surface::{
     ExternalSurface, ExternalSurfaceAlphaMode, ExternalSurfaceConfig, ExternalSurfaceContent,

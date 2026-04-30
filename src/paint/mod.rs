@@ -9,6 +9,7 @@ pub(crate) mod composition;
 pub mod display_list;
 pub mod renderer;
 
+use crate::effects::{EffectComposite, EffectFilter};
 use crate::gpu_resources::{GpuResourceError, GpuResources};
 pub use border_path_iter::{BorderPath, BorderPathEvent};
 use imaging::{PaintSink, Painter};
@@ -133,7 +134,7 @@ pub struct PaintCx<'a> {
     /// Reference to global paint state
     pub window_state: &'a mut WindowState,
     gpu_resources: Option<&'a GpuResources>,
-    pub painter: Painter<'a, StageRecorder>,
+    pub painter: Painter<'a, StageRecorder, EffectFilter, EffectComposite>,
     is_vger: bool,
     /// The target visual node being painted
     pub target_id: ElementId,
@@ -565,25 +566,7 @@ impl GlobalPaintCx<'_> {
     }
 }
 
-impl<'a> PaintCx<'a> {
-    pub fn push_color_effect(&mut self, effect: crate::effects::ColorEffect) {
-        self.painter.sink_mut().push_color_effect(effect);
-    }
-
-    pub fn pop_color_effect(&mut self) {
-        self.painter.sink_mut().pop_color_effect();
-    }
-
-    pub fn with_color_effect(
-        &mut self,
-        effect: crate::effects::ColorEffect,
-        f: impl FnOnce(&mut Self),
-    ) {
-        self.push_color_effect(effect);
-        f(self);
-        self.pop_color_effect();
-    }
-
+impl PaintCx<'_> {
     /// Allows a `View` to determine if it is being called in order to
     /// paint a *draggable* image of itself during a drag (likely
     /// `draggable()` was called on the `View` or `ViewId`) as opposed
