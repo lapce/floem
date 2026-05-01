@@ -141,6 +141,7 @@ pub(crate) struct FrameSchedule {
     /// `Present` wakes retire an already prepared frame. `Update` wakes
     /// advance deferred next-frame work when nothing is ready to present yet.
     pub(crate) wake: Option<ScheduledFrameWake>,
+    pub(crate) coalesce_input_until: Option<Instant>,
 }
 
 fn surface_extent(size: Size, os_scale: f64) -> PhysicalSize<u32> {
@@ -335,6 +336,13 @@ impl FrameTimingAccumulator {
         timings.total = timings.thread_total(TimingThread::Main);
         timings
     }
+
+    fn cloned_timing_report(&self) -> Option<TimingReport> {
+        if self.spans.is_empty() {
+            return None;
+        }
+        Some(self.clone().build_timing_report())
+    }
 }
 
 impl crate::paint::renderer::RendererTimingRecorder for FrameTimingAccumulator {
@@ -381,6 +389,10 @@ impl WindowHandle {
                 depth: 0,
             })
             .collect()
+    }
+
+    pub(crate) fn pending_profile_timing(&self) -> Option<TimingReport> {
+        self.pending_timing.cloned_timing_report()
     }
 
     pub(crate) fn record_profile_instant(&mut self, name: &'static str, at: Instant) {
@@ -1219,9 +1231,11 @@ impl WindowHandle {
             return false;
         }
 
-        self.commit_compositor_frame(compositor_commit_reason);
+        self.pending_timing = timing;
+        let _ = self.commit_compositor_frame(compositor_commit_reason);
         self.compositor_scene_render_pending = false;
 
+        let mut timing = std::mem::take(&mut self.pending_timing);
         timing.record_renderer_span(
             "PrePresentNotify",
             Some(crate::paint::renderer::TimingSpan::new(
@@ -1318,25 +1332,14 @@ impl WindowHandle {
         }
     }
 
-    fn retire_compositor_only_frame(&mut self, presented: bool) {
-        let frame_index = self.next_frame_id;
-        self.next_frame_id = self.next_frame_id.saturating_add(1);
-        self.window_state
-            .external_surfaces
-            .release_outcomes(|outcome| {
-                outcome.frame_index = frame_index;
-                outcome.outcome.draw_completed = presented;
-                outcome.outcome.missed_deadline = None;
-            });
-    }
-
-    pub(crate) fn render_compositor_scene_layers(&mut self, reason: &'static str) {
+    pub(crate) fn render_compositor_scene_layers(&mut self, reason: &'static str) -> bool {
         let Some(gpu_resources) = self.gpu_resources.as_ref() else {
-            return;
+            return false;
         };
         if !matches!(self.paint_state, PaintState::Initialized { .. }) {
-            return;
+            return false;
         }
+        let start = Instant::now();
         let frame_index = self.current_frame_time().frame_index;
         let plan = self.window_state.composition_plan.clone();
         if crate::frame_clock::frame_pacing_diag_enabled() {
@@ -1358,9 +1361,18 @@ impl WindowHandle {
             self.paint_state.backend_mut(),
             self.window_state.effective_scale(),
         );
+        let end = Instant::now();
+        self.pending_timing.push_absolute_span(
+            "CompositorRenderSceneLayers",
+            start,
+            end,
+            TimingKind::Renderer,
+        );
+        true
     }
 
-    fn commit_compositor_frame(&mut self, reason: &'static str) {
+    fn commit_compositor_frame(&mut self, reason: &'static str) -> bool {
+        let start = Instant::now();
         #[cfg(target_os = "macos")]
         if let Some(signal_index) = self.current_frame_signal_index {
             if self.last_compositor_commit_signal_index == Some(signal_index) {
@@ -1370,13 +1382,22 @@ impl WindowHandle {
                         reason, self.window_id, signal_index,
                     );
                 }
-                return;
+                return false;
             }
             self.last_compositor_commit_signal_index = Some(signal_index);
         }
-        self.render_compositor_scene_layers(reason);
+        let rendered = self.render_compositor_scene_layers(reason);
         #[cfg(target_os = "macos")]
         self.refresh_frame_clock_display_link_layer();
+        if rendered {
+            self.pending_timing.push_absolute_span(
+                "CompositorCommit",
+                start,
+                Instant::now(),
+                TimingKind::Present,
+            );
+        }
+        rendered
     }
 
     /// Builds the scene source for a paint/capture operation and runs a single
@@ -1735,6 +1756,28 @@ impl WindowHandle {
             return FrameSchedule::default();
         }
 
+        if (self.window_state.has_next_frame_work()
+            || self.window_state.has_pending_paint()
+            || self.window_state.has_pending_render())
+            && let Some(submit_deadline) = self.frame_clock.should_defer_scene_work(now)
+        {
+            if self.frame_clock.has_external_frame_signal() {
+                self.frame_signal_render_pending = false;
+            }
+            self.frame_clock.set_frame_prepared(false);
+            if crate::frame_clock::frame_pacing_diag_enabled() {
+                eprintln!(
+                    "floem frame advance blocked window={:?} reason=scene_work_budget submit_deadline_in={:.3}ms",
+                    self.window_id,
+                    submit_deadline.saturating_duration_since(now).as_secs_f64() * 1000.0,
+                );
+            }
+            return FrameSchedule {
+                wake: None,
+                coalesce_input_until: Some(submit_deadline),
+            };
+        }
+
         let prepared = if self
             .frame_clock
             .needs_frame_prepare(self.window_state.has_next_frame_work())
@@ -1759,14 +1802,19 @@ impl WindowHandle {
                 self.frame_signal_render_pending = false;
             }
         } else if self.compositor_scene_render_pending {
-            self.commit_compositor_frame("external");
-            self.compositor_scene_render_pending = false;
-            self.retire_compositor_only_frame(true);
-            self.active_frame_time = None;
+            let committed = self.commit_compositor_frame("external");
+            if committed {
+                let submitted_at = Instant::now();
+                let presented_at = self.frame_present_time(submitted_at);
+                self.next_frame_id = self.next_frame_id.saturating_add(1);
+                self.route_paint_present_event(presented_at);
+                self.finish_presented_frame(Some(submitted_at), presented_at);
+            }
+            self.compositor_scene_render_pending = !committed;
             if crate::frame_clock::frame_pacing_diag_enabled() {
                 eprintln!(
-                    "floem frame advance compositor-only window={:?} pending_paint=false pending_render=false",
-                    self.window_id,
+                    "floem frame advance compositor-only window={:?} committed={} pending_paint=false pending_render=false",
+                    self.window_id, committed,
                 );
             }
         } else if crate::frame_clock::frame_pacing_diag_enabled() {
@@ -1794,6 +1842,7 @@ impl WindowHandle {
                         .redraw_deadline(frame_interval, Instant::now()),
                     kind: FrameWakeKind::Update,
                 }),
+                coalesce_input_until: None,
             };
         }
 
@@ -1946,7 +1995,7 @@ impl WindowHandle {
             return None;
         }
 
-        self.render_compositor_scene_layers("capture");
+        let _ = self.render_compositor_scene_layers("capture");
         let extent = surface_extent(self.window_state.root_size, self.window_state.os_scale);
         let frame_size = Size::new(f64::from(extent.width), f64::from(extent.height));
         let background = self.capture_background();

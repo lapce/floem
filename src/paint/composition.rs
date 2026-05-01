@@ -1,4 +1,4 @@
-use peniko::kurbo::{Affine, Rect, RoundedRect};
+use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size};
 
 use crate::{effects::CompositorEffect, external_surface::ExternalSurfaceId};
 
@@ -118,4 +118,67 @@ pub(crate) struct ExternalSurfaceLayer {
     pub transform: Affine,
     pub clip: Option<RoundedRect>,
     pub opacity: f32,
+}
+
+pub(crate) fn clip_scene_layers_to_viewport(plan: &mut CompositionPlan, viewport_size: Size) {
+    let viewport = Rect::from_origin_size(Point::ZERO, viewport_size);
+    if !is_non_empty(viewport) {
+        return;
+    }
+
+    for item in &mut plan.items {
+        let CompositionItem::Scene(layer) = item else {
+            continue;
+        };
+
+        let world_bounds = transform_rect_bbox(layer.transform, layer.bounds);
+        let visible_world = intersect_rects(world_bounds, viewport);
+        if !is_non_empty(visible_world) {
+            layer.bounds = Rect::ZERO;
+            layer.content_bounds = None;
+            continue;
+        }
+
+        let visible_local = intersect_rects(
+            layer.bounds,
+            transform_rect_bbox(layer.transform.inverse(), visible_world),
+        );
+        if !is_non_empty(visible_local) {
+            layer.bounds = Rect::ZERO;
+            layer.content_bounds = None;
+            continue;
+        }
+
+        layer.bounds = visible_local;
+        layer.content_bounds = layer
+            .content_bounds
+            .map(|content_bounds| intersect_rects(content_bounds, visible_local))
+            .filter(|bounds| is_non_empty(*bounds));
+    }
+}
+
+fn transform_rect_bbox(transform: Affine, rect: Rect) -> Rect {
+    let p0 = transform * rect.origin();
+    let p1 = transform * Point::new(rect.x1, rect.y0);
+    let p2 = transform * Point::new(rect.x0, rect.y1);
+    let p3 = transform * Point::new(rect.x1, rect.y1);
+    Rect::new(
+        p0.x.min(p1.x).min(p2.x).min(p3.x),
+        p0.y.min(p1.y).min(p2.y).min(p3.y),
+        p0.x.max(p1.x).max(p2.x).max(p3.x),
+        p0.y.max(p1.y).max(p2.y).max(p3.y),
+    )
+}
+
+fn intersect_rects(a: Rect, b: Rect) -> Rect {
+    Rect::new(
+        a.x0.max(b.x0),
+        a.y0.max(b.y0),
+        a.x1.min(b.x1),
+        a.y1.min(b.y1),
+    )
+}
+
+fn is_non_empty(rect: Rect) -> bool {
+    rect.x0 < rect.x1 && rect.y0 < rect.y1
 }

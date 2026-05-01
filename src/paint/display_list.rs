@@ -104,7 +104,8 @@ impl Default for ElementStage {
 }
 
 impl ElementStage {
-    pub(crate) fn set_scene(&mut self, scene: Scene, color_effects: Vec<ColorEffectCommand>) {
+    pub(crate) fn set_scene(&mut self, scene: Scene, mut color_effects: Vec<ColorEffectCommand>) {
+        color_effects.sort_by_key(|effect| effect.command_index);
         self.transform_class = scene_transform_class(&scene);
         self.stack_index = StageStackIndex::build(&scene);
         self.stack_index.apply_effect_commands(&color_effects);
@@ -323,8 +324,6 @@ impl StageRecorder {
                     kind: ColorEffectCommandKind::Push(effect),
                 });
                 close_ops.push(EffectGroupClose::ColorEffect);
-                PaintSink::push_group(&mut self.scene, GroupRef::new());
-                close_ops.push(EffectGroupClose::Group);
             }
         }
 
@@ -683,14 +682,17 @@ impl RetainedDisplayList {
         let mut chunk_index = 0;
         let mut external_occurrence = 0;
         let mut chunks = Vec::new();
+        let property_state = PropertyState::default();
+        let mut lowering_stack = FxHashSet::default();
         for slot in &self.roots {
             self.lower_slot_into_chunks(
                 *slot,
+                &mut lowering_stack,
                 &mut chunks,
                 &mut chunk_index,
                 &mut external_occurrence,
                 effective_scale,
-                0,
+                &property_state,
             );
         }
         let mut plan = chunks_into_composition_plan(chunks);
@@ -698,14 +700,15 @@ impl RetainedDisplayList {
         plan
     }
 
-    fn lower_slot_into_chunks(
-        &self,
+    fn lower_slot_into_chunks<'a>(
+        &'a self,
         slot: DisplayNodeSlot,
-        chunks: &mut Vec<LoweredChunk>,
+        lowering_stack: &mut FxHashSet<DisplayNodeSlot>,
+        chunks: &mut Vec<LoweredChunk<'a>>,
         chunk_index: &mut u32,
         external_occurrence: &mut u32,
         effective_scale: f64,
-        active_stack_depth: usize,
+        property_state: &PropertyState,
     ) {
         let Some(node) = self.node(slot) else {
             return;
@@ -716,16 +719,21 @@ impl RetainedDisplayList {
         let Some(snapshot) = node.display.snapshot else {
             return;
         };
+        if !lowering_stack.insert(slot) {
+            debug_assert!(false, "cycle detected while lowering retained display list");
+            return;
+        }
 
-        let active_stack_depth = if let Some(clip) = snapshot.clip {
-            chunks.push(LoweredChunk::PushClip(ClipScope {
+        let scoped_property_state;
+        let property_state = if let Some(clip) = snapshot.clip {
+            scoped_property_state = property_state.with_clip(PropertyClip {
                 clip,
                 transform: snapshot.world_transform,
                 bounds: snapshot.local_bounds,
-            }));
-            active_stack_depth + 1
+            });
+            &scoped_property_state
         } else {
-            active_stack_depth
+            property_state
         };
 
         self.lower_stage_into_plan(
@@ -737,17 +745,18 @@ impl RetainedDisplayList {
             chunk_index,
             external_occurrence,
             effective_scale,
-            active_stack_depth,
+            property_state,
         );
 
         for child in &node.children.ordered {
             self.lower_slot_into_chunks(
                 *child,
+                lowering_stack,
                 chunks,
                 chunk_index,
                 external_occurrence,
                 effective_scale,
-                active_stack_depth,
+                property_state,
             );
         }
 
@@ -760,25 +769,23 @@ impl RetainedDisplayList {
             chunk_index,
             external_occurrence,
             effective_scale,
-            active_stack_depth,
+            property_state,
         );
 
-        if snapshot.clip.is_some() {
-            chunks.push(LoweredChunk::PopClip);
-        }
+        lowering_stack.remove(&slot);
     }
 
-    fn lower_stage_into_plan(
+    fn lower_stage_into_plan<'a>(
         &self,
         _element_id: ElementId,
         _stage_kind: PaintStage,
-        stage: &ElementStage,
+        stage: &'a ElementStage,
         snapshot: ElementSnapshot,
-        chunks: &mut Vec<LoweredChunk>,
+        chunks: &mut Vec<LoweredChunk<'a>>,
         chunk_index: &mut u32,
         external_occurrence: &mut u32,
         effective_scale: f64,
-        active_stack_depth: usize,
+        property_state: &PropertyState,
     ) {
         if stage.scene.is_empty() {
             return;
@@ -787,6 +794,7 @@ impl RetainedDisplayList {
         let command_count = stage.scene.commands().len();
         let mut range_start = 0;
         let mut effect_index = 0usize;
+        let mut scoped_effects = Vec::new();
 
         for command_index in 0..=command_count {
             while effect_index < stage.color_effects.len()
@@ -803,13 +811,16 @@ impl RetainedDisplayList {
                     command_index,
                     effective_scale,
                     snapshot,
+                    &property_state.with_effects(&scoped_effects),
                 );
                 range_start = command_index;
                 match &stage.color_effects[effect_index].kind {
                     ColorEffectCommandKind::Push(effect) => {
-                        chunks.push(LoweredChunk::PushColorEffect(effect.clone()));
+                        scoped_effects.push(effect.clone());
                     }
-                    ColorEffectCommandKind::Pop => chunks.push(LoweredChunk::PopColorEffect),
+                    ColorEffectCommandKind::Pop => {
+                        let _ = scoped_effects.pop();
+                    }
                 }
                 effect_index += 1;
             }
@@ -817,7 +828,8 @@ impl RetainedDisplayList {
             let Some(command) = stage.scene.commands().get(command_index) else {
                 continue;
             };
-            if active_stack_depth == 0
+            if property_state.can_direct_promote()
+                && scoped_effects.is_empty()
                 && !stage.stack_index.has_active_group_or_clip(command_index)
                 && let Some(external) = promotable_external_image_fill(
                     &stage.scene,
@@ -835,6 +847,7 @@ impl RetainedDisplayList {
                     command_index,
                     effective_scale,
                     snapshot,
+                    property_state,
                 );
                 chunks.push(LoweredChunk::External(external));
                 *external_occurrence += 1;
@@ -850,6 +863,7 @@ impl RetainedDisplayList {
             command_count,
             effective_scale,
             snapshot,
+            &property_state.with_effects(&scoped_effects),
         );
     }
 
@@ -1072,51 +1086,72 @@ impl DisplayNode {
     }
 }
 
-#[derive(Clone)]
-enum LoweredChunk {
-    PushClip(ClipScope),
-    PopClip,
-    PushColorEffect(CompositorEffect),
-    PopColorEffect,
-    Scene(LoweredSceneChunk),
-    External(ExternalSurfaceLayer),
+// Floem's small equivalent of Chromium's paint property tree state. Lowered
+// chunks carry the nearest active clip/effect state separately from their draw
+// commands; layerization then coalesces adjacent chunks with identical property
+// state and materializes that state only once in the final scene run.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct PropertyState {
+    clips: Vec<PropertyClip>,
+    effects: Vec<CompositorEffect>,
 }
 
-#[derive(Clone)]
-struct ClipScope {
+impl PropertyState {
+    fn with_clip(&self, clip: PropertyClip) -> Self {
+        let mut next = self.clone();
+        next.clips.push(clip);
+        next
+    }
+
+    fn with_effects(&self, effects: &[CompositorEffect]) -> Self {
+        let mut next = self.clone();
+        next.effects.extend_from_slice(effects);
+        next
+    }
+
+    fn can_direct_promote(&self) -> bool {
+        self.clips.is_empty() && self.effects.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct PropertyClip {
     clip: RoundedRect,
     transform: Affine,
     bounds: Rect,
 }
 
 #[derive(Clone)]
-struct LoweredSceneChunk {
-    scene: Scene,
+enum LoweredChunk<'a> {
+    Scene(LoweredSceneChunk<'a>),
+    External(ExternalSurfaceLayer),
+}
+
+#[derive(Clone)]
+struct LoweredSceneChunk<'a> {
+    scene: &'a Scene,
+    start: usize,
+    end: usize,
     external_images: Vec<SceneExternalImage>,
-    color_effects: Vec<CompositorEffect>,
+    property_state: PropertyState,
     content_revision: u64,
     transform: Affine,
     bounds: Rect,
 }
 
-fn chunks_into_composition_plan(chunks: Vec<LoweredChunk>) -> CompositionPlan {
+fn chunks_into_composition_plan(chunks: Vec<LoweredChunk<'_>>) -> CompositionPlan {
     let mut plan = CompositionPlan::new();
     let mut pending = SceneRunBuilder::default();
     let mut run_index = 0u32;
 
     for chunk in chunks {
         match chunk {
-            LoweredChunk::PushClip(clip) => pending.push_clip(clip),
-            LoweredChunk::PopClip => pending.pop_clip(),
-            LoweredChunk::PushColorEffect(effect) => {
-                pending.flush(&mut plan, &mut run_index);
-                pending.push_color_effect(effect);
+            LoweredChunk::Scene(scene) => {
+                if !pending.accepts(&scene.property_state) {
+                    pending.flush(&mut plan, &mut run_index);
+                }
+                pending.push(scene);
             }
-            LoweredChunk::PopColorEffect => {
-                pending.flush(&mut plan, &mut run_index);
-                pending.pop_color_effect();
-            }
-            LoweredChunk::Scene(scene) => pending.push(scene),
             LoweredChunk::External(external) => {
                 pending.flush(&mut plan, &mut run_index);
                 plan.items.push(CompositionItem::ExternalSurface(external));
@@ -1129,41 +1164,46 @@ fn chunks_into_composition_plan(chunks: Vec<LoweredChunk>) -> CompositionPlan {
 }
 
 #[derive(Default)]
-struct SceneRunBuilder {
-    scene: Scene,
+struct SceneRunBuilder<'a> {
+    ranges: Vec<PendingSceneRange<'a>>,
     external_images: Vec<SceneExternalImage>,
-    color_effects: Vec<CompositorEffect>,
+    property_state: Option<PropertyState>,
     content_revision: u64,
     bounds: Option<Rect>,
+    content_bounds: Option<Rect>,
     content_chunks: usize,
 }
 
-impl SceneRunBuilder {
-    fn push_clip(&mut self, clip: ClipScope) {
-        push_snapshot_clip(&mut self.scene, clip.clip, clip.transform, clip.bounds);
-        let clip_bounds = transform_rect_bbox(clip.transform, clip.bounds);
-        self.bounds = Some(match self.bounds {
-            Some(bounds) => union_rects(bounds, clip_bounds),
-            None => clip_bounds,
+struct PendingSceneRange<'a> {
+    scene: &'a Scene,
+    start: usize,
+    end: usize,
+    transform: Affine,
+}
+
+impl<'a> SceneRunBuilder<'a> {
+    fn accepts(&self, property_state: &PropertyState) -> bool {
+        self.content_chunks == 0 || self.property_state.as_ref() == Some(property_state)
+    }
+
+    fn push(&mut self, chunk: LoweredSceneChunk<'a>) {
+        if self.property_state.as_ref() != Some(&chunk.property_state) {
+            debug_assert_eq!(self.content_chunks, 0);
+            for clip in &chunk.property_state.clips {
+                let clip_bounds = transform_rect_bbox(clip.transform, clip.bounds);
+                self.bounds = Some(match self.bounds {
+                    Some(bounds) => union_rects(bounds, clip_bounds),
+                    None => clip_bounds,
+                });
+            }
+            self.property_state = Some(chunk.property_state.clone());
+        }
+        self.ranges.push(PendingSceneRange {
+            scene: chunk.scene,
+            start: chunk.start,
+            end: chunk.end,
+            transform: chunk.transform,
         });
-    }
-
-    fn pop_clip(&mut self) {
-        self.scene.pop_clip();
-    }
-
-    fn push_color_effect(&mut self, effect: CompositorEffect) {
-        self.color_effects.push(effect);
-    }
-
-    fn pop_color_effect(&mut self) {
-        let _ = self.color_effects.pop();
-    }
-
-    fn push(&mut self, chunk: LoweredSceneChunk) {
-        debug_assert_eq!(self.color_effects, chunk.color_effects);
-        self.scene.reserve_like(&chunk.scene);
-        self.scene.append_transformed(&chunk.scene, chunk.transform);
         self.external_images.extend(chunk.external_images);
         self.content_revision = self.content_revision.wrapping_add(chunk.content_revision);
         self.content_chunks += 1;
@@ -1172,35 +1212,65 @@ impl SceneRunBuilder {
             Some(bounds) => union_rects(bounds, chunk_bounds),
             None => chunk_bounds,
         });
+        if let Some(content_bounds) =
+            scene_command_range_bounds(chunk.scene, chunk.start, chunk.end)
+        {
+            let content_bounds = transform_rect_bbox(chunk.transform, content_bounds);
+            self.content_bounds = Some(match self.content_bounds {
+                Some(bounds) => union_rects(bounds, content_bounds),
+                None => content_bounds,
+            });
+        }
     }
 
     fn flush(&mut self, plan: &mut CompositionPlan, run_index: &mut u32) {
         if self.content_chunks == 0 {
-            self.scene.clear();
+            self.ranges.clear();
             self.bounds = None;
+            self.content_bounds = None;
+            self.property_state = None;
             return;
         }
 
-        let source_scene = mem::take(&mut self.scene);
-        let content_bounds =
-            scene_command_range_bounds(&source_scene, 0, source_scene.commands().len());
-        let bounds = match (self.bounds, content_bounds) {
+        let property_state = self.property_state.take().unwrap_or_default();
+        let bounds = match (self.bounds, self.content_bounds) {
             (Some(bounds), Some(content_bounds)) => union_rects(bounds, content_bounds),
             (Some(bounds), None) => bounds,
             (None, Some(content_bounds)) => content_bounds,
             (None, None) => Rect::ZERO,
         };
         let mut scene = Scene::new();
-        scene.reserve_like(&source_scene);
-        scene.append_transformed(&source_scene, Affine::translate((-bounds.x0, -bounds.y0)));
-        let local_content_bounds = content_bounds.map(|rect| rect - bounds.origin().to_vec2());
+        let local_transform = Affine::translate((-bounds.x0, -bounds.y0));
+        for clip in &property_state.clips {
+            push_snapshot_clip(
+                &mut scene,
+                clip.clip,
+                local_transform * clip.transform,
+                clip.bounds,
+            );
+        }
+        for range in &self.ranges {
+            append_scene_range_transformed(
+                range.scene,
+                &mut scene,
+                range.start,
+                range.end,
+                local_transform * range.transform,
+            );
+        }
+        for _ in &property_state.clips {
+            scene.pop_clip();
+        }
+        let local_content_bounds = self
+            .content_bounds
+            .map(|rect| rect - bounds.origin().to_vec2());
         plan.items.push(CompositionItem::Scene(SceneLayer {
             key: CompositionKey::SceneRun {
                 run_index: *run_index,
             },
             scene,
             external_images: mem::take(&mut self.external_images),
-            color_effects: self.color_effects.clone(),
+            color_effects: property_state.effects,
             content_revision: self.content_revision,
             transform: Affine::translate(bounds.origin().to_vec2()),
             clip: None,
@@ -1211,29 +1281,34 @@ impl SceneRunBuilder {
         }));
         self.content_revision = 0;
         self.bounds = None;
+        self.content_bounds = None;
         self.content_chunks = 0;
+        self.ranges.clear();
         *run_index += 1;
     }
 }
 
-fn push_scene_range(
-    chunks: &mut Vec<LoweredChunk>,
+fn push_scene_range<'a>(
+    chunks: &mut Vec<LoweredChunk<'a>>,
     chunk_index: &mut u32,
-    stage: &ElementStage,
+    stage: &'a ElementStage,
     start: usize,
     end: usize,
     effective_scale: f64,
     snapshot: ElementSnapshot,
+    property_state: &PropertyState,
 ) {
-    let Some(scene) = scene_command_range(&stage.scene, start, end) else {
+    if start >= end {
         return;
-    };
+    }
     let external_images =
         external_images_in_command_range(&stage.scene, start, end, effective_scale);
     chunks.push(LoweredChunk::Scene(LoweredSceneChunk {
-        scene,
+        scene: &stage.scene,
+        start,
+        end,
         external_images,
-        color_effects: active_color_effects_at(stage, start),
+        property_state: property_state.clone(),
         content_revision: stage.content_revision,
         transform: snapshot.world_transform,
         bounds: snapshot.local_bounds,
@@ -1248,22 +1323,6 @@ fn push_snapshot_clip(scene: &mut Scene, clip: RoundedRect, transform: Affine, b
         shape: Geometry::RoundedRect(clip),
         fill_rule: Fill::NonZero,
     });
-}
-
-fn active_color_effects_at(stage: &ElementStage, command_index: usize) -> Vec<CompositorEffect> {
-    let mut effects = Vec::new();
-    for command in &stage.color_effects {
-        if command.command_index > command_index {
-            break;
-        }
-        match &command.kind {
-            ColorEffectCommandKind::Push(effect) => effects.push(effect.clone()),
-            ColorEffectCommandKind::Pop => {
-                let _ = effects.pop();
-            }
-        }
-    }
-    effects
 }
 
 fn external_images_in_command_range(
@@ -1553,14 +1612,19 @@ fn union_rects(a: Rect, b: Rect) -> Rect {
     )
 }
 
-fn scene_command_range(scene: &Scene, start: usize, end: usize) -> Option<Scene> {
+fn append_scene_range_transformed(
+    source: &Scene,
+    dest: &mut Scene,
+    start: usize,
+    end: usize,
+    transform: Affine,
+) {
     if start >= end {
-        return None;
+        return;
     }
 
-    let mut out = Scene::new();
     let mut active_commands = Vec::new();
-    for command in &scene.commands()[..start] {
+    for command in &source.commands()[..start] {
         match command {
             Command::PushContext(_) | Command::PushClip(_) | Command::PushGroup(_) => {
                 active_commands.push(command);
@@ -1571,12 +1635,22 @@ fn scene_command_range(scene: &Scene, start: usize, end: usize) -> Option<Scene>
             Command::Draw(_) => {}
         }
     }
+    dest.reserve_additional(
+        active_commands.len() + end.saturating_sub(start) + active_commands.len(),
+        0,
+        0,
+        0,
+        active_commands.len(),
+        active_commands.len(),
+        end.saturating_sub(start),
+        active_commands.len(),
+    );
     for command in &active_commands {
-        append_scene_command(scene, &mut out, command);
+        append_scene_command_transformed(source, dest, command, transform);
     }
     let mut open_commands = active_commands;
-    for command in &scene.commands()[start..end] {
-        append_scene_command(scene, &mut out, command);
+    for command in &source.commands()[start..end] {
+        append_scene_command_transformed(source, dest, command, transform);
         match command {
             Command::PushContext(_) | Command::PushClip(_) | Command::PushGroup(_) => {
                 open_commands.push(command);
@@ -1589,16 +1663,20 @@ fn scene_command_range(scene: &Scene, start: usize, end: usize) -> Option<Scene>
     }
     for command in open_commands.iter().rev() {
         match command {
-            Command::PushContext(_) => out.pop_context(),
-            Command::PushClip(_) => out.pop_clip(),
-            Command::PushGroup(_) => out.pop_group(),
+            Command::PushContext(_) => dest.pop_context(),
+            Command::PushClip(_) => dest.pop_clip(),
+            Command::PushGroup(_) => dest.pop_group(),
             Command::PopContext | Command::PopClip | Command::PopGroup | Command::Draw(_) => {}
         }
     }
-    (!out.is_empty()).then_some(out)
 }
 
-fn append_scene_command(source: &Scene, dest: &mut Scene, command: &Command) {
+fn append_scene_command_transformed(
+    source: &Scene,
+    dest: &mut Scene,
+    command: &Command,
+    transform: Affine,
+) {
     match *command {
         Command::PushContext(id) => {
             let context = source.context(id);
@@ -1606,16 +1684,62 @@ fn append_scene_command(source: &Scene, dest: &mut Scene, command: &Command) {
         }
         Command::PopContext => dest.pop_context(),
         Command::PushClip(id) => {
-            dest.push_clip(source.clip(id).clone());
+            let mut clip = source.clip(id).clone();
+            prepend_clip_transform(&mut clip, transform);
+            dest.push_clip(clip);
         }
         Command::PopClip => dest.pop_clip(),
         Command::PushGroup(id) => {
-            let group = source.group(id).as_ref_with(source);
-            PaintSink::push_group(dest, group);
+            let mut group = source.group(id).clone();
+            prepend_group_transform(source, dest, &mut group, transform);
+            dest.push_group(group);
         }
         Command::PopGroup => dest.pop_group(),
         Command::Draw(id) => {
-            dest.draw(source.draw_op(id).clone());
+            let mut draw = source.draw_op(id).clone();
+            prepend_draw_transform(&mut draw, transform);
+            dest.draw(draw);
+        }
+    }
+}
+
+fn prepend_clip_transform(clip: &mut Clip, prefix: Affine) {
+    match clip {
+        Clip::Fill { transform, .. } | Clip::Stroke { transform, .. } => {
+            *transform = prefix * *transform;
+        }
+    }
+}
+
+fn prepend_group_transform(
+    source: &Scene,
+    dest: &mut Scene,
+    group: &mut imaging::record::Group,
+    prefix: Affine,
+) {
+    if let Some(clip) = &mut group.clip {
+        prepend_clip_transform(clip, prefix);
+    }
+    if let Some(mask) = &mut group.mask {
+        let source_mask = source.mask(mask.mask);
+        mask.mask = dest.define_mask(source_mask.clone());
+        mask.transform = prefix * mask.transform;
+    }
+}
+
+fn prepend_draw_transform(draw: &mut Draw, prefix: Affine) {
+    match draw {
+        Draw::Fill { transform, .. } | Draw::Stroke { transform, .. } => {
+            *transform = prefix * *transform;
+        }
+        Draw::GlyphRun(run) => {
+            run.transform = prefix * run.transform;
+        }
+        Draw::BlurredRoundedRect(draw) => {
+            draw.transform = prefix * draw.transform;
+        }
+        Draw::ScenePicture { transform, .. } => {
+            *transform = prefix * *transform;
         }
     }
 }
@@ -2108,17 +2232,7 @@ mod tests {
 
         assert!(matches!(
             stage.scene.commands(),
-            [
-                Command::PushGroup(_),
-                Command::PushGroup(_),
-                Command::PushGroup(_),
-                Command::PushGroup(_),
-                Command::Draw(_),
-                Command::PopGroup,
-                Command::PopGroup,
-                Command::PopGroup,
-                Command::PopGroup,
-            ]
+            [Command::PushGroup(_), Command::Draw(_), Command::PopGroup]
         ));
 
         let Command::PushGroup(final_group) = stage.scene.commands()[0] else {
@@ -2133,7 +2247,7 @@ mod tests {
                 .iter()
                 .map(|command| command.command_index)
                 .collect::<Vec<_>>(),
-            vec![1, 2, 3, 6, 7, 8]
+            vec![1, 1, 1, 2, 2, 2]
         );
         assert!(matches!(
             &stage.color_effects[0].kind,
@@ -2142,7 +2256,7 @@ mod tests {
         assert_eq!(
             stage.color_effects[1],
             ColorEffectCommand {
-                command_index: 2,
+                command_index: 1,
                 kind: ColorEffectCommandKind::Push(CompositorEffect::Color(effect.clone())),
             }
         );
@@ -2171,13 +2285,7 @@ mod tests {
 
         assert!(matches!(
             stage.scene.commands(),
-            [
-                Command::PushGroup(_),
-                Command::PushGroup(_),
-                Command::Draw(_),
-                Command::PopGroup,
-                Command::PopGroup,
-            ]
+            [Command::PushGroup(_), Command::Draw(_), Command::PopGroup]
         ));
         assert_eq!(stage.color_effects.len(), 2);
         assert!(matches!(
@@ -2647,6 +2755,76 @@ mod tests {
                 3.0
             ))
         );
+    }
+
+    #[test]
+    fn lower_composition_plan_coalesces_sibling_chunks_with_same_property_state() {
+        let clip = RoundedRect::from_rect(Rect::new(0.0, 0.0, 100.0, 100.0), 4.0);
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::IDENTITY, Some(clip)),
+            Scene::new(),
+            Scene::new(),
+        );
+        let (_first_slot, _first_id) = attach_node(
+            &mut list,
+            Some(root_slot),
+            snapshot(Affine::translate((10.0, 10.0)), None),
+            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 10.0, 10.0), Affine::IDENTITY)),
+            Scene::new(),
+        );
+        let (_second_slot, _second_id) = attach_node(
+            &mut list,
+            Some(root_slot),
+            snapshot(Affine::translate((30.0, 10.0)), None),
+            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 10.0, 10.0), Affine::IDENTITY)),
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let plan = list.lower_composition_plan(1.0);
+        assert_eq!(plan.items.len(), 1);
+        let CompositionItem::Scene(layer) = &plan.items[0] else {
+            panic!("expected one scene run");
+        };
+        assert!(matches!(
+            layer.scene.commands(),
+            [
+                Command::PushClip(_),
+                Command::Draw(_),
+                Command::Draw(_),
+                Command::PopClip
+            ]
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "cycle detected while lowering retained display list")]
+    fn lower_composition_plan_detects_display_tree_cycles() {
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::IDENTITY, None),
+            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 10.0, 10.0), Affine::IDENTITY)),
+            Scene::new(),
+        );
+        let (child_slot, _child_id) = attach_node(
+            &mut list,
+            Some(root_slot),
+            snapshot(Affine::translate((5.0, 5.0)), None),
+            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 10.0, 10.0), Affine::IDENTITY)),
+            Scene::new(),
+        );
+        list.node_mut(child_slot)
+            .expect("child")
+            .children
+            .ordered
+            .push(root_slot);
+
+        let _ = list.lower_composition_plan(1.0);
     }
 
     #[test]

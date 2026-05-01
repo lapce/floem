@@ -409,6 +409,20 @@ impl WindowCompositor {
             let bounds = layer.bounds;
             let width = (bounds.width() * effective_scale).ceil().max(1.0) as u32;
             let height = (bounds.height() * effective_scale).ceil().max(1.0) as u32;
+            let max_texture_dimension = gpu_resources.device.limits().max_texture_dimension_2d;
+            if width > max_texture_dimension || height > max_texture_dimension {
+                let failure = UnsupportedPublication::Scene {
+                    key: layer.key.clone(),
+                    revision: layer.content_revision,
+                };
+                if self.unsupported_publications.insert(failure) {
+                    eprintln!(
+                        "floem compositor: scene layer {:?} target {}x{} exceeds max texture dimension {}",
+                        layer.key, width, height, max_texture_dimension,
+                    );
+                }
+                continue;
+            }
             let size = wgpu::Extent3d {
                 width,
                 height,

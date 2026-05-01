@@ -992,6 +992,7 @@ impl WindowState {
         let layout_tree = self.layout_tree.clone();
         let mut changed_elements = FxHashSet::default();
         let mut visited_nodes = FxHashSet::default();
+        let forced_views = self.views_needing_box_tree_update.clone();
         VIEW_STORAGE.with_borrow(|s| {
             diff_absolute_transforms_and_boxes(
                 s,
@@ -1000,6 +1001,7 @@ impl WindowState {
                 self.root_layout_node,
                 Vec2::ZERO, // parent_scroll - root has no parent scroll
                 false,
+                &forced_views,
                 &mut self.taffy_layout_snapshots,
                 &mut visited_nodes,
                 &mut changed_elements,
@@ -1046,14 +1048,18 @@ impl WindowState {
 
                     let props = compute_view_box_properties(s, view_id, layout, parent_scroll);
 
-                    // Update box tree
-                    props
-                        .element_id
-                        .set_local_bounds_without_paint(props.local_rect);
-                    props.element_id.set_local_clip_without_paint(props.clip);
-                    self.box_tree
-                        .borrow_mut()
-                        .set_local_transform(props.element_id.0, props.local_transform);
+                    let (bounds_changed, clip_changed, transform_changed) = {
+                        let mut box_tree = self.box_tree.borrow_mut();
+                        (
+                            box_tree.set_local_bounds(props.element_id.0, props.local_rect),
+                            box_tree.set_local_clip(props.element_id.0, props.clip),
+                            box_tree.set_local_transform(props.element_id.0, props.local_transform),
+                        )
+                    };
+
+                    if bounds_changed || clip_changed || transform_changed {
+                        self.dirty_paint_elements.insert(props.element_id);
+                    }
                 }
             }
         });
@@ -1698,6 +1704,7 @@ fn diff_absolute_transforms_and_boxes(
     node: NodeId,
     parent_scroll: Vec2,
     parent_context_changed: bool,
+    forced_views: &FxHashSet<ViewId>,
     snapshots: &mut FxHashMap<NodeId, TaffyLayoutSnapshot>,
     visited_nodes: &mut FxHashSet<NodeId>,
     changed_elements: &mut FxHashSet<ElementId>,
@@ -1718,13 +1725,14 @@ fn diff_absolute_transforms_and_boxes(
     let mut child_context_changed = parent_context_changed;
 
     if let Some(&view_id) = s.taffy_to_view.get(&node) {
+        let view_forced = forced_views.contains(&view_id);
         let state = s.states.get(view_id);
         let previous_scroll = state
             .as_ref()
             .map(|state| state.borrow().child_translation)
             .unwrap_or(Vec2::ZERO);
 
-        if layout_changed || parent_context_changed {
+        if view_forced || layout_changed || parent_context_changed {
             let props = compute_view_box_properties(s, view_id, layout, parent_scroll);
             let scroll_changed = previous_scroll != props.scroll_offset;
 
@@ -1758,6 +1766,7 @@ fn diff_absolute_transforms_and_boxes(
                 child,
                 child_parent_scroll,
                 child_context_changed,
+                forced_views,
                 snapshots,
                 visited_nodes,
                 changed_elements,

@@ -85,18 +85,29 @@ impl Profile {
             None => self.timeline_origin = Some(frame_start),
             _ => {}
         }
-        let event_sum = frame
+        let event_sum: Duration = frame
             .events
             .iter()
             .map(|event| event.end.saturating_duration_since(event.start))
             .sum();
+        let timing_sum = frame
+            .timing
+            .as_ref()
+            .map(|timing| timing.total)
+            .unwrap_or_default();
+        let timing_count = frame
+            .timing
+            .as_ref()
+            .map(|timing| timing.flattened_spans().len())
+            .unwrap_or_default();
         let event_count = frame.events.len();
         self.events.extend(frame.events);
         self.frames.push(ProfileFrameSummary {
             start: Some(frame_start),
             duration: frame_end.saturating_duration_since(frame_start),
-            sum: event_sum,
+            sum: event_sum + timing_sum,
             event_count,
+            timing_count,
             timing: frame.timing,
         });
     }
@@ -108,6 +119,7 @@ struct ProfileFrameData {
     duration: Duration,
     sum: Duration,
     event_count: usize,
+    timing_count: usize,
 }
 
 #[derive(Default)]
@@ -116,6 +128,7 @@ struct ProfileFrameSummary {
     duration: Duration,
     sum: Duration,
     event_count: usize,
+    timing_count: usize,
     timing: Option<TimingReport>,
 }
 
@@ -1539,6 +1552,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                     duration: frame.duration,
                     sum: frame.sum,
                     event_count: frame.event_count,
+                    timing_count: frame.timing_count,
                 })
             })
         })
@@ -1667,6 +1681,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                     Stack::horizontal((
                         Label::new(format!("start {}", format_duration_short(frame.start))),
                         Label::new(format!("{} events", frame.event_count)),
+                        Label::new(format!("{} spans", frame.timing_count)),
                     ))
                     .style(|s| {
                         s.gap(10.0)

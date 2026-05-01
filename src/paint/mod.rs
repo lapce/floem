@@ -28,7 +28,7 @@ use crate::style::FontSizeCx;
 use crate::view::ViewId;
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
-use composition::CompositionItem;
+use composition::{CompositionItem, clip_scene_layers_to_viewport};
 use display_list::{ElementSnapshot, StageRecorder, replay_scene};
 
 std::thread_local! {
@@ -259,10 +259,12 @@ impl GlobalPaintCx<'_> {
 
     fn apply_composition_plan(&mut self) {
         let effective_scale = self.window_state.effective_scale();
-        self.window_state.composition_plan = self
+        let mut plan = self
             .window_state
             .display_list
             .lower_composition_plan(effective_scale);
+        clip_scene_layers_to_viewport(&mut plan, self.window_state.root_size);
+        self.window_state.composition_plan = plan;
         let _composition_diff = self.window_state.compositor.apply_plan(
             &self.window_state.composition_plan,
             self.window_state.external_surfaces.entries(),

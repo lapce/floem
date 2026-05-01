@@ -12,6 +12,12 @@ use wgpu::web_sys;
 use floem_reactive::{Runtime, SignalUpdate};
 use peniko::kurbo::{Point, Size};
 use std::{collections::HashMap, rc::Rc, time::Duration};
+use ui_events::{
+    ScrollDelta,
+    pointer::{
+        PointerEvent, PointerGesture, PointerGestureEvent, PointerScrollEvent, PointerUpdate,
+    },
+};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::WindowEvent,
@@ -54,6 +60,106 @@ struct PacedWakeTimerState {
     token: Option<TimerToken>,
     deadline: Instant,
     kind: PacedWakeKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum PointerCoalesceKind {
+    Move,
+    Scroll,
+    Pinch,
+    Rotate,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct PointerCoalesceKey {
+    window_id: WindowId,
+    pointer_id: Option<ui_events::pointer::PointerId>,
+    kind: PointerCoalesceKind,
+}
+
+struct PendingPointerEvent {
+    event: PointerEvent,
+}
+
+fn pointer_coalesce_key(window_id: WindowId, event: &PointerEvent) -> Option<PointerCoalesceKey> {
+    let (pointer, kind) = match event {
+        PointerEvent::Move(PointerUpdate { pointer, .. }) => (pointer, PointerCoalesceKind::Move),
+        PointerEvent::Scroll(PointerScrollEvent { pointer, .. }) => {
+            (pointer, PointerCoalesceKind::Scroll)
+        }
+        PointerEvent::Gesture(PointerGestureEvent {
+            pointer,
+            gesture: PointerGesture::Pinch(_),
+            ..
+        }) => (pointer, PointerCoalesceKind::Pinch),
+        PointerEvent::Gesture(PointerGestureEvent {
+            pointer,
+            gesture: PointerGesture::Rotate(_),
+            ..
+        }) => (pointer, PointerCoalesceKind::Rotate),
+        PointerEvent::Down(_)
+        | PointerEvent::Up(_)
+        | PointerEvent::Cancel(_)
+        | PointerEvent::Enter(_)
+        | PointerEvent::Leave(_) => return None,
+    };
+    Some(PointerCoalesceKey {
+        window_id,
+        pointer_id: pointer.pointer_id,
+        kind,
+    })
+}
+
+fn coalesce_pointer_events(pending: &mut PointerEvent, next: PointerEvent) {
+    match (pending, next) {
+        (
+            PointerEvent::Move(PointerUpdate {
+                current, coalesced, ..
+            }),
+            PointerEvent::Move(mut next),
+        ) => {
+            coalesced.push(current.clone());
+            coalesced.append(&mut next.coalesced);
+            *current = next.current;
+        }
+        (
+            PointerEvent::Scroll(PointerScrollEvent { delta, state, .. }),
+            PointerEvent::Scroll(next),
+        ) => {
+            *delta = add_scroll_delta(*delta, next.delta);
+            *state = next.state;
+        }
+        (
+            PointerEvent::Gesture(PointerGestureEvent { gesture, state, .. }),
+            PointerEvent::Gesture(next),
+        ) => {
+            *gesture = add_pointer_gesture(gesture.clone(), next.gesture);
+            *state = next.state;
+        }
+        (pending, next) => {
+            *pending = next;
+        }
+    }
+}
+
+fn add_scroll_delta(a: ScrollDelta, b: ScrollDelta) -> ScrollDelta {
+    match (a, b) {
+        (ScrollDelta::LineDelta(ax, ay), ScrollDelta::LineDelta(bx, by)) => {
+            ScrollDelta::LineDelta(ax + bx, ay + by)
+        }
+        (ScrollDelta::PixelDelta(a), ScrollDelta::PixelDelta(b)) => {
+            ScrollDelta::PixelDelta(PhysicalPosition::new(a.x + b.x, a.y + b.y))
+        }
+        (_, b) => b,
+    }
+}
+
+fn add_pointer_gesture(a: PointerGesture, b: PointerGesture) -> PointerGesture {
+    match (a, b) {
+        (PointerGesture::Pinch(a), PointerGesture::Pinch(b)) => PointerGesture::Pinch(a + b),
+        (PointerGesture::Rotate(a), PointerGesture::Rotate(b)) => PointerGesture::Rotate(a + b),
+        (_, b) => b,
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -140,6 +246,8 @@ pub(crate) struct ApplicationHandle {
     next_output_id: u32,
     timers: HashMap<TimerToken, Timer>,
     paced_wake_timers: HashMap<winit::window::WindowId, PacedWakeTimerState>,
+    pointer_coalesce_until: HashMap<winit::window::WindowId, Instant>,
+    pending_pointer_events: HashMap<PointerCoalesceKey, PendingPointerEvent>,
     pending_context_menus: Vec<PendingContextMenu>,
     pub(crate) event_listener: Option<Box<AppEventCallback>>,
     pub(crate) gpu_resources: Option<GpuResources>,
@@ -158,6 +266,8 @@ impl ApplicationHandle {
             next_output_id: 0,
             timers: HashMap::new(),
             paced_wake_timers: HashMap::new(),
+            pointer_coalesce_until: HashMap::new(),
+            pending_pointer_events: HashMap::new(),
             pending_context_menus: Vec::new(),
             event_listener: None,
             gpu_resources,
@@ -195,6 +305,15 @@ impl ApplicationHandle {
         schedule: FrameSchedule,
         event_loop: &dyn ActiveEventLoop,
     ) {
+        match schedule.coalesce_input_until {
+            Some(deadline) if deadline > Instant::now() => {
+                self.pointer_coalesce_until.insert(window_id, deadline);
+            }
+            _ => {
+                self.pointer_coalesce_until.remove(&window_id);
+            }
+        }
+
         match schedule.wake {
             Some(wake) => {
                 let kind = match wake.kind {
@@ -453,6 +572,9 @@ impl ApplicationHandle {
                         if let Some(profile) = end_profile {
                             profile.set(handle.profile.take().map(|mut profile| {
                                 profile.current.events.extend(handle.take_profile_events());
+                                if profile.current.timing.is_none() {
+                                    profile.current.timing = handle.pending_profile_timing();
+                                }
                                 handle.window_state.profile_events_enabled = false;
                                 if !profile.current.events.is_empty()
                                     || profile.current.timing.is_some()
@@ -505,12 +627,15 @@ impl ApplicationHandle {
         event: WindowEvent,
         event_loop: &dyn ActiveEventLoop,
     ) {
-        let window_handle = match self.window_handles.get_mut(&window_id) {
-            Some(window_handle) => window_handle,
-            None => return,
-        };
+        if !self.window_handles.contains_key(&window_id) {
+            return;
+        }
 
-        let start = window_handle.profile.is_some().then(|| {
+        let has_profile = self
+            .window_handles
+            .get(&window_id)
+            .is_some_and(|window_handle| window_handle.profile.is_some());
+        let start = has_profile.then(|| {
             let name = match event {
                 WindowEvent::ActivationTokenDone { .. } => "ActivationTokenDone",
                 WindowEvent::SurfaceResized(..) => "Resized",
@@ -543,7 +668,11 @@ impl ApplicationHandle {
             (name, Instant::now(), false)
         });
 
-        let event_scale = window_handle.window_state.effective_scale();
+        let event_scale = self
+            .window_handles
+            .get(&window_id)
+            .map(|window_handle| window_handle.window_state.effective_scale())
+            .unwrap_or(1.0);
         let is_latency_sensitive_input = matches!(
             event,
             WindowEvent::KeyboardInput {
@@ -562,24 +691,42 @@ impl ApplicationHandle {
                 | WindowEvent::TouchpadPressure { .. }
         );
         if is_latency_sensitive_input {
-            window_handle.note_input_frame_workload();
+            if let Some(window_handle) = self.window_handles.get_mut(&window_id) {
+                window_handle.note_input_frame_workload();
+            }
         }
 
-        match window_handle.event_reducer.reduce(event_scale, &event) {
+        let translation = self
+            .window_handles
+            .get_mut(&window_id)
+            .and_then(|window_handle| window_handle.event_reducer.reduce(event_scale, &event));
+        match translation {
             Some(WindowEventTranslation::Keyboard(ke)) => {
                 if let WindowEvent::KeyboardInput { is_synthetic, .. } = event
                     && !is_synthetic
                 {
-                    window_handle.key_event(ke)
+                    if let Some(window_handle) = self.window_handles.get_mut(&window_id) {
+                        window_handle.key_event(ke);
+                    }
                 }
             }
             Some(WindowEventTranslation::Pointer(pe)) => {
-                window_handle.pointer_event(pe);
+                if self.should_coalesce_pointer_event(window_id, &pe) {
+                    self.coalesce_pointer_event(window_id, pe);
+                    return;
+                }
+                self.flush_coalesced_pointer_events(window_id);
+                if let Some(window_handle) = self.window_handles.get_mut(&window_id) {
+                    window_handle.pointer_event(pe);
+                }
             }
             None => {}
         }
 
         let frame_presented = false;
+        let Some(window_handle) = self.window_handles.get_mut(&window_id) else {
+            return;
+        };
 
         match event {
             WindowEvent::ActivationTokenDone { .. } => {}
@@ -743,6 +890,7 @@ impl ApplicationHandle {
     ) {
         let start = Instant::now();
         let budget = Self::UPDATE_BUDGET;
+        self.flush_coalesced_pointer_events(window_id);
 
         let Some((done, schedule)) = self.window_handles.get_mut(&window_id).map(|handle| {
             let done = handle.process_update_budgeted(start, budget);
@@ -756,6 +904,45 @@ impl ApplicationHandle {
 
         if !done {
             self.request_update();
+        }
+    }
+
+    fn should_coalesce_pointer_event(&self, window_id: WindowId, event: &PointerEvent) -> bool {
+        self.pointer_coalesce_until
+            .get(&window_id)
+            .is_some_and(|until| Instant::now() < *until)
+            && pointer_coalesce_key(window_id, event).is_some()
+    }
+
+    fn coalesce_pointer_event(&mut self, window_id: WindowId, event: PointerEvent) {
+        let Some(key) = pointer_coalesce_key(window_id, &event) else {
+            return;
+        };
+        self.pending_pointer_events
+            .entry(key)
+            .and_modify(|pending| coalesce_pointer_events(&mut pending.event, event.clone()))
+            .or_insert(PendingPointerEvent { event });
+        self.request_update();
+    }
+
+    fn flush_coalesced_pointer_events(&mut self, window_id: WindowId) {
+        let mut pending = Vec::new();
+        self.pending_pointer_events.retain(|key, event| {
+            if key.window_id == window_id {
+                pending.push(event.event.clone());
+                false
+            } else {
+                true
+            }
+        });
+        if pending.is_empty() {
+            return;
+        }
+        let Some(handle) = self.window_handles.get_mut(&window_id) else {
+            return;
+        };
+        for event in pending {
+            handle.pointer_event(event);
         }
     }
 
@@ -982,6 +1169,9 @@ impl ApplicationHandle {
 
     fn close_window(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
         self.cancel_paced_wake_timer(window_id, event_loop);
+        self.pointer_coalesce_until.remove(&window_id);
+        self.pending_pointer_events
+            .retain(|key, _| key.window_id != window_id);
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
             handle.destroy();
         }

@@ -51,6 +51,9 @@ pub(crate) trait FrameClock {
     fn set_frame_workload(&mut self, _workload: FrameWorkload) {}
     fn set_frame_prepared(&mut self, prepared: bool);
     fn needs_frame_prepare(&self, has_next_frame_work: bool) -> bool;
+    fn should_defer_scene_work(&self, _now: Instant) -> Option<Instant> {
+        None
+    }
     fn redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant;
     fn observe_presented(
         &mut self,
@@ -302,6 +305,7 @@ struct ActivePacingPlan {
     present_time: HostTime,
     pre_surface_work_start: HostTime,
     acquire_surface_at: HostTime,
+    submit_deadline: HostTime,
     present_pacing: PresentPacing,
     frame_index: u64,
 }
@@ -557,6 +561,7 @@ impl SubductionPlanState {
             present_time,
             pre_surface_work_start: self.pacing_time_to_host(decision.pre_surface_work_start),
             acquire_surface_at: self.pacing_time_to_host(decision.acquire_surface_at),
+            submit_deadline: self.pacing_time_to_host(decision.submit_deadline),
             present_pacing,
             frame_index: tick.frame_index,
         })
@@ -649,6 +654,18 @@ impl SubductionPlanState {
         }
 
         self.heuristic.redraw_deadline(frame_interval, now)
+    }
+
+    fn should_defer_scene_work(&self, now: Instant) -> Option<Instant> {
+        let plan = self.latest_plan?;
+        let budget = self.estimate.pre_surface_work + self.estimate.surface_work;
+        let budget = HostDuration::from_nanos(
+            budget.as_nanos().min(u64::MAX as u128) as u64,
+            self.timebase,
+        );
+        let estimated_finish = self.instant_to_host(now) + budget;
+        (estimated_finish > plan.submit_deadline)
+            .then(|| self.host_to_instant(plan.submit_deadline))
     }
 
     fn observe_presented(
@@ -849,6 +866,10 @@ impl FrameClock for SubductionFrameClock {
         self.plan_state.redraw_deadline(frame_interval, now)
     }
 
+    fn should_defer_scene_work(&self, now: Instant) -> Option<Instant> {
+        self.plan_state.should_defer_scene_work(now)
+    }
+
     fn observe_presented(
         &mut self,
         feedback: FrameTimingFeedback,
@@ -1033,6 +1054,10 @@ impl FrameClock for WindowsSubductionFrameClock {
 
     fn redraw_deadline(&self, frame_interval: Duration, now: Instant) -> Instant {
         self.plan_state.redraw_deadline(frame_interval, now)
+    }
+
+    fn should_defer_scene_work(&self, now: Instant) -> Option<Instant> {
+        self.plan_state.should_defer_scene_work(now)
     }
 
     fn observe_presented(
