@@ -2,9 +2,9 @@ use rustc_hash::FxHashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    external_surface::{
-        ExternalSurfaceContent, ExternalSurfaceId, ExternalSurfaceOutcome,
-        ExternalSurfaceProviderHandle,
+    compositor_surface::{
+        CompositorSurfaceContent, CompositorSurfaceId, CompositorSurfaceOutcome,
+        CompositorSurfaceProviderHandle,
     },
     frame::FrameTime,
     gpu_resources::GpuResources,
@@ -16,23 +16,23 @@ use subduction_core::layer::SurfaceId;
 use super::compositor::WindowCompositor;
 
 #[derive(Default)]
-pub(crate) struct WindowExternalSurfaces {
-    entries: FxHashMap<ExternalSurfaceId, ExternalSurfaceEntry>,
+pub(crate) struct WindowCompositorSurfaces {
+    entries: FxHashMap<CompositorSurfaceId, CompositorSurfaceEntry>,
     intermediate_pool: IntermediateTexturePool,
     frame_time: Option<FrameTime>,
     needs_frame_pull: bool,
-    pending_outcomes: Vec<ExternalSurfaceOutcome>,
+    pending_outcomes: Vec<CompositorSurfaceOutcome>,
 }
 
-impl WindowExternalSurfaces {
-    pub(crate) fn entries(&self) -> &FxHashMap<ExternalSurfaceId, ExternalSurfaceEntry> {
+impl WindowCompositorSurfaces {
+    pub(crate) fn entries(&self) -> &FxHashMap<CompositorSurfaceId, CompositorSurfaceEntry> {
         &self.entries
     }
 
     pub(crate) fn set_content(
         &mut self,
-        surface_id: ExternalSurfaceId,
-        content: ExternalSurfaceContent,
+        surface_id: CompositorSurfaceId,
+        content: CompositorSurfaceContent,
     ) {
         let entry = self.entries.entry(surface_id).or_default();
         entry.content = content;
@@ -42,8 +42,8 @@ impl WindowExternalSurfaces {
 
     pub(crate) fn set_provider(
         &mut self,
-        surface_id: ExternalSurfaceId,
-        provider: ExternalSurfaceProviderHandle,
+        surface_id: CompositorSurfaceId,
+        provider: CompositorSurfaceProviderHandle,
     ) {
         let entry = self.entries.entry(surface_id).or_default();
         entry.provider = Some(provider);
@@ -51,7 +51,7 @@ impl WindowExternalSurfaces {
         entry.version = entry.version.wrapping_add(1);
     }
 
-    pub(crate) fn request_frame(&mut self, surface_id: ExternalSurfaceId) {
+    pub(crate) fn request_frame(&mut self, surface_id: CompositorSurfaceId) {
         self.entries.entry(surface_id).or_default();
         self.needs_frame_pull = true;
     }
@@ -62,14 +62,14 @@ impl WindowExternalSurfaces {
         compositor: Option<&mut WindowCompositor>,
         effective_scale: f64,
         gpu_resources: Option<&GpuResources>,
-    ) -> WindowExternalSurfaceFrameUpdate {
+    ) -> WindowCompositorSurfaceFrameUpdate {
         let Some(frame_time) = self.frame_time else {
-            return WindowExternalSurfaceFrameUpdate::default();
+            return WindowCompositorSurfaceFrameUpdate::default();
         };
         let mut compositor = compositor;
-        let mut frame_update = WindowExternalSurfaceFrameUpdate::default();
+        let mut frame_update = WindowCompositorSurfaceFrameUpdate::default();
         self.pending_outcomes.clear();
-        for planned_surface in planned_external_surfaces(plan) {
+        for planned_surface in planned_compositor_surfaces(plan) {
             let Some(entry) = self.entries.get_mut(&planned_surface.surface_id) else {
                 continue;
             };
@@ -85,7 +85,7 @@ impl WindowExternalSurfaces {
                 frame_update.mark_content_changed(planned_surface.surface_id);
                 entry.content = provider
                     .current_content()
-                    .unwrap_or(ExternalSurfaceContent::Empty);
+                    .unwrap_or(CompositorSurfaceContent::Empty);
                 entry.content_dirty = true;
                 entry.version = entry.version.wrapping_add(1);
             }
@@ -118,7 +118,7 @@ impl WindowExternalSurfaces {
                         refresh_interval: None,
                         confidence: subduction_core::timing::TimingConfidence::PacingOnly,
                     };
-                    let format = subduction::wgpu::ExternalSurfaceConfig::default().format;
+                    let format = subduction::wgpu::CompositorSurfaceConfig::default().format;
                     let usage = wgpu::TextureUsages::RENDER_ATTACHMENT
                         | wgpu::TextureUsages::TEXTURE_BINDING;
                     if planned_surface.key.is_some() {
@@ -147,7 +147,7 @@ impl WindowExternalSurfaces {
                 }
                 _ => None,
             };
-            let args = crate::external_surface::ExternalSurfaceFrameArgs {
+            let args = crate::compositor_surface::CompositorSurfaceFrameArgs {
                 surface_id: planned_surface.surface_id,
                 frame_index: frame_time.frame_index,
                 interval: frame_time.interval,
@@ -164,7 +164,7 @@ impl WindowExternalSurfaces {
                 frame_update.mark_content_changed(planned_surface.surface_id);
                 entry.content = provider
                     .current_content()
-                    .unwrap_or(ExternalSurfaceContent::Empty);
+                    .unwrap_or(CompositorSurfaceContent::Empty);
                 entry.content_dirty = true;
                 entry.version = entry.version.wrapping_add(1);
             }
@@ -174,11 +174,11 @@ impl WindowExternalSurfaces {
                 frame_update.mark_content_changed(planned_surface.surface_id);
                 entry.content = provider
                     .current_content()
-                    .unwrap_or(ExternalSurfaceContent::Empty);
+                    .unwrap_or(CompositorSurfaceContent::Empty);
                 entry.content_dirty = true;
                 entry.version = entry.version.wrapping_add(1);
             }
-            self.pending_outcomes.push(ExternalSurfaceOutcome {
+            self.pending_outcomes.push(CompositorSurfaceOutcome {
                 surface_id: planned_surface.surface_id,
                 frame_index: frame_time.frame_index,
                 visible: true,
@@ -210,7 +210,7 @@ impl WindowExternalSurfaces {
         compositor: &mut WindowCompositor,
         effective_scale: f64,
         gpu_resources: Option<&GpuResources>,
-    ) -> WindowExternalSurfaceFrameUpdate {
+    ) -> WindowCompositorSurfaceFrameUpdate {
         self.take_frame_pull();
         self.frame_time = Some(frame_time);
         let _composition_diff = compositor.apply_plan(plan, &self.entries, gpu_resources);
@@ -231,7 +231,7 @@ impl WindowExternalSurfaces {
         old_prefix
     }
 
-    pub(crate) fn release_outcomes(&mut self, mut update: impl FnMut(&mut ExternalSurfaceOutcome)) {
+    pub(crate) fn release_outcomes(&mut self, mut update: impl FnMut(&mut CompositorSurfaceOutcome)) {
         for mut outcome in std::mem::take(&mut self.pending_outcomes) {
             update(&mut outcome);
             if let Some(entry) = self.entries.get_mut(&outcome.surface_id) {
@@ -247,14 +247,14 @@ impl WindowExternalSurfaces {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct WindowExternalSurfaceFrameUpdate {
+pub(crate) struct WindowCompositorSurfaceFrameUpdate {
     pub content_changed: bool,
     pub request_next_frame: bool,
-    pub changed_surfaces: Vec<ExternalSurfaceId>,
+    pub changed_surfaces: Vec<CompositorSurfaceId>,
 }
 
-impl WindowExternalSurfaceFrameUpdate {
-    fn mark_content_changed(&mut self, surface_id: ExternalSurfaceId) {
+impl WindowCompositorSurfaceFrameUpdate {
+    fn mark_content_changed(&mut self, surface_id: CompositorSurfaceId) {
         self.content_changed = true;
         if !self.changed_surfaces.contains(&surface_id) {
             self.changed_surfaces.push(surface_id);
@@ -263,29 +263,29 @@ impl WindowExternalSurfaceFrameUpdate {
 }
 
 #[derive(Clone)]
-struct PlannedExternalSurface {
-    surface_id: ExternalSurfaceId,
+struct PlannedCompositorSurface {
+    surface_id: CompositorSurfaceId,
     rect: Rect,
     source_size: Size,
     key: Option<crate::paint::composition::CompositionKey>,
 }
 
-fn planned_external_surfaces(plan: &CompositionPlan) -> Vec<PlannedExternalSurface> {
+fn planned_compositor_surfaces(plan: &CompositionPlan) -> Vec<PlannedCompositorSurface> {
     let mut surfaces = Vec::new();
     let mut requested = FxHashMap::default();
     for item in &plan.items {
         match item {
-            CompositionItem::ExternalSurface(layer) => {
+            CompositionItem::CompositorSurface(layer) => {
                 let request_key = (layer.surface_id, size_key(layer.source_size));
                 if let Some(index) = requested.get(&request_key).copied() {
-                    let planned: &mut PlannedExternalSurface = &mut surfaces[index];
+                    let planned: &mut PlannedCompositorSurface = &mut surfaces[index];
                     if planned.key.is_none() {
                         planned.key = Some(layer.key.clone());
                         planned.rect = layer.rect;
                     }
                 } else {
                     requested.insert(request_key, surfaces.len());
-                    surfaces.push(PlannedExternalSurface {
+                    surfaces.push(PlannedCompositorSurface {
                         surface_id: layer.surface_id,
                         rect: layer.rect,
                         source_size: layer.source_size,
@@ -300,7 +300,7 @@ fn planned_external_surfaces(plan: &CompositionPlan) -> Vec<PlannedExternalSurfa
                         continue;
                     }
                     requested.insert(request_key, surfaces.len());
-                    surfaces.push(PlannedExternalSurface {
+                    surfaces.push(PlannedCompositorSurface {
                         surface_id: image.surface_id,
                         rect: image.rect,
                         source_size: image.source_size,
@@ -321,19 +321,19 @@ fn size_key(size: Size) -> (u64, u64) {
 mod tests {
     use super::*;
     use crate::{
-        external_surface::ExternalSurfaceId,
+        compositor_surface::CompositorSurfaceId,
         paint::composition::{
-            CompositionKey, ExternalSurfaceLayer, SceneExternalImage, SceneLayer,
+            CompositionKey, CompositorSurfaceLayer, SceneExternalImage, SceneLayer,
         },
     };
 
     #[test]
-    fn planned_external_surfaces_dedupes_repeated_direct_placements() {
-        let surface_id = ExternalSurfaceId::test_new(42);
+    fn planned_compositor_surfaces_dedupes_repeated_direct_placements() {
+        let surface_id = CompositorSurfaceId::test_new(42);
         let mut plan = CompositionPlan::new();
         plan.items
-            .push(CompositionItem::ExternalSurface(ExternalSurfaceLayer {
-                key: CompositionKey::ExternalSurface {
+            .push(CompositionItem::CompositorSurface(CompositorSurfaceLayer {
+                key: CompositionKey::CompositorSurface {
                     surface_id,
                     occurrence: 0,
                 },
@@ -345,8 +345,8 @@ mod tests {
                 opacity: 1.0,
             }));
         plan.items
-            .push(CompositionItem::ExternalSurface(ExternalSurfaceLayer {
-                key: CompositionKey::ExternalSurface {
+            .push(CompositionItem::CompositorSurface(CompositorSurfaceLayer {
+                key: CompositionKey::CompositorSurface {
                     surface_id,
                     occurrence: 1,
                 },
@@ -358,13 +358,13 @@ mod tests {
                 opacity: 1.0,
             }));
 
-        let planned = planned_external_surfaces(&plan);
+        let planned = planned_compositor_surfaces(&plan);
         assert_eq!(planned.len(), 1);
         assert_eq!(planned[0].surface_id, surface_id);
         assert_eq!(planned[0].source_size, Size::new(100.0, 50.0));
         assert_eq!(
             planned[0].key,
-            Some(CompositionKey::ExternalSurface {
+            Some(CompositionKey::CompositorSurface {
                 surface_id,
                 occurrence: 0,
             })
@@ -372,8 +372,8 @@ mod tests {
     }
 
     #[test]
-    fn planned_external_surfaces_upgrades_scene_request_to_direct_layer_request() {
-        let surface_id = ExternalSurfaceId::test_new(43);
+    fn planned_compositor_surfaces_upgrades_scene_request_to_direct_layer_request() {
+        let surface_id = CompositorSurfaceId::test_new(43);
         let mut plan = CompositionPlan::new();
         plan.items.push(CompositionItem::Scene(SceneLayer {
             key: CompositionKey::SceneRun { run_index: 0 },
@@ -394,8 +394,8 @@ mod tests {
             promoted: false,
         }));
         plan.items
-            .push(CompositionItem::ExternalSurface(ExternalSurfaceLayer {
-                key: CompositionKey::ExternalSurface {
+            .push(CompositionItem::CompositorSurface(CompositorSurfaceLayer {
+                key: CompositionKey::CompositorSurface {
                     surface_id,
                     occurrence: 0,
                 },
@@ -407,11 +407,11 @@ mod tests {
                 opacity: 1.0,
             }));
 
-        let planned = planned_external_surfaces(&plan);
+        let planned = planned_compositor_surfaces(&plan);
         assert_eq!(planned.len(), 1);
         assert_eq!(
             planned[0].key,
-            Some(CompositionKey::ExternalSurface {
+            Some(CompositionKey::CompositorSurface {
                 surface_id,
                 occurrence: 0,
             })
@@ -594,18 +594,18 @@ impl IntermediateTexturePool {
 }
 
 #[derive(Clone)]
-pub(crate) struct ExternalSurfaceEntry {
-    pub content: ExternalSurfaceContent,
-    pub provider: Option<ExternalSurfaceProviderHandle>,
+pub(crate) struct CompositorSurfaceEntry {
+    pub content: CompositorSurfaceContent,
+    pub provider: Option<CompositorSurfaceProviderHandle>,
     pub content_dirty: bool,
     pub version: u64,
-    pub previous_outcome: Option<ExternalSurfaceOutcome>,
+    pub previous_outcome: Option<CompositorSurfaceOutcome>,
 }
 
-impl Default for ExternalSurfaceEntry {
+impl Default for CompositorSurfaceEntry {
     fn default() -> Self {
         Self {
-            content: ExternalSurfaceContent::Empty,
+            content: CompositorSurfaceContent::Empty,
             provider: None,
             content_dirty: false,
             version: 0,

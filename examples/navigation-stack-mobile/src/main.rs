@@ -1,6 +1,6 @@
 use floem::{
     AnyView, Application, LazyView,
-    action::{exec_after_animation_frame, set_window_scale},
+    action::{request_animation_frame, set_window_scale},
     event::listener,
     kurbo::Size,
     new_window,
@@ -837,7 +837,7 @@ fn quick_action_sheet(button_id: ViewId) -> impl IntoView {
 
     if visible {
         let sheet_id = sheet.id();
-        exec_after_animation_frame(move |_| {
+        request_animation_frame(move |_| {
             sheet_id.request_focus();
         });
     }

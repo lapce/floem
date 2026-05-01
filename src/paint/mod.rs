@@ -165,7 +165,7 @@ impl GlobalPaintCx<'_> {
             return;
         }
 
-        if self.window_state.composition_plan.has_external_surfaces() {
+        if self.window_state.composition_plan.has_compositor_surfaces() {
             Self::replay_composition_prefix_to_sink(self.window_state, sink, Point::ZERO, None);
             return;
         }
@@ -267,7 +267,7 @@ impl GlobalPaintCx<'_> {
         self.window_state.composition_plan = plan;
         let _composition_diff = self.window_state.compositor.apply_plan(
             &self.window_state.composition_plan,
-            self.window_state.external_surfaces.entries(),
+            self.window_state.compositor_surfaces.entries(),
             self.gpu_resources.as_ref(),
         );
     }
@@ -298,7 +298,7 @@ impl GlobalPaintCx<'_> {
                         PaintSink::pop_clip(sink);
                     }
                 }
-                CompositionItem::Scene(_) | CompositionItem::ExternalSurface(_) => {}
+                CompositionItem::Scene(_) | CompositionItem::CompositorSurface(_) => {}
             }
         }
     }
@@ -595,33 +595,26 @@ pub(crate) enum PaintState {
     PendingGpuResources {
         window: Arc<dyn Window>,
         rx: Receiver<
-            Result<(GpuResources, subduction::wgpu::ExternalSurfaceCapabilities), GpuResourceError>,
+            Result<(GpuResources, subduction::wgpu::CompositorSurfaceCapabilities), GpuResourceError>,
         >,
-        backend: renderer::WindowBackend,
     },
     /// The renderer is initialized and ready to paint.
-    Initialized { backend: renderer::WindowBackend },
+    Initialized,
+    Headless,
 }
 
 impl PaintState {
     pub fn new_pending(
         window: Arc<dyn Window>,
         rx: Receiver<
-            Result<(GpuResources, subduction::wgpu::ExternalSurfaceCapabilities), GpuResourceError>,
+            Result<(GpuResources, subduction::wgpu::CompositorSurfaceCapabilities), GpuResourceError>,
         >,
         _size: Size,
     ) -> Self {
-        Self::PendingGpuResources {
-            window,
-            rx,
-            backend: renderer::uninitialized_backend(),
-        }
+        Self::PendingGpuResources { window, rx }
     }
 
-    pub(crate) fn backend_mut(&mut self) -> &mut (dyn renderer::WindowRenderer + '_) {
-        match self {
-            PaintState::PendingGpuResources { backend, .. } => backend.as_mut(),
-            PaintState::Initialized { backend } => backend.as_mut(),
-        }
+    pub(crate) fn is_initialized(&self) -> bool {
+        matches!(self, Self::Initialized | Self::Headless)
     }
 }

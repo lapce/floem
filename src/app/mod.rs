@@ -26,19 +26,17 @@ use winit::{
     window::{Theme, WindowId},
 };
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::paint::renderer::{RenderedFrame, TimingSpan};
 use crate::{
     action::{Timer, TimerToken},
-    external_surface::{ExternalSurfaceContent, ExternalSurfaceId, ExternalSurfaceProviderHandle},
+    compositor_surface::{CompositorSurfaceContent, CompositorSurfaceId, CompositorSurfaceProviderHandle},
     frame::FrameTime,
     inspector::{Capture, profiler::Profile},
+    paint::composition::CompositionKey,
     platform::clipboard::Clipboard,
     view::IntoView,
-    window::{WindowConfig, WindowCreation},
+    window::{WindowConfig, WindowCreation, compositor::SceneRenderSignature},
 };
 use handle::ApplicationHandle;
-#[cfg(target_os = "macos")]
 use subduction_core::timing::FrameTick;
 
 pub(crate) type AppEventCallback = dyn Fn(AppEvent);
@@ -102,7 +100,7 @@ impl AppConfig {
 
     /// Uses an existing WGPU instance, adapter, device, and queue for Floem.
     ///
-    /// Floem-created window surfaces and compositor-owned external surfaces
+    /// Floem-created window surfaces and compositor-owned compositor surfaces
     /// will be configured against these resources instead of requesting a
     /// separate WGPU context.
     #[inline]
@@ -118,10 +116,7 @@ impl AppConfig {
         self
     }
 
-    /// Override the default renderer chooser for newly created windows.
-    ///
-    /// Individual windows can still override this with
-    /// [`crate::window::WindowConfig::renderer_chooser`].
+    /// Override the application-wide renderer chooser.
     #[inline]
     pub fn renderer_chooser(
         mut self,
@@ -184,28 +179,38 @@ pub(crate) enum UserEvent {
         menu: MenuWrapper,
         pos: Option<Point>,
     },
-    ExternalSurfaceContent {
+    CompositorSurfaceContent {
         window_id: WindowId,
-        surface_id: ExternalSurfaceId,
-        content: ExternalSurfaceContent,
+        surface_id: CompositorSurfaceId,
+        content: CompositorSurfaceContent,
     },
-    ExternalSurfaceRequestFrame {
+    CompositorSurfaceRequestFrame {
         window_id: WindowId,
-        surface_id: ExternalSurfaceId,
+        surface_id: CompositorSurfaceId,
     },
-    ExternalSurfaceProvider {
+    CompositorSurfaceProvider {
         window_id: WindowId,
-        surface_id: ExternalSurfaceId,
-        provider: ExternalSurfaceProviderHandle,
+        surface_id: CompositorSurfaceId,
+        provider: CompositorSurfaceProviderHandle,
     },
-    #[cfg(not(target_arch = "wasm32"))]
-    RenderFrameReady {
+    SceneFragmentReady {
         window_id: WindowId,
-        frame: RenderedFrame,
-        render_span: TimingSpan,
+        key: CompositionKey,
+        signature: SceneRenderSignature,
+        rendered: bool,
+        worker_index: usize,
+        render_start: crate::platform::Instant,
+        render_end: crate::platform::Instant,
     },
-    #[cfg(target_os = "macos")]
-    SubductionFrameTick {
+    LayerHostCommit {
+        window_id: WindowId,
+        committed_at: crate::platform::Instant,
+    },
+    CompositorCommitDeadline {
+        window_id: WindowId,
+        generation: u64,
+    },
+    FrameTick {
         window_id: WindowId,
         tick: FrameTick,
     },
@@ -235,10 +240,6 @@ pub(crate) enum AppUpdateEvent {
     },
     RequestTimer {
         timer: Timer,
-    },
-    RequestAnimationTimer {
-        timer: Timer,
-        window_id: WindowId,
     },
     RequestAnimationFrame {
         window_id: WindowId,

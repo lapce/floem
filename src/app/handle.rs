@@ -36,11 +36,11 @@ use crate::{
         Capture,
         profiler::{Profile, ProfileEvent},
     },
-    paint::PaintState,
+    paint::{PaintState, renderer::SharedSceneFragmentRendererPool},
     view::View,
     window::{
         WindowConfig,
-        handle::{FrameSchedule, FrameWakeKind, WindowHandle},
+        handle::{FrameSchedule, WindowHandle},
         id::process_window_updates,
     },
 };
@@ -49,17 +49,6 @@ struct PendingContextMenu {
     window_id: WindowId,
     menu: super::MenuWrapper,
     pos: Option<Point>,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum PacedWakeKind {
-    Update,
-}
-
-struct PacedWakeTimerState {
-    token: Option<TimerToken>,
-    deadline: Instant,
-    kind: PacedWakeKind,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -244,33 +233,31 @@ impl TimingDiagnostics {
 pub(crate) struct ApplicationHandle {
     window_handles: HashMap<winit::window::WindowId, WindowHandle>,
     next_output_id: u32,
-    timers: HashMap<TimerToken, Timer>,
-    paced_wake_timers: HashMap<winit::window::WindowId, PacedWakeTimerState>,
+    timers: Vec<Timer>,
     pointer_coalesce_until: HashMap<winit::window::WindowId, Instant>,
     pending_pointer_events: HashMap<PointerCoalesceKey, PendingPointerEvent>,
     pending_context_menus: Vec<PendingContextMenu>,
     pub(crate) event_listener: Option<Box<AppEventCallback>>,
     pub(crate) gpu_resources: Option<GpuResources>,
+    pub(crate) scene_renderer_pool: SharedSceneFragmentRendererPool,
     pub(crate) config: AppConfig,
     #[cfg(target_os = "macos")]
     timing_diag: TimingDiagnostics,
 }
 
 impl ApplicationHandle {
-    const UPDATE_BUDGET: Duration = Duration::from_millis(4);
-
     pub(crate) fn new(config: AppConfig) -> Self {
         let gpu_resources = config.gpu_resources.clone();
         Self {
             window_handles: HashMap::new(),
             next_output_id: 0,
-            timers: HashMap::new(),
-            paced_wake_timers: HashMap::new(),
+            timers: Vec::new(),
             pointer_coalesce_until: HashMap::new(),
             pending_pointer_events: HashMap::new(),
             pending_context_menus: Vec::new(),
             event_listener: None,
             gpu_resources,
+            scene_renderer_pool: SharedSceneFragmentRendererPool::default(),
             config,
             #[cfg(target_os = "macos")]
             timing_diag: TimingDiagnostics::new(),
@@ -294,11 +281,12 @@ impl ApplicationHandle {
         }
     }
 
-    /// Applies one window's scheduling output to the event loop.
+    /// Applies non-render scheduling produced by a frame tick.
     ///
-    /// This consumes the deadlines produced by `WindowHandle::advance_frame`
-    /// and turns them into timers or immediate wakeups. It does not decide
-    /// frame policy itself.
+    /// Rendering is not driven from this method. Frame ticks are the render
+    /// opportunity; the returned schedule only carries side effects that the
+    /// app loop owns, currently pointer-event coalescing while scene work is
+    /// deferred to the tick's submit deadline.
     fn apply_window_frame_schedule(
         &mut self,
         window_id: WindowId,
@@ -314,14 +302,23 @@ impl ApplicationHandle {
             }
         }
 
-        match schedule.wake {
-            Some(wake) => {
-                let kind = match wake.kind {
-                    FrameWakeKind::Update => PacedWakeKind::Update,
-                };
-                self.ensure_paced_wake_timer(window_id, wake.deadline, kind, event_loop);
-            }
-            None => self.cancel_paced_wake_timer(window_id, event_loop),
+        if let Some(commit) = schedule.compositor_commit_deadline {
+            let token = TimerToken::next();
+            let action = move |_| {
+                crate::Application::send_proxy_event(UserEvent::CompositorCommitDeadline {
+                    window_id,
+                    generation: commit.generation,
+                });
+            };
+            self.request_timer(
+                Timer {
+                    token,
+                    action: Box::new(action),
+                    deadline: commit.deadline,
+                    sequence: token.into_raw(),
+                },
+                event_loop,
+            );
         }
     }
 
@@ -347,25 +344,21 @@ impl ApplicationHandle {
             }
             UserEvent::GpuResourcesUpdate { window_id } => {
                 let handle = self.window_handles.get_mut(&window_id).unwrap();
-                if let PaintState::PendingGpuResources {
-                    window,
-                    rx,
-                    backend: _,
-                } = &handle.paint_state
-                {
+                if let PaintState::PendingGpuResources { window, rx } = &handle.paint_state {
                     let (gpu_resources, surface_caps) = rx.recv().unwrap().unwrap();
-                    let backend = crate::paint::renderer::NewRendererCx::build(
-                        &handle.renderer_chooser,
-                        window.clone(),
-                        Some(gpu_resources.clone()),
-                        Some(surface_caps),
-                        handle.transparent,
-                        handle.window_state.effective_scale(),
-                        handle.window_state.root_size * handle.window_state.os_scale,
-                        handle.maximum_drawable_count,
-                    );
+                    let cx = crate::paint::renderer::NewRendererCx {
+                        window: window.clone(),
+                        gpu_resources: Some(gpu_resources.clone()),
+                        surface_caps: Some(surface_caps),
+                        transparent: handle.transparent,
+                        scale: handle.window_state.effective_scale(),
+                        size: handle.window_state.root_size * handle.window_state.os_scale,
+                        maximum_drawable_count: handle.maximum_drawable_count,
+                    };
+                    self.scene_renderer_pool
+                        .init_if_needed(&self.config.renderer_chooser, cx);
                     self.gpu_resources = Some(gpu_resources);
-                    handle.paint_state = PaintState::Initialized { backend };
+                    handle.paint_state = PaintState::Initialized;
                     handle.gpu_resources = self.gpu_resources.clone();
                     handle.init_renderer();
                     if let Some(gpu_resources) = handle.gpu_resources.clone() {
@@ -388,7 +381,7 @@ impl ApplicationHandle {
                     pos,
                 });
             }
-            UserEvent::ExternalSurfaceContent {
+            UserEvent::CompositorSurfaceContent {
                 window_id,
                 surface_id,
                 content,
@@ -396,24 +389,26 @@ impl ApplicationHandle {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
                     handle
                         .window_state
-                        .set_external_surface_content(surface_id, content);
+                        .set_compositor_surface_content(surface_id, content);
                     handle.refresh_frame_activity();
                 }
                 self.request_update();
             }
-            UserEvent::ExternalSurfaceRequestFrame {
+            UserEvent::CompositorSurfaceRequestFrame {
                 window_id,
                 surface_id,
             } => {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
                     handle
                         .window_state
-                        .request_external_surface_frame(surface_id);
+                        .compositor_surfaces
+                        .request_frame(surface_id);
+                    handle.note_compositor_surface_frame_demand();
                     handle.refresh_frame_activity();
                 }
                 self.request_update();
             }
-            UserEvent::ExternalSurfaceProvider {
+            UserEvent::CompositorSurfaceProvider {
                 window_id,
                 surface_id,
                 provider,
@@ -421,44 +416,69 @@ impl ApplicationHandle {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
                     handle
                         .window_state
-                        .set_external_surface_provider(surface_id, provider);
+                        .set_compositor_surface_provider(surface_id, provider);
                     handle.refresh_frame_activity();
                 }
                 self.request_update();
             }
-            #[cfg(not(target_arch = "wasm32"))]
-            UserEvent::RenderFrameReady {
+            UserEvent::SceneFragmentReady {
                 window_id,
-                frame,
-                render_span,
+                key,
+                signature,
+                rendered,
+                worker_index,
+                render_start,
+                render_end,
             } => {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    let presented = handle.accept_rendered_frame(frame, render_span);
-                    if !presented {
-                        handle.advance_frame();
-                    }
-                    handle.refresh_frame_activity();
-                    if handle.has_frame_work() {
-                        self.request_update();
+                    if handle.complete_compositor_scene_render(
+                        key,
+                        signature,
+                        rendered,
+                        worker_index,
+                        render_start,
+                        render_end,
+                    ) {
+                        handle.refresh_frame_activity();
                     }
                 }
-                self.update_control_flow(event_loop);
+                self.request_update();
             }
-            #[cfg(target_os = "macos")]
-            UserEvent::SubductionFrameTick { window_id, tick } => {
+            UserEvent::LayerHostCommit {
+                window_id,
+                committed_at,
+            } => {
+                if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                    handle.handle_layer_host_commit(committed_at);
+                    handle.refresh_frame_activity();
+                }
+                self.request_update();
+            }
+            UserEvent::CompositorCommitDeadline {
+                window_id,
+                generation,
+            } => {
+                if let Some(handle) = self.window_handles.get_mut(&window_id)
+                    && handle.handle_compositor_commit_deadline(generation)
+                {
+                    handle.refresh_frame_activity();
+                }
+                self.request_update();
+            }
+            UserEvent::FrameTick { window_id, tick } => {
                 if crate::frame_clock::frame_pacing_diag_enabled() {
                     eprintln!(
                         "floem frame pacing app tick window={:?} tick={} predicted={:?} refresh={:?}",
                         window_id, tick.frame_index, tick.predicted_present, tick.refresh_interval,
                     );
                 }
+                #[cfg(target_os = "macos")]
                 self.timing_diag.record_tick(tick.frame_index);
+                #[cfg(target_os = "macos")]
                 self.timing_diag.maybe_report();
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    handle.record_profile_instant("VSync", Instant::now());
+                    #[cfg(target_os = "macos")]
                     handle.refresh_frame_clock_display_link_layer();
-                    handle.receive_frame_tick(tick);
-                    handle.begin_metal_capture_on_frame_tick();
                 }
 
                 Application::clear_update_posted();
@@ -468,10 +488,12 @@ impl ApplicationHandle {
                 }
 
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    handle.drive_external_surfaces_from_frame_signal();
-                    handle.advance_frame();
+                    let schedule = handle.process_frame_tick(tick);
                     handle.refresh_frame_activity();
-                    if handle.has_frame_work() {
+                    let has_frame_work = handle.has_frame_work();
+                    let _ = handle;
+                    self.apply_window_frame_schedule(window_id, schedule, event_loop);
+                    if has_frame_work {
                         self.request_update();
                     }
                 }
@@ -483,18 +505,13 @@ impl ApplicationHandle {
         Application::clear_update_posted();
         self.drain_app_update_events(event_loop);
 
-        let start = Instant::now();
-        let mut any_work_remaining =
-            self.handle_updates_for_all_windows_budgeted(start, Self::UPDATE_BUDGET, event_loop);
-
-        if start.elapsed() < Self::UPDATE_BUDGET && Runtime::has_pending_work() {
+        if Runtime::has_pending_work() {
             Runtime::drain_pending_work();
-            if Runtime::has_pending_work() {
-                any_work_remaining = true;
-            }
         }
 
-        if any_work_remaining {
+        self.drain_window_update_messages(event_loop);
+
+        if Runtime::has_pending_work() {
             self.request_update();
         }
         self.update_control_flow(event_loop);
@@ -527,30 +544,17 @@ impl ApplicationHandle {
                 AppUpdateEvent::RequestTimer { timer } => {
                     self.request_timer(timer, event_loop);
                 }
-                AppUpdateEvent::RequestAnimationTimer {
-                    mut timer,
-                    window_id,
-                } => {
-                    let Some(handle) = self.window_handles.get_mut(&window_id) else {
-                        continue;
-                    };
-                    if !handle.can_render_now() {
-                        continue;
-                    }
-                    timer.deadline = handle.animation_timer_deadline();
-                    self.request_timer(timer, event_loop);
-                }
                 AppUpdateEvent::RequestAnimationFrame {
                     window_id,
                     callback,
                 } => {
                     if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                        handle.note_animation_frame_workload();
-                        handle.window_state.request_animation_frame(callback);
+                        handle.note_animation_frame_demand();
+                        handle.window_state.begin_frame_callbacks.push(callback);
                     }
                 }
                 AppUpdateEvent::CancelTimer { timer } => {
-                    self.remove_timer(&timer, event_loop);
+                    self.remove_timer(timer, event_loop);
                 }
                 AppUpdateEvent::CaptureWindow { window_id, capture } => {
                     capture.set(self.capture_window(window_id).map(Rc::new));
@@ -673,26 +677,32 @@ impl ApplicationHandle {
             .get(&window_id)
             .map(|window_handle| window_handle.window_state.effective_scale())
             .unwrap_or(1.0);
-        let is_latency_sensitive_input = matches!(
-            event,
+        let discrete_input = matches!(
+            &event,
             WindowEvent::KeyboardInput {
                 is_synthetic: false,
                 ..
             } | WindowEvent::Ime(_)
-                | WindowEvent::MouseWheel { .. }
-                | WindowEvent::PinchGesture { .. }
-                | WindowEvent::PanGesture { .. }
                 | WindowEvent::DoubleTapGesture { .. }
-                | WindowEvent::RotationGesture { .. }
-                | WindowEvent::PointerMoved { .. }
                 | WindowEvent::PointerEntered { .. }
                 | WindowEvent::PointerLeft { .. }
                 | WindowEvent::PointerButton { .. }
                 | WindowEvent::TouchpadPressure { .. }
         );
-        if is_latency_sensitive_input {
-            if let Some(window_handle) = self.window_handles.get_mut(&window_id) {
-                window_handle.note_input_frame_workload();
+        let continuous_input = matches!(
+            &event,
+            WindowEvent::MouseWheel { .. }
+                | WindowEvent::PinchGesture { .. }
+                | WindowEvent::PanGesture { .. }
+                | WindowEvent::RotationGesture { .. }
+                | WindowEvent::PointerMoved { .. }
+        );
+        if let Some(window_handle) = self.window_handles.get_mut(&window_id) {
+            if discrete_input {
+                window_handle.note_discrete_input_frame_demand();
+            }
+            if continuous_input {
+                window_handle.note_continuous_input_frame_demand();
             }
         }
 
@@ -888,23 +898,15 @@ impl ApplicationHandle {
         window_id: WindowId,
         event_loop: &dyn ActiveEventLoop,
     ) {
-        let start = Instant::now();
-        let budget = Self::UPDATE_BUDGET;
+        let _ = event_loop;
         self.flush_coalesced_pointer_events(window_id);
 
-        let Some((done, schedule)) = self.window_handles.get_mut(&window_id).map(|handle| {
-            let done = handle.process_update_budgeted(start, budget);
+        let Some(()) = self.window_handles.get_mut(&window_id).map(|handle| {
+            handle.process_update_messages_only();
             handle.refresh_frame_activity();
-            (done, handle.advance_frame())
         }) else {
             return;
         };
-
-        self.apply_window_frame_schedule(window_id, schedule, event_loop);
-
-        if !done {
-            self.request_update();
-        }
     }
 
     fn should_coalesce_pointer_event(&self, window_id: WindowId, event: &PointerEvent) -> bool {
@@ -971,12 +973,9 @@ impl ApplicationHandle {
             mac_os_config,
             win_os_config,
             web_config,
-            renderer_chooser,
             maximum_drawable_count,
         }: WindowConfig,
     ) {
-        let renderer_chooser =
-            renderer_chooser.unwrap_or_else(|| self.config.renderer_chooser.clone());
         let logical_size = size.map(|size| LogicalSize::new(size.width, size.height));
         let logical_min_size = min_size.map(|size| LogicalSize::new(size.width, size.height));
         let logical_max_size = max_size.map(|size| LogicalSize::new(size.width, size.height));
@@ -1156,7 +1155,8 @@ impl ApplicationHandle {
             window,
             output_id,
             self.gpu_resources.clone(),
-            renderer_chooser,
+            self.config.renderer_chooser.clone(),
+            self.scene_renderer_pool.clone(),
             self.config.wgpu_features,
             self.config.wgpu_backends,
             view_fn,
@@ -1168,7 +1168,7 @@ impl ApplicationHandle {
     }
 
     fn close_window(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
-        self.cancel_paced_wake_timer(window_id, event_loop);
+        let _ = event_loop;
         self.pointer_coalesce_until.remove(&window_id);
         self.pending_pointer_events
             .retain(|key, _| key.window_id != window_id);
@@ -1200,137 +1200,37 @@ impl ApplicationHandle {
         Application::request_update();
     }
 
-    fn handle_updates_for_all_windows_budgeted(
-        &mut self,
-        start: Instant,
-        budget: Duration,
-        event_loop: &dyn ActiveEventLoop,
-    ) -> bool {
-        let mut any_work_remaining = false;
-        let mut schedules = Vec::new();
-
+    fn drain_window_update_messages(&mut self, event_loop: &dyn ActiveEventLoop) {
         for (window_id, handle) in self.window_handles.iter_mut() {
-            let done = handle.process_update_budgeted(start, budget);
+            handle.process_update_messages_only();
             handle.refresh_frame_activity();
-            let schedule = handle.advance_frame();
-            if !done {
-                any_work_remaining = true;
-            }
-            schedules.push((*window_id, schedule));
 
-            if !done || start.elapsed() >= budget {
-                any_work_remaining = true;
-                break;
-            }
-
-            // Keep window updates in the same update phase but bound by the same budget.
             while process_window_updates(window_id) {
-                if start.elapsed() >= budget {
-                    any_work_remaining = true;
-                    break;
-                }
-            }
-            if start.elapsed() >= budget {
-                any_work_remaining = true;
-                break;
+                handle.process_update_messages_only();
+                handle.refresh_frame_activity();
             }
         }
 
-        for (window_id, schedule) in schedules {
-            self.apply_window_frame_schedule(window_id, schedule, event_loop);
-        }
-
-        any_work_remaining
-    }
-
-    fn window_can_render(&self, window_id: &winit::window::WindowId) -> bool {
-        self.window_handles
-            .get(window_id)
-            .map(|h| h.can_render_now())
-            .unwrap_or(false)
+        let _ = event_loop;
     }
 
     fn update_control_flow(&self, event_loop: &dyn ActiveEventLoop) {
-        let timer_deadline = self.timers.values().map(|t| t.deadline).min();
-
-        match timer_deadline {
-            Some(t) => {
-                event_loop.set_control_flow(ControlFlow::WaitUntil(t));
-            }
-            None => {
-                event_loop.set_control_flow(ControlFlow::Wait);
-            }
+        if let Some(deadline) = self.timers.first().map(|timer| timer.deadline) {
+            event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+        } else {
+            event_loop.set_control_flow(ControlFlow::Wait);
         }
     }
 
     fn request_timer(&mut self, timer: Timer, event_loop: &dyn ActiveEventLoop) {
-        self.timers.insert(timer.token, timer);
+        self.timers.push(timer);
+        self.timers
+            .sort_by_key(|timer| (timer.deadline, timer.sequence));
         self.fire_timer(event_loop);
     }
 
-    fn ensure_paced_wake_timer(
-        &mut self,
-        window_id: WindowId,
-        deadline: Instant,
-        kind: PacedWakeKind,
-        event_loop: &dyn ActiveEventLoop,
-    ) {
-        let deadline = if deadline <= Instant::now() {
-            Instant::now() + Duration::from_millis(1)
-        } else {
-            deadline
-        };
-
-        let deadline = match self.paced_wake_timers.entry(window_id) {
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                let state = entry.get_mut();
-                if state.token.is_some() && state.deadline <= deadline && state.kind == kind {
-                    return;
-                }
-                let token = TimerToken::next();
-                state.token = Some(token);
-                state.deadline = deadline;
-                state.kind = kind;
-                deadline
-            }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                let token = TimerToken::next();
-                entry.insert(PacedWakeTimerState {
-                    token: Some(token),
-                    deadline,
-                    kind,
-                });
-                deadline
-            }
-        };
-
-        let token = self
-            .paced_wake_timers
-            .get(&window_id)
-            .and_then(|state| state.token)
-            .expect("paced wake timer token should exist when arming");
-        self.request_timer(
-            Timer {
-                token,
-                action: Box::new(|_| {}),
-                deadline,
-                is_animation: true,
-                window_id: Some(window_id),
-            },
-            event_loop,
-        );
-    }
-
-    fn cancel_paced_wake_timer(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
-        if let Some(state) = self.paced_wake_timers.remove(&window_id)
-            && let Some(token) = state.token
-        {
-            self.remove_timer(&token, event_loop);
-        }
-    }
-
-    fn remove_timer(&mut self, timer: &TimerToken, event_loop: &dyn ActiveEventLoop) {
-        self.timers.remove(timer);
+    fn remove_timer(&mut self, timer: TimerToken, event_loop: &dyn ActiveEventLoop) {
+        self.timers.retain(|entry| entry.token != timer);
         if self.timers.is_empty() {
             event_loop.set_control_flow(ControlFlow::Wait);
         }
@@ -1342,65 +1242,28 @@ impl ApplicationHandle {
             return;
         }
 
-        let deadline = self.timers.values().map(|timer| timer.deadline).min();
-        if let Some(deadline) = deadline {
+        if let Some(deadline) = self.timers.first().map(|timer| timer.deadline) {
             event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
         }
     }
 
     pub(crate) fn handle_timer(&mut self, event_loop: &dyn ActiveEventLoop) {
         let now = Instant::now();
-        let tokens: Vec<TimerToken> = self
+        if self
             .timers
-            .iter()
-            .filter_map(|(token, timer)| {
-                if timer.deadline <= now {
-                    Some(*token)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        if !tokens.is_empty() {
+            .first()
+            .is_some_and(|timer| timer.deadline <= now)
+        {
             let mut any_timer_fired = false;
-            for token in tokens {
-                if let Some(mut timer) = self.timers.remove(&token) {
-                    if timer.is_animation
-                        && timer
-                            .window_id
-                            .is_some_and(|window_id| !self.window_can_render(&window_id))
-                    {
-                        // Keep animation timers dormant while hidden/occluded.
-                        timer.deadline = now + Duration::from_millis(100);
-                        self.timers.insert(token, timer);
-                        continue;
-                    }
-
-                    if let Some(window_id) = timer.window_id
-                        && let Some(state) = self.paced_wake_timers.get_mut(&window_id)
-                        && state.token == Some(token)
-                    {
-                        state.token = None;
-                        match state.kind {
-                            PacedWakeKind::Update => {
-                                if crate::frame_clock::frame_pacing_diag_enabled() {
-                                    eprintln!(
-                                        "floem paced wake update window={:?} deadline_late={:.3}ms",
-                                        window_id,
-                                        now.saturating_duration_since(state.deadline).as_secs_f64()
-                                            * 1000.0,
-                                    );
-                                }
-                                self.request_update();
-                            }
-                        }
-                        any_timer_fired = true;
-                        continue;
-                    }
-
-                    (timer.action)(token);
-                    any_timer_fired = true;
-                }
+            while self
+                .timers
+                .first()
+                .is_some_and(|timer| timer.deadline <= now)
+            {
+                let timer = self.timers.remove(0);
+                let token = timer.token;
+                (timer.action)(token);
+                any_timer_fired = true;
             }
             if any_timer_fired {
                 self.request_update();

@@ -821,7 +821,6 @@ impl ViewId {
     }
 
     /// Request that this the `id` view be styled, laid out and painted again.
-    /// This will recursively request this for all parents.
     pub fn request_all(&self) {
         add_update_message(UpdateMessage::RequestStyle(
             self.get_element_id(),

@@ -35,14 +35,33 @@ pub enum PresentPacing {
     AfterMinimumDuration(Duration),
 }
 
-/// Reason the frame is being produced.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum FrameWorkload {
-    /// User input or other latency-sensitive work.
-    Input,
-    /// Smooth animation work where even cadence is preferred.
-    #[default]
-    Animation,
+bitflags::bitflags! {
+    /// Reasons the frame is being produced.
+    ///
+    /// Multiple causes can be pending at once. The frame clock derives an
+    /// effective scheduling policy from the full set instead of forcing event
+    /// handling to collapse demand to a single priority too early.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub struct FrameDemand: u8 {
+        /// Discrete input such as key presses, clicks, taps, or IME.
+        const DISCRETE_INPUT = 1 << 0;
+        /// Continuous/coalesced input such as pointer move, scroll, or gesture.
+        const CONTINUOUS_INPUT = 1 << 1;
+        /// Animation timeline callbacks.
+        const ANIMATION = 1 << 2;
+        /// External surface producers requesting frame cadence.
+        const EXTERNAL_SURFACE = 1 << 3;
+    }
+}
+
+impl FrameDemand {
+    /// Take the current demand and leave the source empty.
+    #[must_use]
+    pub fn take(&mut self) -> Self {
+        let demand = *self;
+        *self = Self::empty();
+        demand
+    }
 }
 
 /// Renderer timing observations for scheduler feedback.

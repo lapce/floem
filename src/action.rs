@@ -10,7 +10,6 @@ use std::sync::atomic::AtomicU64;
 
 use floem_reactive::{SignalWith, UpdaterEffect};
 use peniko::kurbo::{Point, Size, Vec2};
-use winit::window::WindowId;
 use winit::window::{ResizeDirection, Theme};
 
 use crate::IntoView;
@@ -134,12 +133,10 @@ pub(crate) struct Timer {
     pub(crate) token: TimerToken,
     pub(crate) action: Box<dyn FnOnce(TimerToken)>,
     pub(crate) deadline: Instant,
-    pub(crate) is_animation: bool,
-    pub(crate) window_id: Option<WindowId>,
+    pub(crate) sequence: u64,
 }
 
 /// A token associated with a timer.
-// TODO: what is this for?
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
 pub struct TimerToken(u64);
 
@@ -149,7 +146,7 @@ impl TimerToken {
 
     /// Create a new token.
     pub fn next() -> TimerToken {
-        static TIMER_COUNTER: AtomicU64 = AtomicU64::new(0);
+        static TIMER_COUNTER: AtomicU64 = AtomicU64::new(1);
         TimerToken(TIMER_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
     }
 
@@ -170,6 +167,8 @@ impl TimerToken {
 }
 
 /// Execute a callback after a specified duration.
+///
+/// This must be called on Floem's main UI thread.
 pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static) -> TimerToken {
     let view = get_current_view();
     let action = move |token| {
@@ -180,54 +179,18 @@ pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static)
     };
 
     let token = TimerToken::next();
-    let deadline = Instant::now() + duration;
     add_app_update_event(AppUpdateEvent::RequestTimer {
         timer: Timer {
             token,
             action: Box::new(action),
-            deadline,
-            is_animation: false,
-            window_id: None,
+            deadline: Instant::now() + duration,
+            sequence: token.into_raw(),
         },
-    });
-    token
-}
-
-/// Execute a callback on the next animation frame, synchronized with the display's refresh rate.
-///
-/// Returns a [`TimerToken`] that can be used to cancel the callback before it fires.
-/// Returns [`TimerToken::INVALID`] if called outside of a window context.
-pub fn exec_after_animation_frame(action: impl FnOnce(TimerToken) + 'static) -> TimerToken {
-    let view = get_current_view();
-    let Some(window_id) = view.window_id() else {
-        return TimerToken::INVALID;
-    };
-
-    let action = move |token| {
-        let current_view = get_current_view();
-        set_current_view(view.root());
-        action(token);
-        set_current_view(current_view);
-    };
-
-    let token = TimerToken::next();
-    add_app_update_event(AppUpdateEvent::RequestAnimationTimer {
-        timer: Timer {
-            token,
-            action: Box::new(action),
-            deadline: Instant::now(), // overridden by handler using monitor refresh rate
-            is_animation: true,
-            window_id: Some(window_id),
-        },
-        window_id,
     });
     token
 }
 
 /// Execute a callback at the next begin-frame opportunity for the current window.
-///
-/// Unlike [`exec_after_animation_frame`], this is driven by the window's redraw path rather than
-/// by a timer that approximates the display interval.
 pub fn request_animation_frame(action: impl FnOnce(FrameTime) + 'static) {
     let view = get_current_view();
     let Some(window_id) = view.window_id() else {

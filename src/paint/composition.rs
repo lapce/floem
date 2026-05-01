@@ -1,6 +1,6 @@
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size};
 
-use crate::{effects::CompositorEffect, external_surface::ExternalSurfaceId};
+use crate::{effects::CompositorEffect, compositor_surface::CompositorSurfaceId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum PaintStage {
@@ -13,8 +13,8 @@ pub(crate) enum CompositionKey {
     SceneRun {
         run_index: u32,
     },
-    ExternalSurface {
-        surface_id: ExternalSurfaceId,
+    CompositorSurface {
+        surface_id: CompositorSurfaceId,
         occurrence: u32,
     },
 }
@@ -29,9 +29,9 @@ impl CompositionPlan {
         Self { items: Vec::new() }
     }
 
-    pub(crate) fn has_external_surfaces(&self) -> bool {
+    pub(crate) fn has_compositor_surfaces(&self) -> bool {
         self.items.iter().any(|item| match item {
-            CompositionItem::ExternalSurface(_) => true,
+            CompositionItem::CompositorSurface(_) => true,
             CompositionItem::Scene(layer) => !layer.external_images.is_empty(),
         })
     }
@@ -54,7 +54,7 @@ impl CompositionPlan {
                         color_effect_count: layer.color_effects.len(),
                     });
                 }
-                CompositionItem::Scene(_) | CompositionItem::ExternalSurface(_) => {}
+                CompositionItem::Scene(_) | CompositionItem::CompositorSurface(_) => {}
             }
         }
         WindowPrefixFingerprint { scenes }
@@ -83,7 +83,7 @@ struct SceneFingerprint {
 #[derive(Clone, Debug)]
 pub(crate) enum CompositionItem {
     Scene(SceneLayer),
-    ExternalSurface(ExternalSurfaceLayer),
+    CompositorSurface(CompositorSurfaceLayer),
 }
 
 #[derive(Clone, Debug)]
@@ -104,15 +104,15 @@ pub(crate) struct SceneLayer {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct SceneExternalImage {
     pub image_id: imaging::ExternalImageId,
-    pub surface_id: ExternalSurfaceId,
+    pub surface_id: CompositorSurfaceId,
     pub rect: Rect,
     pub source_size: peniko::kurbo::Size,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ExternalSurfaceLayer {
+pub(crate) struct CompositorSurfaceLayer {
     pub key: CompositionKey,
-    pub surface_id: ExternalSurfaceId,
+    pub surface_id: CompositorSurfaceId,
     pub rect: Rect,
     pub source_size: peniko::kurbo::Size,
     pub transform: Affine,

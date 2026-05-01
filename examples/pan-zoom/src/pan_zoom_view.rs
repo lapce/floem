@@ -2,7 +2,7 @@ use std::{collections::VecDeque, time::Duration};
 
 use floem::{
     IntoView, View,
-    action::exec_after_animation_frame,
+    action::request_animation_frame,
     event::{Event, EventPropagation, PointerScrollEventExt},
     kurbo::{self, Vec2},
     ui_events::pointer::{PointerButtonEvent, PointerEvent, PointerUpdate},
@@ -178,7 +178,7 @@ impl PanZoomView {
 
     fn schedule_update(&mut self) {
         let id = self.id();
-        exec_after_animation_frame(move |_| {
+        request_animation_frame(move |_| {
             id.update_state(Box::new(()));
         });
     }

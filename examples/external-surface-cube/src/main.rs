@@ -5,8 +5,8 @@ use std::{
 
 use bytemuck::{Pod, Zeroable};
 use floem::{
-    Application, ColorEffect, ColorEffectId, ExternalSurface, GpuResources,
-    RenderableExternalSurface, RenderableExternalSurfaceConfig, ShaderEffectId, SourceEffect,
+    Application, ColorEffect, ColorEffectId, CompositorSurface, GpuResources,
+    RenderableCompositorSurface, RenderableCompositorSurfaceConfig, ShaderEffectId, SourceEffect,
     action::{capture_metal, inspect},
     group_ref,
     imaging::{Brush, ClipRef, Filter, ImageBrush},
@@ -22,10 +22,10 @@ use wgpu::util::DeviceExt;
 const CUBE_SIZE: u32 = 640;
 
 fn app_view(window_id: WindowId) -> impl IntoView {
-    let (surface, producer_surface) = ExternalSurface::new_renderable(
+    let (surface, producer_surface) = CompositorSurface::new_renderable(
         window_id,
         Size::new(f64::from(CUBE_SIZE), f64::from(CUBE_SIZE)),
-        RenderableExternalSurfaceConfig::default(),
+        RenderableCompositorSurfaceConfig::default(),
     );
     let producer_surface = Arc::new(Mutex::new(Some(producer_surface)));
     let paint_surface = surface.clone();
@@ -63,7 +63,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                     return;
                 };
                 if let Err(err) = start_cube_target(producer_surface, gpu_resources.clone()) {
-                    eprintln!("external-surface-cube: failed to start renderable target: {err}");
+                    eprintln!("compositor-surface-cube: failed to start renderable target: {err}");
                 }
             },
         )
@@ -76,7 +76,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         })
 }
 
-fn cube_panel(surface: ExternalSurface) -> impl IntoView {
+fn cube_panel(surface: CompositorSurface) -> impl IntoView {
     cube_canvas(surface).style(|s| {
         s.width(780.0)
             .height(520.0)
@@ -88,7 +88,7 @@ fn cube_panel(surface: ExternalSurface) -> impl IntoView {
     })
 }
 
-fn cube_canvas(surface: ExternalSurface) -> impl IntoView {
+fn cube_canvas(surface: CompositorSurface) -> impl IntoView {
     canvas(move |cx, size| {
         let canvas = Rect::ZERO.with_size(size);
         let cube_rect = centered_rect(size, Size::new(440.0, 330.0));
@@ -205,45 +205,45 @@ return vec4<f32>(sampled.rgb * tint, sampled.a);
             origin,
             floem::kurbo::Vec2::ZERO,
             cx.effective_scale,
-            &Brush::Solid(css::RED),
+            &brush,
             Some(Affine::translate((
                 cube_rect.x0 - origin.x,
                 cube_rect.y0 - origin.y,
             ))),
         );
 
-        cx.painter
-            .fill(
-                Rect::new(
-                    label_rect.x0 + 32.0,
-                    label_rect.y0 + 17.0,
-                    label_rect.x1 - 102.0,
-                    label_rect.y0 + 36.0,
-                )
-                .to_rounded_rect(9.0),
-                Color::from_rgba8(35, 45, 42, 210),
-            )
-            .draw();
-        cx.painter
-            .fill(
-                Rect::new(
-                    label_rect.x1 - 116.0,
-                    label_rect.y0 + 14.0,
-                    label_rect.x1 - 46.0,
-                    label_rect.y0 + 40.0,
-                )
-                .to_rounded_rect(13.0),
-                Color::from_rgba8(18, 139, 128, 230),
-            )
-            .draw();
+        // cx.painter
+        //     .fill(
+        //         Rect::new(
+        //             label_rect.x0 + 32.0,
+        //             label_rect.y0 + 17.0,
+        //             label_rect.x1 - 102.0,
+        //             label_rect.y0 + 36.0,
+        //         )
+        //         .to_rounded_rect(9.0),
+        //         Color::from_rgba8(35, 45, 42, 210),
+        //     )
+        //     .draw();
+        // cx.painter
+        //     .fill(
+        //         Rect::new(
+        //             label_rect.x1 - 116.0,
+        //             label_rect.y0 + 14.0,
+        //             label_rect.x1 - 46.0,
+        //             label_rect.y0 + 40.0,
+        //         )
+        //         .to_rounded_rect(13.0),
+        //         Color::from_rgba8(18, 139, 128, 230),
+        //     )
+        //     .draw();
 
-        cx.painter
-            .stroke(
-                cube_rect.inflate(14.0, 14.0).to_rounded_rect(26.0),
-                &Stroke::new(4.0),
-                Color::from_rgba8(250, 238, 205, 225),
-            )
-            .draw();
+        // cx.painter
+        //     .stroke(
+        //         cube_rect.inflate(14.0, 14.0).to_rounded_rect(26.0),
+        //         &Stroke::new(4.0),
+        //         Color::from_rgba8(250, 238, 205, 225),
+        //     )
+        //     .draw();
 
         cx.painter.fill(canvas, &brush).draw();
     })
@@ -258,7 +258,7 @@ fn centered_rect(container: Size, size: Size) -> Rect {
 }
 
 fn start_cube_target(
-    surface: RenderableExternalSurface,
+    surface: RenderableCompositorSurface,
     gpu_resources: GpuResources,
 ) -> Result<(), String> {
     let renderer = Arc::new(Mutex::new(CubeRenderer::new(
@@ -289,7 +289,7 @@ fn start_cube_target(
                 let _ = completion_tx.send(completion);
             }
             Err(err) => {
-                eprintln!("external-surface-cube: {err}");
+                eprintln!("compositor-surface-cube: {err}");
             }
         }
         Ok(subduction::wgpu::SurfaceFrameDecision::Deferred)

@@ -434,7 +434,7 @@ impl<'a> StyleCx<'a> {
                     vs.view_transform_props
                         .read_explicit(&computed, &self.now, &mut transitioning);
                 if box_tree_changed {
-                    view_id.request_box_tree_update_for_view();
+                    self.window_state.request_box_tree_update_for_view(view_id);
                 }
 
                 let old_cursor = vs.style_cursor;

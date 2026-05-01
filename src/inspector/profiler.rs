@@ -62,9 +62,17 @@ impl Profile {
         let frame_start = frame
             .events
             .iter()
+            .filter(|event| event.name == "VSync")
             .map(|event| event.start)
-            .chain(frame.timing.iter().filter_map(|timing| timing.anchor))
-            .min();
+            .min()
+            .or_else(|| {
+                frame
+                    .events
+                    .iter()
+                    .map(|event| event.start)
+                    .chain(frame.timing.iter().filter_map(|timing| timing.anchor))
+                    .min()
+            });
         let Some(frame_start) = frame_start else {
             return;
         };
@@ -153,7 +161,7 @@ enum TimelineItemKind {
 #[derive(Clone)]
 struct TimelineItem {
     label: String,
-    source: &'static str,
+    source: String,
     start: Duration,
     duration: Duration,
     depth: usize,
@@ -234,7 +242,7 @@ fn build_timeline_lanes(profile: &Profile) -> Vec<Vec<TimelineItem>> {
         let duration = event.end.saturating_duration_since(event.start);
         (!duration.is_zero()).then(|| TimelineItem {
             label: event.name.to_string(),
-            source: "Profiler Event",
+            source: "Profiler Event".to_string(),
             start: event.start.saturating_duration_since(origin),
             duration,
             depth: event.depth,
@@ -256,9 +264,9 @@ fn build_timeline_lanes(profile: &Profile) -> Vec<Vec<TimelineItem>> {
                 .map(|span| TimelineItem {
                     label: span.label.to_string(),
                     source: match span.thread {
-                        TimingThread::Main => "Main Thread",
-                        TimingThread::Renderer => "Renderer Thread",
-                        TimingThread::Gpu => "GPU",
+                        TimingThread::Main => "Main Thread".to_string(),
+                        TimingThread::Renderer(index) => format!("Render({index})"),
+                        TimingThread::Gpu => "GPU".to_string(),
                     },
                     start: anchor.saturating_duration_since(origin) + span.start,
                     duration: span.duration,
@@ -276,7 +284,7 @@ fn build_timeline_lanes(profile: &Profile) -> Vec<Vec<TimelineItem>> {
             .then_with(|| a.label.cmp(&b.label))
     });
 
-    let mut lane_threads: Vec<&'static str> = Vec::new();
+    let mut lane_threads: Vec<String> = Vec::new();
     let mut lane_ends: Vec<Duration> = Vec::new();
     let mut lanes: Vec<Vec<TimelineItem>> = Vec::new();
 
@@ -290,7 +298,7 @@ fn build_timeline_lanes(profile: &Profile) -> Vec<Vec<TimelineItem>> {
             *lane_end = item_end;
             lanes[lane_idx].push(item);
         } else {
-            lane_threads.push(item.source);
+            lane_threads.push(item.source.clone());
             lane_ends.push(item_end);
             lanes.push(vec![item]);
         }

@@ -1,5 +1,5 @@
 pub(crate) mod compositor;
-pub(crate) mod external_surface;
+pub(crate) mod compositor_surface;
 pub(crate) mod handle;
 pub(crate) mod id;
 pub mod mock;
@@ -13,7 +13,6 @@ pub use state::WindowState;
 
 use peniko::Color;
 use peniko::kurbo::{Point, Size};
-use std::sync::Arc;
 pub use winit::icon::{Icon, RgbaIcon};
 pub use winit::monitor::Fullscreen;
 pub use winit::window::ResizeDirection;
@@ -54,7 +53,6 @@ pub struct WindowConfig {
     pub(crate) mac_os_config: Option<MacOSWindowConfig>,
     pub(crate) win_os_config: Option<WinOSWindowConfig>,
     pub(crate) web_config: Option<WebWindowConfig>,
-    pub(crate) renderer_chooser: Option<crate::paint::renderer::RendererChooser>,
     pub(crate) maximum_drawable_count: u32,
 }
 
@@ -83,7 +81,6 @@ impl Default for WindowConfig {
             mac_os_config: None,
             win_os_config: None,
             web_config: None,
-            renderer_chooser: None,
             maximum_drawable_count: 2,
         }
     }
@@ -227,22 +224,6 @@ impl WindowConfig {
     #[inline]
     pub fn apply_default_theme(mut self, apply: bool) -> Self {
         self.apply_default_theme = apply;
-        self
-    }
-
-    /// Override the renderer chooser for this window only.
-    ///
-    /// This can be used to provide a custom per-window backend chooser instead of the
-    /// application-wide renderer chooser from [`crate::app::AppConfig::renderer_chooser`].
-    #[inline]
-    pub fn renderer_chooser(
-        mut self,
-        renderer_chooser: impl Fn(NewRendererCx) -> crate::paint::renderer::RendererSpec
-        + Send
-        + Sync
-        + 'static,
-    ) -> Self {
-        self.renderer_chooser = Some(Arc::new(renderer_chooser));
         self
     }
 

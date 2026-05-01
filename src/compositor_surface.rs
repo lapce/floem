@@ -24,9 +24,9 @@ use crate::{
 static NEXT_EXTERNAL_SURFACE_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ExternalSurfaceId(u64);
+pub struct CompositorSurfaceId(u64);
 
-impl ExternalSurfaceId {
+impl CompositorSurfaceId {
     #[must_use]
     pub fn get(self) -> u64 {
         self.0
@@ -52,24 +52,24 @@ impl ExternalSurfaceId {
 const EXTERNAL_SURFACE_IMAGE_ID_MASK: u64 = 1 << 63;
 
 #[derive(Clone, Debug)]
-pub struct ExternalSurface {
-    id: ExternalSurfaceId,
+pub struct CompositorSurface {
+    id: CompositorSurfaceId,
     window_id: WindowId,
-    config: ExternalSurfaceConfig,
+    config: CompositorSurfaceConfig,
 }
 
-impl ExternalSurface {
+impl CompositorSurface {
     #[must_use]
-    pub fn new(window_id: WindowId, config: ExternalSurfaceConfig) -> Self {
+    pub fn new(window_id: WindowId, config: CompositorSurfaceConfig) -> Self {
         Self {
-            id: ExternalSurfaceId(NEXT_EXTERNAL_SURFACE_ID.fetch_add(1, Ordering::Relaxed)),
+            id: CompositorSurfaceId(NEXT_EXTERNAL_SURFACE_ID.fetch_add(1, Ordering::Relaxed)),
             window_id,
             config,
         }
     }
 
     #[must_use]
-    pub fn id(&self) -> ExternalSurfaceId {
+    pub fn id(&self) -> CompositorSurfaceId {
         self.id
     }
 
@@ -89,13 +89,13 @@ impl ExternalSurface {
     }
 
     #[must_use]
-    pub fn config(&self) -> &ExternalSurfaceConfig {
+    pub fn config(&self) -> &CompositorSurfaceConfig {
         &self.config
     }
 
     #[must_use]
-    pub fn handle(&self) -> ExternalSurfaceHandle {
-        ExternalSurfaceHandle {
+    pub fn handle(&self) -> CompositorSurfaceHandle {
+        CompositorSurfaceHandle {
             id: self.id,
             window_id: self.window_id,
         }
@@ -117,7 +117,7 @@ impl ExternalSurface {
         self.handle().request_frame();
     }
 
-    pub fn set_provider(&self, provider: ExternalSurfaceProviderHandle) {
+    pub fn set_provider(&self, provider: CompositorSurfaceProviderHandle) {
         self.handle().set_provider(provider);
     }
 
@@ -125,51 +125,51 @@ impl ExternalSurface {
     pub fn new_renderable(
         window_id: WindowId,
         size: Size,
-        config: RenderableExternalSurfaceConfig,
-    ) -> (Self, RenderableExternalSurface) {
+        config: RenderableCompositorSurfaceConfig,
+    ) -> (Self, RenderableCompositorSurface) {
         let surface = Self::new(
             window_id,
-            ExternalSurfaceConfig {
-                kind: ExternalSurfaceKind::WgpuTexture,
+            CompositorSurfaceConfig {
+                kind: CompositorSurfaceKind::WgpuTexture,
                 alpha_mode: config.alpha_mode,
                 preferred_size: Some(size),
             },
         );
-        let renderable = RenderableExternalSurface::new(surface.handle(), size, config);
+        let renderable = RenderableCompositorSurface::new(surface.handle(), size, config);
         surface.set_provider(Arc::new(Mutex::new(renderable.provider())));
         (surface, renderable)
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct RenderableExternalSurfaceConfig {
-    pub surface: subduction::wgpu::ExternalSurfaceConfig,
-    pub alpha_mode: ExternalSurfaceAlphaMode,
+pub struct RenderableCompositorSurfaceConfig {
+    pub surface: subduction::wgpu::CompositorSurfaceConfig,
+    pub alpha_mode: CompositorSurfaceAlphaMode,
 }
 
-impl Default for RenderableExternalSurfaceConfig {
+impl Default for RenderableCompositorSurfaceConfig {
     fn default() -> Self {
         Self {
-            surface: subduction::wgpu::ExternalSurfaceConfig::default(),
-            alpha_mode: ExternalSurfaceAlphaMode::Premultiplied,
+            surface: subduction::wgpu::CompositorSurfaceConfig::default(),
+            alpha_mode: CompositorSurfaceAlphaMode::Premultiplied,
         }
     }
 }
 
 #[derive(Clone)]
-pub struct RenderableExternalSurface {
-    handle: ExternalSurfaceHandle,
+pub struct RenderableCompositorSurface {
+    handle: CompositorSurfaceHandle,
     preferred_size: Size,
-    config: RenderableExternalSurfaceConfig,
-    callback: Arc<Mutex<Option<RenderableExternalSurfaceCallback>>>,
+    config: RenderableCompositorSurfaceConfig,
+    callback: Arc<Mutex<Option<RenderableCompositorSurfaceCallback>>>,
     completions: Arc<Mutex<mpsc::Receiver<subduction::wgpu::SurfaceFrameCompletion>>>,
     completion_tx: mpsc::Sender<subduction::wgpu::SurfaceFrameCompletion>,
     in_flight: Arc<Mutex<u32>>,
 }
 
-impl std::fmt::Debug for RenderableExternalSurface {
+impl std::fmt::Debug for RenderableCompositorSurface {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RenderableExternalSurface")
+        f.debug_struct("RenderableCompositorSurface")
             .field("id", &self.handle.id())
             .field("preferred_size", &self.preferred_size)
             .field("config", &self.config)
@@ -177,19 +177,19 @@ impl std::fmt::Debug for RenderableExternalSurface {
     }
 }
 
-type RenderableExternalSurfaceCallback = Box<
+type RenderableCompositorSurfaceCallback = Box<
     dyn FnMut(
-            RenderableExternalSurfaceFrameCx,
+            RenderableCompositorSurfaceFrameCx,
         )
             -> Result<subduction::wgpu::SurfaceFrameDecision, subduction::wgpu::SurfaceFrameError>
         + Send,
 >;
 
-impl RenderableExternalSurface {
+impl RenderableCompositorSurface {
     fn new(
-        handle: ExternalSurfaceHandle,
+        handle: CompositorSurfaceHandle,
         preferred_size: Size,
-        config: RenderableExternalSurfaceConfig,
+        config: RenderableCompositorSurfaceConfig,
     ) -> Self {
         let (completion_tx, completion_rx) = mpsc::channel();
         Self {
@@ -204,14 +204,14 @@ impl RenderableExternalSurface {
     }
 
     #[must_use]
-    pub fn surface_id(&self) -> ExternalSurfaceId {
+    pub fn surface_id(&self) -> CompositorSurfaceId {
         self.handle.id()
     }
 
     pub fn set_frame_callback(
         &self,
         callback: impl FnMut(
-            RenderableExternalSurfaceFrameCx,
+            RenderableCompositorSurfaceFrameCx,
         ) -> Result<
             subduction::wgpu::SurfaceFrameDecision,
             subduction::wgpu::SurfaceFrameError,
@@ -227,8 +227,8 @@ impl RenderableExternalSurface {
         self.completion_tx.clone()
     }
 
-    fn provider(&self) -> RenderableExternalSurfaceProvider {
-        RenderableExternalSurfaceProvider {
+    fn provider(&self) -> RenderableCompositorSurfaceProvider {
+        RenderableCompositorSurfaceProvider {
             handle: self.handle.clone(),
             config: self.config.clone(),
             callback: self.callback.clone(),
@@ -241,22 +241,22 @@ impl RenderableExternalSurface {
     }
 }
 
-pub struct RenderableExternalSurfaceFrameCx {
+pub struct RenderableCompositorSurfaceFrameCx {
     opportunity: subduction::wgpu::SurfaceFrameOpportunity,
-    config: RenderableExternalSurfaceConfig,
+    config: RenderableCompositorSurfaceConfig,
     completion_tx: mpsc::Sender<subduction::wgpu::SurfaceFrameCompletion>,
     in_flight: Arc<Mutex<u32>>,
     target: Option<subduction::wgpu::SurfaceFrameLease>,
 }
 
-impl RenderableExternalSurfaceFrameCx {
+impl RenderableCompositorSurfaceFrameCx {
     #[must_use]
     pub fn opportunity(&self) -> subduction::wgpu::SurfaceFrameOpportunity {
         self.opportunity
     }
 
     #[must_use]
-    pub fn config(&self) -> &RenderableExternalSurfaceConfig {
+    pub fn config(&self) -> &RenderableCompositorSurfaceConfig {
         &self.config
     }
 
@@ -297,32 +297,32 @@ pub struct SubductionFrameTick {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ExternalSurfaceKind {
+pub enum CompositorSurfaceKind {
     NativeTexture,
     WgpuTexture,
     CpuImageFallback,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ExternalSurfaceAlphaMode {
+pub enum CompositorSurfaceAlphaMode {
     Opaque,
     Premultiplied,
     Unpremultiplied,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct ExternalSurfaceConfig {
-    pub kind: ExternalSurfaceKind,
-    pub alpha_mode: ExternalSurfaceAlphaMode,
+pub struct CompositorSurfaceConfig {
+    pub kind: CompositorSurfaceKind,
+    pub alpha_mode: CompositorSurfaceAlphaMode,
     pub preferred_size: Option<Size>,
 }
 
-impl ExternalSurfaceConfig {
+impl CompositorSurfaceConfig {
     #[must_use]
     pub fn texture() -> Self {
         Self {
-            kind: ExternalSurfaceKind::WgpuTexture,
-            alpha_mode: ExternalSurfaceAlphaMode::Premultiplied,
+            kind: CompositorSurfaceKind::WgpuTexture,
+            alpha_mode: CompositorSurfaceAlphaMode::Premultiplied,
             preferred_size: None,
         }
     }
@@ -330,14 +330,14 @@ impl ExternalSurfaceConfig {
     #[must_use]
     pub fn video() -> Self {
         Self {
-            kind: ExternalSurfaceKind::NativeTexture,
-            alpha_mode: ExternalSurfaceAlphaMode::Opaque,
+            kind: CompositorSurfaceKind::NativeTexture,
+            alpha_mode: CompositorSurfaceAlphaMode::Opaque,
             preferred_size: None,
         }
     }
 }
 
-impl Default for ExternalSurfaceConfig {
+impl Default for CompositorSurfaceConfig {
     fn default() -> Self {
         Self::texture()
     }
@@ -360,46 +360,46 @@ impl ExternalTexture {
 }
 
 #[derive(Clone, Debug)]
-pub enum ExternalSurfaceContent {
+pub enum CompositorSurfaceContent {
     Empty,
     Texture(ExternalTexture),
     Image(ImageData),
     Subduction(Arc<dyn Any + Send + Sync>),
 }
 
-pub type ExternalSurfaceProviderHandle = Arc<Mutex<dyn ExternalSurfaceProvider + Send>>;
+pub type CompositorSurfaceProviderHandle = Arc<Mutex<dyn CompositorSurfaceProvider + Send>>;
 
-pub trait ExternalSurfaceProvider {
+pub trait CompositorSurfaceProvider {
     fn can_accept_frame_target(&self) -> bool {
         true
     }
 
-    fn poll_current_content(&mut self) -> ExternalSurfaceFrameUpdate {
-        ExternalSurfaceFrameUpdate::idle()
+    fn poll_current_content(&mut self) -> CompositorSurfaceFrameUpdate {
+        CompositorSurfaceFrameUpdate::idle()
     }
 
     fn update_current_content(
         &mut self,
-        args: ExternalSurfaceFrameArgs,
-    ) -> ExternalSurfaceFrameUpdate;
+        args: CompositorSurfaceFrameArgs,
+    ) -> CompositorSurfaceFrameUpdate;
 
-    fn current_content(&self) -> Option<ExternalSurfaceContent>;
+    fn current_content(&self) -> Option<CompositorSurfaceContent>;
 
-    fn release_current_content(&mut self, outcome: ExternalSurfaceOutcome);
+    fn release_current_content(&mut self, outcome: CompositorSurfaceOutcome);
 }
 
-struct RenderableExternalSurfaceProvider {
-    handle: ExternalSurfaceHandle,
-    config: RenderableExternalSurfaceConfig,
-    callback: Arc<Mutex<Option<RenderableExternalSurfaceCallback>>>,
+struct RenderableCompositorSurfaceProvider {
+    handle: CompositorSurfaceHandle,
+    config: RenderableCompositorSurfaceConfig,
+    callback: Arc<Mutex<Option<RenderableCompositorSurfaceCallback>>>,
     completions: Arc<Mutex<mpsc::Receiver<subduction::wgpu::SurfaceFrameCompletion>>>,
     completion_tx: mpsc::Sender<subduction::wgpu::SurfaceFrameCompletion>,
     in_flight: Arc<Mutex<u32>>,
-    current_content: Option<ExternalSurfaceContent>,
+    current_content: Option<CompositorSurfaceContent>,
     last_requested_frame_index: Option<u64>,
 }
 
-impl ExternalSurfaceProvider for RenderableExternalSurfaceProvider {
+impl CompositorSurfaceProvider for RenderableCompositorSurfaceProvider {
     fn can_accept_frame_target(&self) -> bool {
         if self.callback.lock().unwrap().is_none() {
             return false;
@@ -409,14 +409,14 @@ impl ExternalSurfaceProvider for RenderableExternalSurfaceProvider {
         *in_flight < max_latency
     }
 
-    fn poll_current_content(&mut self) -> ExternalSurfaceFrameUpdate {
+    fn poll_current_content(&mut self) -> CompositorSurfaceFrameUpdate {
         self.drain_completions()
     }
 
     fn update_current_content(
         &mut self,
-        args: ExternalSurfaceFrameArgs,
-    ) -> ExternalSurfaceFrameUpdate {
+        args: CompositorSurfaceFrameArgs,
+    ) -> CompositorSurfaceFrameUpdate {
         let mut frame_update = self.drain_completions();
         let diag = crate::frame_clock::frame_pacing_diag_enabled()
             || std::env::var_os("FLOEM_CUBE_DIAG").is_some();
@@ -424,11 +424,11 @@ impl ExternalSurfaceProvider for RenderableExternalSurfaceProvider {
         if !args.visible {
             if diag {
                 eprintln!(
-                    "floem external surface provider skip surface={:?} frame={} reason=not_visible",
+                    "floem compositor surface provider skip surface={:?} frame={} reason=not_visible",
                     args.surface_id, args.frame_index,
                 );
             }
-            return ExternalSurfaceFrameUpdate {
+            return CompositorSurfaceFrameUpdate {
                 content_changed: frame_update.content_changed,
                 request_next_frame: false,
             };
@@ -437,11 +437,11 @@ impl ExternalSurfaceProvider for RenderableExternalSurfaceProvider {
         if args.gpu_resources.is_none() {
             if diag {
                 eprintln!(
-                    "floem external surface provider skip surface={:?} frame={} reason=no_gpu_resources",
+                    "floem compositor surface provider skip surface={:?} frame={} reason=no_gpu_resources",
                     args.surface_id, args.frame_index,
                 );
             }
-            return ExternalSurfaceFrameUpdate {
+            return CompositorSurfaceFrameUpdate {
                 content_changed: frame_update.content_changed,
                 request_next_frame: true,
             };
@@ -450,7 +450,7 @@ impl ExternalSurfaceProvider for RenderableExternalSurfaceProvider {
         if self.last_requested_frame_index == Some(args.frame_index) {
             if diag {
                 eprintln!(
-                    "floem external surface provider skip surface={:?} frame={} reason=already_requested content_changed={}",
+                    "floem compositor surface provider skip surface={:?} frame={} reason=already_requested content_changed={}",
                     args.surface_id, args.frame_index, frame_update.content_changed,
                 );
             }
@@ -460,7 +460,7 @@ impl ExternalSurfaceProvider for RenderableExternalSurfaceProvider {
 
         if diag {
             eprintln!(
-                "floem external surface provider opportunity surface={:?} frame={} rect={:?} size_px={:.1}x{:.1} has_target={}",
+                "floem compositor surface provider opportunity surface={:?} frame={} rect={:?} size_px={:.1}x{:.1} has_target={}",
                 args.surface_id,
                 args.frame_index,
                 args.rect,
@@ -480,7 +480,7 @@ impl ExternalSurfaceProvider for RenderableExternalSurfaceProvider {
             refresh_interval: None,
             confidence: subduction_core::timing::TimingConfidence::PacingOnly,
         };
-        let cx = RenderableExternalSurfaceFrameCx {
+        let cx = RenderableCompositorSurfaceFrameCx {
             opportunity,
             config: self.config.clone(),
             completion_tx: self.completion_tx.clone(),
@@ -499,7 +499,7 @@ impl ExternalSurfaceProvider for RenderableExternalSurfaceProvider {
                 self.last_requested_frame_index = Some(args.frame_index);
                 if diag {
                     eprintln!(
-                        "floem external surface provider decision surface={:?} frame={} decision=deferred",
+                        "floem compositor surface provider decision surface={:?} frame={} decision=deferred",
                         args.surface_id, args.frame_index,
                     );
                 }
@@ -508,7 +508,7 @@ impl ExternalSurfaceProvider for RenderableExternalSurfaceProvider {
             Some(Ok(subduction::wgpu::SurfaceFrameDecision::Skip(reason))) => {
                 if diag {
                     eprintln!(
-                        "floem external surface provider decision surface={:?} frame={} decision=skip reason={reason:?}",
+                        "floem compositor surface provider decision surface={:?} frame={} decision=skip reason={reason:?}",
                         args.surface_id, args.frame_index,
                     );
                 }
@@ -517,7 +517,7 @@ impl ExternalSurfaceProvider for RenderableExternalSurfaceProvider {
             Some(Err(err)) => {
                 if diag {
                     eprintln!(
-                        "floem external surface provider decision surface={:?} frame={} decision=error error={err:?}",
+                        "floem compositor surface provider decision surface={:?} frame={} decision=error error={err:?}",
                         args.surface_id, args.frame_index,
                     );
                 }
@@ -526,7 +526,7 @@ impl ExternalSurfaceProvider for RenderableExternalSurfaceProvider {
             None => {
                 if diag {
                     eprintln!(
-                        "floem external surface provider decision surface={:?} frame={} decision=no_callback",
+                        "floem compositor surface provider decision surface={:?} frame={} decision=no_callback",
                         args.surface_id, args.frame_index,
                     );
                 }
@@ -542,15 +542,15 @@ impl ExternalSurfaceProvider for RenderableExternalSurfaceProvider {
         frame_update
     }
 
-    fn current_content(&self) -> Option<ExternalSurfaceContent> {
+    fn current_content(&self) -> Option<CompositorSurfaceContent> {
         self.current_content.clone()
     }
 
-    fn release_current_content(&mut self, _outcome: ExternalSurfaceOutcome) {}
+    fn release_current_content(&mut self, _outcome: CompositorSurfaceOutcome) {}
 }
 
-impl RenderableExternalSurfaceProvider {
-    fn drain_completions(&mut self) -> ExternalSurfaceFrameUpdate {
+impl RenderableCompositorSurfaceProvider {
+    fn drain_completions(&mut self) -> CompositorSurfaceFrameUpdate {
         let diag = crate::frame_clock::frame_pacing_diag_enabled()
             || std::env::var_os("FLOEM_CUBE_DIAG").is_some();
         let mut content_changed = false;
@@ -562,7 +562,7 @@ impl RenderableExternalSurfaceProvider {
                 subduction::wgpu::SurfaceFrameCompletion::Submitted(frame) => {
                     if diag {
                         eprintln!(
-                            "floem external surface provider completion surface={:?} frame={} submitted size={}x{} resource_key={:?}",
+                            "floem compositor surface provider completion surface={:?} frame={} submitted size={}x{} resource_key={:?}",
                             self.handle.id(),
                             frame.opportunity.frame_index,
                             frame.size.width,
@@ -571,7 +571,7 @@ impl RenderableExternalSurfaceProvider {
                         );
                     }
                     let size = Size::new(f64::from(frame.size.width), f64::from(frame.size.height));
-                    self.current_content = Some(ExternalSurfaceContent::Texture(
+                    self.current_content = Some(CompositorSurfaceContent::Texture(
                         ExternalTexture::new(size, frame),
                     ));
                     content_changed = true;
@@ -579,7 +579,7 @@ impl RenderableExternalSurfaceProvider {
                 subduction::wgpu::SurfaceFrameCompletion::Skipped(frame) => {
                     if diag {
                         eprintln!(
-                            "floem external surface provider completion surface={:?} frame={} skipped reason={:?}",
+                            "floem compositor surface provider completion surface={:?} frame={} skipped reason={:?}",
                             self.handle.id(),
                             frame.opportunity.frame_index,
                             frame.reason,
@@ -588,7 +588,7 @@ impl RenderableExternalSurfaceProvider {
                 }
             }
         }
-        ExternalSurfaceFrameUpdate {
+        CompositorSurfaceFrameUpdate {
             content_changed,
             request_next_frame: false,
         }
@@ -596,12 +596,12 @@ impl RenderableExternalSurfaceProvider {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ExternalSurfaceFrameUpdate {
+pub struct CompositorSurfaceFrameUpdate {
     pub content_changed: bool,
     pub request_next_frame: bool,
 }
 
-impl ExternalSurfaceFrameUpdate {
+impl CompositorSurfaceFrameUpdate {
     #[must_use]
     pub fn idle() -> Self {
         Self::default()
@@ -633,8 +633,8 @@ impl ExternalSurfaceFrameUpdate {
 }
 
 #[derive(Debug)]
-pub struct ExternalSurfaceFrameArgs {
-    pub surface_id: ExternalSurfaceId,
+pub struct CompositorSurfaceFrameArgs {
+    pub surface_id: CompositorSurfaceId,
     pub frame_index: u64,
     pub interval: PresentationInterval,
     pub visible: bool,
@@ -642,66 +642,66 @@ pub struct ExternalSurfaceFrameArgs {
     pub size_px: Size,
     pub gpu_resources: Option<GpuResources>,
     pub target: Option<subduction::wgpu::SurfaceFrameLease>,
-    pub previous_outcome: Option<ExternalSurfaceOutcome>,
+    pub previous_outcome: Option<CompositorSurfaceOutcome>,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ExternalSurfaceOutcome {
-    pub surface_id: ExternalSurfaceId,
+pub struct CompositorSurfaceOutcome {
+    pub surface_id: CompositorSurfaceId,
     pub frame_index: u64,
     pub visible: bool,
     pub outcome: FrameOutcome,
 }
 
 #[derive(Clone, Debug)]
-pub struct ExternalSurfaceHandle {
-    id: ExternalSurfaceId,
+pub struct CompositorSurfaceHandle {
+    id: CompositorSurfaceId,
     window_id: WindowId,
 }
 
-impl ExternalSurfaceHandle {
+impl CompositorSurfaceHandle {
     #[must_use]
-    pub fn id(&self) -> ExternalSurfaceId {
+    pub fn id(&self) -> CompositorSurfaceId {
         self.id
     }
 
     pub fn submit_texture(&self, texture: ExternalTexture) {
-        self.submit(ExternalSurfaceContent::Texture(texture));
+        self.submit(CompositorSurfaceContent::Texture(texture));
     }
 
     pub fn submit_image(&self, image: ImageData) {
-        self.submit(ExternalSurfaceContent::Image(image));
+        self.submit(CompositorSurfaceContent::Image(image));
     }
 
     pub fn submit_subduction_surface(&self, surface: impl Any + Send + Sync) {
-        self.submit(ExternalSurfaceContent::Subduction(Arc::new(surface)));
+        self.submit(CompositorSurfaceContent::Subduction(Arc::new(surface)));
     }
 
     pub fn submit_subduction_surface_arc(&self, surface: Arc<dyn Any + Send + Sync>) {
-        self.submit(ExternalSurfaceContent::Subduction(surface));
+        self.submit(CompositorSurfaceContent::Subduction(surface));
     }
 
     pub fn clear(&self) {
-        self.submit(ExternalSurfaceContent::Empty);
+        self.submit(CompositorSurfaceContent::Empty);
     }
 
     pub fn request_frame(&self) {
-        Application::send_proxy_event(UserEvent::ExternalSurfaceRequestFrame {
+        Application::send_proxy_event(UserEvent::CompositorSurfaceRequestFrame {
             window_id: self.window_id,
             surface_id: self.id,
         });
     }
 
-    pub fn set_provider(&self, provider: ExternalSurfaceProviderHandle) {
-        Application::send_proxy_event(UserEvent::ExternalSurfaceProvider {
+    pub fn set_provider(&self, provider: CompositorSurfaceProviderHandle) {
+        Application::send_proxy_event(UserEvent::CompositorSurfaceProvider {
             window_id: self.window_id,
             surface_id: self.id,
             provider,
         });
     }
 
-    fn submit(&self, content: ExternalSurfaceContent) {
-        Application::send_proxy_event(UserEvent::ExternalSurfaceContent {
+    fn submit(&self, content: CompositorSurfaceContent) {
+        Application::send_proxy_event(UserEvent::CompositorSurfaceContent {
             window_id: self.window_id,
             surface_id: self.id,
             content,

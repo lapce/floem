@@ -41,7 +41,7 @@ impl GpuResources {
         required_features: wgpu::Features,
         backends: Option<Backends>,
         window: Arc<dyn Window>,
-    ) -> Receiver<Result<(Self, subduction::wgpu::ExternalSurfaceCapabilities), GpuResourceError>>
+    ) -> Receiver<Result<(Self, subduction::wgpu::CompositorSurfaceCapabilities), GpuResourceError>>
     {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: Backends::from_env().or(backends).unwrap_or(Backends::all()),
@@ -66,7 +66,7 @@ impl GpuResources {
                     return;
                 };
 
-                let surface_caps = subduction::wgpu::ExternalSurfaceCapabilities {
+                let surface_caps = subduction::wgpu::CompositorSurfaceCapabilities {
                     formats: vec![
                         wgpu::TextureFormat::Rgba8Unorm,
                         wgpu::TextureFormat::Bgra8Unorm,

@@ -44,8 +44,8 @@ pub fn animation_view() -> impl IntoView {
             .animation(move |_| {
                 animation
                     .get()
-                    .pause(move || pause.track())
-                    .resume(move || resume.track())
+                    // .pause(move || pause.track())
+                    // .resume(move || resume.track())
                     .delay(3.seconds())
             })
             .on_event_stop(listener::PointerEnter, move |_, _| {

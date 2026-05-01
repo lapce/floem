@@ -22,7 +22,7 @@ use crate::{
     BoxTree, ElementId,
     action::add_update_message,
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
-    external_surface::{ExternalSurfaceContent, ExternalSurfaceId, ExternalSurfaceProviderHandle},
+    compositor_surface::{CompositorSurfaceContent, CompositorSurfaceId, CompositorSurfaceProviderHandle},
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
     paint::display_list::RetainedDisplayList,
@@ -121,7 +121,7 @@ pub struct WindowState {
     pub(crate) display_list: RetainedDisplayList,
     pub(crate) composition_plan: CompositionPlan,
     pub(crate) compositor: crate::window::compositor::WindowCompositor,
-    pub(crate) external_surfaces: crate::window::external_surface::WindowExternalSurfaces,
+    pub(crate) compositor_surfaces: crate::window::compositor_surface::WindowCompositorSurfaces,
     pub(crate) last_paint_stats: PaintStats,
 
     /// Per-pointer capture tracking inspired by Chromium's PointerEventManager.
@@ -250,7 +250,7 @@ impl WindowState {
             display_list: RetainedDisplayList::default(),
             composition_plan: CompositionPlan::new(),
             compositor: crate::window::compositor::WindowCompositor::default(),
-            external_surfaces: crate::window::external_surface::WindowExternalSurfaces::default(),
+            compositor_surfaces: crate::window::compositor_surface::WindowCompositorSurfaces::default(),
             last_paint_stats: PaintStats::default(),
             pointer_capture_target: PointerCaptureMap::new(),
             pending_pointer_capture_target: PointerCaptureMap::new(),
@@ -311,38 +311,26 @@ impl WindowState {
         }
     }
 
-    pub(crate) fn set_external_surface_content(
+    pub(crate) fn set_compositor_surface_content(
         &mut self,
-        surface_id: ExternalSurfaceId,
-        content: ExternalSurfaceContent,
+        surface_id: CompositorSurfaceId,
+        content: CompositorSurfaceContent,
     ) {
-        self.external_surfaces.set_content(surface_id, content);
+        self.compositor_surfaces.set_content(surface_id, content);
         self.request_paint(self.root_view_id);
     }
 
-    pub(crate) fn set_external_surface_provider(
+    pub(crate) fn set_compositor_surface_provider(
         &mut self,
-        surface_id: ExternalSurfaceId,
-        provider: ExternalSurfaceProviderHandle,
+        surface_id: CompositorSurfaceId,
+        provider: CompositorSurfaceProviderHandle,
     ) {
-        self.external_surfaces.set_provider(surface_id, provider);
+        self.compositor_surfaces.set_provider(surface_id, provider);
         self.request_paint(self.root_view_id);
-    }
-
-    pub(crate) fn request_external_surface_frame(&mut self, surface_id: ExternalSurfaceId) {
-        self.external_surfaces.request_frame(surface_id);
-    }
-
-    pub(crate) fn request_animation_frame(&mut self, callback: Box<dyn FnOnce(FrameTime)>) {
-        self.begin_frame_callbacks.push(callback);
-    }
-
-    pub(crate) fn has_pending_begin_frame_callbacks(&self) -> bool {
-        !self.begin_frame_callbacks.is_empty()
     }
 
     pub(crate) fn has_next_frame_work(&self) -> bool {
-        self.has_next_window_frame_work() || self.external_surfaces.has_frame_pull()
+        self.has_next_window_frame_work() || self.compositor_surfaces.has_frame_pull()
     }
 
     pub(crate) fn has_next_window_frame_work(&self) -> bool {
@@ -352,7 +340,7 @@ impl WindowState {
             || self.next_frame_needs_box_tree_commit
             || !self.next_frame_views_needing_box_tree_update.is_empty()
             || !self.next_frame_dirty_paint_elements.is_empty()
-            || self.has_pending_begin_frame_callbacks()
+            || !self.begin_frame_callbacks.is_empty()
     }
 
     pub(crate) fn take_begin_frame_callbacks(&mut self) -> Vec<Box<dyn FnOnce(FrameTime)>> {
@@ -1152,7 +1140,7 @@ impl WindowState {
             }
         }
         if should_request_next_drag_frame {
-            self.request_animation_frame(Box::new(move |_| {
+            self.begin_frame_callbacks.push(Box::new(move |_| {
                 add_update_message(UpdateMessage::RequestBoxTreeCommit);
             }));
         }

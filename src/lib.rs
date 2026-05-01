@@ -198,7 +198,7 @@ pub mod context;
 pub mod effects;
 pub mod event;
 pub mod ext_event;
-pub mod external_surface;
+pub mod compositor_surface;
 pub mod frame;
 pub(crate) mod frame_clock;
 mod inspector;
@@ -247,16 +247,16 @@ pub use effects::{
     CompositeEffect, CompositorEffect, EffectComposite, EffectFilter, EffectGroupRef,
     ShaderEffectId, SourceEffect, SourceEffectShader, group_ref,
 };
-pub use external_surface::{
-    ExternalSurface, ExternalSurfaceAlphaMode, ExternalSurfaceConfig, ExternalSurfaceContent,
-    ExternalSurfaceFrameArgs, ExternalSurfaceFrameUpdate, ExternalSurfaceHandle, ExternalSurfaceId,
-    ExternalSurfaceKind, ExternalSurfaceOutcome, ExternalSurfaceProvider,
-    ExternalSurfaceProviderHandle, ExternalTexture, RenderableExternalSurface,
-    RenderableExternalSurfaceConfig, RenderableExternalSurfaceFrameCx,
+pub use compositor_surface::{
+    CompositorSurface, CompositorSurfaceAlphaMode, CompositorSurfaceConfig, CompositorSurfaceContent,
+    CompositorSurfaceFrameArgs, CompositorSurfaceFrameUpdate, CompositorSurfaceHandle, CompositorSurfaceId,
+    CompositorSurfaceKind, CompositorSurfaceOutcome, CompositorSurfaceProvider,
+    CompositorSurfaceProviderHandle, ExternalTexture, RenderableCompositorSurface,
+    RenderableCompositorSurfaceConfig, RenderableCompositorSurfaceFrameCx,
 };
 pub use floem_reactive as reactive;
 pub use frame::{
-    DisplayTiming, FrameOutcome, FrameTime, FrameTimingFeedback, FrameWorkload, PresentPacing,
+    DisplayTiming, FrameDemand, FrameOutcome, FrameTime, FrameTimingFeedback, PresentPacing,
     PresentationInterval,
 };
 pub use gpu_resources::GpuResources;
@@ -292,9 +292,9 @@ pub mod prelude {
     pub use crate::event::listener as el;
     pub use crate::event::listener;
     pub use crate::event::listener::EventListenerTrait;
-    pub use crate::external_surface::{ExternalSurface, ExternalSurfaceConfig, ExternalTexture};
+    pub use crate::compositor_surface::{CompositorSurface, CompositorSurfaceConfig, ExternalTexture};
     pub use crate::frame::{
-        DisplayTiming, FrameOutcome, FrameTime, FrameTimingFeedback, FrameWorkload, PresentPacing,
+        DisplayTiming, FrameDemand, FrameOutcome, FrameTime, FrameTimingFeedback, PresentPacing,
         PresentationInterval,
     };
     pub use crate::unit::{DurationUnitExt, UnitExt};

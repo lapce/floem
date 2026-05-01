@@ -642,7 +642,7 @@ pub enum TimingKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TimingThread {
     Main,
-    Renderer,
+    Renderer(usize),
     Gpu,
 }
 
@@ -740,6 +740,14 @@ impl TimingReport {
         let mut intervals = Vec::new();
         collect_thread_intervals(&self.spans, thread, &mut intervals);
         union_duration(intervals)
+    }
+
+    pub fn renderer_threads(&self) -> Vec<usize> {
+        let mut threads = Vec::new();
+        collect_renderer_threads(&self.spans, &mut threads);
+        threads.sort_unstable();
+        threads.dedup();
+        threads
     }
 }
 
@@ -842,6 +850,15 @@ fn collect_thread_intervals(
             }
         }
         collect_thread_intervals(&span.children, thread, out);
+    }
+}
+
+fn collect_renderer_threads(spans: &[TimingSpan], out: &mut Vec<usize>) {
+    for span in spans {
+        if let TimingThread::Renderer(index) = span.thread {
+            out.push(index);
+        }
+        collect_renderer_threads(&span.children, out);
     }
 }
 
@@ -1289,7 +1306,7 @@ fn timing_details(report: &TimingReport, thread: TimingThread) -> impl View + us
 }
 
 fn timing_thread_breakdown(
-    title: &'static str,
+    title: String,
     subtitle: &'static str,
     report: TimingReport,
     thread: TimingThread,
@@ -1351,9 +1368,8 @@ fn timing_report_view(report: TimingReport) -> AnyView {
     let details_open = RwSignal::new(false);
     let details_mode = RwSignal::new(0usize);
     let details_report = report.clone();
-    let renderer_total = report.thread_total(TimingThread::Renderer);
+    let renderer_threads = report.renderer_threads();
     let gpu_total = report.thread_total(TimingThread::Gpu);
-    let has_renderer_spans = renderer_total > Duration::ZERO;
     let has_gpu_spans = gpu_total > Duration::ZERO;
 
     Stack::vertical((
@@ -1410,37 +1426,36 @@ fn timing_report_view(report: TimingReport) -> AnyView {
                             .debug_name("Timing Details Mode Switch"),
                             Stack::vertical((
                                 timing_thread_breakdown(
-                                    "Main thread",
+                                    "Main thread".to_string(),
                                     "Frame update, paint recording, and present work",
                                     details_report.clone(),
                                     TimingThread::Main,
                                     details_report.total,
                                     details_mode,
                                 ),
-                                dyn_container(move || has_renderer_spans, {
+                                Stack::vertical_from_iter(renderer_threads.iter().map({
                                     let details_report = details_report.clone();
-                                    move |has_renderer_spans| {
-                                        if has_renderer_spans {
-                                            timing_thread_breakdown(
-                                                "Renderer thread",
-                                                "Renderer conversion and backend CPU work",
-                                                details_report.clone(),
-                                                TimingThread::Renderer,
-                                                renderer_total,
-                                                details_mode,
-                                            )
-                                            .into_any()
-                                        } else {
-                                            ().into_any()
-                                        }
+                                    move |index| {
+                                        let thread = TimingThread::Renderer(*index);
+                                        let total = details_report.thread_total(thread);
+                                        timing_thread_breakdown(
+                                            format!("Render({index})"),
+                                            "Renderer conversion and backend CPU work",
+                                            details_report.clone(),
+                                            thread,
+                                            total,
+                                            details_mode,
+                                        )
+                                        .into_any()
                                     }
-                                }),
+                                }))
+                                .style(|s| s.width_full().gap(TIMING_SECTION_GAP)),
                                 dyn_container(move || has_gpu_spans, {
                                     let details_report = details_report.clone();
                                     move |has_gpu_spans| {
                                         if has_gpu_spans {
                                             timing_thread_breakdown(
-                                                "GPU",
+                                                "GPU".to_string(),
                                                 "Resolved GPU command execution intervals",
                                                 details_report.clone(),
                                                 TimingThread::Gpu,
@@ -2126,7 +2141,7 @@ mod tests {
             Duration::from_millis(2),
             Duration::from_millis(5),
             TimingKind::Renderer,
-            TimingThread::Renderer,
+            TimingThread::Renderer(0),
         );
 
         assert_eq!(
@@ -2134,7 +2149,7 @@ mod tests {
             Duration::from_millis(5)
         );
         assert_eq!(
-            report.thread_total(TimingThread::Renderer),
+            report.thread_total(TimingThread::Renderer(0)),
             Duration::from_millis(5)
         );
 
