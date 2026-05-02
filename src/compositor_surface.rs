@@ -484,7 +484,7 @@ impl CompositorSurfaceProvider for RenderableCompositorSurfaceProvider {
         args: CompositorSurfaceFrameArgs,
     ) -> CompositorSurfaceFrameUpdate {
         let mut frame_update = self.drain_completions();
-        let diag = crate::frame_clock::frame_pacing_diag_enabled()
+        let diag = crate::frame_source::frame_pacing_diag_enabled()
             || std::env::var_os("FLOEM_CUBE_DIAG").is_some();
 
         if !args.visible {
@@ -617,7 +617,7 @@ impl CompositorSurfaceProvider for RenderableCompositorSurfaceProvider {
 
 impl RenderableCompositorSurfaceProvider {
     fn drain_completions(&mut self) -> CompositorSurfaceFrameUpdate {
-        let diag = crate::frame_clock::frame_pacing_diag_enabled()
+        let diag = crate::frame_source::frame_pacing_diag_enabled()
             || std::env::var_os("FLOEM_CUBE_DIAG").is_some();
         let mut content_changed = false;
         while let Ok(completion) = self.completions.lock().unwrap().try_recv() {

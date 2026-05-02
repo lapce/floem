@@ -1,6 +1,7 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
+    ElementId,
     compositor_surface::{CompositorSurfaceContent, CompositorSurfaceId, ExternalTexture},
     effects::CompositorEffect,
     gpu_resources::GpuResources,
@@ -56,10 +57,24 @@ pub(crate) struct WindowCompositor {
     scene_render_signatures: FxHashMap<CompositionKey, SceneRenderSignature>,
     pending_scene_renders: FxHashMap<CompositionKey, PendingSceneRender>,
     pending_scene_publications: Vec<(subduction::SubmittedContentInfo, subduction::ResourceKey)>,
+    published_compositor_surface_versions: FxHashMap<CompositionKey, u64>,
     effect_renderer: ColorEffectRenderer,
     pending_layer_changes: Option<FrameChanges>,
     #[cfg(target_os = "macos")]
     metal_capture_active: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PresentedLayer {
+    pub layer_id: LayerId,
+    pub source_element_id: Option<ElementId>,
+    pub debug_name: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct CompositorCommit {
+    pub layers: Vec<PresentedLayer>,
+    pub active_layers: Vec<PresentedLayer>,
 }
 
 impl WindowCompositor {
@@ -114,7 +129,7 @@ impl WindowCompositor {
         }
         match subduction::LayerHost::from_window(window) {
             Ok(mut layer_host) => {
-                if crate::frame_clock::frame_pacing_diag_enabled() {
+                if crate::frame_source::frame_pacing_diag_enabled() {
                     eprintln!(
                         "floem compositor layer host backend={}",
                         layer_host.backend_name()
@@ -172,6 +187,7 @@ impl WindowCompositor {
             self.scene_content_by_key.remove(key);
             self.scene_render_signatures.remove(key);
             self.pending_scene_renders.remove(key);
+            self.published_compositor_surface_versions.remove(key);
             if let Some(layer_id) = self.layer_ids_by_key.remove(key) {
                 self.destroy_layer_recursive(layer_id);
             }
@@ -183,7 +199,7 @@ impl WindowCompositor {
         }
         self.order = new_order;
         let changes = self.sync_layer_store();
-        if crate::frame_clock::frame_pacing_diag_enabled() {
+        if crate::frame_source::frame_pacing_diag_enabled() {
             eprintln!(
                 "floem compositor layer tree layers={} roots={} plan_items={} scene_layers={} external_layers={} flattened_external_images={}",
                 self.layer_store.len(),
@@ -252,25 +268,9 @@ impl WindowCompositor {
 
     fn layer_state_for_sync(&mut self, key: &CompositionKey) -> Option<CompositorLayerState> {
         let desired = self.layers_by_key.get(key)?.clone();
-        match desired {
-            CompositorLayerState::CompositorSurface(_) => {
-                self.visible_layers_by_key
-                    .insert(key.clone(), desired.clone());
-                Some(desired)
-            }
-            CompositorLayerState::Scene(_) => {
-                if self.scene_content_by_key.contains_key(key) {
-                    self.visible_layers_by_key
-                        .get(key)
-                        .cloned()
-                        .or(Some(desired))
-                } else {
-                    self.visible_layers_by_key
-                        .insert(key.clone(), desired.clone());
-                    Some(desired)
-                }
-            }
-        }
+        self.visible_layers_by_key
+            .insert(key.clone(), desired.clone());
+        Some(desired)
     }
 
     fn ensure_root_layers(&mut self) {
@@ -336,26 +336,55 @@ impl WindowCompositor {
 
     fn sync_scene_layer(&mut self, layer_id: LayerId, layer: &SceneCompositorLayer) {
         self.ensure_layer_content(layer_id);
-        self.layer_store.set_bounds(layer_id, layer.bounds.size());
+        let bounds = layer.bounds.size();
+        if self.layer_store.bounds(layer_id) != bounds {
+            self.layer_store.set_bounds(layer_id, bounds);
+        }
         let origin = layer.transform * layer.bounds.origin();
-        self.layer_store.set_transform(
-            layer_id,
-            Transform3d::from_translation(origin.x, origin.y, 0.0),
-        );
-        self.layer_store.set_clip(layer_id, None);
-        self.layer_store.set_opacity(layer_id, layer.opacity);
+        let transform = Transform3d::from_translation(origin.x, origin.y, 0.0);
+        if self.layer_store.local_transform(layer_id) != transform {
+            self.layer_store.set_transform(layer_id, transform);
+        }
+        if self.layer_store.clip(layer_id).is_some() {
+            self.layer_store.set_clip(layer_id, None);
+        }
+        if self.layer_store.local_opacity(layer_id) != layer.opacity {
+            self.layer_store.set_opacity(layer_id, layer.opacity);
+        }
     }
 
     fn sync_external_layer(&mut self, layer_id: LayerId, layer: &CompositorSurfaceCompositorLayer) {
-        self.ensure_layer_content(layer_id);
-        self.layer_store.set_bounds(layer_id, layer.rect.size());
+        match layer.content {
+            CompositorSurfaceContent::Texture(_) => {
+                self.ensure_layer_content(layer_id);
+            }
+            CompositorSurfaceContent::Empty if layer.has_provider => {
+                self.ensure_layer_content(layer_id);
+            }
+            CompositorSurfaceContent::Empty
+            | CompositorSurfaceContent::NativeLayer(_)
+            | CompositorSurfaceContent::Image(_)
+            | CompositorSurfaceContent::Subduction(_) => {
+                if self.layer_store.content(layer_id).is_some() {
+                    self.layer_store.set_content(layer_id, None);
+                }
+            }
+        }
+        let bounds = layer.rect.size();
+        if self.layer_store.bounds(layer_id) != bounds {
+            self.layer_store.set_bounds(layer_id, bounds);
+        }
         let origin = layer.transform * layer.rect.origin();
-        self.layer_store.set_transform(
-            layer_id,
-            Transform3d::from_translation(origin.x, origin.y, 0.0),
-        );
-        self.layer_store.set_clip(layer_id, None);
-        self.layer_store.set_opacity(layer_id, layer.opacity);
+        let transform = Transform3d::from_translation(origin.x, origin.y, 0.0);
+        if self.layer_store.local_transform(layer_id) != transform {
+            self.layer_store.set_transform(layer_id, transform);
+        }
+        if self.layer_store.clip(layer_id).is_some() {
+            self.layer_store.set_clip(layer_id, None);
+        }
+        if self.layer_store.local_opacity(layer_id) != layer.opacity {
+            self.layer_store.set_opacity(layer_id, layer.opacity);
+        }
     }
 
     fn destroy_layer_recursive(&mut self, layer_id: LayerId) {
@@ -376,7 +405,7 @@ impl WindowCompositor {
         effective_scale: f64,
     ) -> usize {
         let render_call_id = COMPOSITOR_RENDER_CALL_ID.fetch_add(1, Ordering::Relaxed);
-        if crate::frame_clock::frame_pacing_diag_enabled() {
+        if crate::frame_source::frame_pacing_diag_enabled() {
             let scene_layers = plan
                 .items
                 .iter()
@@ -406,7 +435,7 @@ impl WindowCompositor {
             renderer_pool,
             effective_scale,
         );
-        if crate::frame_clock::frame_pacing_diag_enabled() {
+        if crate::frame_source::frame_pacing_diag_enabled() {
             eprintln!(
                 "floem compositor render_scene_layers end call={} scheduled_frames={}",
                 render_call_id, scheduled_scene_frames,
@@ -419,19 +448,114 @@ impl WindowCompositor {
         !self.pending_scene_renders.is_empty()
     }
 
-    pub(crate) fn commit_ready_layer_tree(&mut self, queue: &wgpu::Queue) -> bool {
+    pub(crate) fn has_pending_commit_work(&self) -> bool {
+        self.pending_layer_changes
+            .as_ref()
+            .is_some_and(|changes| !frame_changes_empty(changes))
+            || !self.pending_scene_publications.is_empty()
+            || self.has_pending_compositor_surface_publications()
+    }
+
+    pub(crate) fn commit_ready_layer_tree(
+        &mut self,
+        queue: &wgpu::Queue,
+    ) -> Option<CompositorCommit> {
         if self.layer_host.is_none() {
-            return false;
+            return None;
         }
         let mut publications = std::mem::take(&mut self.pending_scene_publications);
         publications.extend(self.submitted_content_publications());
         let native_layers = self.native_layer_attachments();
+        let presented_layers = self.pending_presented_layers(&publications);
         let committed = self.commit_layer_tree_and_publications(&publications, queue);
+        let active_layers = self.active_presented_layers();
         self.attach_native_layers(&native_layers);
         if committed {
             self.mark_submitted_content_published();
         }
-        committed || !native_layers.is_empty()
+        if !native_layers.is_empty() {
+            self.mark_native_layer_content_attached();
+        }
+        if committed || !native_layers.is_empty() {
+            Some(CompositorCommit {
+                layers: presented_layers,
+                active_layers,
+            })
+        } else {
+            None
+        }
+    }
+
+    fn pending_presented_layers(
+        &self,
+        publications: &[(subduction::SubmittedContentInfo, subduction::ResourceKey)],
+    ) -> Vec<PresentedLayer> {
+        let mut layers = FxHashSet::default();
+        if let Some(changes) = &self.pending_layer_changes {
+            layers.extend(changes.transforms.iter().copied());
+            layers.extend(changes.opacities.iter().copied());
+            layers.extend(changes.clips.iter().copied());
+            layers.extend(changes.content.iter().copied());
+            layers.extend(changes.bounds.iter().copied());
+            layers.extend(changes.hidden.iter().copied());
+            layers.extend(changes.unhidden.iter().copied());
+            layers.extend(changes.added.iter().copied());
+        }
+        for (info, _) in publications {
+            if let Some(layer_id) = self.layer_for_content_surface(info.surface_id) {
+                layers.insert(layer_id.index());
+            }
+        }
+
+        let mut presented = Vec::new();
+        for (key, layer_id) in &self.layer_ids_by_key {
+            if !layers.contains(&layer_id.index()) {
+                continue;
+            }
+            if let Some(layer) = self.presented_layer_for_key(key, *layer_id) {
+                presented.push(layer);
+            }
+        }
+        presented
+    }
+
+    fn active_presented_layers(&self) -> Vec<PresentedLayer> {
+        self.layer_ids_by_key
+            .iter()
+            .filter_map(|(key, layer_id)| self.presented_layer_for_key(key, *layer_id))
+            .collect()
+    }
+
+    fn presented_layer_for_key(
+        &self,
+        key: &CompositionKey,
+        layer_id: LayerId,
+    ) -> Option<PresentedLayer> {
+        let (source_element_id, debug_name) = match self.layers_by_key.get(key) {
+            Some(CompositorLayerState::Scene(layer)) => {
+                (layer.source_element_id, layer.debug_name.clone())
+            }
+            Some(CompositorLayerState::CompositorSurface(layer)) => (
+                None,
+                Some(format!("CompositorSurface {:?}", layer.surface_id)),
+            ),
+            None => (None, None),
+        };
+        if source_element_id.is_none() && debug_name.as_ref().is_none_or(|name| name.is_empty()) {
+            return None;
+        }
+        Some(PresentedLayer {
+            layer_id,
+            source_element_id,
+            debug_name,
+        })
+    }
+
+    fn layer_for_content_surface(&self, surface_id: SurfaceId) -> Option<LayerId> {
+        self.layer_ids_by_key
+            .values()
+            .copied()
+            .find(|layer_id| self.layer_store.content(*layer_id) == Some(surface_id))
     }
 
     fn render_scene_content(
@@ -516,7 +640,7 @@ impl WindowCompositor {
             let Some(external_images) =
                 self.external_image_resources_for_scene(layer, compositor_surfaces)
             else {
-                if crate::frame_clock::frame_pacing_diag_enabled() {
+                if crate::frame_source::frame_pacing_diag_enabled() {
                     eprintln!(
                         "floem compositor scene render skip key={:?} reason=external_image_unavailable",
                         layer.key,
@@ -573,7 +697,7 @@ impl WindowCompositor {
             };
             let render_texture = scene_texture.as_ref().unwrap_or(&lease.texture);
             let render_size = Size::new(f64::from(width), f64::from(height));
-            if crate::frame_clock::frame_pacing_diag_enabled() {
+            if crate::frame_source::frame_pacing_diag_enabled() {
                 eprintln!(
                     "floem compositor scene render call={} key={:?} revision={} size={}x{} bounds={:?} transform={:?} commands={} external_images={} color_effects={}",
                     render_call_id,
@@ -614,7 +738,7 @@ impl WindowCompositor {
                         layer.key,
                     );
                 }
-                if crate::frame_clock::frame_pacing_diag_enabled() {
+                if crate::frame_source::frame_pacing_diag_enabled() {
                     eprintln!(
                         "floem compositor scene render skip key={:?} reason=renderer_failed",
                         layer.key,
@@ -637,7 +761,7 @@ impl WindowCompositor {
                     content_revision: layer.content_revision,
                 },
             );
-            if crate::frame_clock::frame_pacing_diag_enabled() {
+            if crate::frame_source::frame_pacing_diag_enabled() {
                 eprintln!(
                     "floem compositor scene render scheduled key={:?} surface={:?} size={}x{}",
                     layer.key, surface_id, width, height,
@@ -708,7 +832,7 @@ impl WindowCompositor {
             return false;
         }
         #[cfg(debug_assertions)]
-        if crate::frame_clock::frame_pacing_diag_enabled() && !pending.effects.is_empty() {
+        if crate::frame_source::frame_pacing_diag_enabled() && !pending.effects.is_empty() {
             eprintln!(
                 "floem compositor scene effect rendered call={} key={:?} revision={} effects={}",
                 pending.render_call_id,
@@ -918,6 +1042,11 @@ impl WindowCompositor {
                 CompositorLayerState::Scene(_) => {}
                 CompositorLayerState::CompositorSurface(layer) => match &layer.content {
                     CompositorSurfaceContent::Texture(texture) => {
+                        if self.published_compositor_surface_versions.get(key)
+                            == Some(&layer.content_version)
+                        {
+                            continue;
+                        }
                         if let Some(frame) = texture
                             .payload
                             .downcast_ref::<subduction::wgpu::SubmittedSurfaceFrame>()
@@ -957,6 +1086,18 @@ impl WindowCompositor {
         publications
     }
 
+    fn has_pending_compositor_surface_publications(&self) -> bool {
+        self.layers_by_key.iter().any(|(key, state)| {
+            let CompositorLayerState::CompositorSurface(layer) = state else {
+                return false;
+            };
+            if self.published_compositor_surface_versions.get(key) == Some(&layer.content_version) {
+                return false;
+            }
+            compositor_surface_content_is_publishable(&layer.content)
+        })
+    }
+
     fn native_layer_attachments(&self) -> Vec<(LayerId, subduction::NativeLayer)> {
         let mut attachments = Vec::new();
         for (key, state) in &self.layers_by_key {
@@ -988,8 +1129,8 @@ impl WindowCompositor {
         }
     }
 
-    fn mark_submitted_content_published(&self) {
-        for state in self.layers_by_key.values() {
+    fn mark_submitted_content_published(&mut self) {
+        for (key, state) in &self.layers_by_key {
             let CompositorLayerState::CompositorSurface(layer) = state else {
                 continue;
             };
@@ -1001,6 +1142,20 @@ impl WindowCompositor {
                 .downcast_ref::<subduction::wgpu::SubmittedSurfaceFrame>()
             {
                 frame.mark_published();
+                self.published_compositor_surface_versions
+                    .insert(key.clone(), layer.content_version);
+            }
+        }
+    }
+
+    fn mark_native_layer_content_attached(&mut self) {
+        for (key, state) in &self.layers_by_key {
+            let CompositorLayerState::CompositorSurface(layer) = state else {
+                continue;
+            };
+            if matches!(layer.content, CompositorSurfaceContent::NativeLayer(_)) {
+                self.published_compositor_surface_versions
+                    .insert(key.clone(), layer.content_version);
             }
         }
     }
@@ -1065,6 +1220,19 @@ fn publication_for_frame_surface(
         },
         subduction::ResourceKey(resource_key),
     ))
+}
+
+fn compositor_surface_content_is_publishable(content: &CompositorSurfaceContent) -> bool {
+    match content {
+        CompositorSurfaceContent::Texture(texture) => texture
+            .payload
+            .downcast_ref::<subduction::wgpu::SubmittedSurfaceFrame>()
+            .is_some_and(|frame| frame.resource_key.is_some()),
+        CompositorSurfaceContent::NativeLayer(_) => true,
+        CompositorSurfaceContent::Empty
+        | CompositorSurfaceContent::Image(_)
+        | CompositorSurfaceContent::Subduction(_) => false,
+    }
 }
 
 pub(crate) struct CompositorCaptureScene {
@@ -1258,7 +1426,7 @@ impl ColorEffectRenderer {
         let Some((last, leading)) = effects.split_last() else {
             return Ok(());
         };
-        if crate::frame_clock::frame_pacing_diag_enabled() {
+        if crate::frame_source::frame_pacing_diag_enabled() {
             eprintln!(
                 "floem compositor color effect chain call={} key={:?} revision={} effects={} size={}x{}",
                 render_call_id,
@@ -1921,6 +2089,8 @@ impl CompositorLayerState {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct SceneCompositorLayer {
     pub key: CompositionKey,
+    pub source_element_id: Option<ElementId>,
+    pub debug_name: Option<String>,
     pub external_images: Vec<SceneExternalImageCompositorLayer>,
     pub color_effects: Vec<CompositorEffect>,
     pub transform: peniko::kurbo::Affine,
@@ -1940,6 +2110,8 @@ impl SceneCompositorLayer {
     ) -> Self {
         Self {
             key: layer.key.clone(),
+            source_element_id: layer.source_element_id,
+            debug_name: layer.debug_name.clone(),
             external_images: layer
                 .external_images
                 .iter()
@@ -2008,6 +2180,7 @@ pub(crate) struct CompositorSurfaceCompositorLayer {
     pub opacity: f32,
     pub content: CompositorSurfaceContent,
     pub content_version: u64,
+    pub has_provider: bool,
 }
 
 impl CompositorSurfaceCompositorLayer {
@@ -2031,6 +2204,9 @@ impl CompositorSurfaceCompositorLayer {
                 .get(&layer.surface_id)
                 .map(|entry| entry.version)
                 .unwrap_or(0),
+            has_provider: compositor_surfaces
+                .get(&layer.surface_id)
+                .is_some_and(|entry| entry.provider.is_some()),
         }
     }
 
@@ -2043,6 +2219,7 @@ impl CompositorSurfaceCompositorLayer {
             && self.clip == other.clip
             && self.opacity == other.opacity
             && self.content_version == other.content_version
+            && self.has_provider == other.has_provider
             && external_content_key(&self.content) == external_content_key(&other.content)
     }
 }
@@ -2089,6 +2266,8 @@ mod tests {
     fn layer_with_effect(effect: CompositorEffect) -> SceneLayer {
         SceneLayer {
             key: CompositionKey::SceneRun { run_index: 0 },
+            source_element_id: None,
+            debug_name: None,
             scene: Scene::new(),
             external_images: Vec::new(),
             color_effects: vec![effect],

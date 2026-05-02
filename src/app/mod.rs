@@ -211,6 +211,7 @@ pub(crate) enum UserEvent {
     CompositorCommitDeadline {
         window_id: WindowId,
         generation: u64,
+        token: TimerToken,
     },
     FrameTick {
         window_id: WindowId,

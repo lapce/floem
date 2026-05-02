@@ -8,7 +8,7 @@ use crate::{
     },
     frame::FrameTime,
     gpu_resources::GpuResources,
-    paint::composition::{CompositionItem, CompositionPlan, WindowPrefixFingerprint},
+    paint::composition::{CompositionItem, CompositionPlan},
 };
 use peniko::kurbo::{Rect, Size};
 use subduction_core::layer::SurfaceId;
@@ -19,7 +19,6 @@ use super::compositor::WindowCompositor;
 pub(crate) struct WindowCompositorSurfaces {
     entries: FxHashMap<CompositorSurfaceId, CompositorSurfaceEntry>,
     intermediate_pool: IntermediateTexturePool,
-    frame_time: Option<FrameTime>,
     needs_frame_pull: bool,
     pending_outcomes: Vec<CompositorSurfaceOutcome>,
 }
@@ -62,14 +61,13 @@ impl WindowCompositorSurfaces {
         compositor: Option<&mut WindowCompositor>,
         effective_scale: f64,
         gpu_resources: Option<&GpuResources>,
+        frame_time_for_surface: &mut impl FnMut(CompositorSurfaceId) -> FrameTime,
     ) -> WindowCompositorSurfaceFrameUpdate {
-        let Some(frame_time) = self.frame_time else {
-            return WindowCompositorSurfaceFrameUpdate::default();
-        };
         let mut compositor = compositor;
         let mut frame_update = WindowCompositorSurfaceFrameUpdate::default();
         self.pending_outcomes.clear();
         for planned_surface in planned_compositor_surfaces(plan) {
+            let frame_time = frame_time_for_surface(planned_surface.surface_id);
             let Some(entry) = self.entries.get_mut(&planned_surface.surface_id) else {
                 continue;
             };
@@ -205,30 +203,25 @@ impl WindowCompositorSurfaces {
 
     pub(crate) fn pull_frame(
         &mut self,
-        frame_time: FrameTime,
+        mut frame_time_for_surface: impl FnMut(CompositorSurfaceId) -> FrameTime,
         plan: &CompositionPlan,
         compositor: &mut WindowCompositor,
         effective_scale: f64,
         gpu_resources: Option<&GpuResources>,
     ) -> WindowCompositorSurfaceFrameUpdate {
         self.take_frame_pull();
-        self.frame_time = Some(frame_time);
         let _composition_diff = compositor.apply_plan(plan, &self.entries, gpu_resources);
-        let update = self.update_providers(plan, Some(compositor), effective_scale, gpu_resources);
+        let update = self.update_providers(
+            plan,
+            Some(compositor),
+            effective_scale,
+            gpu_resources,
+            &mut frame_time_for_surface,
+        );
         if update.content_changed {
             let _composition_diff = compositor.apply_plan(plan, &self.entries, gpu_resources);
         }
         update
-    }
-
-    pub(crate) fn begin_composition_update(
-        &mut self,
-        frame_time: FrameTime,
-        plan: &CompositionPlan,
-    ) -> WindowPrefixFingerprint {
-        let old_prefix = plan.window_prefix_fingerprint();
-        self.frame_time = Some(frame_time);
-        old_prefix
     }
 
     pub(crate) fn release_outcomes(
@@ -380,6 +373,8 @@ mod tests {
         let mut plan = CompositionPlan::new();
         plan.items.push(CompositionItem::Scene(SceneLayer {
             key: CompositionKey::SceneRun { run_index: 0 },
+            source_element_id: None,
+            debug_name: None,
             scene: imaging::record::Scene::new(),
             external_images: vec![SceneExternalImage {
                 image_id: imaging::ExternalImageId(43),

@@ -182,6 +182,7 @@ pub struct ElementMeta {
     pub element_id: ElementId,
     pub focus: FocusNavMeta,
     pub(crate) retained_transform_boundary: Option<TransformClass>,
+    pub(crate) wants_layer: bool,
 }
 
 impl ElementMeta {
@@ -199,6 +200,7 @@ impl ElementMeta {
                 enabled: true,
             },
             retained_transform_boundary: None,
+            wants_layer: false,
         }
     }
 }
@@ -272,6 +274,26 @@ impl BoxTree {
             return false;
         };
         meta.retained_transform_boundary = boundary;
+        self.metadata.insert(id, meta);
+        true
+    }
+
+    pub(crate) fn wants_layer(&self, id: understory_box_tree::NodeId) -> bool {
+        self.element_meta(id).is_some_and(|meta| meta.wants_layer)
+    }
+
+    pub(crate) fn set_wants_layer(
+        &mut self,
+        id: understory_box_tree::NodeId,
+        wants_layer: bool,
+    ) -> bool {
+        let Some(mut meta) = self.element_meta(id) else {
+            return false;
+        };
+        if meta.wants_layer == wants_layer {
+            return false;
+        }
+        meta.wants_layer = wants_layer;
         self.metadata.insert(id, meta);
         true
     }

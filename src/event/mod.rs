@@ -28,7 +28,7 @@ pub use path::clear_hit_test_cache;
 pub use dispatch::*;
 
 use crate::ElementId;
-use crate::platform::Instant;
+use crate::platform::{Duration, Instant};
 
 use std::any::Any;
 
@@ -655,7 +655,7 @@ pub enum InteractionEvent {
 /// and react to different stages of the update pipeline. This is primarily useful
 /// for debugging, profiling, or coordinating effects that need to run at specific
 /// points in the update cycle.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Debug)]
 pub enum UpdatePhaseEvent {
     /// Processing update messages from the queue.
     /// This phase handles state changes and view updates queued by the application.
@@ -691,7 +691,36 @@ pub enum UpdatePhaseEvent {
     /// The timestamp is Floem's best presentation timestamp for the frame. When
     /// available, this is the display-link/subduction predicted present time;
     /// otherwise it falls back to the submit-side timestamp.
-    PaintPresent(Instant),
+    PaintPresent(PaintPresentInfo),
+}
+
+/// Presentation feedback for a committed paint frame.
+#[derive(Clone, Debug)]
+pub struct PaintPresentInfo {
+    /// Floem's best presentation timestamp for the frame.
+    pub presented_at: Instant,
+    /// Compositor layers that changed or published content in this commit.
+    pub layers: Vec<PaintPresentLayer>,
+    /// Compositor layers that are still active in the window after this commit.
+    ///
+    /// This is topology feedback, not presentation feedback. A layer can be active without
+    /// having presented new content in this commit.
+    pub active_layers: Vec<PaintPresentLayer>,
+}
+
+/// Presentation feedback for one compositor layer.
+#[derive(Clone, Debug)]
+pub struct PaintPresentLayer {
+    /// Backend layer slot/index for diagnostics.
+    pub layer_id: u32,
+    /// The first Floem element that contributed content to this layer, if known.
+    pub source_element_id: Option<ElementId>,
+    /// Debug name for `source_element_id`, if known.
+    pub debug_name: Option<String>,
+    /// Target interval used when the layer was submitted.
+    pub target_frame_interval: Option<Duration>,
+    /// Whether the layer missed the submit deadline for that target interval.
+    pub missed_deadline: bool,
 }
 
 /// Events related to the application window state.

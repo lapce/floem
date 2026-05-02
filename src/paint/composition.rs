@@ -1,6 +1,6 @@
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size};
 
-use crate::{compositor_surface::CompositorSurfaceId, effects::CompositorEffect};
+use crate::{ElementId, compositor_surface::CompositorSurfaceId, effects::CompositorEffect};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum PaintStage {
@@ -35,49 +35,6 @@ impl CompositionPlan {
             CompositionItem::Scene(layer) => !layer.external_images.is_empty(),
         })
     }
-
-    pub(crate) fn window_prefix_fingerprint(&self) -> WindowPrefixFingerprint {
-        let mut scenes = Vec::new();
-        for item in &self.items {
-            match item {
-                CompositionItem::Scene(layer) if !layer.promoted => {
-                    scenes.push(SceneFingerprint {
-                        key: layer.key.clone(),
-                        content_revision: layer.content_revision,
-                        transform: layer.transform,
-                        clip: layer.clip,
-                        bounds: layer.bounds,
-                        content_bounds: layer.content_bounds,
-                        opacity: layer.opacity,
-                        command_count: layer.scene.commands().len(),
-                        external_image_count: layer.external_images.len(),
-                        color_effect_count: layer.color_effects.len(),
-                    });
-                }
-                CompositionItem::Scene(_) | CompositionItem::CompositorSurface(_) => {}
-            }
-        }
-        WindowPrefixFingerprint { scenes }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct WindowPrefixFingerprint {
-    scenes: Vec<SceneFingerprint>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-struct SceneFingerprint {
-    key: CompositionKey,
-    content_revision: u64,
-    transform: Affine,
-    clip: Option<RoundedRect>,
-    bounds: Rect,
-    content_bounds: Option<Rect>,
-    opacity: f32,
-    command_count: usize,
-    external_image_count: usize,
-    color_effect_count: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -89,6 +46,8 @@ pub(crate) enum CompositionItem {
 #[derive(Clone, Debug)]
 pub(crate) struct SceneLayer {
     pub key: CompositionKey,
+    pub source_element_id: Option<ElementId>,
+    pub debug_name: Option<String>,
     pub scene: imaging::record::Scene,
     pub external_images: Vec<SceneExternalImage>,
     pub color_effects: Vec<CompositorEffect>,

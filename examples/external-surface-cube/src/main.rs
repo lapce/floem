@@ -34,7 +34,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 .font_weight(FontWeight::BOLD)
                 .color(Color::from_rgb8(246, 241, 226))
         }),
-        "The cube is rendered by a compositor-surface producer into a Floem/Subduction-owned wgpu texture. Floem can publish that compositor-owned frame as a native layer, or sample the same frame through imaging as an external image brush. This example uses the cube texture as an image brush for the large glyph fill, then flattens the surrounding clip, blur, and checkerboard layer effect into one ordered render pass when direct layer promotion is not legal. Press F11 for the inspector or F12 to capture the next Metal frame."
+        "The cube is rendered by a compositor-surface producer into a Floem/Subduction-owned wgpu texture. Floem can publish that compositor-owned frame as a native layer, or sample the same frame through imaging as an external image brush. This example uses the cube texture as an image brush for the large glyph fill, then flattens the surrounding clip, blur, and checkerboard layer effect into one ordered render pass when direct layer promotion is not legal. Press F10 for the HUD, F11 for the inspector, or F12 to capture the next Metal frame."
             .style(|s| {
                 s.font_size(14.0)
                     .line_height(1.35)

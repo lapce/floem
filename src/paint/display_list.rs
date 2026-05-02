@@ -457,6 +457,7 @@ pub(crate) struct ElementSnapshot {
     pub local_bounds: Rect,
     pub clip: Option<RoundedRect>,
     pub world_transform: Affine,
+    pub wants_layer: bool,
 }
 
 impl ElementSnapshot {
@@ -465,6 +466,7 @@ impl ElementSnapshot {
             local_bounds: box_tree.local_bounds(element_id.0).unwrap_or_default(),
             clip: box_tree.clipped_local_clip(element_id.0),
             world_transform: box_tree.world_transform(element_id.0).unwrap_or_default(),
+            wants_layer: box_tree.wants_layer(element_id.0),
         }
     }
 
@@ -745,6 +747,10 @@ impl RetainedDisplayList {
             property_state
         };
 
+        if snapshot.wants_layer {
+            chunks.push(LoweredChunk::Boundary);
+        }
+
         self.lower_stage_into_plan(
             element_id,
             PaintStage::Paint,
@@ -780,6 +786,10 @@ impl RetainedDisplayList {
             effective_scale,
             property_state,
         );
+
+        if snapshot.wants_layer {
+            chunks.push(LoweredChunk::Boundary);
+        }
 
         lowering_stack.remove(&slot);
     }
@@ -1138,6 +1148,7 @@ struct PropertyClip {
 
 #[derive(Clone)]
 enum LoweredChunk<'a> {
+    Boundary,
     Scene(LoweredSceneChunk<'a>),
     External(CompositorSurfaceLayer),
 }
@@ -1163,6 +1174,9 @@ fn chunks_into_composition_plan(chunks: Vec<LoweredChunk<'_>>) -> CompositionPla
 
     for chunk in chunks {
         match chunk {
+            LoweredChunk::Boundary => {
+                pending.flush(&mut plan, &mut run_index);
+            }
             LoweredChunk::Scene(scene) => {
                 if !pending.accepts(&scene.property_state) {
                     pending.flush(&mut plan, &mut run_index);
@@ -1189,6 +1203,7 @@ struct SceneRunBuilder<'a> {
     content_revision: u64,
     bounds: Option<Rect>,
     content_bounds: Option<Rect>,
+    clip_bounds: Option<Rect>,
     content_chunks: usize,
 }
 
@@ -1210,9 +1225,9 @@ impl<'a> SceneRunBuilder<'a> {
         if self.property_state.as_ref() != Some(&chunk.property_state) {
             debug_assert_eq!(self.content_chunks, 0);
             for clip in &chunk.property_state.clips {
-                let clip_bounds = transform_rect_bbox(clip.transform, clip.bounds);
-                self.bounds = Some(match self.bounds {
-                    Some(bounds) => union_rects(bounds, clip_bounds),
+                let clip_bounds = property_clip_bounds(clip);
+                self.clip_bounds = Some(match self.clip_bounds {
+                    Some(bounds) => intersect_rects(bounds, clip_bounds),
                     None => clip_bounds,
                 });
             }
@@ -1250,17 +1265,25 @@ impl<'a> SceneRunBuilder<'a> {
             self.ranges.clear();
             self.bounds = None;
             self.content_bounds = None;
+            self.clip_bounds = None;
             self.property_state = None;
             return;
         }
 
         let property_state = self.property_state.take().unwrap_or_default();
-        let bounds = match (self.bounds, self.content_bounds) {
+        let mut bounds = match (self.bounds, self.content_bounds) {
             (Some(bounds), Some(content_bounds)) => union_rects(bounds, content_bounds),
             (Some(bounds), None) => bounds,
             (None, Some(content_bounds)) => content_bounds,
             (None, None) => Rect::ZERO,
         };
+        if let Some(clip_bounds) = self.clip_bounds {
+            bounds = intersect_rects(bounds, clip_bounds);
+        }
+        let clipped_content_bounds = self
+            .content_bounds
+            .map(|content_bounds| intersect_rects(content_bounds, bounds))
+            .filter(|content_bounds| is_non_empty_rect(*content_bounds));
         let mut scene = Scene::new();
         let local_transform = Affine::translate((-bounds.x0, -bounds.y0));
         let mut scene_state_revision = self.content_revision;
@@ -1290,13 +1313,18 @@ impl<'a> SceneRunBuilder<'a> {
         for _ in &property_state.clips {
             scene.pop_clip();
         }
-        let local_content_bounds = self
-            .content_bounds
-            .map(|rect| rect - bounds.origin().to_vec2());
+        let local_content_bounds =
+            clipped_content_bounds.map(|rect| rect - bounds.origin().to_vec2());
         plan.items.push(CompositionItem::Scene(SceneLayer {
             key: CompositionKey::SceneRun {
                 run_index: *run_index,
             },
+            source_element_id: self.ranges.first().map(|range| range.element_id),
+            debug_name: self
+                .ranges
+                .first()
+                .map(|range| range.element_id.owning_id().debug_name())
+                .filter(|name| !name.is_empty()),
             scene,
             external_images: mem::take(&mut self.external_images),
             color_effects: property_state.effects,
@@ -1311,6 +1339,7 @@ impl<'a> SceneRunBuilder<'a> {
         self.content_revision = 0;
         self.bounds = None;
         self.content_bounds = None;
+        self.clip_bounds = None;
         self.content_chunks = 0;
         self.ranges.clear();
         *run_index += 1;
@@ -1356,6 +1385,15 @@ fn push_snapshot_clip(scene: &mut Scene, clip: RoundedRect, transform: Affine, b
         shape: Geometry::RoundedRect(clip),
         fill_rule: Fill::NonZero,
     });
+}
+
+fn property_clip_bounds(property_clip: &PropertyClip) -> Rect {
+    let clip = constrain_infinite_rounded_rect(
+        property_clip.clip,
+        Affine::IDENTITY,
+        property_clip.bounds.size(),
+    );
+    transform_rect_bbox(property_clip.transform, clip.rect())
 }
 
 fn hash_value<T: Hash>(hash: &mut u64, value: &T) {
@@ -1584,6 +1622,10 @@ fn intersect_rects(a: Rect, b: Rect) -> Rect {
         a.x1.min(b.x1),
         a.y1.min(b.y1),
     )
+}
+
+fn is_non_empty_rect(rect: Rect) -> bool {
+    rect.x0 < rect.x1 && rect.y0 < rect.y1
 }
 
 fn rects_overlap(a: Rect, b: Rect) -> bool {
@@ -2001,6 +2043,7 @@ pub mod bench_support {
             local_bounds: Rect::new(0.0, 0.0, 100.0, 40.0),
             clip: None,
             world_transform,
+            wants_layer: false,
         }
     }
 
@@ -2391,6 +2434,7 @@ mod tests {
             local_bounds: Rect::new(0.0, 0.0, 100.0, 100.0),
             clip,
             world_transform,
+            wants_layer: false,
         }
     }
 
@@ -2695,7 +2739,7 @@ mod tests {
         let first = list.lower_composition_plan(1.0);
         let first_revision = match &first.items[0] {
             CompositionItem::Scene(layer) => {
-                assert_eq!(layer.bounds, Rect::new(0.0, 0.0, 200.0, 100.0));
+                assert_eq!(layer.bounds, Rect::new(0.0, 0.0, 50.0, 50.0));
                 layer.content_revision
             }
             CompositionItem::CompositorSurface(_) => panic!("expected scene layer"),
@@ -2711,13 +2755,45 @@ mod tests {
         let second = list.lower_composition_plan(1.0);
         let second_revision = match &second.items[0] {
             CompositionItem::Scene(layer) => {
-                assert_eq!(layer.bounds, Rect::new(0.0, 0.0, 200.0, 100.0));
+                assert_eq!(layer.bounds, Rect::new(0.0, 0.0, 60.0, 50.0));
                 layer.content_revision
             }
             CompositionItem::CompositorSurface(_) => panic!("expected scene layer"),
         };
 
         assert_ne!(first_revision, second_revision);
+    }
+
+    #[test]
+    fn lower_composition_plan_tightens_layer_bounds_to_active_clip() {
+        let clip = RoundedRect::from_rect(Rect::new(20.0, 10.0, 80.0, 50.0), 0.0);
+        let mut list = RetainedDisplayList::default();
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::IDENTITY, Some(clip)),
+            Scene::new(),
+            Scene::new(),
+        );
+        let (_child_slot, _child_id) = attach_node(
+            &mut list,
+            Some(root_slot),
+            snapshot(Affine::IDENTITY, None),
+            scene_with_draw(fill_draw(
+                Rect::new(0.0, 0.0, 200.0, 100.0),
+                Affine::IDENTITY,
+            )),
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let plan = list.lower_composition_plan(1.0);
+        let CompositionItem::Scene(layer) = &plan.items[0] else {
+            panic!("expected scene layer");
+        };
+        assert_eq!(layer.bounds, Rect::new(0.0, 0.0, 60.0, 40.0));
+        assert_eq!(layer.transform, Affine::translate((20.0, 10.0)));
+        assert_eq!(layer.content_bounds, Some(Rect::new(0.0, 0.0, 60.0, 40.0)));
     }
 
     #[test]
@@ -2822,7 +2898,7 @@ mod tests {
         else {
             panic!("expected fill clip");
         };
-        assert_eq!(*transform, Affine::IDENTITY);
+        assert_eq!(*transform, Affine::translate((-5.0, -6.0)));
         assert_eq!(*shape, Geometry::RoundedRect(clip));
     }
 
@@ -2858,7 +2934,7 @@ mod tests {
         else {
             panic!("expected fill clip");
         };
-        assert_eq!(*transform, Affine::IDENTITY);
+        assert_eq!(*transform, Affine::translate((0.0, -6.0)));
         assert_eq!(
             *shape,
             Geometry::RoundedRect(RoundedRect::from_rect(
@@ -2908,7 +2984,7 @@ mod tests {
         else {
             panic!("expected fill clip");
         };
-        assert_eq!(*transform, Affine::IDENTITY);
+        assert_eq!(*transform, Affine::translate((-5.0, -10.0)));
         assert_eq!(
             *shape,
             Geometry::RoundedRect(RoundedRect::from_rect(

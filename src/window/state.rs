@@ -333,7 +333,9 @@ impl WindowState {
     }
 
     pub(crate) fn has_next_frame_work(&self) -> bool {
-        self.has_next_window_frame_work() || self.compositor_surfaces.has_frame_pull()
+        self.has_next_window_frame_work()
+            || (self.composition_plan.has_compositor_surfaces()
+                && self.compositor_surfaces.has_frame_pull())
     }
 
     pub(crate) fn has_next_window_frame_work(&self) -> bool {
@@ -787,6 +789,14 @@ impl WindowState {
 
     pub fn set_root_size(&mut self, size: Size) {
         if self.root_size != size {
+            let width_changed = (self.root_size.width - size.width).abs() > f64::EPSILON;
+            self.needs_layout = true;
+            self.needs_box_tree_from_layout = true;
+            if width_changed {
+                let responsive = StyleReason::with_selectors(StyleSelectors::empty().responsive());
+                self.mark_style_dirty_with(self.root_view_id.get_element_id(), responsive);
+                self.mark_descendants_with_responsive_selector_dirty(self.root_view_id);
+            }
             // Request layout on all fixed elements since their size depends on root_size
             for &id in &self.fixed_elements {
                 id.request_layout();

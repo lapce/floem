@@ -303,11 +303,12 @@ impl ApplicationHandle {
         }
 
         if let Some(commit) = schedule.compositor_commit_deadline {
-            let token = TimerToken::next();
+            let token = commit.token;
             let action = move |_| {
                 crate::Application::send_proxy_event(UserEvent::CompositorCommitDeadline {
                     window_id,
                     generation: commit.generation,
+                    token,
                 });
             };
             self.request_timer(
@@ -457,16 +458,17 @@ impl ApplicationHandle {
             UserEvent::CompositorCommitDeadline {
                 window_id,
                 generation,
+                token,
             } => {
                 if let Some(handle) = self.window_handles.get_mut(&window_id)
-                    && handle.handle_compositor_commit_deadline(generation)
+                    && handle.handle_compositor_commit_deadline(generation, token)
                 {
                     handle.refresh_frame_activity();
                 }
                 self.request_update();
             }
             UserEvent::FrameTick { window_id, tick } => {
-                if crate::frame_clock::frame_pacing_diag_enabled() {
+                if crate::frame_source::frame_pacing_diag_enabled() {
                     eprintln!(
                         "floem frame pacing app tick window={:?} tick={} predicted={:?} refresh={:?}",
                         window_id, tick.frame_index, tick.predicted_present, tick.refresh_interval,
@@ -477,10 +479,12 @@ impl ApplicationHandle {
                 #[cfg(target_os = "macos")]
                 self.timing_diag.maybe_report();
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    #[cfg(target_os = "macos")]
-                    handle.refresh_frame_clock_display_link_layer();
+                    handle.refresh_frame_source_target();
                 }
 
+                // Frame ticks are the handoff point for continuous input that
+                // arrived while the previous compositor frame was active.
+                self.flush_coalesced_pointer_events(window_id);
                 Application::clear_update_posted();
                 self.drain_app_update_events(event_loop);
                 if Runtime::has_pending_work() {
@@ -764,8 +768,7 @@ impl ApplicationHandle {
                     position.to_logical(window_handle.window_state.os_scale);
                 let point = Point::new(position.x, position.y);
                 window_handle.position(point);
-                #[cfg(target_os = "macos")]
-                window_handle.refresh_frame_clock_display_link_layer();
+                window_handle.refresh_frame_source_target();
             }
             WindowEvent::CloseRequested => {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
@@ -822,8 +825,7 @@ impl ApplicationHandle {
             WindowEvent::TouchpadPressure { .. } => {}
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 window_handle.os_scale(scale_factor);
-                #[cfg(target_os = "macos")]
-                window_handle.refresh_frame_clock_display_link_layer();
+                window_handle.refresh_frame_source_target();
             }
             WindowEvent::ThemeChanged(theme) => {
                 window_handle.set_theme(Some(theme), true);
@@ -875,9 +877,8 @@ impl ApplicationHandle {
                 }
             }
         }
-        #[cfg(target_os = "macos")]
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
-            handle.refresh_frame_clock_display_link_layer();
+            handle.refresh_frame_source_target();
         }
         if frame_presented {
             if let Some(handle) = self.window_handles.get_mut(&window_id) {
@@ -899,7 +900,9 @@ impl ApplicationHandle {
         event_loop: &dyn ActiveEventLoop,
     ) {
         let _ = event_loop;
-        self.flush_coalesced_pointer_events(window_id);
+        if !self.is_coalescing_pointer_events(window_id) {
+            self.flush_coalesced_pointer_events(window_id);
+        }
 
         let Some(()) = self.window_handles.get_mut(&window_id).map(|handle| {
             handle.process_update_messages_only();
@@ -910,10 +913,14 @@ impl ApplicationHandle {
     }
 
     fn should_coalesce_pointer_event(&self, window_id: WindowId, event: &PointerEvent) -> bool {
+        self.is_coalescing_pointer_events(window_id)
+            && pointer_coalesce_key(window_id, event).is_some()
+    }
+
+    fn is_coalescing_pointer_events(&self, window_id: WindowId) -> bool {
         self.pointer_coalesce_until
             .get(&window_id)
             .is_some_and(|until| Instant::now() < *until)
-            && pointer_coalesce_key(window_id, event).is_some()
     }
 
     fn coalesce_pointer_event(&mut self, window_id: WindowId, event: PointerEvent) {

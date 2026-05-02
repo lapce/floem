@@ -101,6 +101,7 @@ pub enum UpdateMessage {
     RemoveOverlay {
         id: ViewId,
     },
+    ToggleHud,
     Inspect,
     CaptureMetalFrame,
     ScrollTo {

@@ -529,6 +529,7 @@ impl<'a> StyleCx<'a> {
                 }
 
                 if taffy_style != vs.taffy_style {
+                    let display_changed = taffy_style.display != vs.taffy_style.display;
                     let taffy_node = vs.layout_id;
                     vs.taffy_style = taffy_style.clone();
                     view_id
@@ -536,7 +537,7 @@ impl<'a> StyleCx<'a> {
                         .borrow_mut()
                         .set_style(taffy_node, taffy_style.clone())
                         .unwrap();
-                    if !is_hidden_final {
+                    if !is_hidden_final || display_changed {
                         self.window_state.needs_layout = true;
                     }
                 }
@@ -545,6 +546,8 @@ impl<'a> StyleCx<'a> {
                 // ─────────────────────────────────────────────────────────────────────
                 let element_id = vs.element_id;
                 let focus_nav_changed;
+                let visibility_changed;
+                let wants_layer_changed;
                 {
                     let box_tree = view_id.box_tree();
                     let box_tree = &mut box_tree.borrow_mut();
@@ -561,6 +564,8 @@ impl<'a> StyleCx<'a> {
                     if !is_hidden_final {
                         flags |= NodeFlags::VISIBLE;
                     }
+                    visibility_changed = old_flags.contains(NodeFlags::VISIBLE)
+                        != flags.contains(NodeFlags::VISIBLE);
                     if old_flags != flags {
                         box_tree.set_flags(element_id.0, flags);
                     }
@@ -586,14 +591,19 @@ impl<'a> StyleCx<'a> {
                     if old_z_index != new_z_index {
                         box_tree.set_z_index(element_id.0, new_z_index);
                     }
+
+                    let new_wants_layer = vs.combined_style.builtin().wants_layer();
+                    wants_layer_changed = box_tree.set_wants_layer(element_id.0, new_wants_layer);
                 }
                 if focus_nav_changed {
                     self.window_state.invalidate_focus_nav_cache();
                 }
                 // ─────────────────────────────────────────────────────────────────────
-                // Phase 8.3: request paint for view style changes if not hidden
+                // Phase 8.3: request paint for visible style changes and visibility flips.
+                // Hidden nodes are omitted from the retained display list, so hiding a node must
+                // schedule a rebuild that lets compositor layers/surfaces for that node be removed.
                 // ─────────────────────────────────────────────────────────────────────
-                if !is_hidden_final && need_paint {
+                if visibility_changed || (!is_hidden_final && (need_paint || wants_layer_changed)) {
                     self.window_state.request_paint(element_id);
                 }
             }

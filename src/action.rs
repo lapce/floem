@@ -88,6 +88,11 @@ pub fn capture_metal() {
     add_update_message(UpdateMessage::CaptureMetalFrame);
 }
 
+/// Toggle the compact performance HUD for the current window.
+pub fn toggle_hud() {
+    add_update_message(UpdateMessage::ToggleHud);
+}
+
 /// Set the **global** app theme in all windows.
 ///
 /// Toggles both floem and window themes.

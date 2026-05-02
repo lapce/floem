@@ -116,7 +116,6 @@ mod inner {
         FocusEvent, ImeEvent, InteractionEvent, PointerCaptureEvent, UpdatePhaseEvent, WindowEvent,
     };
     use crate::gpu_resources::GpuResources;
-    use crate::platform::Instant;
 
     // EventListener using the same pattern as StyleClass
     #[derive(Copy, Clone)]
@@ -1207,8 +1206,9 @@ mod inner {
     );
 
     event_listener!(
-        /// Receives `Event::Window(UpdatePhase(PaintPresent(time)))` — fired after a frame is
-        /// presented. The payload is Floem's best presentation timestamp for the frame.
+        /// Receives `Event::Window(UpdatePhase(PaintPresent(info)))` — fired after a frame is
+        /// presented. The payload includes Floem's best presentation timestamp and changed
+        /// compositor layers for the frame.
         ///
         /// # Routing
         /// Dispatched to **Target phase only** on all views that have registered this listener.
@@ -1216,10 +1216,10 @@ mod inner {
         ///
         /// # Default Actions
         /// No preventable default action.
-        pub UpdatePhasePaintPresent: Instant,
+        pub UpdatePhasePaintPresent: crate::event::PaintPresentInfo,
         |event| {
-            if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent(time))) = event {
-                return Some(time as &dyn Any);
+            if let Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent(info))) = event {
+                return Some(info as &dyn Any);
             }
             None
         }

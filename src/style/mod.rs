@@ -1888,6 +1888,13 @@ define_builtin_props!(
     /// Higher values appear in front of lower values.
     ZIndex z_index {  tr }: Option<i32> [i32] {} = None,
 
+    /// Hints that this view should be isolated into its own compositor layer.
+    ///
+    /// This is a performance and diagnostics hint. Floem may still flatten the
+    /// view if it has no paint output or if compositor layer promotion is not
+    /// available.
+    WantsLayer wants_layer {}: bool {} = false,
+
     /// Sets the cursor style when hovering over the view.
     ///
     /// Changes the appearance of the mouse cursor.
