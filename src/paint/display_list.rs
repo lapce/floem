@@ -26,10 +26,11 @@ use understory_box_tree::NodeFlags;
 
 use crate::{
     BoxTree, ElementId,
-    effects::{
-        ColorEffect, CompositorEffect, EffectComposite, EffectFilter, EffectGroupRef, SourceEffect,
-    },
     compositor_surface::CompositorSurfaceId,
+    effects::{
+        ColorEffect, CompositorEffect, EffectComposite, EffectFilter, EffectGroupRef, LayerEffect,
+        SourceEffect,
+    },
     paint::composition::{
         CompositionItem, CompositionKey, CompositionPlan, CompositorSurfaceLayer, PaintStage,
         SceneExternalImage, SceneLayer,
@@ -265,7 +266,9 @@ impl StageRecorder {
         let has_compositor_effect = group.filters.iter().any(|filter| {
             matches!(
                 filter,
-                EffectFilter::ColorEffect(_) | EffectFilter::SourceEffect(_)
+                EffectFilter::ColorEffect(_)
+                    | EffectFilter::LayerEffect(_)
+                    | EffectFilter::SourceEffect(_)
             )
         });
         let composite = match group.composite {
@@ -284,7 +287,9 @@ impl StageRecorder {
                 .iter()
                 .filter_map(|filter| match filter {
                     EffectFilter::Imaging(filter) => Some(*filter),
-                    EffectFilter::ColorEffect(_) | EffectFilter::SourceEffect(_) => None,
+                    EffectFilter::ColorEffect(_)
+                    | EffectFilter::LayerEffect(_)
+                    | EffectFilter::SourceEffect(_) => None,
                 })
                 .collect::<Vec<_>>()
         };
@@ -312,7 +317,7 @@ impl StageRecorder {
         if has_compositor_effect {
             for filter in group.filters {
                 let effect = match filter {
-                    EffectFilter::Imaging(filter) => CompositorEffect::Color(
+                    EffectFilter::Imaging(filter) => CompositorEffect::Layer(
                         compositor_effect_for_imaging_filter(*filter).unwrap_or_else(|| {
                             panic!(
                                 "cannot preserve ordered mixed filter chain with unsupported Imaging filter: {filter:?}"
@@ -320,6 +325,7 @@ impl StageRecorder {
                         }),
                     ),
                     EffectFilter::ColorEffect(effect) => CompositorEffect::Color(effect.clone()),
+                    EffectFilter::LayerEffect(effect) => CompositorEffect::Layer(effect.clone()),
                     EffectFilter::SourceEffect(effect) => CompositorEffect::Source(effect.clone()),
                 };
                 self.color_effects.push(ColorEffectCommand {
@@ -364,7 +370,7 @@ impl imaging::ImagingSceneSink for StageRecorder {
     }
 }
 
-fn compositor_effect_for_imaging_filter(filter: Filter) -> Option<ColorEffect> {
+fn compositor_effect_for_imaging_filter(filter: Filter) -> Option<LayerEffect> {
     match filter {
         Filter::Blur {
             std_deviation_x,
@@ -373,7 +379,7 @@ fn compositor_effect_for_imaging_filter(filter: Filter) -> Option<ColorEffect> {
             let id = u64::from(std_deviation_x.to_bits())
                 | (u64::from(std_deviation_y.to_bits()) << 32) ^ 0xB10E_0000_0000_0000;
             Some(
-                ColorEffect::wgsl(
+                LayerEffect::wgsl_with_id(
                     crate::effects::ColorEffectId(id),
                     format!(
                         r#"
@@ -1165,7 +1171,8 @@ fn chunks_into_composition_plan(chunks: Vec<LoweredChunk<'_>>) -> CompositionPla
             }
             LoweredChunk::External(external) => {
                 pending.flush(&mut plan, &mut run_index);
-                plan.items.push(CompositionItem::CompositorSurface(external));
+                plan.items
+                    .push(CompositionItem::CompositorSurface(external));
             }
         }
     }
@@ -2281,7 +2288,7 @@ mod tests {
     fn stage_recorder_preserves_order_for_mixed_imaging_and_color_effect_filters() {
         let mut stage = ElementStage::default();
         let mut recorder = StageRecorder::from_stage(&mut stage);
-        let effect = ColorEffect::wgsl(crate::effects::ColorEffectId(71), "return color;");
+        let effect = ColorEffect::wgsl("return color;");
         let filters = [
             EffectFilter::Imaging(Filter::Blur {
                 std_deviation_x: 2.0,
@@ -2323,7 +2330,7 @@ mod tests {
         );
         assert!(matches!(
             &stage.color_effects[0].kind,
-            ColorEffectCommandKind::Push(CompositorEffect::Color(generated)) if generated.id != effect.id
+            ColorEffectCommandKind::Push(CompositorEffect::Layer(_))
         ));
         assert_eq!(
             stage.color_effects[1],
@@ -2334,7 +2341,7 @@ mod tests {
         );
         assert!(matches!(
             &stage.color_effects[2].kind,
-            ColorEffectCommandKind::Push(CompositorEffect::Color(generated)) if generated.id != effect.id
+            ColorEffectCommandKind::Push(CompositorEffect::Layer(_))
         ));
         assert!(
             stage.color_effects[3..]
@@ -2347,10 +2354,7 @@ mod tests {
     fn source_effect_rect_records_placeholder_draw_inside_source_effect() {
         let mut stage = ElementStage::default();
         let mut recorder = StageRecorder::from_stage(&mut stage);
-        let effect = crate::effects::SourceEffect::wgsl(
-            crate::effects::ShaderEffectId(9),
-            "return vec4<f32>(uv, 0.0, 1.0);",
-        );
+        let effect = crate::effects::SourceEffect::wgsl("return vec4<f32>(uv, 0.0, 1.0);");
 
         recorder.source_effect_rect(Rect::new(1.0, 2.0, 11.0, 22.0), effect.clone());
         recorder.finish(&mut stage);
@@ -3225,9 +3229,15 @@ mod tests {
         let plan = list.lower_composition_plan(1.0);
         assert_eq!(plan.items.len(), 5);
         assert!(matches!(plan.items[0], CompositionItem::Scene(_)));
-        assert!(matches!(plan.items[1], CompositionItem::CompositorSurface(_)));
+        assert!(matches!(
+            plan.items[1],
+            CompositionItem::CompositorSurface(_)
+        ));
         assert!(matches!(plan.items[2], CompositionItem::Scene(_)));
-        assert!(matches!(plan.items[3], CompositionItem::CompositorSurface(_)));
+        assert!(matches!(
+            plan.items[3],
+            CompositionItem::CompositorSurface(_)
+        ));
         assert!(matches!(plan.items[4], CompositionItem::Scene(_)));
     }
 

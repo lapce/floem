@@ -1,6 +1,6 @@
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size};
 
-use crate::{effects::CompositorEffect, compositor_surface::CompositorSurfaceId};
+use crate::{compositor_surface::CompositorSurfaceId, effects::CompositorEffect};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum PaintStage {

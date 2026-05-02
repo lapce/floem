@@ -21,8 +21,10 @@ use std::rc::Rc;
 use crate::{
     BoxTree, ElementId,
     action::add_update_message,
+    compositor_surface::{
+        CompositorSurfaceContent, CompositorSurfaceId, CompositorSurfaceProviderHandle,
+    },
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
-    compositor_surface::{CompositorSurfaceContent, CompositorSurfaceId, CompositorSurfaceProviderHandle},
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
     paint::display_list::RetainedDisplayList,
@@ -250,7 +252,8 @@ impl WindowState {
             display_list: RetainedDisplayList::default(),
             composition_plan: CompositionPlan::new(),
             compositor: crate::window::compositor::WindowCompositor::default(),
-            compositor_surfaces: crate::window::compositor_surface::WindowCompositorSurfaces::default(),
+            compositor_surfaces:
+                crate::window::compositor_surface::WindowCompositorSurfaces::default(),
             last_paint_stats: PaintStats::default(),
             pointer_capture_target: PointerCaptureMap::new(),
             pending_pointer_capture_target: PointerCaptureMap::new(),

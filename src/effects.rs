@@ -1,4 +1,14 @@
-use std::sync::Arc;
+//! Compositor-aware filters, shaders, and composites.
+//!
+//! Floem uses Imaging's generic group API with [`EffectFilter`] and
+//! [`EffectComposite`] payloads. Standard Imaging filters/composites keep
+//! flowing to renderers. Floem-only effects are consumed while lowering the
+//! display list and executed as compositor render passes when needed.
+
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
 use imaging::{Composite, Filter, GroupRef};
 use subduction::wgpu::SurfaceColorSpace;
@@ -10,15 +20,24 @@ use subduction::wgpu::SurfaceColorSpace;
 /// understand them.
 #[derive(Clone, Debug, PartialEq)]
 pub enum EffectFilter {
+    /// A renderer-supported Imaging filter.
     Imaging(Filter),
+    /// A color-only shader that transforms the current pixel color.
     ColorEffect(ColorEffect),
+    /// A shader that can sample an isolated input layer.
+    LayerEffect(LayerEffect),
+    /// A shader that generates content without an input layer.
     SourceEffect(SourceEffect),
 }
 
 /// An executable compositor shader pass.
 #[derive(Clone, Debug, PartialEq)]
 pub enum CompositorEffect {
+    /// A shader pass that transforms the current pixel color.
     Color(ColorEffect),
+    /// A shader pass that samples the previous pass output.
+    Layer(LayerEffect),
+    /// A shader pass that fills a target without sampling previous output.
     Source(SourceEffect),
 }
 
@@ -34,6 +53,12 @@ impl From<ColorEffect> for EffectFilter {
     }
 }
 
+impl From<LayerEffect> for EffectFilter {
+    fn from(effect: LayerEffect) -> Self {
+        Self::LayerEffect(effect)
+    }
+}
+
 impl From<SourceEffect> for EffectFilter {
     fn from(effect: SourceEffect) -> Self {
         Self::SourceEffect(effect)
@@ -46,7 +71,9 @@ impl From<SourceEffect> for EffectFilter {
 /// compositing without changing renderer-facing Imaging APIs.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum EffectComposite {
+    /// A renderer-supported Imaging composite operation.
     Imaging(Composite),
+    /// A compositor-only shader composite.
     Shader(CompositeEffect),
 }
 
@@ -68,8 +95,23 @@ impl From<CompositeEffect> for EffectComposite {
     }
 }
 
+/// Group reference used by Floem's painter.
+///
+/// Filters are applied in slice order. Floem may insert intermediate render
+/// passes so each effect observes the output of the previous filter/effect.
 pub type EffectGroupRef<'a> = GroupRef<'a, EffectFilter, EffectComposite>;
 
+/// Returns an empty Floem effect group.
+///
+/// Start from this when using `Painter::with_group` with Floem-specific
+/// effects:
+///
+/// ```ignore
+/// let filters = [effect.into(), imaging::Filter::blur(5.0).into()];
+/// painter.with_group(group_ref().with_filters(&filters), |painter| {
+///     // isolated content
+/// });
+/// ```
 #[must_use]
 pub fn group_ref<'a>() -> EffectGroupRef<'a> {
     EffectGroupRef {
@@ -80,19 +122,31 @@ pub fn group_ref<'a>() -> EffectGroupRef<'a> {
     }
 }
 
-/// Stable identifier for a reusable compositor effect program.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ColorEffectId(pub u64);
+static NEXT_COLOR_EFFECT_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_SHADER_EFFECT_ID: AtomicU64 = AtomicU64::new(1);
 
-/// Stable identifier for reusable compositor source/effect programs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ShaderEffectId(pub u64);
+fn next_color_effect_id() -> ColorEffectId {
+    ColorEffectId(NEXT_COLOR_EFFECT_ID.fetch_add(1, Ordering::Relaxed))
+}
 
-/// A SwiftUI-style color/layer effect applied to an isolated compositor subtree.
+fn next_shader_effect_id() -> ShaderEffectId {
+    ShaderEffectId(NEXT_SHADER_EFFECT_ID.fetch_add(1, Ordering::Relaxed))
+}
+
+/// Internal stable identifier for a reusable compositor effect program.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct ColorEffectId(pub u64);
+
+/// Internal stable identifier for reusable compositor source/effect programs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct ShaderEffectId(pub u64);
+
+/// A SwiftUI-style color effect applied to an isolated compositor subtree.
 ///
-/// The effect is evaluated over an input texture containing the already-rendered subtree. Backends
-/// expose the input texture and sampler to the shader, so the shader may either use the pre-sampled
-/// `color` value or sample the input texture at another `uv`.
+/// The effect receives the already-sampled source color for the destination
+/// pixel. It cannot sample neighboring pixels or sample the input layer at a
+/// different coordinate. Use [`LayerEffect`] when the shader needs layer
+/// sampling.
 ///
 /// Effect shaders are written in logical window coordinates by default: the `position` argument
 /// passed to `color_effect` is measured in logical pixels, not framebuffer pixels. Use
@@ -100,7 +154,7 @@ pub struct ShaderEffectId(pub u64);
 /// normalized texture space with `(0, 0)` at the top-left and `(1, 1)` at the bottom-right.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ColorEffect {
-    pub id: ColorEffectId,
+    pub(crate) id: ColorEffectId,
     pub shader: ColorEffectShader,
     pub args: ColorEffectArgs,
     pub color_space: SurfaceColorSpace,
@@ -108,8 +162,16 @@ pub struct ColorEffect {
 }
 
 impl ColorEffect {
+    /// Creates a WGSL color effect from a function body.
+    ///
+    /// The body is inserted into the generated `color_effect` function
+    /// documented by [`ColorEffectShader::Wgsl`].
     #[must_use]
-    pub fn wgsl(id: ColorEffectId, fragment_body: impl Into<Arc<str>>) -> Self {
+    pub fn wgsl(fragment_body: impl Into<Arc<str>>) -> Self {
+        Self::wgsl_with_id(next_color_effect_id(), fragment_body)
+    }
+
+    pub(crate) fn wgsl_with_id(id: ColorEffectId, fragment_body: impl Into<Arc<str>>) -> Self {
         Self {
             id,
             shader: ColorEffectShader::Wgsl {
@@ -122,6 +184,7 @@ impl ColorEffect {
         }
     }
 
+    /// Adds a human-readable label for GPU debugging and pipeline caching.
     #[must_use]
     pub fn with_label(mut self, label: impl Into<Arc<str>>) -> Self {
         match &mut self.shader {
@@ -130,12 +193,14 @@ impl ColorEffect {
         self
     }
 
+    /// Sets raw uniform argument bytes for the effect.
     #[must_use]
     pub fn with_args(mut self, args: impl Into<Vec<u8>>) -> Self {
         self.args = ColorEffectArgs { bytes: args.into() };
         self
     }
 
+    /// Sets the working/output color space for this effect.
     #[must_use]
     pub fn with_color_space(mut self, color_space: SurfaceColorSpace) -> Self {
         self.color_space = color_space;
@@ -155,6 +220,78 @@ impl ColorEffect {
     }
 }
 
+/// A SwiftUI-style layer effect applied to an isolated compositor subtree.
+///
+/// The effect is evaluated over an input texture containing the already-rendered
+/// subtree. Backends expose the input texture and sampler to the shader, so the
+/// shader may either use the pre-sampled `color` value or sample the input
+/// texture at another `uv`.
+///
+/// Like [`ColorEffect`], `position` is in logical pixels and `uv` is normalized
+/// texture space. Use `frame.effective_scale` to convert to physical pixels.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LayerEffect {
+    pub(crate) id: ColorEffectId,
+    pub shader: LayerEffectShader,
+    pub args: ColorEffectArgs,
+    pub color_space: SurfaceColorSpace,
+    pub needs_time: bool,
+}
+
+impl LayerEffect {
+    /// Creates a WGSL layer effect from a function body.
+    ///
+    /// The body is inserted into the generated `layer_effect` function
+    /// documented by [`LayerEffectShader::Wgsl`].
+    #[must_use]
+    pub fn wgsl(fragment_body: impl Into<Arc<str>>) -> Self {
+        Self::wgsl_with_id(next_color_effect_id(), fragment_body)
+    }
+
+    pub(crate) fn wgsl_with_id(id: ColorEffectId, fragment_body: impl Into<Arc<str>>) -> Self {
+        Self {
+            id,
+            shader: LayerEffectShader::Wgsl {
+                label: None,
+                fragment_body: fragment_body.into(),
+            },
+            args: ColorEffectArgs::default(),
+            color_space: SurfaceColorSpace::ExtendedLinearSrgb,
+            needs_time: false,
+        }
+    }
+
+    /// Adds a human-readable label for GPU debugging and pipeline caching.
+    #[must_use]
+    pub fn with_label(mut self, label: impl Into<Arc<str>>) -> Self {
+        match &mut self.shader {
+            LayerEffectShader::Wgsl { label: slot, .. } => *slot = Some(label.into()),
+        }
+        self
+    }
+
+    /// Sets raw uniform argument bytes for the effect.
+    #[must_use]
+    pub fn with_args(mut self, args: impl Into<Vec<u8>>) -> Self {
+        self.args = ColorEffectArgs { bytes: args.into() };
+        self
+    }
+
+    /// Sets the working/output color space for this effect.
+    #[must_use]
+    pub fn with_color_space(mut self, color_space: SurfaceColorSpace) -> Self {
+        self.color_space = color_space;
+        self
+    }
+
+    /// Mark this effect as depending on frame time.
+    #[must_use]
+    pub fn needs_time(mut self) -> Self {
+        self.needs_time = true;
+        self
+    }
+}
+
 /// A no-input shader that generates a compositor texture from position, uv, args, and frame data.
 ///
 /// This is useful for SwiftUI-style generated visual content: procedural gradients, noise,
@@ -163,7 +300,7 @@ impl ColorEffect {
 /// space. Use `frame.effective_scale` to convert to physical pixels.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SourceEffect {
-    pub id: ShaderEffectId,
+    pub(crate) id: ShaderEffectId,
     pub shader: SourceEffectShader,
     pub args: ColorEffectArgs,
     pub color_space: SurfaceColorSpace,
@@ -171,8 +308,16 @@ pub struct SourceEffect {
 }
 
 impl SourceEffect {
+    /// Creates a WGSL source effect from a function body.
+    ///
+    /// The body is inserted into the generated `source_effect` function
+    /// documented by [`SourceEffectShader::Wgsl`].
     #[must_use]
-    pub fn wgsl(id: ShaderEffectId, fragment_body: impl Into<Arc<str>>) -> Self {
+    pub fn wgsl(fragment_body: impl Into<Arc<str>>) -> Self {
+        Self::wgsl_with_id(next_shader_effect_id(), fragment_body)
+    }
+
+    pub(crate) fn wgsl_with_id(id: ShaderEffectId, fragment_body: impl Into<Arc<str>>) -> Self {
         Self {
             id,
             shader: SourceEffectShader::Wgsl {
@@ -185,6 +330,7 @@ impl SourceEffect {
         }
     }
 
+    /// Adds a human-readable label for GPU debugging and pipeline caching.
     #[must_use]
     pub fn with_label(mut self, label: impl Into<Arc<str>>) -> Self {
         match &mut self.shader {
@@ -193,18 +339,24 @@ impl SourceEffect {
         self
     }
 
+    /// Sets raw uniform argument bytes for the source shader.
     #[must_use]
     pub fn with_args(mut self, args: impl Into<Vec<u8>>) -> Self {
         self.args = ColorEffectArgs { bytes: args.into() };
         self
     }
 
+    /// Sets the working/output color space for this source effect.
     #[must_use]
     pub fn with_color_space(mut self, color_space: SurfaceColorSpace) -> Self {
         self.color_space = color_space;
         self
     }
 
+    /// Mark this source effect as depending on frame time.
+    ///
+    /// Timeless source effects are invalidated by size, args, and shader/source
+    /// changes, but not solely by frame advancement.
     #[must_use]
     pub fn needs_time(mut self) -> Self {
         self.needs_time = true;
@@ -241,7 +393,19 @@ pub enum SourceEffectShader {
 /// group API, but execution requires a backdrop render pass and currently fails loudly if used.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct CompositeEffect {
-    pub id: ShaderEffectId,
+    /// Stable program identifier for the composite shader.
+    pub(crate) id: ShaderEffectId,
+}
+
+impl CompositeEffect {
+    /// Creates a compositor composite effect with an automatically assigned
+    /// internal identity.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            id: next_shader_effect_id(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -251,8 +415,6 @@ pub enum ColorEffectShader {
     /// The generated wrapper provides:
     ///
     /// ```wgsl
-    /// @group(0) @binding(0) var input_texture: texture_2d<f32>;
-    /// @group(0) @binding(1) var input_sampler: sampler;
     /// @group(0) @binding(2) var<uniform> args: ColorEffectArgs;
     /// @group(0) @binding(3) var<uniform> frame: ColorEffectFrame;
     ///
@@ -276,8 +438,37 @@ pub enum ColorEffectShader {
     },
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum LayerEffectShader {
+    /// WGSL function body for the generated `layer_effect` function.
+    ///
+    /// The generated wrapper provides:
+    ///
+    /// ```wgsl
+    /// @group(0) @binding(0) var input_texture: texture_2d<f32>;
+    /// @group(0) @binding(1) var input_sampler: sampler;
+    /// @group(0) @binding(2) var<uniform> args: ColorEffectArgs;
+    /// @group(0) @binding(3) var<uniform> frame: ColorEffectFrame;
+    ///
+    /// fn layer_effect(
+    ///     position: vec2<f32>, // logical pixels, top-left origin
+    ///     uv: vec2<f32>,
+    ///     color: vec4<f32>,
+    ///     args: ColorEffectArgs,
+    ///     frame: ColorEffectFrame,
+    /// ) -> vec4<f32> {
+    ///     // fragment_body
+    /// }
+    /// ```
+    Wgsl {
+        label: Option<Arc<str>>,
+        fragment_body: Arc<str>,
+    },
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ColorEffectArgs {
+    /// Raw uniform payload. The shader body defines how these bytes are read.
     pub bytes: Vec<u8>,
 }
 

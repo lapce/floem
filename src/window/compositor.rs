@@ -1,8 +1,8 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
-    effects::CompositorEffect,
     compositor_surface::{CompositorSurfaceContent, CompositorSurfaceId, ExternalTexture},
+    effects::CompositorEffect,
     gpu_resources::GpuResources,
     paint::{
         composition::{
@@ -69,7 +69,10 @@ impl WindowCompositor {
         self.pending_scene_renders.clear();
     }
 
-    pub(crate) fn invalidate_compositor_surface_content(&mut self, surface_id: CompositorSurfaceId) {
+    pub(crate) fn invalidate_compositor_surface_content(
+        &mut self,
+        surface_id: CompositorSurfaceId,
+    ) {
         let keys = self
             .layers_by_key
             .iter()
@@ -422,11 +425,13 @@ impl WindowCompositor {
         }
         let mut publications = std::mem::take(&mut self.pending_scene_publications);
         publications.extend(self.submitted_content_publications());
+        let native_layers = self.native_layer_attachments();
         let committed = self.commit_layer_tree_and_publications(&publications, queue);
+        self.attach_native_layers(&native_layers);
         if committed {
             self.mark_submitted_content_published();
         }
-        committed
+        committed || !native_layers.is_empty()
     }
 
     fn render_scene_content(
@@ -781,7 +786,7 @@ impl WindowCompositor {
                         self.layers_by_key.get(&layer.key)
                     else {
                         return Err(format!(
-                            "compositor capture missing external layer {:?}",
+                            "compositor capture missing compositor surface layer {:?}",
                             layer.key
                         ));
                     };
@@ -943,11 +948,44 @@ impl WindowCompositor {
                             );
                         }
                     }
-                    CompositorSurfaceContent::Empty | CompositorSurfaceContent::Subduction(_) => {}
+                    CompositorSurfaceContent::Empty
+                    | CompositorSurfaceContent::NativeLayer(_)
+                    | CompositorSurfaceContent::Subduction(_) => {}
                 },
             }
         }
         publications
+    }
+
+    fn native_layer_attachments(&self) -> Vec<(LayerId, subduction::NativeLayer)> {
+        let mut attachments = Vec::new();
+        for (key, state) in &self.layers_by_key {
+            let CompositorLayerState::CompositorSurface(layer) = state else {
+                continue;
+            };
+            let CompositorSurfaceContent::NativeLayer(native_layer) = &layer.content else {
+                continue;
+            };
+            let Some(layer_id) = self.layer_ids_by_key.get(key).copied() else {
+                continue;
+            };
+            attachments.push((layer_id, native_layer.clone()));
+        }
+        attachments
+    }
+
+    fn attach_native_layers(&mut self, attachments: &[(LayerId, subduction::NativeLayer)]) {
+        let Some(layer_host) = &mut self.layer_host else {
+            return;
+        };
+        for (layer_id, native_layer) in attachments {
+            if let Err(err) = layer_host.attach_native_layer(*layer_id, native_layer) {
+                eprintln!(
+                    "floem compositor: failed to attach native layer {:?}: {err}",
+                    layer_id,
+                );
+            }
+        }
     }
 
     fn mark_submitted_content_published(&self) {
@@ -1387,7 +1425,6 @@ impl ColorEffectRenderer {
     ) -> Result<&ColorEffectPipeline, String> {
         let shader_hash = color_effect_shader_hash(effect);
         let key = ColorEffectPipelineKey {
-            id: compositor_effect_id(effect),
             shader_hash,
             format,
         };
@@ -1509,7 +1546,6 @@ impl ColorEffectPipeline {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct ColorEffectPipelineKey {
-    id: crate::effects::ShaderEffectId,
     shader_hash: u64,
     format: wgpu::TextureFormat,
 }
@@ -1586,12 +1622,26 @@ fn initialize_texture_for_external_writer(
 
 fn color_effect_shader_hash(effect: &CompositorEffect) -> u64 {
     let mut hasher = DefaultHasher::new();
-    compositor_effect_id(effect).hash(&mut hasher);
     match effect {
         CompositorEffect::Color(effect) => {
             "color".hash(&mut hasher);
             match &effect.shader {
                 crate::effects::ColorEffectShader::Wgsl {
+                    label,
+                    fragment_body,
+                } => {
+                    label.hash(&mut hasher);
+                    fragment_body.hash(&mut hasher);
+                }
+            }
+            effect.args.bytes.hash(&mut hasher);
+            format!("{:?}", effect.color_space).hash(&mut hasher);
+            effect.needs_time.hash(&mut hasher);
+        }
+        CompositorEffect::Layer(effect) => {
+            "layer".hash(&mut hasher);
+            match &effect.shader {
+                crate::effects::LayerEffectShader::Wgsl {
                     label,
                     fragment_body,
                 } => {
@@ -1631,16 +1681,10 @@ fn compositor_effect_dependency_hash(effect: &CompositorEffect, frame_index: u64
     hasher.finish()
 }
 
-fn compositor_effect_id(effect: &CompositorEffect) -> crate::effects::ShaderEffectId {
-    match effect {
-        CompositorEffect::Color(effect) => crate::effects::ShaderEffectId(effect.id.0),
-        CompositorEffect::Source(effect) => effect.id,
-    }
-}
-
 fn compositor_effect_needs_time(effect: &CompositorEffect) -> bool {
     match effect {
         CompositorEffect::Color(effect) => effect.needs_time,
+        CompositorEffect::Layer(effect) => effect.needs_time,
         CompositorEffect::Source(effect) => effect.needs_time,
     }
 }
@@ -1648,6 +1692,7 @@ fn compositor_effect_needs_time(effect: &CompositorEffect) -> bool {
 fn effect_args(effect: &CompositorEffect) -> &[u8] {
     match effect {
         CompositorEffect::Color(effect) => &effect.args.bytes,
+        CompositorEffect::Layer(effect) => &effect.args.bytes,
         CompositorEffect::Source(effect) => &effect.args.bytes,
     }
 }
@@ -1657,6 +1702,11 @@ fn color_effect_label(effect: &CompositorEffect) -> &str {
         CompositorEffect::Color(effect) => match &effect.shader {
             crate::effects::ColorEffectShader::Wgsl { label, .. } => {
                 label.as_deref().unwrap_or("floem compositor color effect")
+            }
+        },
+        CompositorEffect::Layer(effect) => match &effect.shader {
+            crate::effects::LayerEffectShader::Wgsl { label, .. } => {
+                label.as_deref().unwrap_or("floem compositor layer effect")
             }
         },
         CompositorEffect::Source(effect) => match &effect.shader {
@@ -1672,6 +1722,9 @@ fn color_effect_shader_source(effect: &CompositorEffect) -> Result<String, Strin
         CompositorEffect::Color(effect) => match &effect.shader {
             crate::effects::ColorEffectShader::Wgsl { fragment_body, .. } => fragment_body,
         },
+        CompositorEffect::Layer(effect) => match &effect.shader {
+            crate::effects::LayerEffectShader::Wgsl { fragment_body, .. } => fragment_body,
+        },
         CompositorEffect::Source(effect) => match &effect.shader {
             crate::effects::SourceEffectShader::Wgsl { fragment_body, .. } => fragment_body,
         },
@@ -1680,6 +1733,20 @@ fn color_effect_shader_source(effect: &CompositorEffect) -> Result<String, Strin
         CompositorEffect::Color(_) => format!(
             r#"
 fn color_effect(
+    position: vec2<f32>,
+    uv: vec2<f32>,
+    color: vec4<f32>,
+    args: ColorEffectArgs,
+    frame: ColorEffectFrame,
+) -> vec4<f32> {{
+{}
+}}
+"#,
+            fragment_body
+        ),
+        CompositorEffect::Layer(_) => format!(
+            r#"
+fn layer_effect(
     position: vec2<f32>,
     uv: vec2<f32>,
     color: vec4<f32>,
@@ -1708,6 +1775,9 @@ fn source_effect(
     let fragment_return = match effect {
         CompositorEffect::Color(_) => {
             "let color = textureSample(input_texture, input_sampler, in.uv);\n    return color_effect(logical_position, in.uv, color, args, frame);"
+        }
+        CompositorEffect::Layer(_) => {
+            "let color = textureSample(input_texture, input_sampler, in.uv);\n    return layer_effect(logical_position, in.uv, color, args, frame);"
         }
         CompositorEffect::Source(_) => {
             "return source_effect(logical_position, in.uv, args, frame);"
@@ -1983,6 +2053,9 @@ fn external_content_key(content: &CompositorSurfaceContent) -> ExternalContentKe
         CompositorSurfaceContent::Texture(texture) => {
             ExternalContentKey::Texture { size: texture.size }
         }
+        CompositorSurfaceContent::NativeLayer(layer) => ExternalContentKey::Subduction {
+            ptr: layer.identity(),
+        },
         CompositorSurfaceContent::Image(image) => ExternalContentKey::Image {
             size: peniko::kurbo::Size::new(image.width as f64, image.height as f64),
         },
@@ -2011,7 +2084,7 @@ pub(crate) struct CompositorDiff {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::effects::{ColorEffect, ColorEffectId, ShaderEffectId, SourceEffect};
+    use crate::effects::{ColorEffect, SourceEffect};
 
     fn layer_with_effect(effect: CompositorEffect) -> SceneLayer {
         SceneLayer {
@@ -2039,7 +2112,7 @@ mod tests {
 
     #[test]
     fn timeless_effect_signature_ignores_frame_index() {
-        let effect = ColorEffect::wgsl(ColorEffectId(1), "return color;");
+        let effect = ColorEffect::wgsl("return color;");
         let layer = layer_with_effect(CompositorEffect::Color(effect));
         let compositor_surfaces = FxHashMap::default();
         let a = scene_render_signature(
@@ -2066,7 +2139,7 @@ mod tests {
 
     #[test]
     fn time_dependent_effect_signature_tracks_frame_index() {
-        let effect = ColorEffect::wgsl(ColorEffectId(1), "return color;").needs_time();
+        let effect = ColorEffect::wgsl("return color;").needs_time();
         let layer = layer_with_effect(CompositorEffect::Color(effect));
         let compositor_surfaces = FxHashMap::default();
         let a = scene_render_signature(
@@ -2093,7 +2166,7 @@ mod tests {
 
     #[test]
     fn effect_signature_tracks_target_size() {
-        let effect = ColorEffect::wgsl(ColorEffectId(1), "return color;");
+        let effect = ColorEffect::wgsl("return color;");
         let layer = layer_with_effect(CompositorEffect::Color(effect));
         let compositor_surfaces = FxHashMap::default();
         let a = scene_render_signature(
@@ -2120,9 +2193,8 @@ mod tests {
 
     #[test]
     fn source_effect_time_dependency_tracks_frame_index_only_when_requested() {
-        let timeless = SourceEffect::wgsl(ShaderEffectId(2), "return vec4<f32>(uv, 0.0, 1.0);");
-        let timed =
-            SourceEffect::wgsl(ShaderEffectId(3), "return vec4<f32>(uv, 0.0, 1.0);").needs_time();
+        let timeless = SourceEffect::wgsl("return vec4<f32>(uv, 0.0, 1.0);");
+        let timed = SourceEffect::wgsl("return vec4<f32>(uv, 0.0, 1.0);").needs_time();
         let compositor_surfaces = FxHashMap::default();
 
         let timeless_layer = layer_with_effect(CompositorEffect::Source(timeless));

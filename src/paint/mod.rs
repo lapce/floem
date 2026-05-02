@@ -595,7 +595,7 @@ pub(crate) enum PaintState {
     PendingGpuResources {
         window: Arc<dyn Window>,
         rx: Receiver<
-            Result<(GpuResources, subduction::wgpu::CompositorSurfaceCapabilities), GpuResourceError>,
+            Result<(GpuResources, subduction::wgpu::ExternalSurfaceCapabilities), GpuResourceError>,
         >,
     },
     /// The renderer is initialized and ready to paint.
@@ -607,7 +607,7 @@ impl PaintState {
     pub fn new_pending(
         window: Arc<dyn Window>,
         rx: Receiver<
-            Result<(GpuResources, subduction::wgpu::CompositorSurfaceCapabilities), GpuResourceError>,
+            Result<(GpuResources, subduction::wgpu::ExternalSurfaceCapabilities), GpuResourceError>,
         >,
         _size: Size,
     ) -> Self {

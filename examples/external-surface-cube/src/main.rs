@@ -5,12 +5,12 @@ use std::{
 
 use bytemuck::{Pod, Zeroable};
 use floem::{
-    Application, ColorEffect, ColorEffectId, CompositorSurface, GpuResources,
-    RenderableCompositorSurface, RenderableCompositorSurfaceConfig, ShaderEffectId, SourceEffect,
+    Application, CompositorSurface, GpuResources, LayerEffect, RenderableCompositorSurface,
+    RenderableCompositorSurfaceConfig, SourceEffect,
     action::{capture_metal, inspect},
     group_ref,
     imaging::{Brush, ClipRef, Filter, ImageBrush},
-    kurbo::{Affine, Circle, Point, Rect, Size, Stroke},
+    kurbo::{Affine, Circle, Point, Rect, Size},
     peniko::Color,
     prelude::*,
     style::Position,
@@ -27,16 +27,14 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         Size::new(f64::from(CUBE_SIZE), f64::from(CUBE_SIZE)),
         RenderableCompositorSurfaceConfig::default(),
     );
-    let producer_surface = Arc::new(Mutex::new(Some(producer_surface)));
-    let paint_surface = surface.clone();
 
     (
-        "External Surface as Image Brush".style(|s| {
+        "Compositor Surface as Image Brush".style(|s| {
             s.font_size(30.0)
                 .font_weight(FontWeight::BOLD)
                 .color(Color::from_rgb8(246, 241, 226))
         }),
-        "The cube is rendered by an external producer into a Subduction-owned wgpu texture. Floem can publish that frame as a compositor layer, or sample the same submitted frame as an imaging external image. This example uses the cube texture as an image brush for the large glyph fill, then flattens the surrounding clip, blur, and checkerboard color effect into one ordered render pass when direct layer promotion is not legal. Press F11 for the inspector or F12 to capture the next Metal frame."
+        "The cube is rendered by a compositor-surface producer into a Floem/Subduction-owned wgpu texture. Floem can publish that compositor-owned frame as a native layer, or sample the same frame through imaging as an external image brush. This example uses the cube texture as an image brush for the large glyph fill, then flattens the surrounding clip, blur, and checkerboard layer effect into one ordered render pass when direct layer promotion is not legal. Press F11 for the inspector or F12 to capture the next Metal frame."
             .style(|s| {
                 s.font_size(14.0)
                     .line_height(1.35)
@@ -45,7 +43,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                     .max_width(760.0)
                     .color(Color::from_rgb8(155, 169, 177))
             }),
-        cube_panel(paint_surface),
+        cube_panel(surface),
     )
         .style(|s| {
             s.width_full()
@@ -59,10 +57,8 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         .on_event_stop(
             listener::WindowGpuResourcesReady,
             move |_cx, gpu_resources| {
-                let Some(producer_surface) = producer_surface.lock().unwrap().take() else {
-                    return;
-                };
-                if let Err(err) = start_cube_target(producer_surface, gpu_resources.clone()) {
+                if let Err(err) = start_cube_target(producer_surface.clone(), gpu_resources.clone())
+                {
                     eprintln!("compositor-surface-cube: failed to start renderable target: {err}");
                 }
             },
@@ -125,7 +121,6 @@ fn cube_canvas(surface: CompositorSurface) -> impl IntoView {
             label_rect.y1 - 6.0,
         );
         let source_panel = SourceEffect::wgsl(
-            ShaderEffectId(2),
             r#"
 let cell = floor(position / vec2<f32>(22.0, 22.0));
 let checker = (cell.x + cell.y) - 2.0 * floor((cell.x + cell.y) * 0.5);
@@ -146,8 +141,7 @@ return vec4<f32>(base + stripe * 0.035, 0.58);
             source_panel,
         );
 
-        let checkerboard_effect = ColorEffect::wgsl(
-            ColorEffectId(1),
+        let checkerboard_effect = LayerEffect::wgsl(
             r#"
 let sampled = textureSample(input_texture, input_sampler, uv);
 let cell = floor(position / vec2<f32>(28.0, 28.0));
@@ -158,7 +152,7 @@ let tint = mix(tint_a, tint_b, checker);
 return vec4<f32>(sampled.rgb * tint, sampled.a);
 "#,
         )
-        .with_label("cube checkerboard color effect")
+        .with_label("cube checkerboard layer effect")
         .with_color_space(subduction::wgpu::SurfaceColorSpace::ExtendedLinearSrgb);
         let filters = [checkerboard_effect.into(), Filter::blur(5.).into()];
         cx.painter.with_group(
@@ -673,7 +667,7 @@ fn main() {
             Some(
                 WindowConfig::default()
                     .size(Size::new(900.0, 660.0))
-                    .title("External Surface Cube"),
+                    .title("Compositor Surface Cube"),
             ),
         )
         .run();

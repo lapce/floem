@@ -49,8 +49,8 @@ bitflags::bitflags! {
         const CONTINUOUS_INPUT = 1 << 1;
         /// Animation timeline callbacks.
         const ANIMATION = 1 << 2;
-        /// External surface producers requesting frame cadence.
-        const EXTERNAL_SURFACE = 1 << 3;
+        /// Compositor-surface producers requesting frame cadence.
+        const COMPOSITOR_SURFACE = 1 << 3;
     }
 }
 

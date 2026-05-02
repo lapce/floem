@@ -118,7 +118,7 @@ impl WindowCompositorSurfaces {
                         refresh_interval: None,
                         confidence: subduction_core::timing::TimingConfidence::PacingOnly,
                     };
-                    let format = subduction::wgpu::CompositorSurfaceConfig::default().format;
+                    let format = subduction::wgpu::ExternalSurfaceConfig::default().format;
                     let usage = wgpu::TextureUsages::RENDER_ATTACHMENT
                         | wgpu::TextureUsages::TEXTURE_BINDING;
                     if planned_surface.key.is_some() {
@@ -231,7 +231,10 @@ impl WindowCompositorSurfaces {
         old_prefix
     }
 
-    pub(crate) fn release_outcomes(&mut self, mut update: impl FnMut(&mut CompositorSurfaceOutcome)) {
+    pub(crate) fn release_outcomes(
+        &mut self,
+        mut update: impl FnMut(&mut CompositorSurfaceOutcome),
+    ) {
         for mut outcome in std::mem::take(&mut self.pending_outcomes) {
             update(&mut outcome);
             if let Some(entry) = self.entries.get_mut(&outcome.surface_id) {

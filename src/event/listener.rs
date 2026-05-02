@@ -981,7 +981,7 @@ mod inner {
         /// Receives [`Event::Window`] `GpuResourcesReady` variant — fired once Floem has acquired
         /// the wgpu instance/adapter/device/queue for this window.
         ///
-        /// External surface producers should use these resources instead of creating an unrelated
+        /// Compositor-surface producers should use these resources instead of creating an unrelated
         /// wgpu device.
         pub WindowGpuResourcesReady: GpuResources,
         |event| {

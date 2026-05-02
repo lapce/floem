@@ -521,7 +521,9 @@ fn pacing_demand(demand: FrameDemand) -> PacingFrameDemand {
 fn is_frame_cadenced_demand(demand: FrameDemand) -> bool {
     !demand.contains(FrameDemand::DISCRETE_INPUT)
         && demand.intersects(
-            FrameDemand::ANIMATION | FrameDemand::CONTINUOUS_INPUT | FrameDemand::EXTERNAL_SURFACE,
+            FrameDemand::ANIMATION
+                | FrameDemand::CONTINUOUS_INPUT
+                | FrameDemand::COMPOSITOR_SURFACE,
         )
 }
 

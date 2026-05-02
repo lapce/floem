@@ -167,7 +167,7 @@ pub(crate) struct SceneFragmentRendererPool {
 pub struct NewRendererCx {
     pub window: Arc<dyn Window>,
     pub gpu_resources: Option<GpuResources>,
-    pub surface_caps: Option<subduction::wgpu::CompositorSurfaceCapabilities>,
+    pub surface_caps: Option<subduction::wgpu::ExternalSurfaceCapabilities>,
     pub transparent: bool,
     pub size: Size,
     pub scale: f64,
@@ -279,7 +279,7 @@ impl NewRendererCx {
 
 pub struct GpuRendererChooserCx<'a> {
     pub gpu_resources: &'a GpuResources,
-    pub surface_caps: &'a subduction::wgpu::CompositorSurfaceCapabilities,
+    pub surface_caps: &'a subduction::wgpu::ExternalSurfaceCapabilities,
 }
 
 impl GpuRendererChooserCx<'_> {

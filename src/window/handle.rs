@@ -518,7 +518,7 @@ impl WindowHandle {
         size: Size,
         maximum_drawable_count: u32,
     ) -> PaintState {
-        let surface_caps = subduction::wgpu::CompositorSurfaceCapabilities {
+        let surface_caps = subduction::wgpu::ExternalSurfaceCapabilities {
             formats: vec![
                 wgpu::TextureFormat::Rgba8Unorm,
                 wgpu::TextureFormat::Bgra8Unorm,
@@ -1572,7 +1572,7 @@ impl WindowHandle {
 
     pub(crate) fn note_compositor_surface_frame_demand(&mut self) {
         self.pending_frame_demand
-            .insert(FrameDemand::EXTERNAL_SURFACE);
+            .insert(FrameDemand::COMPOSITOR_SURFACE);
         self.frame_clock.set_frame_demand(self.pending_frame_demand);
     }
 

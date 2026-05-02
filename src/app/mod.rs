@@ -28,7 +28,9 @@ use winit::{
 
 use crate::{
     action::{Timer, TimerToken},
-    compositor_surface::{CompositorSurfaceContent, CompositorSurfaceId, CompositorSurfaceProviderHandle},
+    compositor_surface::{
+        CompositorSurfaceContent, CompositorSurfaceId, CompositorSurfaceProviderHandle,
+    },
     frame::FrameTime,
     inspector::{Capture, profiler::Profile},
     paint::composition::CompositionKey,

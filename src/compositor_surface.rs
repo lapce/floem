@@ -1,3 +1,12 @@
+//! Compositor-owned surface slots.
+//!
+//! A [`CompositorSurface`] is content that Floem/Subduction owns well enough to
+//! either promote into a platform compositor layer or sample through Imaging
+//! when a clip, mask, filter, effect, or group forces flattening. This is the
+//! right primitive for embedded renderers, video-like producers, camera frames,
+//! and any surface that must remain visually correct when direct layer
+//! promotion is not legal.
+
 use std::{
     any::Any,
     sync::{
@@ -21,12 +30,17 @@ use crate::{
     gpu_resources::GpuResources,
 };
 
-static NEXT_EXTERNAL_SURFACE_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_COMPOSITOR_SURFACE_ID: AtomicU64 = AtomicU64::new(1);
 
+/// Stable window-local identity for a compositor-owned surface slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct CompositorSurfaceId(u64);
 
 impl CompositorSurfaceId {
+    pub(crate) fn next() -> Self {
+        Self(NEXT_COMPOSITOR_SURFACE_ID.fetch_add(1, Ordering::Relaxed))
+    }
+
     #[must_use]
     pub fn get(self) -> u64 {
         self.0
@@ -34,13 +48,13 @@ impl CompositorSurfaceId {
 
     #[must_use]
     pub fn image_id(self) -> imaging::ExternalImageId {
-        imaging::ExternalImageId(self.0 | EXTERNAL_SURFACE_IMAGE_ID_MASK)
+        imaging::ExternalImageId(self.0 | COMPOSITOR_SURFACE_IMAGE_ID_MASK)
     }
 
     #[must_use]
     pub fn from_image_id(image_id: imaging::ExternalImageId) -> Option<Self> {
-        (image_id.0 & EXTERNAL_SURFACE_IMAGE_ID_MASK != 0)
-            .then_some(Self(image_id.0 & !EXTERNAL_SURFACE_IMAGE_ID_MASK))
+        (image_id.0 & COMPOSITOR_SURFACE_IMAGE_ID_MASK != 0)
+            .then_some(Self(image_id.0 & !COMPOSITOR_SURFACE_IMAGE_ID_MASK))
     }
 
     #[cfg(test)]
@@ -49,8 +63,18 @@ impl CompositorSurfaceId {
     }
 }
 
-const EXTERNAL_SURFACE_IMAGE_ID_MASK: u64 = 1 << 63;
+const COMPOSITOR_SURFACE_IMAGE_ID_MASK: u64 = 1 << 63;
 
+/// A Floem/Subduction-owned compositor surface.
+///
+/// The surface has stable identity and content, but placement still comes from
+/// paint order. Use [`CompositorSurface::image`] to place the surface through
+/// the normal Imaging brush path; display-list lowering may promote that brush
+/// back to a compositor layer when it is safe.
+///
+/// Unlike [`crate::external_surface::ExternalSurface`], this path may flatten:
+/// Floem can resolve the submitted content as an external image and render it
+/// into an intermediate pass when correctness requires it.
 #[derive(Clone, Debug)]
 pub struct CompositorSurface {
     id: CompositorSurfaceId,
@@ -62,7 +86,7 @@ impl CompositorSurface {
     #[must_use]
     pub fn new(window_id: WindowId, config: CompositorSurfaceConfig) -> Self {
         Self {
-            id: CompositorSurfaceId(NEXT_EXTERNAL_SURFACE_ID.fetch_add(1, Ordering::Relaxed)),
+            id: CompositorSurfaceId::next(),
             window_id,
             config,
         }
@@ -73,6 +97,12 @@ impl CompositorSurface {
         self.id
     }
 
+    /// Creates an Imaging external image handle for this surface.
+    ///
+    /// The returned image can be used with `imaging::ImageBrush`. If the brush
+    /// is used in a simple promotable fill, Floem may publish the surface
+    /// directly as a compositor layer. If active group state requires
+    /// flattening, the renderer samples the same submitted surface content.
     #[must_use]
     pub fn image(&self, width: u32, height: u32) -> imaging::ExternalImage {
         imaging::ExternalImage::new(
@@ -121,6 +151,13 @@ impl CompositorSurface {
         self.handle().set_provider(provider);
     }
 
+    /// Creates a surface with a frame-opportunity driven wgpu render target.
+    ///
+    /// The returned [`RenderableCompositorSurface`] owns the producer callback.
+    /// On each frame opportunity the callback may acquire a Subduction-managed
+    /// target, render into it, and complete asynchronously. Floem then either
+    /// publishes that content directly or samples it during compositor
+    /// flattening.
     #[must_use]
     pub fn new_renderable(
         window_id: WindowId,
@@ -141,21 +178,26 @@ impl CompositorSurface {
     }
 }
 
+/// Configuration for a frame-opportunity driven compositor surface.
 #[derive(Clone, Debug)]
 pub struct RenderableCompositorSurfaceConfig {
-    pub surface: subduction::wgpu::CompositorSurfaceConfig,
+    /// Subduction wgpu target configuration, including latency and format
+    /// preferences.
+    pub surface: subduction::wgpu::ExternalSurfaceConfig,
+    /// Alpha interpretation for the published content.
     pub alpha_mode: CompositorSurfaceAlphaMode,
 }
 
 impl Default for RenderableCompositorSurfaceConfig {
     fn default() -> Self {
         Self {
-            surface: subduction::wgpu::CompositorSurfaceConfig::default(),
+            surface: subduction::wgpu::ExternalSurfaceConfig::default(),
             alpha_mode: CompositorSurfaceAlphaMode::Premultiplied,
         }
     }
 }
 
+/// Producer-side handle for rendering into a compositor-owned wgpu target.
 #[derive(Clone)]
 pub struct RenderableCompositorSurface {
     handle: CompositorSurfaceHandle,
@@ -241,6 +283,10 @@ impl RenderableCompositorSurface {
     }
 }
 
+/// Per-frame render context passed to a renderable compositor surface callback.
+///
+/// `acquire_target` is non-blocking. It fails when no compositor target is
+/// available or when the configured max frame latency is already in flight.
 pub struct RenderableCompositorSurfaceFrameCx {
     opportunity: subduction::wgpu::SurfaceFrameOpportunity,
     config: RenderableCompositorSurfaceConfig,
@@ -296,13 +342,18 @@ pub struct SubductionFrameTick {
     pub display_timing: Option<crate::frame::DisplayTiming>,
 }
 
+/// Preferred storage/presentation class for compositor surface content.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CompositorSurfaceKind {
+    /// Native platform texture or layer-like content, when available.
     NativeTexture,
+    /// Subduction-managed wgpu texture content.
     WgpuTexture,
+    /// CPU image fallback content.
     CpuImageFallback,
 }
 
+/// Alpha mode for compositor surface content.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CompositorSurfaceAlphaMode {
     Opaque,
@@ -310,6 +361,7 @@ pub enum CompositorSurfaceAlphaMode {
     Unpremultiplied,
 }
 
+/// Configuration for a compositor-owned surface slot.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompositorSurfaceConfig {
     pub kind: CompositorSurfaceKind,
@@ -343,6 +395,11 @@ impl Default for CompositorSurfaceConfig {
     }
 }
 
+/// Opaque texture-like payload submitted to a compositor surface.
+///
+/// The payload is intentionally type-erased so producer/backends can pass
+/// backend-specific handles without making Floem platform-specific. Direct
+/// external surfaces validate this payload synchronously before accepting it.
 #[derive(Clone, Debug)]
 pub struct ExternalTexture {
     pub size: Size,
@@ -359,16 +416,25 @@ impl ExternalTexture {
     }
 }
 
+/// Current content for a compositor-owned surface slot.
 #[derive(Clone, Debug)]
 pub enum CompositorSurfaceContent {
     Empty,
     Texture(ExternalTexture),
+    /// Opaque platform layer. Floem only stores and orders it; Subduction owns
+    /// platform-specific attachment.
+    NativeLayer(subduction::NativeLayer),
     Image(ImageData),
     Subduction(Arc<dyn Any + Send + Sync>),
 }
 
 pub type CompositorSurfaceProviderHandle = Arc<Mutex<dyn CompositorSurfaceProvider + Send>>;
 
+/// Producer interface used by Floem to request and poll compositor content.
+///
+/// Providers should avoid blocking the UI thread. If a frame cannot be
+/// produced immediately, return a deferred update and complete through the
+/// configured completion channel.
 pub trait CompositorSurfaceProvider {
     fn can_accept_frame_target(&self) -> bool {
         true

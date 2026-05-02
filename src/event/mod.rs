@@ -739,7 +739,7 @@ pub enum WindowEvent {
 
     /// Floem has acquired the window GPU resources.
     ///
-    /// External surface producers should use these resources when they need to
+    /// Compositor-surface producers should use these resources when they need to
     /// render into compositor-owned textures/surfaces so all wgpu work is on
     /// the same instance/adapter/device/queue as the app renderer.
     GpuResourcesReady(crate::gpu_resources::GpuResources),
