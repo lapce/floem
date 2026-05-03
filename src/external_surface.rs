@@ -1,10 +1,16 @@
 //! Direct compositor surfaces owned by an external producer.
 //!
-//! [`ExternalSurface`] is the direct-promotion counterpart to
-//! [`crate::compositor_surface::CompositorSurface`]. It is for content that
-//! must be published as a compositor layer. Floem validates submissions
-//! synchronously and returns an error when the content cannot be directly
-//! composited instead of falling back to renderer sampling.
+//! [`ExternalSurface`] is the direct-composition counterpart to
+//! [`crate::compositor_surface::CompositorSurfaceImage`]. It is for content that
+//! the producer already owns as a compositor-compatible texture or native
+//! layer. Floem validates each submission synchronously and returns an error
+//! when the content cannot be directly composited. It does not fall back to
+//! renderer sampling.
+//!
+//! Use [`crate::compositor_surface::CompositorSurfaceImage`] with
+//! [`crate::compositor_surface::CompositorSurfaceProducer`] when Floem should
+//! place the content as an image and remain free to flatten it for clips,
+//! masks, filters, effects, or grouped rendering.
 
 use std::fmt;
 
@@ -33,12 +39,18 @@ impl ExternalSurfaceId {
     }
 }
 
-/// Direct compositor content supplied by an external producer.
+/// Direct compositor slot supplied by an external producer.
 ///
-/// Use this for producer-owned textures or native layers that should not be
-/// flattened into an Imaging render pass. If content needs clipping, masking,
-/// filtering, color effects, or any other renderer fallback, use
-/// [`crate::compositor_surface::CompositorSurface`] instead.
+/// Use this for producer-owned textures or native layers that must be
+/// published as compositor content. Submissions are validated immediately. If a
+/// texture or native layer cannot be attached directly, the submit call returns
+/// [`ExternalSurfaceError`] instead of silently changing to renderer fallback.
+///
+/// This API is intentionally stricter than
+/// [`crate::compositor_surface::CompositorSurfaceImage`]. If the content needs
+/// normal image behavior inside the Floem scene, including flattening under
+/// clips, masks, filters, effects, or opacity groups, use a compositor surface
+/// image instead.
 #[derive(Clone, Debug)]
 pub struct ExternalSurface {
     id: ExternalSurfaceId,

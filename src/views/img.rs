@@ -8,7 +8,8 @@ use std::{
 };
 
 use floem_reactive::{ReadSignal, RwSignal, SignalWith, UpdaterEffect};
-use peniko::{Blob, Brush, ImageAlphaType, ImageData, kurbo::Rect};
+use imaging::{Brush, ExternalImage, Image as ImagingImage, ImageBrush};
+use peniko::{Blob, ImageAlphaType, ImageData, kurbo::Rect};
 
 use crate::{
     prop_extractor,
@@ -108,50 +109,62 @@ prop_extractor! {
 /// Holds the data needed for [img] view fn to display images.
 pub struct Img {
     id: ViewId,
-    img: ImageData,
+    img: ImagingImage,
     layout_data: Rc<RefCell<ImageLayoutData>>,
     style: Extractor,
 }
 
 #[doc(hidden)]
 pub enum ImgReader {
-    Static(ImageData),
-    Reactive(Rc<dyn Fn() -> ImageData>),
+    Static(ImagingImage),
+    Reactive(Rc<dyn Fn() -> ImagingImage>),
 }
 
-/// A static input that can be converted into [`ImageData`] for [`Img`].
+/// A static input that can be converted into image content for [`Img`].
 pub trait ImgDataSource {
     /// Convert this value into owned image data.
-    fn into_image_data(self) -> ImageData;
+    fn into_image_data(self) -> ImagingImage;
 }
 
 impl ImgDataSource for ImageData {
-    fn into_image_data(self) -> ImageData {
+    fn into_image_data(self) -> ImagingImage {
+        ImagingImage::Raster(self)
+    }
+}
+
+impl ImgDataSource for ExternalImage {
+    fn into_image_data(self) -> ImagingImage {
+        ImagingImage::External(self)
+    }
+}
+
+impl ImgDataSource for ImagingImage {
+    fn into_image_data(self) -> ImagingImage {
         self
     }
 }
 
 impl ImgDataSource for Vec<u8> {
-    fn into_image_data(self) -> ImageData {
-        Img::image_data_from_bytes(&self)
+    fn into_image_data(self) -> ImagingImage {
+        ImagingImage::Raster(Img::image_data_from_bytes(&self))
     }
 }
 
 impl ImgDataSource for &'static [u8] {
-    fn into_image_data(self) -> ImageData {
-        Img::image_data_from_bytes(self)
+    fn into_image_data(self) -> ImagingImage {
+        ImagingImage::Raster(Img::image_data_from_bytes(self))
     }
 }
 
 impl<const N: usize> ImgDataSource for &'static [u8; N] {
-    fn into_image_data(self) -> ImageData {
-        Img::image_data_from_bytes(self.as_slice())
+    fn into_image_data(self) -> ImagingImage {
+        ImagingImage::Raster(Img::image_data_from_bytes(self.as_slice()))
     }
 }
 
 impl ImgDataSource for PathBuf {
-    fn into_image_data(self) -> ImageData {
-        Img::image_data_from_path(&self)
+    fn into_image_data(self) -> ImagingImage {
+        ImagingImage::Raster(Img::image_data_from_path(&self))
     }
 }
 
@@ -161,6 +174,7 @@ impl ImgDataSource for PathBuf {
 /// - direct image bytes (`Vec<u8>`)
 /// - direct file paths (`PathBuf`)
 /// - direct [`ImageData`]
+/// - direct [`ExternalImage`]
 /// - closures returning any of the above
 /// - [`ReadSignal`] and [`RwSignal`] values containing any of the above
 pub trait ImgSource: 'static {
@@ -187,6 +201,18 @@ impl ImgSource for PathBuf {
 }
 
 impl ImgSource for ImageData {
+    fn into_img_reader(self) -> ImgReader {
+        ImgReader::Static(self.into_image_data())
+    }
+}
+
+impl ImgSource for ExternalImage {
+    fn into_img_reader(self) -> ImgReader {
+        ImgReader::Static(self.into_image_data())
+    }
+}
+
+impl ImgSource for ImagingImage {
     fn into_img_reader(self) -> ImgReader {
         ImgReader::Static(self)
     }
@@ -302,8 +328,9 @@ pub fn img_from_path(image: impl Fn() -> PathBuf + 'static) -> Img {
 }
 
 impl Img {
-    /// Decode static image bytes, a static image path, or reuse existing [`ImageData`].
-    pub fn image_data(source: impl ImgDataSource) -> ImageData {
+    /// Decode static image bytes, a static image path, or reuse existing image
+    /// content.
+    pub fn image_data(source: impl ImgDataSource) -> ImagingImage {
         source.into_image_data()
     }
 
@@ -347,7 +374,10 @@ impl Img {
             }
         };
 
-        let layout_data = Rc::new(RefCell::new(ImageLayoutData::new(img.width, img.height)));
+        let layout_data = Rc::new(RefCell::new(ImageLayoutData::new(
+            img.width(),
+            img.height(),
+        )));
 
         let mut img = Self {
             id,
@@ -358,6 +388,14 @@ impl Img {
 
         img.set_taffy_layout();
         img
+    }
+
+    fn set_image(&mut self, image: ImagingImage) {
+        self.layout_data.borrow_mut().natural_width = image.width();
+        self.layout_data.borrow_mut().natural_height = image.height();
+        self.img = image;
+        self.id.request_mark_view_layout_dirty();
+        self.id.request_layout();
     }
 
     fn set_taffy_layout(&mut self) {
@@ -396,8 +434,8 @@ impl Img {
         object_fit: ObjectFit,
         object_position: ObjectPosition,
     ) -> Rect {
-        let natural_w = self.img.width as f64;
-        let natural_h = self.img.height as f64;
+        let natural_w = self.img.width() as f64;
+        let natural_h = self.img.height() as f64;
         if natural_w == 0.0 || natural_h == 0.0 {
             return content_rect;
         }
@@ -462,16 +500,15 @@ impl View for Img {
     }
 
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
-        if let Ok(img) = state.downcast::<ImageData>() {
-            // Update layout data with new image dimensions
-            let width = img.width;
-            let height = img.height;
-            self.layout_data.borrow_mut().natural_width = width;
-            self.layout_data.borrow_mut().natural_height = height;
-
-            self.img = *img;
-            self.id.request_mark_view_layout_dirty();
-            self.id.request_layout();
+        match state.downcast::<ImagingImage>() {
+            Ok(img) => {
+                self.set_image(*img);
+            }
+            Err(state) => {
+                if let Ok(img) = state.downcast::<ImageData>() {
+                    self.set_image(ImagingImage::Raster(*img));
+                }
+            }
         }
     }
 
@@ -487,12 +524,12 @@ impl View for Img {
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         let content_rect = self.id.get_content_rect_local();
         let dest_rect = self.object_fit_dest_rect(content_rect);
-        let image_brush = Brush::Image(peniko::ImageBrush {
+        let image_brush = Brush::Image(ImageBrush(peniko::ImageBrush {
             image: self.img.clone(),
             sampler: self.style.image_sampler(),
-        });
-        let source_width = self.img.width as f64;
-        let source_height = self.img.height as f64;
+        }));
+        let source_width = self.img.width() as f64;
+        let source_height = self.img.height() as f64;
 
         if source_width <= 0.0 || source_height <= 0.0 {
             return;

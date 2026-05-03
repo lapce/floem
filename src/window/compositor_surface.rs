@@ -84,6 +84,8 @@ impl WindowCompositorSurfaces {
                 entry.content = provider
                     .current_content()
                     .unwrap_or(CompositorSurfaceContent::Empty);
+                entry.presents_without_transaction =
+                    provider.current_presents_without_transaction();
                 entry.content_dirty = true;
                 entry.version = entry.version.wrapping_add(1);
             }
@@ -148,6 +150,7 @@ impl WindowCompositorSurfaces {
             let args = crate::compositor_surface::CompositorSurfaceFrameArgs {
                 surface_id: planned_surface.surface_id,
                 frame_index: frame_time.frame_index,
+                frame_time,
                 interval: frame_time.interval,
                 visible: true,
                 rect: planned_surface.rect,
@@ -163,6 +166,8 @@ impl WindowCompositorSurfaces {
                 entry.content = provider
                     .current_content()
                     .unwrap_or(CompositorSurfaceContent::Empty);
+                entry.presents_without_transaction =
+                    provider.current_presents_without_transaction();
                 entry.content_dirty = true;
                 entry.version = entry.version.wrapping_add(1);
             }
@@ -173,6 +178,8 @@ impl WindowCompositorSurfaces {
                 entry.content = provider
                     .current_content()
                     .unwrap_or(CompositorSurfaceContent::Empty);
+                entry.presents_without_transaction =
+                    provider.current_presents_without_transaction();
                 entry.content_dirty = true;
                 entry.version = entry.version.wrapping_add(1);
             }
@@ -595,6 +602,7 @@ impl IntermediateTexturePool {
 pub(crate) struct CompositorSurfaceEntry {
     pub content: CompositorSurfaceContent,
     pub provider: Option<CompositorSurfaceProviderHandle>,
+    pub presents_without_transaction: bool,
     pub content_dirty: bool,
     pub version: u64,
     pub previous_outcome: Option<CompositorSurfaceOutcome>,
@@ -605,6 +613,7 @@ impl Default for CompositorSurfaceEntry {
         Self {
             content: CompositorSurfaceContent::Empty,
             provider: None,
+            presents_without_transaction: false,
             content_dirty: false,
             version: 0,
             previous_outcome: None,

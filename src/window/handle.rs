@@ -877,6 +877,7 @@ impl WindowHandle {
     pub(crate) fn size(&mut self, size: Size) {
         self.size.set(size);
         self.record_frame_demand(FrameDemand::CONTINUOUS_INPUT);
+        self.preempt_active_frame_for_resize();
 
         // Update root size first so any style work triggered by resize observes
         // the new width instead of the previous frame's value.
@@ -895,6 +896,32 @@ impl WindowHandle {
         self.window_state
             .request_paint(self.window_state.root_view_id);
         self.schedule_repaint();
+    }
+
+    fn preempt_active_frame_for_resize(&mut self) {
+        if !self.compositor_frame_scheduler.has_active_frame()
+            && self.pending_compositor_commit.is_none()
+            && !self.window_state.compositor.has_pending_scene_renders()
+            && !self.window_state.compositor.has_pending_commit_work()
+        {
+            return;
+        }
+
+        if let Some(pending) = self.pending_compositor_commit.take() {
+            pending.token.cancel();
+        }
+        let discarded = self
+            .window_state
+            .compositor
+            .discard_pending_scene_frame_work("resize");
+        self.pending_scene_frame_work_started_at = None;
+        self.pending_scene_frame_work_cpu_end_at = None;
+        self.pending_timing = FrameTimingAccumulator::default();
+        self.active_frame_time = None;
+        self.note_begin_frame_finished();
+        if discarded {
+            self.record_frame_demand(FrameDemand::CONTINUOUS_INPUT);
+        }
     }
 
     fn resize_present_surface_to_window(&mut self) {
@@ -1538,6 +1565,21 @@ impl WindowHandle {
     }
 
     fn attempt_compositor_commit(&mut self, reason: &'static str) -> CompositorCommitResult {
+        self.attempt_compositor_commit_inner(reason, false)
+    }
+
+    fn attempt_independent_compositor_surface_commit(
+        &mut self,
+        reason: &'static str,
+    ) -> CompositorCommitResult {
+        self.attempt_compositor_commit_inner(reason, true)
+    }
+
+    fn attempt_compositor_commit_inner(
+        &mut self,
+        reason: &'static str,
+        independent_compositor_surface_only: bool,
+    ) -> CompositorCommitResult {
         let Some(gpu_resources) = self.gpu_resources.as_ref() else {
             return CompositorCommitResult::NoWork;
         };
@@ -1546,10 +1588,15 @@ impl WindowHandle {
             .pending_compositor_commit
             .map(|pending| pending.submitted_at)
             .unwrap_or(start);
-        let commit = self
-            .window_state
-            .compositor
-            .commit_ready_layer_tree(&gpu_resources.queue);
+        let commit = if independent_compositor_surface_only {
+            self.window_state
+                .compositor
+                .commit_independent_compositor_surface_work(&gpu_resources.queue)
+        } else {
+            self.window_state
+                .compositor
+                .commit_ready_layer_tree(&gpu_resources.queue)
+        };
         let scene_pending_at_commit = self.window_state.compositor.has_pending_scene_renders();
         let Some(commit) = commit else {
             if crate::frame_source::frame_pacing_diag_enabled() {
@@ -1676,7 +1723,17 @@ impl WindowHandle {
             CompositorFrameAction::Commit { reason, .. } => compositor_commit_reason_label(reason),
             _ => "deadline",
         };
-        if pending_scene && !pending_commit_work {
+        if pending_scene {
+            if self
+                .window_state
+                .compositor
+                .has_independent_compositor_surface_commit_work()
+            {
+                let result = self.attempt_independent_compositor_surface_commit("deadline-surface");
+                let committed = result == CompositorCommitResult::Committed;
+                self.record_frame_demand(FrameDemand::ANIMATION);
+                return committed;
+            }
             eprintln!(
                 "floem stutter deadline-skip-pending-scene window={:?} generation={} reason={} pending_commit_work={}",
                 self.window_id, generation, reason, pending_commit_work,
@@ -1686,11 +1743,6 @@ impl WindowHandle {
             self.record_frame_demand(FrameDemand::ANIMATION);
             return false;
         }
-        let reason = if pending_scene && pending_commit_work {
-            "deadline-carry"
-        } else {
-            reason
-        };
         self.commit_requested_compositor_frame(reason)
     }
 

@@ -62,6 +62,8 @@ pub(crate) struct WindowCompositor {
     pending_layer_changes: Option<FrameChanges>,
     #[cfg(target_os = "macos")]
     metal_capture_active: bool,
+    #[cfg(target_os = "macos")]
+    metal_capture_frame_had_scene_render: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -116,6 +118,7 @@ impl WindowCompositor {
     #[cfg(target_os = "macos")]
     pub(crate) fn mark_metal_capture_active(&mut self) {
         self.metal_capture_active = true;
+        self.metal_capture_frame_had_scene_render = false;
     }
 
     pub(crate) fn ensure_platform_presenter(
@@ -445,6 +448,10 @@ impl WindowCompositor {
                 render_call_id, scheduled_scene_frames,
             );
         }
+        #[cfg(target_os = "macos")]
+        if self.metal_capture_active && scheduled_scene_frames > 0 {
+            self.metal_capture_frame_had_scene_render = true;
+        }
         scheduled_scene_frames
     }
 
@@ -457,7 +464,35 @@ impl WindowCompositor {
             .as_ref()
             .is_some_and(|changes| !frame_changes_empty(changes))
             || !self.pending_scene_publications.is_empty()
-            || self.has_pending_compositor_surface_publications()
+            || self.has_pending_compositor_surface_publications(false)
+    }
+
+    pub(crate) fn discard_pending_scene_frame_work(&mut self, reason: &'static str) -> bool {
+        let pending_scene_renders = self.pending_scene_renders.len();
+        if pending_scene_renders > 0 {
+            self.pending_scene_renders.clear();
+            if crate::frame_source::frame_pacing_diag_enabled() {
+                eprintln!(
+                    "floem compositor pending scene cancel reason={} count={}",
+                    reason, pending_scene_renders,
+                );
+            }
+        }
+
+        let pending_scene_publications = self.pending_scene_publications.len();
+        self.pending_scene_publications.clear();
+
+        let had_layer_changes = self
+            .pending_layer_changes
+            .take()
+            .is_some_and(|changes| !frame_changes_empty(&changes));
+
+        pending_scene_renders > 0 || pending_scene_publications > 0 || had_layer_changes
+    }
+
+    pub(crate) fn has_independent_compositor_surface_commit_work(&self) -> bool {
+        self.has_pending_compositor_surface_publications(true)
+            || !self.native_layer_attachments(true).is_empty()
     }
 
     pub(crate) fn commit_ready_layer_tree(
@@ -468,17 +503,46 @@ impl WindowCompositor {
             return None;
         }
         let mut publications = std::mem::take(&mut self.pending_scene_publications);
-        publications.extend(self.submitted_content_publications());
-        let native_layers = self.native_layer_attachments();
+        publications.extend(self.submitted_content_publications(false));
+        let native_layers = self.native_layer_attachments(false);
         let presented_layers = self.pending_presented_layers(&publications);
         let committed = self.commit_layer_tree_and_publications(&publications, queue);
         let active_layers = self.active_presented_layers();
         self.attach_native_layers(&native_layers);
         if committed {
-            self.mark_submitted_content_published();
+            self.mark_submitted_content_published(false);
         }
         if !native_layers.is_empty() {
-            self.mark_native_layer_content_attached();
+            self.mark_native_layer_content_attached(false);
+        }
+        if committed || !native_layers.is_empty() {
+            Some(CompositorCommit {
+                layers: presented_layers,
+                active_layers,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn commit_independent_compositor_surface_work(
+        &mut self,
+        queue: &wgpu::Queue,
+    ) -> Option<CompositorCommit> {
+        if self.layer_host.is_none() {
+            return None;
+        }
+        let publications = self.submitted_content_publications(true);
+        let native_layers = self.native_layer_attachments(true);
+        let presented_layers = self.pending_presented_layers(&publications);
+        let committed = self.commit_layer_tree_and_publications(&publications, queue);
+        let active_layers = self.active_presented_layers();
+        self.attach_native_layers(&native_layers);
+        if committed {
+            self.mark_submitted_content_published(true);
+        }
+        if !native_layers.is_empty() {
+            self.mark_native_layer_content_attached(true);
         }
         if committed || !native_layers.is_empty() {
             Some(CompositorCommit {
@@ -1016,23 +1080,30 @@ impl WindowCompositor {
         let has_changes = !frame_changes_empty(&changes);
         if !has_changes && publications.is_empty() {
             #[cfg(target_os = "macos")]
-            if self.metal_capture_active && self.pending_scene_renders.is_empty() {
-                self.metal_capture_active = false;
-                subduction_backend_apple::stop_active_metal_capture();
-            }
+            self.stop_metal_capture_after_rendered_frame();
             return false;
         }
         layer_host.apply_and_publish_surface_resources(&self.layer_store, &changes, publications);
         #[cfg(target_os = "macos")]
-        if self.metal_capture_active && self.pending_scene_renders.is_empty() {
+        self.stop_metal_capture_after_rendered_frame();
+        true
+    }
+
+    #[cfg(target_os = "macos")]
+    fn stop_metal_capture_after_rendered_frame(&mut self) {
+        if self.metal_capture_active
+            && self.metal_capture_frame_had_scene_render
+            && self.pending_scene_renders.is_empty()
+        {
             self.metal_capture_active = false;
+            self.metal_capture_frame_had_scene_render = false;
             subduction_backend_apple::stop_active_metal_capture();
         }
-        true
     }
 
     fn submitted_content_publications(
         &mut self,
+        without_transaction_only: bool,
     ) -> Vec<(subduction::SubmittedContentInfo, subduction::ResourceKey)> {
         let mut publications = Vec::new();
         for (key, state) in &self.layers_by_key {
@@ -1046,6 +1117,9 @@ impl WindowCompositor {
                 CompositorLayerState::Scene(_) => {}
                 CompositorLayerState::CompositorSurface(layer) => match &layer.content {
                     CompositorSurfaceContent::Texture(texture) => {
+                        if without_transaction_only && !layer.presents_without_transaction {
+                            continue;
+                        }
                         if self.published_compositor_surface_versions.get(key)
                             == Some(&layer.content_version)
                         {
@@ -1090,11 +1164,14 @@ impl WindowCompositor {
         publications
     }
 
-    fn has_pending_compositor_surface_publications(&self) -> bool {
+    fn has_pending_compositor_surface_publications(&self, without_transaction_only: bool) -> bool {
         self.layers_by_key.iter().any(|(key, state)| {
             let CompositorLayerState::CompositorSurface(layer) = state else {
                 return false;
             };
+            if without_transaction_only && !layer.presents_without_transaction {
+                return false;
+            }
             if self.published_compositor_surface_versions.get(key) == Some(&layer.content_version) {
                 return false;
             }
@@ -1102,12 +1179,18 @@ impl WindowCompositor {
         })
     }
 
-    fn native_layer_attachments(&self) -> Vec<(LayerId, subduction::NativeLayer)> {
+    fn native_layer_attachments(
+        &self,
+        without_transaction_only: bool,
+    ) -> Vec<(LayerId, subduction::NativeLayer)> {
         let mut attachments = Vec::new();
         for (key, state) in &self.layers_by_key {
             let CompositorLayerState::CompositorSurface(layer) = state else {
                 continue;
             };
+            if without_transaction_only && !layer.presents_without_transaction {
+                continue;
+            }
             let CompositorSurfaceContent::NativeLayer(native_layer) = &layer.content else {
                 continue;
             };
@@ -1133,11 +1216,14 @@ impl WindowCompositor {
         }
     }
 
-    fn mark_submitted_content_published(&mut self) {
+    fn mark_submitted_content_published(&mut self, without_transaction_only: bool) {
         for (key, state) in &self.layers_by_key {
             let CompositorLayerState::CompositorSurface(layer) = state else {
                 continue;
             };
+            if without_transaction_only && !layer.presents_without_transaction {
+                continue;
+            }
             let CompositorSurfaceContent::Texture(texture) = &layer.content else {
                 continue;
             };
@@ -1152,11 +1238,14 @@ impl WindowCompositor {
         }
     }
 
-    fn mark_native_layer_content_attached(&mut self) {
+    fn mark_native_layer_content_attached(&mut self, without_transaction_only: bool) {
         for (key, state) in &self.layers_by_key {
             let CompositorLayerState::CompositorSurface(layer) = state else {
                 continue;
             };
+            if without_transaction_only && !layer.presents_without_transaction {
+                continue;
+            }
             if matches!(layer.content, CompositorSurfaceContent::NativeLayer(_)) {
                 self.published_compositor_surface_versions
                     .insert(key.clone(), layer.content_version);
@@ -2184,6 +2273,7 @@ pub(crate) struct CompositorSurfaceCompositorLayer {
     pub opacity: f32,
     pub content: CompositorSurfaceContent,
     pub content_version: u64,
+    pub presents_without_transaction: bool,
     pub has_provider: bool,
 }
 
@@ -2208,6 +2298,9 @@ impl CompositorSurfaceCompositorLayer {
                 .get(&layer.surface_id)
                 .map(|entry| entry.version)
                 .unwrap_or(0),
+            presents_without_transaction: compositor_surfaces
+                .get(&layer.surface_id)
+                .is_some_and(|entry| entry.presents_without_transaction),
             has_provider: compositor_surfaces
                 .get(&layer.surface_id)
                 .is_some_and(|entry| entry.provider.is_some()),
@@ -2223,6 +2316,7 @@ impl CompositorSurfaceCompositorLayer {
             && self.clip == other.clip
             && self.opacity == other.opacity
             && self.content_version == other.content_version
+            && self.presents_without_transaction == other.presents_without_transaction
             && self.has_provider == other.has_provider
             && external_content_key(&self.content) == external_content_key(&other.content)
     }

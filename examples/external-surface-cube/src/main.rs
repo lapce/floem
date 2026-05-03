@@ -5,15 +5,15 @@ use std::{
 
 use bytemuck::{Pod, Zeroable};
 use floem::{
-    Application, CompositorSurface, GpuResources, LayerEffect, RenderableCompositorSurface,
-    RenderableCompositorSurfaceConfig, SourceEffect,
+    Application, CompositorSurfaceImage, CompositorSurfaceProducer,
+    CompositorSurfaceProducerConfig, GpuResources, LayerEffect, SourceEffect,
     action::{capture_metal, inspect},
     group_ref,
     imaging::{Brush, ClipRef, Filter, ImageBrush},
     kurbo::{Affine, Circle, Point, Rect, Size},
     peniko::Color,
     prelude::*,
-    style::Position,
+    style::{ObjectFit, ObjectPosition, Position},
     text::{Alignment, Attrs, AttrsList, FontWeight, TextLayout},
     window::{WindowConfig, WindowId},
 };
@@ -22,10 +22,10 @@ use wgpu::util::DeviceExt;
 const CUBE_SIZE: u32 = 640;
 
 fn app_view(window_id: WindowId) -> impl IntoView {
-    let (surface, producer_surface) = CompositorSurface::new_renderable(
+    let (surface_image, cube_producer) = CompositorSurfaceProducer::new_image(
         window_id,
         Size::new(f64::from(CUBE_SIZE), f64::from(CUBE_SIZE)),
-        RenderableCompositorSurfaceConfig::default(),
+        CompositorSurfaceProducerConfig::default(),
     );
 
     (
@@ -43,7 +43,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                     .max_width(760.0)
                     .color(Color::from_rgb8(155, 169, 177))
             }),
-        cube_panel(surface),
+        cube_canvas(surface_image),
     )
         .style(|s| {
             s.width_full()
@@ -57,9 +57,9 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         .on_event_stop(
             listener::WindowGpuResourcesReady,
             move |_cx, gpu_resources| {
-                if let Err(err) = start_cube_target(producer_surface.clone(), gpu_resources.clone())
+                if let Err(err) = start_cube_target(cube_producer.clone(), gpu_resources.clone())
                 {
-                    eprintln!("compositor-surface-cube: failed to start renderable target: {err}");
+                    eprintln!("compositor-surface-cube: failed to start producer target: {err}");
                 }
             },
         )
@@ -72,20 +72,9 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         })
 }
 
-fn cube_panel(surface: CompositorSurface) -> impl IntoView {
-    cube_canvas(surface).style(|s| {
-        s.width(780.0)
-            .height(520.0)
-            .margin_top(22.0)
-            .position(Position::Relative)
-            .border_radius(32.0)
-            .border(1.0)
-            .border_color(Color::from_rgba8(241, 219, 167, 55))
-    })
-}
-
-fn cube_canvas(surface: CompositorSurface) -> impl IntoView {
-    canvas(move |cx, size| {
+fn cube_canvas(surface_image: CompositorSurfaceImage) -> impl IntoView {
+    let cube_image = surface_image.image((300., 300.).into());
+    let canvas = canvas(move |cx, size| {
         let canvas = Rect::ZERO.with_size(size);
         let cube_rect = centered_rect(size, Size::new(440.0, 330.0));
         cx.painter
@@ -101,11 +90,6 @@ fn cube_canvas(surface: CompositorSurface) -> impl IntoView {
                 )
                 .draw();
         }
-
-        let cube_image = surface.image(
-            (cube_rect.width() * cx.effective_scale).ceil() as u32,
-            (cube_rect.height() * cx.effective_scale).ceil() as u32,
-        );
 
         let brush = Brush::Image(ImageBrush::from(cube_image));
         let label_rect = Rect::new(
@@ -241,6 +225,22 @@ return vec4<f32>(sampled.rgb * tint, sampled.a);
 
         cx.painter.fill(canvas, &brush).draw();
     })
+    .style(|s| {
+        s.width(780.0)
+            .height(520.0)
+            .margin_top(22.0)
+            .position(Position::Relative)
+            .border_radius(32.0)
+            .border(1.0)
+            .border_color(Color::from_rgba8(241, 219, 167, 55))
+    });
+    (
+        canvas,
+        Img::new(cube_image).style(|s| {
+            s.object_position(ObjectPosition::Center)
+                .object_fit(ObjectFit::ScaleDown)
+        }),
+    )
 }
 
 fn centered_rect(container: Size, size: Size) -> Rect {
@@ -252,7 +252,7 @@ fn centered_rect(container: Size, size: Size) -> Rect {
 }
 
 fn start_cube_target(
-    surface: RenderableCompositorSurface,
+    producer: CompositorSurfaceProducer,
     gpu_resources: GpuResources,
 ) -> Result<(), String> {
     let renderer = Arc::new(Mutex::new(CubeRenderer::new(
@@ -261,32 +261,38 @@ fn start_cube_target(
         CUBE_SIZE,
         wgpu::TextureFormat::Bgra8Unorm,
     )?));
-    let animation_origin = Arc::new(Mutex::new(None::<Instant>));
     let renderer_for_callback = renderer.clone();
-    let origin_for_callback = animation_origin.clone();
-    surface.set_frame_callback(move |mut cx| {
+    let animation_origin = Instant::now();
+    producer.set_frame_callback(move |cx| {
         let completion_tx = cx.completion_sender();
         let lease = match cx.acquire_target() {
             Ok(lease) => lease,
             Err(subduction::wgpu::SurfaceFrameError::NoTargetAvailable) => {
-                return Ok(subduction::wgpu::SurfaceFrameDecision::Skip(
-                    subduction::wgpu::SurfaceSkipReason::ProducerBusy,
-                ));
+                cx.skip(subduction::wgpu::SurfaceSkipReason::ProducerBusy);
+                return Ok(());
             }
             Err(err) => return Err(err),
         };
-        let mut origin = origin_for_callback.lock().unwrap();
-        let origin = *origin.get_or_insert_with(Instant::now);
-        let seconds = origin.elapsed().as_secs_f32();
+        let frame_time = cx.frame_time();
+        let animation_time = frame_time
+            .interval
+            .predicted_present
+            .unwrap_or(frame_time.now);
+        let seconds = animation_time
+            .saturating_duration_since(animation_origin)
+            .as_secs_f32();
         match renderer_for_callback.lock().unwrap().render(seconds, lease) {
             Ok(completion) => {
                 let _ = completion_tx.send(completion);
             }
             Err(err) => {
                 eprintln!("compositor-surface-cube: {err}");
+                cx.skip(subduction::wgpu::SurfaceSkipReason::ProducerDropped);
+                return Ok(());
             }
         }
-        Ok(subduction::wgpu::SurfaceFrameDecision::Deferred)
+        cx.present_without_transaction();
+        Ok(())
     });
     Ok(())
 }

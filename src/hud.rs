@@ -17,7 +17,7 @@ use crate::{
     platform::{Duration, Instant},
     prelude::*,
     style::Position,
-    text::{Alignment, Attrs, AttrsList, FontWeight, TextLayout},
+    text::{Alignment, Attrs, AttrsList, FamilyOwned, FontWeight, TextLayout},
     view::View,
     views::Overlay,
 };
@@ -25,7 +25,7 @@ use crate::{
 const SAMPLE_COUNT: usize = 90;
 const GRAPH_COUNT: usize = 44;
 const HUD_WIDTH: f64 = 268.0;
-const HUD_HEADER_HEIGHT: f64 = 44.0;
+const HUD_HEADER_HEIGHT: f64 = 58.0;
 const HUD_LAYER_HEIGHT: f64 = 48.0;
 const HUD_MAX_HEIGHT: f64 = 360.0;
 
@@ -316,12 +316,28 @@ fn draw_hud_header(cx: &mut PaintCx<'_>, size: Size, metrics: &HudMetrics) {
         FontWeight::BOLD,
         Color::from_rgba8(122, 255, 176, 235),
     );
+    draw_monospace_text(
+        cx,
+        Point::new(10.0, 24.0),
+        "dl   = missed compositor deadline",
+        9.0,
+        FontWeight::NORMAL,
+        Color::from_rgba8(184, 255, 205, 210),
+    );
+    draw_monospace_text(
+        cx,
+        Point::new(10.0, 38.0),
+        "miss = missed present cadence",
+        9.0,
+        FontWeight::NORMAL,
+        Color::from_rgba8(184, 255, 205, 210),
+    );
     if metrics.layers.is_empty() {
         draw_text(
             cx,
-            Point::new(10.0, 28.0),
+            Point::new(10.0, 47.0),
             "Waiting for layer presents",
-            12.0,
+            9.0,
             FontWeight::NORMAL,
             Color::from_rgba8(184, 255, 205, 220),
         );
@@ -468,6 +484,30 @@ fn draw_text(
     color: Color,
 ) {
     draw_text_with_width(cx, origin, text, font_size, weight, color, 220.0);
+}
+
+fn draw_monospace_text(
+    cx: &mut PaintCx<'_>,
+    origin: Point,
+    text: &str,
+    font_size: f32,
+    weight: FontWeight,
+    color: Color,
+) {
+    let family = [FamilyOwned::Monospace];
+    let mut layout = TextLayout::new_with_text(
+        text,
+        AttrsList::new(
+            Attrs::new()
+                .family(&family)
+                .font_size(font_size)
+                .weight(weight)
+                .color(color),
+        ),
+        Some(Alignment::Start),
+    );
+    layout.set_size(220.0, 24.0);
+    layout.draw(cx, origin);
 }
 
 fn draw_text_with_width(

@@ -395,6 +395,28 @@ impl ApplicationHandle {
             handle.record_deferred_frame_timer_lateness(timer_lateness);
         }
 
+        self.process_frame_tick_now(window_id, tick, event_loop);
+    }
+
+    fn process_pending_frame_tick_now(
+        &mut self,
+        window_id: WindowId,
+        event_loop: &dyn ActiveEventLoop,
+    ) -> bool {
+        let Some(pending) = self.pending_frame_ticks.remove(&window_id) else {
+            return false;
+        };
+        self.remove_timer(pending.token, event_loop);
+        self.process_frame_tick_now(window_id, pending.tick, event_loop);
+        true
+    }
+
+    fn process_frame_tick_now(
+        &mut self,
+        window_id: WindowId,
+        tick: subduction_core::timing::FrameTick,
+        event_loop: &dyn ActiveEventLoop,
+    ) {
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
             handle.refresh_frame_source_target();
             handle.poll_gpu_callbacks();
@@ -825,6 +847,7 @@ impl ApplicationHandle {
         }
 
         let frame_presented = false;
+        let mut process_resize_frame_immediately = false;
         let Some(window_handle) = self.window_handles.get_mut(&window_id) else {
             return;
         };
@@ -849,6 +872,7 @@ impl ApplicationHandle {
                 }
                 window_handle.size(size);
                 self.request_update();
+                process_resize_frame_immediately = true;
             }
             WindowEvent::Moved(position) => {
                 let position: LogicalPosition<f64> =
@@ -966,6 +990,12 @@ impl ApplicationHandle {
         }
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
             handle.refresh_frame_source_target();
+        }
+        if process_resize_frame_immediately
+            && self.process_pending_frame_tick_now(window_id, event_loop)
+        {
+            self.update_control_flow(event_loop);
+            return;
         }
         if frame_presented {
             if let Some(handle) = self.window_handles.get_mut(&window_id) {

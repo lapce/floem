@@ -245,12 +245,11 @@ pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use box_tree::{BoxTree, ElementId, ElementMeta, FocusNavMeta};
 pub(crate) use box_tree::{bump_focus_nav_meta_revision, focus_nav_meta_revision};
 pub use compositor_surface::{
-    CompositorSurface, CompositorSurfaceAlphaMode, CompositorSurfaceConfig,
-    CompositorSurfaceContent, CompositorSurfaceFrameArgs, CompositorSurfaceFrameUpdate,
-    CompositorSurfaceHandle, CompositorSurfaceId, CompositorSurfaceKind, CompositorSurfaceOutcome,
+    CompositorSurfaceAlphaMode, CompositorSurfaceConfig, CompositorSurfaceContent,
+    CompositorSurfaceFrameArgs, CompositorSurfaceFrameCx, CompositorSurfaceFrameUpdate,
+    CompositorSurfaceHandle, CompositorSurfaceId, CompositorSurfaceImage, CompositorSurfaceKind,
+    CompositorSurfaceOutcome, CompositorSurfaceProducer, CompositorSurfaceProducerConfig,
     CompositorSurfaceProvider, CompositorSurfaceProviderHandle, ExternalTexture,
-    RenderableCompositorSurface, RenderableCompositorSurfaceConfig,
-    RenderableCompositorSurfaceFrameCx,
 };
 pub use effects::{
     ColorEffect, ColorEffectArgs, ColorEffectFrameUniform, ColorEffectShader, CompositeEffect,
@@ -296,7 +295,8 @@ pub use style::{theme, unit};
 
 pub mod prelude {
     pub use crate::compositor_surface::{
-        CompositorSurface, CompositorSurfaceConfig, ExternalTexture,
+        CompositorSurfaceConfig, CompositorSurfaceImage, CompositorSurfaceProducer,
+        CompositorSurfaceProducerConfig, ExternalTexture,
     };
     pub use crate::event::listener as el;
     pub use crate::event::listener;

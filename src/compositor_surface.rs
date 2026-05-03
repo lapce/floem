@@ -1,12 +1,25 @@
-//! Compositor-owned surface slots.
+//! Compositor-owned image surfaces.
 //!
-//! A [`CompositorSurface`] is content that Floem/Subduction owns well enough to
-//! either promote into a platform compositor layer or sample through Imaging
-//! when a clip, mask, filter, effect, or group forces flattening. This is the
-//! right primitive for embedded renderers, video-like producers, camera frames,
-//! and any surface that must remain visually correct when direct layer
-//! promotion is not legal.
+//! This module models compositor content that still behaves like an image in
+//! the Floem display list. A [`CompositorSurfaceImage`] is the paint-facing
+//! identity used by views and `imaging::ImageBrush`. A
+//! [`CompositorSurfaceProducer`] is the producer-facing handle that renders
+//! frames for that image into Subduction-owned wgpu targets.
+//!
+//! During display-list lowering, Floem chooses how to use the image for the
+//! current paint state. If the placement can be directly composed, the image
+//! can become a platform compositor layer. If a clip, mask, filter, effect,
+//! opacity group, or other paint state requires renderer participation, Floem
+//! can sample the same submitted content through Imaging and flatten it into
+//! an intermediate pass.
+//!
+//! Use this API when produced content should be placed by the view tree and
+//! must remain correct under normal Floem paint operations. Use
+//! [`crate::external_surface::ExternalSurface`] when the producer owns direct
+//! compositor content and submission should fail instead of falling back to
+//! renderer sampling.
 
+use rustc_hash::FxHashMap;
 use std::{
     any::Any,
     sync::{
@@ -65,24 +78,31 @@ impl CompositorSurfaceId {
 
 const COMPOSITOR_SURFACE_IMAGE_ID_MASK: u64 = 1 << 63;
 
-/// A Floem/Subduction-owned compositor surface.
+/// Paint-facing identity for compositor-produced image content.
 ///
-/// The surface has stable identity and content, but placement still comes from
-/// paint order. Use [`CompositorSurface::image`] to place the surface through
-/// the normal Imaging brush path; display-list lowering may promote that brush
-/// back to a compositor layer when it is safe.
+/// `CompositorSurfaceImage` is the consumer side of the API. It gives the view
+/// tree a stable image identity, but it does not render frames itself. Use
+/// [`CompositorSurfaceImage::image`] to create the `imaging::ExternalImage`
+/// handle that an `ImageBrush` paints.
 ///
-/// Unlike [`crate::external_surface::ExternalSurface`], this path may flatten:
-/// Floem can resolve the submitted content as an external image and render it
-/// into an intermediate pass when correctness requires it.
+/// The same image can be placed more than once and at more than one source
+/// size. Floem dedupes equivalent placements before asking the producer for
+/// work. At composition time each placement may either be promoted to a
+/// compositor layer or sampled by the renderer, depending on the surrounding
+/// display-list state.
+///
+/// This differs from [`crate::external_surface::ExternalSurface`]. External
+/// surfaces are direct-composition only and reject unsupported submissions.
+/// `CompositorSurfaceImage` is allowed to flatten when that is required for
+/// correct clips, masks, filters, effects, or grouped rendering.
 #[derive(Clone, Debug)]
-pub struct CompositorSurface {
+pub struct CompositorSurfaceImage {
     id: CompositorSurfaceId,
     window_id: WindowId,
     config: CompositorSurfaceConfig,
 }
 
-impl CompositorSurface {
+impl CompositorSurfaceImage {
     #[must_use]
     pub fn new(window_id: WindowId, config: CompositorSurfaceConfig) -> Self {
         Self {
@@ -97,18 +117,30 @@ impl CompositorSurface {
         self.id
     }
 
-    /// Creates an Imaging external image handle for this surface.
+    /// Creates an Imaging external image handle for this surface at `size`.
     ///
-    /// The returned image can be used with `imaging::ImageBrush`. If the brush
-    /// is used in a simple promotable fill, Floem may publish the surface
-    /// directly as a compositor layer. If active group state requires
+    /// The returned image can be used with `imaging::ImageBrush`. `size` is
+    /// the logical source size for this brush placement. It does not create a
+    /// new surface identity: multiple calls to `image` return handles for the
+    /// same submitted compositor content with different advertised source
+    /// sizes.
+    ///
+    /// For producer-backed surfaces created with
+    /// [`CompositorSurfaceProducer::new_image`], that factory's `size` is only
+    /// the initial/preferred producer target size. Each `image(size)` placement
+    /// can request a target sized for that placement. Repeated placements with
+    /// the same surface id and source size are deduped before the producer is
+    /// asked for work.
+    ///
+    /// If the brush is used in a simple promotable fill, Floem may publish the
+    /// surface directly as a compositor layer. If active group state requires
     /// flattening, the renderer samples the same submitted surface content.
     #[must_use]
-    pub fn image(&self, width: u32, height: u32) -> imaging::ExternalImage {
+    pub fn image(&self, size: Size) -> imaging::ExternalImage {
         imaging::ExternalImage::new(
             self.id.image_id(),
-            width,
-            height,
+            size.width.ceil().max(1.0) as u32,
+            size.height.ceil().max(1.0) as u32,
             peniko::ImageAlphaType::AlphaPremultiplied,
         )
     }
@@ -150,45 +182,23 @@ impl CompositorSurface {
     pub fn set_provider(&self, provider: CompositorSurfaceProviderHandle) {
         self.handle().set_provider(provider);
     }
-
-    /// Creates a surface with a frame-opportunity driven wgpu render target.
-    ///
-    /// The returned [`RenderableCompositorSurface`] owns the producer callback.
-    /// On each frame opportunity the callback may acquire a Subduction-managed
-    /// target, render into it, and complete asynchronously. Floem then either
-    /// publishes that content directly or samples it during compositor
-    /// flattening.
-    #[must_use]
-    pub fn new_renderable(
-        window_id: WindowId,
-        size: Size,
-        config: RenderableCompositorSurfaceConfig,
-    ) -> (Self, RenderableCompositorSurface) {
-        let surface = Self::new(
-            window_id,
-            CompositorSurfaceConfig {
-                kind: CompositorSurfaceKind::WgpuTexture,
-                alpha_mode: config.alpha_mode,
-                preferred_size: Some(size),
-            },
-        );
-        let renderable = RenderableCompositorSurface::new(surface.handle(), size, config);
-        surface.set_provider(Arc::new(Mutex::new(renderable.provider())));
-        (surface, renderable)
-    }
 }
 
-/// Configuration for a frame-opportunity driven compositor surface.
+/// Configuration for a wgpu-backed [`CompositorSurfaceProducer`].
 #[derive(Clone, Debug)]
-pub struct RenderableCompositorSurfaceConfig {
-    /// Subduction wgpu target configuration, including latency and format
-    /// preferences.
+pub struct CompositorSurfaceProducerConfig {
+    /// Subduction target configuration for leased wgpu frame targets.
+    ///
+    /// This controls target allocation policy such as maximum frame latency and
+    /// backend format preferences. It does not control where the produced image
+    /// is placed in the Floem scene.
     pub surface: subduction::wgpu::ExternalSurfaceConfig,
-    /// Alpha interpretation for the published content.
+    /// Alpha interpretation for completed frames when they are published or
+    /// sampled.
     pub alpha_mode: CompositorSurfaceAlphaMode,
 }
 
-impl Default for RenderableCompositorSurfaceConfig {
+impl Default for CompositorSurfaceProducerConfig {
     fn default() -> Self {
         Self {
             surface: subduction::wgpu::ExternalSurfaceConfig::default(),
@@ -197,46 +207,94 @@ impl Default for RenderableCompositorSurfaceConfig {
     }
 }
 
-/// Producer-side handle for rendering into a compositor-owned wgpu target.
+/// Producer-side frame source for a [`CompositorSurfaceImage`].
+///
+/// A producer supplies rendered frames for one [`CompositorSurfaceImage`]
+/// identity that Floem owns and places in the scene. Create one with
+/// [`CompositorSurfaceProducer::new_image`]: the returned
+/// [`CompositorSurfaceImage`] is painted by the view tree, while the producer
+/// receives frame opportunities and leases wgpu targets for the renderer.
+/// Multiple `ImageBrush` placements can reference that same image identity;
+/// they do not create separate producers.
+///
+/// The producer is not a view and does not affect paint order directly. Keep it
+/// with the renderer or state object that can service frame callbacks.
+///
+/// The producer callback receives frame opportunities when the current
+/// compositor plan needs new content for that image identity. A typical
+/// callback reads [`CompositorSurfaceFrameCx::frame_time`], acquires a
+/// Subduction-managed wgpu target with
+/// [`CompositorSurfaceFrameCx::acquire_target`], renders on the caller's worker
+/// or queue, sends the resulting
+/// [`subduction::wgpu::SurfaceFrameCompletion`] through
+/// [`CompositorSurfaceFrameCx::completion_sender`], then chooses whether the
+/// completed frame presents with the window transaction or independently.
+///
+/// Use this when Floem owns placement and fallback behavior, but another
+/// renderer owns the contents. Use [`crate::external_surface::ExternalSurface`]
+/// when the producer owns already-compositable content and unsupported
+/// submissions should be rejected synchronously.
 #[derive(Clone)]
-pub struct RenderableCompositorSurface {
+pub struct CompositorSurfaceProducer {
     handle: CompositorSurfaceHandle,
-    preferred_size: Size,
-    config: RenderableCompositorSurfaceConfig,
-    callback: Arc<Mutex<Option<RenderableCompositorSurfaceCallback>>>,
+    config: CompositorSurfaceProducerConfig,
+    callback: Arc<Mutex<Option<CompositorSurfaceProducerCallback>>>,
     completions: Arc<Mutex<mpsc::Receiver<subduction::wgpu::SurfaceFrameCompletion>>>,
     completion_tx: mpsc::Sender<subduction::wgpu::SurfaceFrameCompletion>,
     in_flight: Arc<Mutex<u32>>,
 }
 
-impl std::fmt::Debug for RenderableCompositorSurface {
+impl std::fmt::Debug for CompositorSurfaceProducer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RenderableCompositorSurface")
+        f.debug_struct("CompositorSurfaceProducer")
             .field("id", &self.handle.id())
-            .field("preferred_size", &self.preferred_size)
             .field("config", &self.config)
             .finish_non_exhaustive()
     }
 }
 
-type RenderableCompositorSurfaceCallback = Box<
-    dyn FnMut(
-            RenderableCompositorSurfaceFrameCx,
-        )
-            -> Result<subduction::wgpu::SurfaceFrameDecision, subduction::wgpu::SurfaceFrameError>
+type CompositorSurfaceProducerCallback = Box<
+    dyn FnMut(&mut CompositorSurfaceFrameCx) -> Result<(), subduction::wgpu::SurfaceFrameError>
         + Send,
 >;
 
-impl RenderableCompositorSurface {
-    fn new(
-        handle: CompositorSurfaceHandle,
-        preferred_size: Size,
-        config: RenderableCompositorSurfaceConfig,
-    ) -> Self {
+impl CompositorSurfaceProducer {
+    /// Creates an image slot and the producer that renders frames for it.
+    ///
+    /// The returned [`CompositorSurfaceImage`] is the object the view tree
+    /// paints through [`CompositorSurfaceImage::image`]. The returned
+    /// [`CompositorSurfaceProducer`] owns the frame callback and target leasing
+    /// state. The two handles refer to the same compositor surface id.
+    ///
+    /// `size` is the initial preferred target size for producer allocation. It
+    /// is not the only size the image can be painted at. Each
+    /// [`CompositorSurfaceImage::image`] call supplies the logical source size
+    /// for that brush placement. Floem dedupes placements by `(surface id,
+    /// source size)` and asks the producer for the target size needed by the
+    /// current composition plan.
+    #[must_use]
+    pub fn new_image(
+        window_id: WindowId,
+        size: Size,
+        config: CompositorSurfaceProducerConfig,
+    ) -> (CompositorSurfaceImage, Self) {
+        let surface = CompositorSurfaceImage::new(
+            window_id,
+            CompositorSurfaceConfig {
+                kind: CompositorSurfaceKind::WgpuTexture,
+                alpha_mode: config.alpha_mode,
+                preferred_size: Some(size),
+            },
+        );
+        let producer = Self::new(surface.handle(), config);
+        surface.set_provider(Arc::new(Mutex::new(producer.provider())));
+        (surface, producer)
+    }
+
+    fn new(handle: CompositorSurfaceHandle, config: CompositorSurfaceProducerConfig) -> Self {
         let (completion_tx, completion_rx) = mpsc::channel();
         Self {
             handle,
-            preferred_size,
             config,
             callback: Arc::new(Mutex::new(None)),
             completions: Arc::new(Mutex::new(completion_rx)),
@@ -250,27 +308,28 @@ impl RenderableCompositorSurface {
         self.handle.id()
     }
 
+    /// Installs the frame callback for this producer and requests a frame.
+    ///
+    /// Floem invokes the callback when the associated image participates in a
+    /// compositor plan that needs producer work. The callback may skip the
+    /// opportunity, or it may acquire one target and complete it
+    /// asynchronously. Returning from the callback does not mean rendering is
+    /// complete; completion is reported through
+    /// [`CompositorSurfaceFrameCx::completion_sender`].
     pub fn set_frame_callback(
         &self,
         callback: impl FnMut(
-            RenderableCompositorSurfaceFrameCx,
-        ) -> Result<
-            subduction::wgpu::SurfaceFrameDecision,
-            subduction::wgpu::SurfaceFrameError,
-        > + Send
+            &mut CompositorSurfaceFrameCx,
+        ) -> Result<(), subduction::wgpu::SurfaceFrameError>
+        + Send
         + 'static,
     ) {
         *self.callback.lock().unwrap() = Some(Box::new(callback));
         self.handle.request_frame();
     }
 
-    #[must_use]
-    pub fn completion_sender(&self) -> mpsc::Sender<subduction::wgpu::SurfaceFrameCompletion> {
-        self.completion_tx.clone()
-    }
-
-    fn provider(&self) -> RenderableCompositorSurfaceProvider {
-        RenderableCompositorSurfaceProvider {
+    fn provider(&self) -> CompositorSurfaceProducerProvider {
+        CompositorSurfaceProducerProvider {
             handle: self.handle.clone(),
             config: self.config.clone(),
             callback: self.callback.clone(),
@@ -278,39 +337,66 @@ impl RenderableCompositorSurface {
             completion_tx: self.completion_tx.clone(),
             in_flight: self.in_flight.clone(),
             current_content: None,
+            current_presents_without_transaction: false,
+            pending_presentations: FxHashMap::default(),
             last_requested_frame_index: None,
         }
     }
 }
 
-/// Per-frame render context passed to a renderable compositor surface callback.
+/// Per-frame context passed to a [`CompositorSurfaceProducer`] callback.
 ///
-/// `acquire_target` is non-blocking. It fails when no compositor target is
-/// available or when the configured max frame latency is already in flight.
-pub struct RenderableCompositorSurfaceFrameCx {
+/// Each context represents one frame opportunity for one image placement group.
+/// The callback can acquire at most one wgpu target. If it acquires a target,
+/// it is responsible for sending exactly one
+/// [`subduction::wgpu::SurfaceFrameCompletion`] through
+/// [`Self::completion_sender`] when rendering finishes.
+///
+/// Presentation policy is explicit per opportunity. Use
+/// [`Self::present_with_transaction`] when the completed frame must publish
+/// atomically with the window compositor transaction. Use
+/// [`Self::present_without_transaction`] only for content that may update
+/// outside that transaction without causing visible layer desynchronization.
+pub struct CompositorSurfaceFrameCx {
+    frame_time: crate::frame::FrameTime,
     opportunity: subduction::wgpu::SurfaceFrameOpportunity,
-    config: RenderableCompositorSurfaceConfig,
+    config: CompositorSurfaceProducerConfig,
     completion_tx: mpsc::Sender<subduction::wgpu::SurfaceFrameCompletion>,
     in_flight: Arc<Mutex<u32>>,
     target: Option<subduction::wgpu::SurfaceFrameLease>,
+    decision: SurfaceFrameCallbackDecision,
 }
 
-impl RenderableCompositorSurfaceFrameCx {
+impl CompositorSurfaceFrameCx {
+    #[must_use]
+    pub fn frame_time(&self) -> crate::frame::FrameTime {
+        self.frame_time
+    }
+
     #[must_use]
     pub fn opportunity(&self) -> subduction::wgpu::SurfaceFrameOpportunity {
         self.opportunity
     }
 
     #[must_use]
-    pub fn config(&self) -> &RenderableCompositorSurfaceConfig {
+    pub fn config(&self) -> &CompositorSurfaceProducerConfig {
         &self.config
     }
 
+    /// Returns the channel used to deliver asynchronous frame completions.
+    ///
+    /// The callback normally clones this sender, moves the acquired target to
+    /// a render task, then sends the task's completion when rendering finishes.
     #[must_use]
     pub fn completion_sender(&self) -> mpsc::Sender<subduction::wgpu::SurfaceFrameCompletion> {
         self.completion_tx.clone()
     }
 
+    /// Acquires the Subduction-managed wgpu target for this frame opportunity.
+    ///
+    /// This is non-blocking. It returns [`SurfaceFrameError::NoTargetAvailable`]
+    /// when the producer already has the configured number of frames in flight,
+    /// and [`SurfaceFrameError::Unsupported`] when no target can be provided.
     pub fn acquire_target(
         &mut self,
     ) -> Result<subduction::wgpu::SurfaceFrameLease, subduction::wgpu::SurfaceFrameError> {
@@ -330,6 +416,36 @@ impl RenderableCompositorSurfaceFrameCx {
         }
         unreachable!("target existence was checked before in-flight reservation")
     }
+
+    /// Marks this opportunity as skipped.
+    pub fn skip(&mut self, reason: subduction::wgpu::SurfaceSkipReason) {
+        self.decision = SurfaceFrameCallbackDecision::Skip(reason);
+    }
+
+    /// The async completion for this opportunity should publish atomically with
+    /// the window's compositor transaction.
+    pub fn present_with_transaction(&mut self) {
+        self.decision = SurfaceFrameCallbackDecision::Present {
+            presentation: subduction::wgpu::SurfaceFramePresentation::WithTransaction,
+        };
+    }
+
+    /// The async completion for this opportunity may publish independently,
+    /// outside the window's compositor transaction.
+    pub fn present_without_transaction(&mut self) {
+        self.decision = SurfaceFrameCallbackDecision::Present {
+            presentation: subduction::wgpu::SurfaceFramePresentation::WithoutTransaction,
+        };
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SurfaceFrameCallbackDecision {
+    None,
+    Present {
+        presentation: subduction::wgpu::SurfaceFramePresentation,
+    },
+    Skip(subduction::wgpu::SurfaceSkipReason),
 }
 
 #[cfg(target_os = "macos")]
@@ -451,21 +567,27 @@ pub trait CompositorSurfaceProvider {
 
     fn current_content(&self) -> Option<CompositorSurfaceContent>;
 
+    fn current_presents_without_transaction(&self) -> bool {
+        false
+    }
+
     fn release_current_content(&mut self, outcome: CompositorSurfaceOutcome);
 }
 
-struct RenderableCompositorSurfaceProvider {
+struct CompositorSurfaceProducerProvider {
     handle: CompositorSurfaceHandle,
-    config: RenderableCompositorSurfaceConfig,
-    callback: Arc<Mutex<Option<RenderableCompositorSurfaceCallback>>>,
+    config: CompositorSurfaceProducerConfig,
+    callback: Arc<Mutex<Option<CompositorSurfaceProducerCallback>>>,
     completions: Arc<Mutex<mpsc::Receiver<subduction::wgpu::SurfaceFrameCompletion>>>,
     completion_tx: mpsc::Sender<subduction::wgpu::SurfaceFrameCompletion>,
     in_flight: Arc<Mutex<u32>>,
     current_content: Option<CompositorSurfaceContent>,
+    current_presents_without_transaction: bool,
+    pending_presentations: FxHashMap<u64, bool>,
     last_requested_frame_index: Option<u64>,
 }
 
-impl CompositorSurfaceProvider for RenderableCompositorSurfaceProvider {
+impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
     fn can_accept_frame_target(&self) -> bool {
         if self.callback.lock().unwrap().is_none() {
             return false;
@@ -546,35 +668,56 @@ impl CompositorSurfaceProvider for RenderableCompositorSurfaceProvider {
             refresh_interval: None,
             confidence: subduction_core::timing::TimingConfidence::PacingOnly,
         };
-        let cx = RenderableCompositorSurfaceFrameCx {
+        let cx = CompositorSurfaceFrameCx {
+            frame_time: args.frame_time,
             opportunity,
             config: self.config.clone(),
             completion_tx: self.completion_tx.clone(),
             in_flight: self.in_flight.clone(),
             target: args.target,
+            decision: SurfaceFrameCallbackDecision::None,
         };
 
-        let decision = self
+        let mut cx = cx;
+        let callback_result = self
             .callback
             .lock()
             .unwrap()
             .as_mut()
-            .map(|callback| callback(cx));
+            .map(|callback| callback(&mut cx));
+        let decision = match callback_result {
+            Some(Ok(())) => Some(Ok(cx.decision)),
+            Some(Err(err)) => Some(Err(err)),
+            None => None,
+        };
         let request_next_frame = match decision {
-            Some(Ok(subduction::wgpu::SurfaceFrameDecision::Deferred)) => {
+            Some(Ok(SurfaceFrameCallbackDecision::Present { presentation })) => {
                 self.last_requested_frame_index = Some(args.frame_index);
+                self.pending_presentations.insert(
+                    args.frame_index,
+                    presentation == subduction::wgpu::SurfaceFramePresentation::WithoutTransaction,
+                );
                 if diag {
                     eprintln!(
-                        "floem compositor surface provider decision surface={:?} frame={} decision=deferred",
-                        args.surface_id, args.frame_index,
+                        "floem compositor surface provider decision surface={:?} frame={} decision=present presentation={:?}",
+                        args.surface_id, args.frame_index, presentation,
                     );
                 }
                 true
             }
-            Some(Ok(subduction::wgpu::SurfaceFrameDecision::Skip(reason))) => {
+            Some(Ok(SurfaceFrameCallbackDecision::Skip(reason))) => {
                 if diag {
                     eprintln!(
                         "floem compositor surface provider decision surface={:?} frame={} decision=skip reason={reason:?}",
+                        args.surface_id, args.frame_index,
+                    );
+                }
+                false
+            }
+            Some(Ok(SurfaceFrameCallbackDecision::None)) => {
+                if diag {
+                    eprintln!(
+                        "floem compositor surface provider decision surface={:?} frame={} decision=none",
                         args.surface_id, args.frame_index,
                     );
                 }
@@ -612,10 +755,14 @@ impl CompositorSurfaceProvider for RenderableCompositorSurfaceProvider {
         self.current_content.clone()
     }
 
+    fn current_presents_without_transaction(&self) -> bool {
+        self.current_presents_without_transaction
+    }
+
     fn release_current_content(&mut self, _outcome: CompositorSurfaceOutcome) {}
 }
 
-impl RenderableCompositorSurfaceProvider {
+impl CompositorSurfaceProducerProvider {
     fn drain_completions(&mut self) -> CompositorSurfaceFrameUpdate {
         let diag = crate::frame_source::frame_pacing_diag_enabled()
             || std::env::var_os("FLOEM_CUBE_DIAG").is_some();
@@ -626,20 +773,26 @@ impl RenderableCompositorSurfaceProvider {
             drop(in_flight);
             match completion {
                 subduction::wgpu::SurfaceFrameCompletion::Submitted(frame) => {
+                    let presents_without_transaction = self
+                        .pending_presentations
+                        .remove(&frame.opportunity.frame_index)
+                        .unwrap_or(false);
                     if diag {
                         eprintln!(
-                            "floem compositor surface provider completion surface={:?} frame={} submitted size={}x{} resource_key={:?}",
+                            "floem compositor surface provider completion surface={:?} frame={} submitted size={}x{} resource_key={:?} presents_without_transaction={}",
                             self.handle.id(),
                             frame.opportunity.frame_index,
                             frame.size.width,
                             frame.size.height,
                             frame.resource_key,
+                            presents_without_transaction,
                         );
                     }
                     let size = Size::new(f64::from(frame.size.width), f64::from(frame.size.height));
                     self.current_content = Some(CompositorSurfaceContent::Texture(
                         ExternalTexture::new(size, frame),
                     ));
+                    self.current_presents_without_transaction = presents_without_transaction;
                     content_changed = true;
                 }
                 subduction::wgpu::SurfaceFrameCompletion::Skipped(frame) => {
@@ -702,6 +855,7 @@ impl CompositorSurfaceFrameUpdate {
 pub struct CompositorSurfaceFrameArgs {
     pub surface_id: CompositorSurfaceId,
     pub frame_index: u64,
+    pub frame_time: crate::frame::FrameTime,
     pub interval: PresentationInterval,
     pub visible: bool,
     pub rect: Rect,

@@ -1,5 +1,5 @@
 use floem::{
-    peniko,
+    imaging,
     prelude::*,
     style::{CursorStyle, ObjectFit, ObjectPosition},
     theme::StyleThemeExt,
@@ -43,7 +43,7 @@ pub fn img_view() -> impl IntoView {
     ))
 }
 
-fn object_fit_position_picker(image_data: peniko::ImageData) -> impl IntoView {
+fn object_fit_position_picker(image_data: imaging::Image) -> impl IntoView {
     let object_fit = RwSignal::new(ObjectFit::Cover);
     let object_position = RwSignal::new(ObjectPosition::Center);
 
