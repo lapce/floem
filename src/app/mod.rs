@@ -203,6 +203,7 @@ pub(crate) enum UserEvent {
         worker_index: usize,
         render_start: crate::platform::Instant,
         render_end: crate::platform::Instant,
+        gpu_end: crate::platform::Instant,
     },
     LayerHostCommit {
         window_id: WindowId,
@@ -216,6 +217,11 @@ pub(crate) enum UserEvent {
     FrameTick {
         window_id: WindowId,
         tick: FrameTick,
+    },
+    DeferredFrameTick {
+        window_id: WindowId,
+        tick: FrameTick,
+        token: TimerToken,
     },
 }
 

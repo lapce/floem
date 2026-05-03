@@ -78,12 +78,6 @@ pub(crate) struct CompositorCommit {
 }
 
 impl WindowCompositor {
-    pub(crate) fn invalidate_scene_content(&mut self) {
-        self.scene_content_by_key.clear();
-        self.scene_render_signatures.clear();
-        self.pending_scene_renders.clear();
-    }
-
     pub(crate) fn invalidate_compositor_surface_content(
         &mut self,
         surface_id: CompositorSurfaceId,
@@ -106,7 +100,12 @@ impl WindowCompositor {
         for key in &keys {
             self.scene_content_by_key.remove(key);
             self.scene_render_signatures.remove(key);
-            self.pending_scene_renders.remove(key);
+            if self.pending_scene_renders.remove(key).is_some() {
+                eprintln!(
+                    "floem compositor pending scene cancel reason=external_surface_invalidate key={:?} surface={:?}",
+                    key, surface_id,
+                );
+            }
         }
     }
 
@@ -186,7 +185,12 @@ impl WindowCompositor {
             self.visible_layers_by_key.remove(key);
             self.scene_content_by_key.remove(key);
             self.scene_render_signatures.remove(key);
-            self.pending_scene_renders.remove(key);
+            if self.pending_scene_renders.remove(key).is_some() {
+                eprintln!(
+                    "floem compositor pending scene cancel reason=layer_removed key={:?}",
+                    key,
+                );
+            }
             self.published_compositor_surface_versions.remove(key);
             if let Some(layer_id) = self.layer_ids_by_key.remove(key) {
                 self.destroy_layer_recursive(layer_id);

@@ -2,8 +2,8 @@ use super::{TimingKind, TimingReport, TimingThread};
 use crate::app::{AppUpdateEvent, add_app_update_event};
 use crate::context::{LayoutChanged, LayoutChangedListener, PaintCx, StyleCx};
 use crate::event::{Event, EventPropagation, PointerScrollEventExt, listener};
-use crate::prelude::EventListenerTrait;
 use crate::prelude::palette::css;
+use crate::prelude::{EventListenerTrait, TooltipExt};
 use crate::style::theme::Theme;
 use crate::text::{Attrs, AttrsList, TextLayout};
 use crate::theme::StyleThemeExt;
@@ -171,7 +171,11 @@ struct TimelineItem {
 fn timeline_item_color(item: &TimelineItem) -> Color {
     match &item.kind {
         TimelineItemKind::Event if item.label == "VSync" => Color::from_rgb8(153, 97, 191),
+        TimelineItemKind::Event if item.label == "BeginFrameWork" => Color::from_rgb8(221, 154, 52),
         TimelineItemKind::Event if item.label == "FramePresented" => Color::from_rgb8(48, 166, 127),
+        TimelineItemKind::Event if item.label == "CompositorCarryCommit" => {
+            Color::from_rgb8(224, 112, 74)
+        }
         TimelineItemKind::Event => Color::from_rgb8(54, 111, 196),
         TimelineItemKind::Timing(TimingKind::Total) => Color::from_rgb8(41, 78, 163),
         TimelineItemKind::Timing(TimingKind::Style) => Color::from_rgb8(29, 142, 120),
@@ -187,7 +191,9 @@ fn timeline_item_color(item: &TimelineItem) -> Color {
 fn instant_marker_color(label: &str) -> Color {
     match label {
         "VSync" => Color::from_rgb8(153, 97, 191),
+        "BeginFrameWork" => Color::from_rgb8(221, 154, 52),
         "FramePresented" => Color::from_rgb8(48, 166, 127),
+        "CompositorCarryCommit" => Color::from_rgb8(224, 112, 74),
         _ => Color::from_rgb8(54, 111, 196),
     }
 }
@@ -228,6 +234,85 @@ fn profiler_chip(
             .background(accent.with_alpha(0.10))
             .border_color(accent.with_alpha(0.18))
             .min_width(0.0)
+    })
+}
+
+fn profiler_marker_legend_item(
+    label: impl Into<String>,
+    color: Color,
+    description: impl Into<String>,
+) -> impl IntoView {
+    let description = description.into();
+    Stack::horizontal((
+        color,
+        Label::new(label.into()).style(|s| {
+            s.font_size(10.5)
+                .text_ellipsis()
+                .min_width(0.0)
+                .with_theme(|s, t| s.color(t.text_muted()))
+        }),
+    ))
+    .tooltip(move || {
+        Label::new(description.clone()).style(|s| {
+            s.max_width(260.0)
+                .padding(10.0)
+                .border_radius(10.0)
+                .font_size(11.0)
+                .text_wrap()
+                .with_theme(|s, t| {
+                    s.background(t.bg_overlay())
+                        .border_color(t.border_muted())
+                        .color(t.text())
+                })
+                .border(1.0)
+        })
+    })
+    .style(|s| s.items_center().gap(6.0).min_width(0.0))
+}
+
+fn profiler_marker_legend() -> impl IntoView {
+    Stack::horizontal((
+        Label::new("Markers").style(|s| {
+            s.font_size(10.5)
+                .font_bold()
+                .with_theme(|s, t| s.color(t.text()))
+        }),
+        profiler_marker_legend_item(
+            "VSync",
+            instant_marker_color("VSync"),
+            "Display-link frame opportunity received by Floem.",
+        ),
+        profiler_marker_legend_item(
+            "Begin",
+            instant_marker_color("BeginFrameWork"),
+            "Deferred frame work begins: style, layout, paint, and render scheduling.",
+        ),
+        profiler_marker_legend_item(
+            "Commit",
+            instant_marker_color("CompositorCommit"),
+            "Core Animation compositor transaction committed with ready scene/layer content.",
+        ),
+        profiler_marker_legend_item(
+            "Carry",
+            instant_marker_color("CompositorCarryCommit"),
+            "Deadline commit while scene render work is still pending; commits ready or old state.",
+        ),
+        profiler_marker_legend_item(
+            "Presented",
+            instant_marker_color("FramePresented"),
+            "Layer-host feedback observed the committed frame as presented.",
+        ),
+    ))
+    .style(|s| {
+        s.items_center()
+            .gap(10.0)
+            .padding_horiz(12.0)
+            .padding_vert(10.0)
+            .border_radius(16.0)
+            .border(1.0)
+            .with_theme(|s, t| s.background(t.bg_overlay()).border_color(t.border_muted()))
+            .min_width(0.0)
+            .flex_wrap(taffy::style::FlexWrap::Wrap)
     })
 }
 
@@ -1906,6 +1991,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                     format_duration_short(total_duration),
                     Color::from_rgb8(64, 157, 163),
                 ),
+                profiler_marker_legend(),
             ))
             .style(|s| s.gap(8.0).flex_wrap(taffy::style::FlexWrap::Wrap)),
             timeline,

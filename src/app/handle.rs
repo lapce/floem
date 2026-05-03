@@ -70,6 +70,12 @@ struct PendingPointerEvent {
     event: PointerEvent,
 }
 
+struct PendingFrameTick {
+    tick: subduction_core::timing::FrameTick,
+    token: TimerToken,
+    deadline: Instant,
+}
+
 fn pointer_coalesce_key(window_id: WindowId, event: &PointerEvent) -> Option<PointerCoalesceKey> {
     let (pointer, kind) = match event {
         PointerEvent::Move(PointerUpdate { pointer, .. }) => (pointer, PointerCoalesceKind::Move),
@@ -234,6 +240,7 @@ pub(crate) struct ApplicationHandle {
     window_handles: HashMap<winit::window::WindowId, WindowHandle>,
     next_output_id: u32,
     timers: Vec<Timer>,
+    pending_frame_ticks: HashMap<winit::window::WindowId, PendingFrameTick>,
     pointer_coalesce_until: HashMap<winit::window::WindowId, Instant>,
     pending_pointer_events: HashMap<PointerCoalesceKey, PendingPointerEvent>,
     pending_context_menus: Vec<PendingContextMenu>,
@@ -252,6 +259,7 @@ impl ApplicationHandle {
             window_handles: HashMap::new(),
             next_output_id: 0,
             timers: Vec::new(),
+            pending_frame_ticks: HashMap::new(),
             pointer_coalesce_until: HashMap::new(),
             pending_pointer_events: HashMap::new(),
             pending_context_menus: Vec::new(),
@@ -320,6 +328,98 @@ impl ApplicationHandle {
                 },
                 event_loop,
             );
+        }
+    }
+
+    fn schedule_frame_tick(
+        &mut self,
+        window_id: WindowId,
+        tick: subduction_core::timing::FrameTick,
+        event_loop: &dyn ActiveEventLoop,
+    ) {
+        let Some(handle) = self.window_handles.get_mut(&window_id) else {
+            return;
+        };
+        handle.record_profile_instant("VSync", Instant::now());
+        let deadline = handle.schedule_frame_tick_work(tick);
+        if self.pending_frame_ticks.contains_key(&window_id) {
+            return;
+        }
+        let token = TimerToken::next();
+        self.pending_frame_ticks.insert(
+            window_id,
+            PendingFrameTick {
+                tick,
+                token,
+                deadline,
+            },
+        );
+        let action = move |_| {
+            crate::Application::send_proxy_event(UserEvent::DeferredFrameTick {
+                window_id,
+                tick,
+                token,
+            });
+        };
+        self.request_timer(
+            Timer {
+                token,
+                action: Box::new(action),
+                deadline,
+                sequence: token.into_raw(),
+            },
+            event_loop,
+        );
+    }
+
+    fn process_deferred_frame_tick(
+        &mut self,
+        window_id: WindowId,
+        _tick: subduction_core::timing::FrameTick,
+        token: TimerToken,
+        event_loop: &dyn ActiveEventLoop,
+    ) {
+        let Some(pending) = self.pending_frame_ticks.get(&window_id) else {
+            return;
+        };
+        if pending.token != token {
+            return;
+        }
+        let Some(pending) = self.pending_frame_ticks.remove(&window_id) else {
+            return;
+        };
+        let tick = pending.tick;
+        let timer_lateness = Instant::now().saturating_duration_since(pending.deadline);
+
+        if let Some(handle) = self.window_handles.get_mut(&window_id) {
+            handle.record_deferred_frame_timer_lateness(timer_lateness);
+        }
+
+        if let Some(handle) = self.window_handles.get_mut(&window_id) {
+            handle.refresh_frame_source_target();
+            handle.poll_gpu_callbacks();
+        }
+
+        // Frame ticks are the handoff point for continuous input that arrived
+        // while the previous compositor frame was active. Deferring to the
+        // latest safe start time lets resize/input events that arrived after
+        // the tick join this frame before scene work begins.
+        self.flush_coalesced_pointer_events(window_id);
+        Application::clear_update_posted();
+        self.drain_app_update_events(event_loop);
+        if Runtime::has_pending_work() {
+            Runtime::drain_pending_work();
+        }
+
+        if let Some(handle) = self.window_handles.get_mut(&window_id) {
+            let schedule = handle.process_frame_tick(tick);
+            handle.refresh_frame_activity();
+            let has_frame_work = handle.has_frame_work();
+            let _ = handle;
+            self.apply_window_frame_schedule(window_id, schedule, event_loop);
+            if has_frame_work {
+                self.request_update();
+            }
         }
     }
 
@@ -430,6 +530,7 @@ impl ApplicationHandle {
                 worker_index,
                 render_start,
                 render_end,
+                gpu_end,
             } => {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
                     if handle.complete_compositor_scene_render(
@@ -439,6 +540,7 @@ impl ApplicationHandle {
                         worker_index,
                         render_start,
                         render_end,
+                        gpu_end,
                     ) {
                         handle.refresh_frame_activity();
                     }
@@ -478,29 +580,14 @@ impl ApplicationHandle {
                 self.timing_diag.record_tick(tick.frame_index);
                 #[cfg(target_os = "macos")]
                 self.timing_diag.maybe_report();
-                if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    handle.refresh_frame_source_target();
-                }
-
-                // Frame ticks are the handoff point for continuous input that
-                // arrived while the previous compositor frame was active.
-                self.flush_coalesced_pointer_events(window_id);
-                Application::clear_update_posted();
-                self.drain_app_update_events(event_loop);
-                if Runtime::has_pending_work() {
-                    Runtime::drain_pending_work();
-                }
-
-                if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    let schedule = handle.process_frame_tick(tick);
-                    handle.refresh_frame_activity();
-                    let has_frame_work = handle.has_frame_work();
-                    let _ = handle;
-                    self.apply_window_frame_schedule(window_id, schedule, event_loop);
-                    if has_frame_work {
-                        self.request_update();
-                    }
-                }
+                self.schedule_frame_tick(window_id, tick, event_loop);
+            }
+            UserEvent::DeferredFrameTick {
+                window_id,
+                tick,
+                token,
+            } => {
+                self.process_deferred_frame_tick(window_id, tick, token, event_loop);
             }
         }
     }

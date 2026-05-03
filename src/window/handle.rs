@@ -32,8 +32,9 @@ use peniko::color::palette;
 use peniko::kurbo::{self, Point, Size};
 use understory_frame_pacing::{
     BeginFrameTiming, CompositorCommitReason, CompositorCommitResult, CompositorFrameAction,
-    CompositorFrameScheduler, CompositorWorkStatus, Duration as PacingDuration,
-    FrameDemand as PacingFrameDemand, Time as PacingTime,
+    CompositorFrameScheduler, CompositorWorkStatus, DisplayTiming as PacingDisplayTiming,
+    Duration as PacingDuration, FrameDemand as PacingFrameDemand, FrameOpportunity,
+    FrameTimingEstimate, Time as PacingTime, plan_frame,
 };
 use winit::{
     cursor::CursorIcon,
@@ -77,6 +78,9 @@ use crate::{
 };
 
 const COMPOSITOR_DEADLINE_FUDGE: Duration = Duration::from_millis(1);
+const DEFAULT_FRAME_WORK_ESTIMATE: Duration = Duration::from_millis(2);
+const DEFAULT_GPU_WORK_ESTIMATE: Duration = Duration::ZERO;
+const DEFAULT_TIMER_WAKEUP_ESTIMATE: Duration = Duration::from_millis(1);
 /// The top-level window handle that owns the winit `Window`.
 /// Meant only for use with the root view of the application.
 /// Owns the [`WindowState`] and is responsible for
@@ -120,7 +124,12 @@ pub(crate) struct WindowHandle {
     compositor_frame_scheduler: CompositorFrameScheduler,
     pending_compositor_commit: Option<PendingCompositorCommit>,
     next_compositor_commit_generation: u64,
-    last_stutter_commit_at: Option<Instant>,
+    active_begin_frame_started_at: Option<Instant>,
+    pending_scene_frame_work_started_at: Option<Instant>,
+    pending_scene_frame_work_cpu_end_at: Option<Instant>,
+    frame_work_estimate: Duration,
+    gpu_work_estimate: Duration,
+    timer_wakeup_estimate: Duration,
     hud: crate::hud::Hud,
     pending_presented_layers: Vec<crate::window::compositor::PresentedLayer>,
     pending_active_layers: Vec<crate::window::compositor::PresentedLayer>,
@@ -150,6 +159,7 @@ struct PendingCompositorCommit {
     generation: u64,
     token: TimerToken,
     submitted_at: Instant,
+    scene_ready_at: Option<Instant>,
 }
 
 #[derive(Clone, Copy)]
@@ -172,6 +182,15 @@ fn surface_extent(size: Size, os_scale: f64) -> PhysicalSize<u32> {
         physical.width.max(1.0).round() as u32,
         physical.height.max(1.0).round() as u32,
     )
+}
+
+fn smooth_duration_estimate(previous: Duration, observed: Duration) -> Duration {
+    if observed >= previous {
+        return observed;
+    }
+    let previous_ns = previous.as_nanos();
+    let observed_ns = observed.as_nanos();
+    Duration::from_nanos(((previous_ns * 7 + observed_ns) / 8).min(u64::MAX as u128) as u64)
 }
 
 #[derive(Clone, Debug, Default)]
@@ -514,7 +533,12 @@ impl WindowHandle {
             compositor_frame_scheduler: CompositorFrameScheduler::new(),
             pending_compositor_commit: None,
             next_compositor_commit_generation: 1,
-            last_stutter_commit_at: None,
+            active_begin_frame_started_at: None,
+            pending_scene_frame_work_started_at: None,
+            pending_scene_frame_work_cpu_end_at: None,
+            frame_work_estimate: DEFAULT_FRAME_WORK_ESTIMATE,
+            gpu_work_estimate: DEFAULT_GPU_WORK_ESTIMATE,
+            timer_wakeup_estimate: DEFAULT_TIMER_WAKEUP_ESTIMATE,
             hud,
             pending_presented_layers: Vec::new(),
             pending_active_layers: Vec::new(),
@@ -701,7 +725,12 @@ impl WindowHandle {
             compositor_frame_scheduler: CompositorFrameScheduler::new(),
             pending_compositor_commit: None,
             next_compositor_commit_generation: 1,
-            last_stutter_commit_at: None,
+            active_begin_frame_started_at: None,
+            pending_scene_frame_work_started_at: None,
+            pending_scene_frame_work_cpu_end_at: None,
+            frame_work_estimate: DEFAULT_FRAME_WORK_ESTIMATE,
+            gpu_work_estimate: DEFAULT_GPU_WORK_ESTIMATE,
+            timer_wakeup_estimate: DEFAULT_TIMER_WAKEUP_ESTIMATE,
             hud: crate::hud::Hud::new(),
             pending_presented_layers: Vec::new(),
             pending_active_layers: Vec::new(),
@@ -873,7 +902,6 @@ impl WindowHandle {
             return;
         }
 
-        self.window_state.compositor.invalidate_scene_content();
         self.refresh_frame_source_target();
     }
 
@@ -1317,6 +1345,7 @@ impl WindowHandle {
         worker_index: usize,
         render_start: Instant,
         render_end: Instant,
+        gpu_end: Instant,
     ) -> bool {
         let Some(gpu_resources) = self.gpu_resources.as_ref() else {
             return false;
@@ -1336,25 +1365,117 @@ impl WindowHandle {
                 TimingKind::Renderer,
                 TimingThread::Renderer(worker_index),
             );
+            if gpu_end > render_end {
+                self.pending_timing.push_absolute_span_on_thread(
+                    "RenderGpuWait",
+                    render_end,
+                    gpu_end,
+                    TimingKind::Renderer,
+                    TimingThread::Renderer(worker_index),
+                );
+                self.gpu_work_estimate =
+                    smooth_duration_estimate(self.gpu_work_estimate, gpu_end - render_end);
+            }
             self.pending_timing.push_absolute_span(
                 "CompositorSceneFragmentComplete",
                 start,
                 Instant::now(),
                 TimingKind::Renderer,
             );
+            self.pending_scene_frame_work_cpu_end_at = Some(
+                self.pending_scene_frame_work_cpu_end_at
+                    .map(|end| end.max(render_end))
+                    .unwrap_or(render_end),
+            );
             if self.window_state.compositor.has_pending_scene_renders() {
                 return true;
             }
-            let now = Instant::now();
-            match self
-                .compositor_frame_scheduler
-                .on_scene_ready(self.pacing_time(now), self.compositor_work_status())
+            let now = Instant::now().max(gpu_end);
+            if let (Some(started_at), Some(cpu_end)) = (
+                self.pending_scene_frame_work_started_at.take(),
+                self.pending_scene_frame_work_cpu_end_at.take(),
+            ) {
+                let observed_frame_work = cpu_end.saturating_duration_since(started_at);
+                self.frame_work_estimate =
+                    smooth_duration_estimate(self.frame_work_estimate, observed_frame_work)
+                        .max(Duration::from_micros(500));
+            }
+            let scene_ready_generation = self
+                .pending_compositor_commit
+                .map(|pending| pending.generation);
+            let scene_ready_deadline = self
+                .pending_compositor_commit
+                .map(|pending| pending.deadline);
+            if let Some(pending) = self.pending_compositor_commit.as_mut()
+                && pending.scene_ready_at.is_none()
             {
+                pending.scene_ready_at = Some(now);
+                let ready_delta_ms = if now >= pending.deadline {
+                    now.saturating_duration_since(pending.deadline)
+                        .as_secs_f64()
+                        * 1000.0
+                } else {
+                    -(pending
+                        .deadline
+                        .saturating_duration_since(now)
+                        .as_secs_f64()
+                        * 1000.0)
+                };
+                if crate::frame_source::frame_pacing_diag_enabled() {
+                    eprintln!(
+                        "floem compositor scene-ready timing window={:?} generation={} ready_vs_deadline={:.3}ms submitted_age={:.3}ms deadline={:?} ready_at={:?} pending_commit_work={}",
+                        self.window_id,
+                        pending.generation,
+                        ready_delta_ms,
+                        now.saturating_duration_since(pending.submitted_at)
+                            .as_secs_f64()
+                            * 1000.0,
+                        pending.deadline,
+                        now,
+                        self.window_state.compositor.has_pending_commit_work(),
+                    );
+                }
+            }
+            let status = self.compositor_work_status();
+            let action = self
+                .compositor_frame_scheduler
+                .on_scene_ready(self.pacing_time(now), status);
+            if crate::frame_source::frame_pacing_diag_enabled() {
+                eprintln!(
+                    "floem compositor scene-ready decision window={:?} generation={:?} action={:?} pending_scene={} pending_commit_work={} now_vs_deadline={:?}ms",
+                    self.window_id,
+                    scene_ready_generation,
+                    action,
+                    status.scene_jobs_pending,
+                    status.commit_ready,
+                    scene_ready_deadline.map(|deadline| {
+                        if now >= deadline {
+                            now.saturating_duration_since(deadline).as_secs_f64() * 1000.0
+                        } else {
+                            -(deadline.saturating_duration_since(now).as_secs_f64() * 1000.0)
+                        }
+                    }),
+                );
+            }
+            match action {
                 CompositorFrameAction::Commit { reason, .. } => {
                     let pending_token = self.pending_compositor_commit.map(|pending| pending.token);
-                    if self
-                        .commit_requested_compositor_frame(compositor_commit_reason_label(reason))
-                    {
+                    let reason = compositor_commit_reason_label(reason);
+                    let result = self.attempt_compositor_commit(reason);
+                    if crate::frame_source::frame_pacing_diag_enabled() {
+                        eprintln!(
+                            "floem compositor scene-ready commit-result window={:?} generation={:?} reason={} result={:?} pending_scene_after={} pending_commit_work_after={}",
+                            self.window_id,
+                            scene_ready_generation,
+                            reason,
+                            result,
+                            self.window_state.compositor.has_pending_scene_renders(),
+                            self.window_state.compositor.has_pending_commit_work(),
+                        );
+                    }
+                    let committed = result == CompositorCommitResult::Committed;
+                    self.apply_compositor_commit_result(result);
+                    if committed {
                         if let Some(token) = pending_token {
                             token.cancel();
                         }
@@ -1376,10 +1497,23 @@ impl WindowHandle {
         let deadline = self
             .active_compositor_deadline_instant()
             .unwrap_or_else(|| self.current_frame_time().interval.deadline_max);
-        match self
+        let status = self.compositor_work_status();
+        let action = self
             .compositor_frame_scheduler
-            .on_frame_submitted(self.pacing_time(deadline), self.compositor_work_status())
-        {
+            .on_frame_submitted(self.pacing_time(deadline), status);
+        if crate::frame_source::frame_pacing_diag_enabled() {
+            eprintln!(
+                "floem compositor frame-submitted window={:?} reason={} scheduled_scene_frames={} action={:?} pending_scene={} pending_commit_work={} deadline_from_now={:.3}ms",
+                self.window_id,
+                reason,
+                scheduled_scene_frames,
+                action,
+                status.scene_jobs_pending,
+                status.commit_ready,
+                deadline.saturating_duration_since(start).as_secs_f64() * 1000.0,
+            );
+        }
+        match action {
             CompositorFrameAction::ArmDeadline(_) => {
                 self.arm_compositor_commit_deadline_at(start, deadline);
             }
@@ -1416,72 +1550,25 @@ impl WindowHandle {
             .window_state
             .compositor
             .commit_ready_layer_tree(&gpu_resources.queue);
+        let scene_pending_at_commit = self.window_state.compositor.has_pending_scene_renders();
         let Some(commit) = commit else {
             if crate::frame_source::frame_pacing_diag_enabled() {
                 eprintln!(
                     "floem compositor commit no-op reason={} window={:?} pending_scene={} pending_commit_work={} pending_deadline={}",
                     reason,
                     self.window_id,
-                    self.window_state.compositor.has_pending_scene_renders(),
+                    scene_pending_at_commit,
                     self.window_state.compositor.has_pending_commit_work(),
                     self.pending_compositor_commit.is_some(),
                 );
             }
-            if !self.window_state.compositor.has_pending_scene_renders()
-                && !self.window_state.compositor.has_pending_commit_work()
-            {
+            if !scene_pending_at_commit && !self.window_state.compositor.has_pending_commit_work() {
                 self.pending_compositor_commit = None;
             }
             return CompositorCommitResult::NoWork;
         };
         self.pending_presented_layers = commit.layers;
         self.pending_active_layers = commit.active_layers;
-        if let Some(frame_time) = self.active_frame_time {
-            let interval = frame_time.frame_interval;
-            let interval_ms = interval.as_secs_f64() * 1000.0;
-            let predicted = frame_time.interval.predicted_present;
-            let commit_margin_ms = predicted.map(|predicted| {
-                if predicted >= start {
-                    predicted.saturating_duration_since(start).as_secs_f64() * 1000.0
-                } else {
-                    -(start.saturating_duration_since(predicted).as_secs_f64() * 1000.0)
-                }
-            });
-            let submitted_age_ms =
-                start.saturating_duration_since(submitted_at).as_secs_f64() * 1000.0;
-            let commit_gap_ms = self
-                .last_stutter_commit_at
-                .map(|last| start.saturating_duration_since(last).as_secs_f64() * 1000.0);
-            let expected_margin = interval.min(Duration::from_millis(1));
-            let too_close_to_present =
-                predicted.is_some_and(|predicted| start + expected_margin >= predicted);
-            let commit_gap_is_suspicious = commit_gap_ms.is_some_and(|gap| {
-                if !self.has_frame_work() || gap <= interval_ms * 1.5 {
-                    return false;
-                }
-                // ProMotion can intentionally select 60 Hz presentation on a
-                // 120 Hz panel. Exact multiples of the nominal display
-                // interval are cadence selection, not compositor stutter.
-                let multiple = (gap / interval_ms).round().max(1.0);
-                let expected = multiple * interval_ms;
-                (gap - expected).abs() > interval_ms * 0.1
-            });
-            if too_close_to_present || commit_gap_is_suspicious {
-                eprintln!(
-                    "floem stutter compositor-commit window={:?} frame={} reason={} commit_margin={:?}ms commit_gap={:?}ms interval={:.3}ms submitted_age={:.3}ms scene_pending={} commit_ready={}",
-                    self.window_id,
-                    frame_time.frame_index,
-                    reason,
-                    commit_margin_ms,
-                    commit_gap_ms,
-                    interval_ms,
-                    submitted_age_ms,
-                    self.window_state.compositor.has_pending_scene_renders(),
-                    self.window_state.compositor.has_pending_commit_work(),
-                );
-            }
-            self.last_stutter_commit_at = Some(start);
-        }
         self.pending_compositor_commit = None;
         if self.waits_for_layer_host_commit_feedback() {
             self.arm_layer_host_commit_feedback(submitted_at);
@@ -1490,8 +1577,14 @@ impl WindowHandle {
             self.route_paint_present_event(submitted_at, frame_time);
             self.finish_presented_frame(Some(submitted_at), submitted_at, frame_time);
         }
+        let commit_label = if scene_pending_at_commit {
+            "CompositorCarryCommit"
+        } else {
+            "CompositorCommit"
+        };
+        self.record_profile_instant(commit_label, start);
         self.pending_timing.push_absolute_span(
-            "CompositorCommit",
+            commit_label,
             start,
             Instant::now(),
             TimingKind::Present,
@@ -1502,7 +1595,7 @@ impl WindowHandle {
                 reason,
                 self.window_id,
                 start.saturating_duration_since(submitted_at).as_secs_f64() * 1000.0,
-                self.window_state.compositor.has_pending_scene_renders(),
+                scene_pending_at_commit,
                 self.window_state.compositor.has_pending_commit_work(),
             );
         }
@@ -1514,13 +1607,17 @@ impl WindowHandle {
             CompositorFrameAction::FinishFrame {
                 pending: Some(pending),
             } => {
+                self.active_begin_frame_started_at = None;
                 let demand = Self::frame_demand_from_pacing(pending.demand);
                 if !demand.is_empty() {
                     self.compositor_frame_scheduler
                         .request_frame(Self::pacing_frame_demand(demand));
                 }
             }
-            CompositorFrameAction::FinishFrame { pending: None } | CompositorFrameAction::Idle => {}
+            CompositorFrameAction::FinishFrame { pending: None } => {
+                self.active_begin_frame_started_at = None;
+            }
+            CompositorFrameAction::Idle => {}
             _ => {}
         }
     }
@@ -1533,6 +1630,14 @@ impl WindowHandle {
             .wrapping_add(1)
             .max(1);
         let token = TimerToken::next();
+        if self.window_state.compositor.has_pending_scene_renders() {
+            self.pending_scene_frame_work_started_at
+                .get_or_insert(self.active_begin_frame_started_at.unwrap_or(submitted_at));
+            self.pending_scene_frame_work_cpu_end_at = None;
+        } else {
+            self.pending_scene_frame_work_started_at = None;
+            self.pending_scene_frame_work_cpu_end_at = None;
+        }
         if let Some(previous) = self
             .pending_compositor_commit
             .replace(PendingCompositorCommit {
@@ -1540,6 +1645,11 @@ impl WindowHandle {
                 generation,
                 token,
                 submitted_at,
+                scene_ready_at: if self.window_state.compositor.has_pending_scene_renders() {
+                    None
+                } else {
+                    Some(now)
+                },
             })
         {
             previous.token.cancel();
@@ -1566,7 +1676,7 @@ impl WindowHandle {
             CompositorFrameAction::Commit { reason, .. } => compositor_commit_reason_label(reason),
             _ => "deadline",
         };
-        if pending_scene {
+        if pending_scene && !pending_commit_work {
             eprintln!(
                 "floem stutter deadline-skip-pending-scene window={:?} generation={} reason={} pending_commit_work={}",
                 self.window_id, generation, reason, pending_commit_work,
@@ -1576,6 +1686,11 @@ impl WindowHandle {
             self.record_frame_demand(FrameDemand::ANIMATION);
             return false;
         }
+        let reason = if pending_scene && pending_commit_work {
+            "deadline-carry"
+        } else {
+            reason
+        };
         self.commit_requested_compositor_frame(reason)
     }
 
@@ -1602,15 +1717,30 @@ impl WindowHandle {
                 .checked_duration_since(pending.deadline)
                 .map(|duration| duration.as_secs_f64() * 1000.0)
                 .unwrap_or(0.0);
+            let scene_ready_vs_deadline_ms = pending.scene_ready_at.map(|ready_at| {
+                if ready_at >= pending.deadline {
+                    ready_at
+                        .saturating_duration_since(pending.deadline)
+                        .as_secs_f64()
+                        * 1000.0
+                } else {
+                    -(pending
+                        .deadline
+                        .saturating_duration_since(ready_at)
+                        .as_secs_f64()
+                        * 1000.0)
+                }
+            });
             if self.window_state.compositor.has_pending_scene_renders() || late_by_ms > 0.5 {
                 eprintln!(
-                    "floem stutter compositor-deadline window={:?} generation={} late_by={:.3}ms submitted_age={:.3}ms pending_scene={} pending_commit_work={}",
+                    "floem stutter compositor-deadline window={:?} generation={} late_by={:.3}ms submitted_age={:.3}ms scene_ready_vs_deadline={:?}ms pending_scene={} pending_commit_work={}",
                     self.window_id,
                     generation,
                     late_by_ms,
                     now.saturating_duration_since(pending.submitted_at)
                         .as_secs_f64()
                         * 1000.0,
+                    scene_ready_vs_deadline_ms,
                     self.window_state.compositor.has_pending_scene_renders(),
                     self.window_state.compositor.has_pending_commit_work(),
                 );
@@ -1767,12 +1897,7 @@ impl WindowHandle {
     ) -> BeginFrameTiming {
         let frame_interval = frame_time.frame_interval;
         let frame_time_instant = frame_time.now;
-        let deadline_instant = frame_time
-            .interval
-            .deadline_max
-            .checked_sub(COMPOSITOR_DEADLINE_FUDGE)
-            .unwrap_or(now)
-            .max(now);
+        let deadline_instant = frame_time.interval.deadline_max.max(now);
         let now = self.pacing_time(now);
         let frame_time = self.pacing_time(frame_time_instant);
         let deadline = self.pacing_time(deadline_instant);
@@ -1791,6 +1916,7 @@ impl WindowHandle {
             CompositorFrameAction::FinishFrame {
                 pending: Some(pending),
             } => {
+                self.active_begin_frame_started_at = None;
                 let demand = Self::frame_demand_from_pacing(pending.demand);
                 if crate::frame_source::frame_pacing_diag_enabled() {
                     eprintln!(
@@ -1804,6 +1930,7 @@ impl WindowHandle {
                 }
             }
             _ => {
+                self.active_begin_frame_started_at = None;
                 if crate::frame_source::frame_pacing_diag_enabled() {
                     eprintln!(
                         "floem begin frame finish window={:?} pending=none",
@@ -1908,6 +2035,16 @@ impl WindowHandle {
             .refresh_window_target(self.window.as_ref());
     }
 
+    pub(crate) fn poll_gpu_callbacks(&self) {
+        if let Some(gpu_resources) = &self.gpu_resources {
+            let _ = gpu_resources.device.poll(wgpu::PollType::Poll);
+        }
+    }
+
+    pub(crate) fn record_deferred_frame_timer_lateness(&mut self, lateness: Duration) {
+        self.timer_wakeup_estimate = smooth_duration_estimate(self.timer_wakeup_estimate, lateness);
+    }
+
     fn run_begin_frame_callbacks(&mut self) {
         if self.window_state.begin_frame_callbacks.is_empty() {
             return;
@@ -1927,6 +2064,54 @@ impl WindowHandle {
             );
         }
         self.frame_source.receive_frame_tick(tick);
+    }
+
+    pub(crate) fn schedule_frame_tick_work(
+        &mut self,
+        tick: subduction_core::timing::FrameTick,
+    ) -> Instant {
+        let now = Instant::now();
+        self.receive_frame_tick(tick);
+        let frame_time = self.frame_time_at(now);
+        let interval = PacingDuration::from_nanos(
+            frame_time.frame_interval.as_nanos().min(u64::MAX as u128) as u64,
+        );
+        let start_before_present_estimate = self
+            .frame_work_estimate
+            .saturating_add(self.gpu_work_estimate)
+            .saturating_add(COMPOSITOR_DEADLINE_FUDGE)
+            .saturating_add(self.timer_wakeup_estimate);
+        let estimate = FrameTimingEstimate {
+            pre_surface_work: PacingDuration::from_nanos(
+                start_before_present_estimate
+                    .as_nanos()
+                    .min(u64::MAX as u128) as u64,
+            ),
+            surface_work: PacingDuration::ZERO,
+            gpu_work: PacingDuration::ZERO,
+            safety_margin: PacingDuration::ZERO,
+        };
+        let demand =
+            Self::pacing_frame_demand(self.status_frame_demand(self.compositor_work_status()));
+        let decision = plan_frame(
+            PacingDisplayTiming::fixed(interval),
+            estimate,
+            demand,
+            FrameOpportunity {
+                now: self.pacing_time(now),
+                predicted_present_time: frame_time
+                    .interval
+                    .predicted_present
+                    .map(|present| self.pacing_time(present)),
+                frame_interval: Some(interval),
+                last_present_time: None,
+                pending_target_present_time: None,
+            },
+        );
+        let start_at = self
+            .instant_from_pacing_time(decision.pre_surface_work_start)
+            .max(now);
+        start_at
     }
 
     /// Starts or stops the frame clock from window-owned frame state.
@@ -1962,12 +2147,18 @@ impl WindowHandle {
         &mut self,
         tick: subduction_core::timing::FrameTick,
     ) -> FrameSchedule {
-        self.record_profile_instant("VSync", Instant::now());
+        self.record_profile_instant("BeginFrameWork", Instant::now());
         // Frame timing is valid for one backend frame opportunity. Do not let a
         // previous prepared frame's predicted-present deadline leak into a later
         // pending-render/compositor-only commit path.
         self.active_frame_time = None;
-        self.receive_frame_tick(tick);
+        if self
+            .frame_source
+            .latest_tick()
+            .is_none_or(|latest| latest.frame_index != tick.frame_index)
+        {
+            self.receive_frame_tick(tick);
+        }
         #[cfg(target_os = "macos")]
         self.begin_metal_capture_on_frame_tick();
 
@@ -2043,6 +2234,24 @@ impl WindowHandle {
             }
             return self.current_frame_schedule();
         }
+        if let Some(active) = self.compositor_frame_scheduler.active_frame() {
+            let active_age_ms = self
+                .active_begin_frame_started_at
+                .map(|started| now.saturating_duration_since(started).as_secs_f64() * 1000.0);
+            eprintln!(
+                "floem stutter tick-while-active window={:?} tick={} active_sequence={} pending_begin={} active_age={:?}ms pending_scene={} commit_ready={} pending_deadline={} pending_paint={} pending_render={}",
+                self.window_id,
+                tick.frame_index,
+                active.sequence,
+                self.compositor_frame_scheduler.has_pending_frame(),
+                active_age_ms,
+                status.scene_jobs_pending,
+                status.commit_ready,
+                self.pending_compositor_commit.is_some(),
+                self.window_state.has_pending_paint(),
+                self.window_state.has_pending_render(),
+            );
+        }
         let begin_timing = self.begin_frame_timing_for_frame_time(frame_time, now);
         match self
             .compositor_frame_scheduler
@@ -2055,6 +2264,7 @@ impl WindowHandle {
             }
             CompositorFrameAction::StartFrame(frame) => {
                 self.active_frame_time = Some(frame_time);
+                self.active_begin_frame_started_at = Some(now);
                 let active_demand = Self::frame_demand_from_pacing(frame.demand);
                 if crate::frame_source::frame_pacing_diag_enabled() {
                     eprintln!(

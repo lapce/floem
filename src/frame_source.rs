@@ -158,6 +158,10 @@ impl FrameSource {
         self.inner.receive_frame_tick(tick);
     }
 
+    pub(crate) fn latest_tick(&self) -> Option<subduction_core::timing::FrameTick> {
+        self.inner.latest_tick()
+    }
+
     pub(crate) fn set_active(&mut self, active: bool) {
         #[cfg(target_os = "macos")]
         {

@@ -50,7 +50,7 @@
 use std::{
     sync::{
         Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc,
     },
     thread,
@@ -208,14 +208,17 @@ impl NewRendererCx {
         surface_format: wgpu::TextureFormat,
         name: &'static str,
     ) -> RendererSpec {
-        let device = self
+        let gpu_resources = self
             .gpu_resources
             .as_ref()
-            .expect("renderer requires GPU device")
-            .device
-            .clone();
+            .expect("renderer requires GPU resources");
         RendererSpec(RendererSpecInner::Gpu {
-            backend: GpuRenderer::provided_texture(backend, device, name),
+            backend: GpuRenderer::provided_texture(
+                backend,
+                gpu_resources.device.clone(),
+                gpu_resources.queue.clone(),
+                name,
+            ),
             surface_format,
         })
     }
@@ -226,14 +229,17 @@ impl NewRendererCx {
         surface_format: wgpu::TextureFormat,
         name: &'static str,
     ) -> RendererSpec {
-        let device = self
+        let gpu_resources = self
             .gpu_resources
             .as_ref()
-            .expect("renderer requires GPU device")
-            .device
-            .clone();
+            .expect("renderer requires GPU resources");
         RendererSpec(RendererSpecInner::Gpu {
-            backend: GpuRenderer::owned_texture(backend, device, name),
+            backend: GpuRenderer::owned_texture(
+                backend,
+                gpu_resources.device.clone(),
+                gpu_resources.queue.clone(),
+                name,
+            ),
             surface_format,
         })
     }
@@ -245,14 +251,17 @@ impl NewRendererCx {
         surface_format: wgpu::TextureFormat,
         name: &'static str,
     ) -> RendererSpec {
-        let device = self
+        let gpu_resources = self
             .gpu_resources
             .as_ref()
-            .expect("renderer requires GPU device")
-            .device
-            .clone();
+            .expect("renderer requires GPU resources");
         RendererSpec(RendererSpecInner::Gpu {
-            backend: GpuRenderer::provided_texture_view(backend, device, name),
+            backend: GpuRenderer::provided_texture_view(
+                backend,
+                gpu_resources.device.clone(),
+                gpu_resources.queue.clone(),
+                name,
+            ),
             surface_format,
         })
     }
@@ -264,14 +273,17 @@ impl NewRendererCx {
         surface_format: wgpu::TextureFormat,
         name: &'static str,
     ) -> RendererSpec {
-        let device = self
+        let gpu_resources = self
             .gpu_resources
             .as_ref()
-            .expect("renderer requires GPU device")
-            .device
-            .clone();
+            .expect("renderer requires GPU resources");
         RendererSpec(RendererSpecInner::Gpu {
-            backend: GpuRenderer::owned_texture_view(backend, device, name),
+            backend: GpuRenderer::owned_texture_view(
+                backend,
+                gpu_resources.device.clone(),
+                gpu_resources.queue.clone(),
+                name,
+            ),
             surface_format,
         })
     }
@@ -527,6 +539,18 @@ impl RenderSource for SceneFragmentSource {
 
 pub struct RendererSpec(RendererSpecInner);
 
+impl RendererSpec {
+    #[cfg(not(target_arch = "wasm32"))]
+    fn gpu_fence_resources(&self) -> Option<(wgpu::Device, wgpu::Queue)> {
+        match &self.0 {
+            RendererSpecInner::Gpu { backend, .. } => {
+                Some((backend.device.clone(), backend.queue.clone()))
+            }
+            RendererSpecInner::Cpu(_) => None,
+        }
+    }
+}
+
 enum RendererSpecInner {
     Cpu(CpuRenderer),
     Gpu {
@@ -684,15 +708,19 @@ impl SceneFragmentRenderWorker {
                                 job.external_images,
                             );
                             let render_end = Instant::now();
-                            Application::send_proxy_event(UserEvent::SceneFragmentReady {
-                                window_id: completion.window_id,
-                                key: completion.key,
-                                signature: completion.signature,
+                            let gpu_end = if rendered {
+                                wait_for_gpu_work_done(&backend).unwrap_or(render_end)
+                            } else {
+                                render_end
+                            };
+                            send_scene_fragment_ready(
+                                completion,
                                 rendered,
-                                worker_index: index,
+                                index,
                                 render_start,
                                 render_end,
-                            });
+                                gpu_end,
+                            );
                             worker_in_flight.fetch_sub(1, Ordering::Relaxed);
                         }
                         SceneFragmentRenderCommand::RenderForCapture { job, response } => {
@@ -784,6 +812,8 @@ impl CpuRenderer {
 
 struct GpuRenderer {
     backend: GpuRendererBackend,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
     name: &'static str,
 }
 
@@ -805,11 +835,14 @@ impl GpuRenderer {
     )]
     fn provided_texture(
         backend: impl TextureRenderer<TextureTarget = wgpu::Texture, Texture = wgpu::Texture> + 'static,
-        _device: wgpu::Device,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
         name: &'static str,
     ) -> Self {
         Self {
             backend: GpuRendererBackend::Texture(Box::new(backend)),
+            device,
+            queue,
             name,
         }
     }
@@ -820,11 +853,14 @@ impl GpuRenderer {
     )]
     fn owned_texture(
         backend: impl TextureRenderer<TextureTarget = wgpu::Texture, Texture = wgpu::Texture> + 'static,
-        _device: wgpu::Device,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
         name: &'static str,
     ) -> Self {
         Self {
             backend: GpuRendererBackend::Texture(Box::new(backend)),
+            device,
+            queue,
             name,
         }
     }
@@ -832,11 +868,14 @@ impl GpuRenderer {
     fn provided_texture_view(
         backend: impl TextureRenderer<TextureTarget = TextureViewTarget, Texture = wgpu::Texture>
         + 'static,
-        _device: wgpu::Device,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
         name: &'static str,
     ) -> Self {
         Self {
             backend: GpuRendererBackend::TextureView(Box::new(backend)),
+            device,
+            queue,
             name,
         }
     }
@@ -844,14 +883,54 @@ impl GpuRenderer {
     fn owned_texture_view(
         backend: impl TextureRenderer<TextureTarget = TextureViewTarget, Texture = wgpu::Texture>
         + 'static,
-        _device: wgpu::Device,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
         name: &'static str,
     ) -> Self {
         Self {
             backend: GpuRendererBackend::TextureView(Box::new(backend)),
+            device,
+            queue,
             name,
         }
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn send_scene_fragment_ready(
+    completion: SceneFragmentRenderCompletion,
+    rendered: bool,
+    worker_index: usize,
+    render_start: Instant,
+    render_end: Instant,
+    gpu_end: Instant,
+) {
+    Application::send_proxy_event(UserEvent::SceneFragmentReady {
+        window_id: completion.window_id,
+        key: completion.key,
+        signature: completion.signature,
+        rendered,
+        worker_index,
+        render_start,
+        render_end,
+        gpu_end,
+    });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn wait_for_gpu_work_done(backend: &RendererSpec) -> Option<Instant> {
+    let (device, queue) = backend.gpu_fence_resources()?;
+    let done = Arc::new(AtomicBool::new(false));
+    let callback_done = Arc::clone(&done);
+    queue.on_submitted_work_done(move || {
+        callback_done.store(true, Ordering::Release);
+    });
+    while !done.load(Ordering::Acquire) {
+        if device.poll(wgpu::PollType::wait_indefinitely()).is_err() {
+            return None;
+        }
+    }
+    Some(Instant::now())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
