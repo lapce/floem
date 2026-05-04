@@ -1,14 +1,13 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
-    ElementId,
     compositor_surface::{CompositorSurfaceContent, CompositorSurfaceId, ExternalTexture},
     effects::CompositorEffect,
     gpu_resources::GpuResources,
     paint::{
         composition::{
             CompositionItem, CompositionKey, CompositionPlan, CompositorSurfaceLayer,
-            SceneExternalImage, SceneLayer,
+            LayerSourceId, SceneExternalImage, SceneLayer,
         },
         renderer::SceneFragmentRenderCompletion,
         renderer::{ExternalImageResources, SceneFragmentRenderJob, SceneFragmentRendererPool},
@@ -77,7 +76,7 @@ pub(crate) type CompositorRuntime = WindowCompositor;
 #[derive(Clone, Debug)]
 pub(crate) struct PresentedLayer {
     pub layer_id: LayerId,
-    pub source_element_id: Option<ElementId>,
+    pub source_element_id: Option<LayerSourceId>,
     pub debug_name: Option<String>,
 }
 
@@ -2190,7 +2189,7 @@ impl CompositorLayerState {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct SceneCompositorLayer {
     pub key: CompositionKey,
-    pub source_element_id: Option<ElementId>,
+    pub source_element_id: Option<LayerSourceId>,
     pub debug_name: Option<String>,
     pub external_images: Vec<SceneExternalImageCompositorLayer>,
     pub color_effects: Vec<CompositorEffect>,

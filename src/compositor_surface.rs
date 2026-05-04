@@ -339,6 +339,7 @@ impl CompositorSurfaceProducer {
             current_content: None,
             current_presents_without_transaction: false,
             pending_presentations: FxHashMap::default(),
+            pending_request_started_at: FxHashMap::default(),
             last_requested_frame_index: None,
         }
     }
@@ -584,6 +585,7 @@ struct CompositorSurfaceProducerProvider {
     current_content: Option<CompositorSurfaceContent>,
     current_presents_without_transaction: bool,
     pending_presentations: FxHashMap<u64, bool>,
+    pending_request_started_at: FxHashMap<u64, Instant>,
     last_requested_frame_index: Option<u64>,
 }
 
@@ -606,6 +608,7 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
         args: CompositorSurfaceFrameArgs,
     ) -> CompositorSurfaceFrameUpdate {
         let mut frame_update = self.drain_completions();
+        let callback_started_at = Instant::now();
         let diag = crate::frame_source::frame_pacing_diag_enabled()
             || std::env::var_os("FLOEM_CUBE_DIAG").is_some();
 
@@ -619,6 +622,7 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
             return CompositorSurfaceFrameUpdate {
                 content_changed: frame_update.content_changed,
                 request_next_frame: false,
+                producer_observed_latency: frame_update.producer_observed_latency,
             };
         }
 
@@ -632,6 +636,7 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
             return CompositorSurfaceFrameUpdate {
                 content_changed: frame_update.content_changed,
                 request_next_frame: true,
+                producer_observed_latency: frame_update.producer_observed_latency,
             };
         }
 
@@ -693,6 +698,8 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
         let request_next_frame = match decision {
             Some(Ok(SurfaceFrameCallbackDecision::Present { presentation })) => {
                 self.last_requested_frame_index = Some(args.frame_index);
+                self.pending_request_started_at
+                    .insert(args.frame_index, callback_started_at);
                 self.pending_presentations.insert(
                     args.frame_index,
                     presentation == subduction::wgpu::SurfaceFramePresentation::WithoutTransaction,
@@ -767,6 +774,7 @@ impl CompositorSurfaceProducerProvider {
         let diag = crate::frame_source::frame_pacing_diag_enabled()
             || std::env::var_os("FLOEM_CUBE_DIAG").is_some();
         let mut content_changed = false;
+        let mut max_observed_latency = None;
         while let Ok(completion) = self.completions.lock().unwrap().try_recv() {
             let mut in_flight = self.in_flight.lock().unwrap();
             *in_flight = in_flight.saturating_sub(1);
@@ -777,15 +785,20 @@ impl CompositorSurfaceProducerProvider {
                         .pending_presentations
                         .remove(&frame.opportunity.frame_index)
                         .unwrap_or(false);
+                    let observed_latency = self
+                        .pending_request_started_at
+                        .remove(&frame.opportunity.frame_index)
+                        .map(|started_at| Instant::now().saturating_duration_since(started_at));
                     if diag {
                         eprintln!(
-                            "floem compositor surface provider completion surface={:?} frame={} submitted size={}x{} resource_key={:?} presents_without_transaction={}",
+                            "floem compositor surface provider completion surface={:?} frame={} submitted size={}x{} resource_key={:?} presents_without_transaction={} observed_latency={:?}",
                             self.handle.id(),
                             frame.opportunity.frame_index,
                             frame.size.width,
                             frame.size.height,
                             frame.resource_key,
                             presents_without_transaction,
+                            observed_latency,
                         );
                     }
                     let size = Size::new(f64::from(frame.size.width), f64::from(frame.size.height));
@@ -794,8 +807,17 @@ impl CompositorSurfaceProducerProvider {
                     ));
                     self.current_presents_without_transaction = presents_without_transaction;
                     content_changed = true;
+                    if let Some(observed_latency) = observed_latency {
+                        max_observed_latency = Some(
+                            max_observed_latency
+                                .map(|latency: Duration| latency.max(observed_latency))
+                                .unwrap_or(observed_latency),
+                        );
+                    }
                 }
                 subduction::wgpu::SurfaceFrameCompletion::Skipped(frame) => {
+                    self.pending_request_started_at
+                        .remove(&frame.opportunity.frame_index);
                     if diag {
                         eprintln!(
                             "floem compositor surface provider completion surface={:?} frame={} skipped reason={:?}",
@@ -810,6 +832,7 @@ impl CompositorSurfaceProducerProvider {
         CompositorSurfaceFrameUpdate {
             content_changed,
             request_next_frame: false,
+            producer_observed_latency: max_observed_latency,
         }
     }
 }
@@ -818,6 +841,7 @@ impl CompositorSurfaceProducerProvider {
 pub struct CompositorSurfaceFrameUpdate {
     pub content_changed: bool,
     pub request_next_frame: bool,
+    pub producer_observed_latency: Option<Duration>,
 }
 
 impl CompositorSurfaceFrameUpdate {
@@ -831,6 +855,7 @@ impl CompositorSurfaceFrameUpdate {
         Self {
             content_changed: true,
             request_next_frame: false,
+            producer_observed_latency: None,
         }
     }
 
@@ -839,6 +864,7 @@ impl CompositorSurfaceFrameUpdate {
         Self {
             content_changed: false,
             request_next_frame: true,
+            producer_observed_latency: None,
         }
     }
 
@@ -847,6 +873,7 @@ impl CompositorSurfaceFrameUpdate {
         Self {
             content_changed: true,
             request_next_frame: true,
+            producer_observed_latency: None,
         }
     }
 }

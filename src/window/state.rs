@@ -176,7 +176,7 @@ pub struct WindowState {
     pub(crate) key_trigger_state: bool,
     pub(crate) focus_state: FocusState<ElementId>,
     pub(crate) last_focused_element: Option<ElementId>,
-    pub(crate) file_drag_paths: Option<Rc<[std::path::PathBuf]>>,
+    pub(crate) file_drag_paths: Option<std::rc::Rc<[std::path::PathBuf]>>,
     pub(crate) element_id_cursors: FxHashMap<ElementId, CursorStyle>,
     // whether the window is in light or dark mode
     pub(crate) light_dark_theme: winit::window::Theme,
@@ -190,6 +190,7 @@ pub struct WindowState {
     pub(crate) last_pointer: (Point, PointerInfo),
     pub(crate) keyboard_navigation: bool,
     pub(crate) context_menu: HashMap<MenuId, Box<dyn Fn()>>,
+    pub(crate) window_menu: HashMap<MenuId, Box<dyn Fn()>>,
 
     /// Cache for style resolution results.
     /// Views with identical styles and interaction states can share resolved styles.
@@ -290,6 +291,7 @@ impl WindowState {
             keyboard_navigation: false,
             grid_bps: GridBreakpoints::default(),
             context_menu: HashMap::new(),
+            window_menu: HashMap::new(),
             default_theme: theme,
             default_theme_inherited: inherited,
             needs_layout: true,
@@ -1549,6 +1551,10 @@ impl WindowState {
         actions: HashMap<MenuId, Box<dyn Fn() + 'static>>,
     ) {
         self.context_menu = actions;
+    }
+
+    pub(crate) fn update_window_menu(&mut self, actions: HashMap<MenuId, Box<dyn Fn() + 'static>>) {
+        self.window_menu = actions;
     }
 
     /// returns the previously set cursor if there was one

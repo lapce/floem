@@ -713,8 +713,9 @@ pub struct PaintPresentInfo {
 pub struct PaintPresentLayer {
     /// Backend layer slot/index for diagnostics.
     pub layer_id: u32,
-    /// The first Floem element that contributed content to this layer, if known.
-    pub source_element_id: Option<ElementId>,
+    /// Stable diagnostic token for the first Floem element that contributed
+    /// content to this layer, if known.
+    pub source_element_id: Option<crate::paint::composition::LayerSourceId>,
     /// Debug name for `source_element_id`, if known.
     pub debug_name: Option<String>,
     /// Target interval used when the layer was submitted.

@@ -6,6 +6,7 @@ pub mod mock;
 pub(crate) mod state;
 pub(crate) mod tracking;
 pub(crate) mod ui_driver;
+pub(crate) mod ui_runtime;
 
 pub use crate::paint::renderer::{GpuRendererChooserCx, NewRendererCx};
 pub use id::{Urgency, WindowIdExt};
@@ -27,7 +28,7 @@ use crate::app::{AppUpdateEvent, add_app_update_event};
 use crate::view::IntoView;
 
 pub struct WindowCreation {
-    pub(crate) view_fn: Box<dyn FnOnce(WindowId) -> AnyView>,
+    pub(crate) view_fn: Box<dyn FnOnce(WindowId) -> AnyView + Send>,
     pub(crate) config: Option<WindowConfig>,
 }
 
@@ -657,7 +658,7 @@ impl WebWindowConfig {
 /// Create a new window. You'll need to create Application first, otherwise it
 /// will panic.
 pub fn new_window<V: IntoView + 'static>(
-    app_view: impl FnOnce(WindowId) -> V + 'static,
+    app_view: impl FnOnce(WindowId) -> V + Send + 'static,
     config: Option<WindowConfig>,
 ) {
     add_app_update_event(AppUpdateEvent::NewWindow {

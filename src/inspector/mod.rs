@@ -26,6 +26,7 @@ use crate::{
 
 use std::{cell::Cell, collections::HashMap, fmt::Display, rc::Rc};
 use understory_box_tree::NodeFlags;
+use winit::window::WindowId;
 
 use crate::views::TabSelectorClass;
 use taffy::{
@@ -1852,6 +1853,7 @@ struct CaptureView {
 
 thread_local! {
     pub(crate) static RUNNING: Cell<bool> = const { Cell::new(false) };
+    pub(crate) static INSPECTOR_WINDOW: Cell<Option<WindowId>> = const { Cell::new(None) };
     pub(crate) static CAPTURE: RwSignal<Option<Rc<Capture>>> = {
         Scope::new().create_rw_signal(None)
     };

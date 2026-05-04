@@ -117,6 +117,9 @@ pub enum UpdateMessage {
         size: Size,
     },
     WindowVisible(bool),
+    RequestAnimationFrame {
+        callback: Box<dyn FnOnce(crate::frame::FrameTime)>,
+    },
     ViewTransitionAnimComplete(ViewId),
     SetTheme(Option<Theme>),
     /// Remove views from the tree (used by keyed children).

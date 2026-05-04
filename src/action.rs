@@ -198,9 +198,6 @@ pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static)
 /// Execute a callback at the next begin-frame opportunity for the current window.
 pub fn request_animation_frame(action: impl FnOnce(FrameTime) + 'static) {
     let view = get_current_view();
-    let Some(window_id) = view.window_id() else {
-        return;
-    };
 
     let action = move |frame_time| {
         let current_view = get_current_view();
@@ -209,10 +206,12 @@ pub fn request_animation_frame(action: impl FnOnce(FrameTime) + 'static) {
         set_current_view(current_view);
     };
 
-    add_app_update_event(AppUpdateEvent::RequestAnimationFrame {
-        window_id,
+    add_update_message(UpdateMessage::RequestAnimationFrame {
         callback: Box::new(action),
     });
+    if let Some(window_id) = view.window_id() {
+        crate::window::tracking::force_window_repaint(&window_id);
+    }
 }
 
 /// Debounce an action.

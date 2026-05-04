@@ -189,7 +189,9 @@ impl HeadlessHarness {
     /// ```
     pub fn process_update_no_paint(&mut self) {
         // Promote any next-frame work when the harness explicitly advances.
-        self.window_handle.ui.state.promote_next_frame_work();
+        self.window_handle
+            .ui
+            .with_direct(|ui| ui.state.promote_next_frame_work());
 
         // Run style and layout passes, returning whether paint is needed
         self.window_handle.process_update_no_paint()
@@ -197,7 +199,7 @@ impl HeadlessHarness {
 
     /// Get the root view ID.
     pub fn root_id(&self) -> ViewId {
-        self.window_handle.ui.root_id
+        self.window_handle.ui.with_direct(|ui| ui.root_id)
     }
 
     /// Returns the `winit::window::WindowId` of the underlying headless window.
@@ -345,22 +347,30 @@ impl HeadlessHarness {
     ///   2: returning into the element
     /// or keyboard trigger is down).
     pub fn is_active(&self, id: impl Into<ElementId>) -> bool {
-        self.window_handle.ui.state.is_active(id)
+        self.window_handle
+            .ui
+            .with_direct(|ui| ui.state.is_active(id))
     }
 
     /// Check if a view is currently hovered.
     pub fn is_hovered(&self, id: impl Into<ElementId>) -> bool {
-        self.window_handle.ui.state.is_hovered(id)
+        self.window_handle
+            .ui
+            .with_direct(|ui| ui.state.is_hovered(id))
     }
 
     /// Check if a view is currently focused.
     pub fn is_focused(&self, id: impl Into<ElementId>) -> bool {
-        self.window_handle.ui.state.is_focused(id)
+        self.window_handle
+            .ui
+            .with_direct(|ui| ui.state.is_focused(id))
     }
 
     /// Check if a view has pointer capture.
     pub fn has_capture(&self, id: impl Into<ElementId>) -> bool {
-        self.window_handle.ui.state.has_capture(id)
+        self.window_handle
+            .ui
+            .with_direct(|ui| ui.state.has_capture(id))
     }
 
     /// Get the current interaction state for a view.
@@ -370,7 +380,9 @@ impl HeadlessHarness {
     pub fn get_interaction_state(&mut self, id: impl Into<ElementId>) -> InteractionState {
         let id: ElementId = id.into();
         let view_id = id.owning_id();
-        crate::style::StyleCx::get_interact_state(&self.window_handle.ui.state, view_id)
+        self.window_handle
+            .ui
+            .with_direct(|ui| crate::style::StyleCx::get_interact_state(&ui.state, view_id))
     }
 
     /// Check if a view has styles defined for the given selector.
@@ -378,7 +390,9 @@ impl HeadlessHarness {
     /// For example, `has_style_for_selector(id, StyleSelector::Active)` returns true
     /// if the view has an `:active` style defined.
     pub fn has_style_for_selector(&mut self, id: ViewId, selector: StyleSelector) -> bool {
-        self.window_handle.ui.state.has_style_for_sel(id, selector)
+        self.window_handle
+            .ui
+            .with_direct(|ui| ui.state.has_style_for_sel(id, selector))
     }
 
     /// Get the computed style for a view.
@@ -424,19 +438,25 @@ impl HeadlessHarness {
     ///
     /// This is useful for verifying that style changes trigger repaints.
     pub fn paint_requested(&self) -> bool {
-        self.window_handle.ui.state.has_pending_paint()
+        self.window_handle
+            .ui
+            .with_direct(|ui| ui.state.has_pending_paint())
     }
 
     /// Clear the paint request flag.
     ///
     /// Call this before an operation to then check if it triggered a repaint.
     pub fn clear_paint_request(&mut self) {
-        self.window_handle.ui.state.clear_pending_paint();
+        self.window_handle
+            .ui
+            .with_direct(|ui| ui.state.clear_pending_paint());
     }
 
     /// Check if a view has pending style changes.
     pub fn has_pending_style_change(&self, id: ViewId) -> bool {
-        self.window_handle.ui.state.style_dirty.contains_key(&id)
+        self.window_handle
+            .ui
+            .with_direct(|ui| ui.state.style_dirty.contains_key(&id))
     }
 
     /// Check if there are scheduled updates for the next frame.
@@ -444,14 +464,18 @@ impl HeadlessHarness {
     /// This is useful for testing transitions, which schedule style updates
     /// to animate across frames.
     pub fn has_scheduled_updates(&self) -> bool {
-        self.window_handle.ui.state.has_next_frame_work()
+        self.window_handle
+            .ui
+            .with_direct(|ui| ui.state.has_next_frame_work())
     }
 
     /// Check if a view is in the style_dirty set.
     ///
     /// Views in this set will be processed during the next style pass.
     pub fn is_style_dirty(&self, id: ViewId) -> bool {
-        self.window_handle.ui.state.style_dirty.contains_key(&id)
+        self.window_handle
+            .ui
+            .with_direct(|ui| ui.state.style_dirty.contains_key(&id))
     }
 
     /// Get the layout rectangle for a view.
@@ -535,7 +559,9 @@ impl HeadlessHarness {
     }
 
     pub fn last_paint_stats(&self) -> PaintStats {
-        self.window_handle.ui.state.last_paint_stats
+        self.window_handle
+            .ui
+            .with_direct(|ui| ui.state.last_paint_stats)
     }
 }
 

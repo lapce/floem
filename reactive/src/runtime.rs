@@ -5,7 +5,7 @@ use std::{
     collections::{HashMap, HashSet},
     rc::Rc,
     sync::{
-        OnceLock,
+        LazyLock, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
     thread::{self, ThreadId},
@@ -27,7 +27,8 @@ thread_local! {
 pub static RUNTIME: Runtime = Runtime::new();
 }
 
-static UI_THREAD_ID: OnceLock<ThreadId> = OnceLock::new();
+static UI_THREAD_IDS: LazyLock<Mutex<HashSet<ThreadId>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 #[cfg(debug_assertions)]
 static UI_THREAD_SET_LOCATION: OnceLock<&'static std::panic::Location<'static>> = OnceLock::new();
 static ENFORCE_UI_THREAD: AtomicBool = AtomicBool::new(false);
@@ -73,16 +74,7 @@ impl Runtime {
     #[cfg_attr(debug_assertions, track_caller)]
     pub fn init_on_ui_thread() {
         let current = thread::current().id();
-        match UI_THREAD_ID.set(current) {
-            Ok(_) => {}
-            Err(_) => {
-                assert_eq!(
-                    UI_THREAD_ID.get(),
-                    Some(&current),
-                    "UI thread id already set to a different thread"
-                );
-            }
-        }
+        UI_THREAD_IDS.lock().unwrap().insert(current);
         #[cfg(debug_assertions)]
         {
             let caller = std::panic::Location::caller();
@@ -98,38 +90,29 @@ impl Runtime {
         }
 
         let current = thread::current().id();
-        match UI_THREAD_ID.get() {
-            Some(ui_id) => {
-                if *ui_id != current {
-                    #[cfg(debug_assertions)]
-                    {
-                        let caller = std::panic::Location::caller();
-                        let set_at = UI_THREAD_SET_LOCATION.get();
-                        let set_info = set_at
-                            .map(|loc| format!(" (set at {}:{})", loc.file(), loc.line()))
-                            .unwrap_or_default();
-                        panic!(
-                            "Unsync runtime access from non-UI thread\n  expected UI thread: {:?}{}\n  current thread: {:?}\n  caller: {}:{}",
-                            ui_id,
-                            set_info,
-                            current,
-                            caller.file(),
-                            caller.line(),
-                        );
-                    }
-                    #[cfg(not(debug_assertions))]
-                    {
-                        assert_eq!(
-                            *ui_id, current,
-                            "Unsync runtime access from non-UI thread: expected {:?}, got {:?}",
-                            ui_id, current
-                        );
-                    }
-                }
+        let is_ui_thread = UI_THREAD_IDS.lock().unwrap().contains(&current);
+        if !is_ui_thread {
+            #[cfg(debug_assertions)]
+            {
+                let caller = std::panic::Location::caller();
+                let set_at = UI_THREAD_SET_LOCATION.get();
+                let set_info = set_at
+                    .map(|loc| format!(" (first set at {}:{})", loc.file(), loc.line()))
+                    .unwrap_or_default();
+                panic!(
+                    "Unsync runtime access from non-UI thread\n  expected one of registered UI threads{}\n  current thread: {:?}\n  caller: {}:{}",
+                    set_info,
+                    current,
+                    caller.file(),
+                    caller.line(),
+                );
             }
-            None => {
-                // Once enforcement is on, first access defines the UI thread.
-                let _ = UI_THREAD_ID.set(current);
+            #[cfg(not(debug_assertions))]
+            {
+                panic!(
+                    "Unsync runtime access from non-UI thread: current thread {:?} is not a registered UI thread",
+                    current
+                );
             }
         }
     }
@@ -138,10 +121,10 @@ impl Runtime {
         if !ENFORCE_UI_THREAD.load(Ordering::Relaxed) {
             true
         } else {
-            UI_THREAD_ID
-                .get()
-                .map(|id| *id == thread::current().id())
-                .unwrap_or(false)
+            UI_THREAD_IDS
+                .lock()
+                .unwrap()
+                .contains(&thread::current().id())
         }
     }
 

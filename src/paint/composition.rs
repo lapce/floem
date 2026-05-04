@@ -1,6 +1,19 @@
+use std::hash::{Hash, Hasher};
+
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size};
 
 use crate::{ElementId, compositor_surface::CompositorSurfaceId, effects::CompositorEffect};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct LayerSourceId(u64);
+
+impl LayerSourceId {
+    pub(crate) fn from_element_id(id: ElementId) -> Self {
+        let mut hasher = rustc_hash::FxHasher::default();
+        id.hash(&mut hasher);
+        Self(hasher.finish())
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum PaintStage {
@@ -46,7 +59,7 @@ pub(crate) enum CompositionItem {
 #[derive(Clone, Debug)]
 pub(crate) struct SceneLayer {
     pub key: CompositionKey,
-    pub source_element_id: Option<ElementId>,
+    pub source_element_id: Option<LayerSourceId>,
     pub debug_name: Option<String>,
     pub scene: imaging::record::Scene,
     pub external_images: Vec<SceneExternalImage>,

@@ -135,9 +135,17 @@ impl Hud {
     }
 
     pub(crate) fn record_present(&self, info: &PaintPresentInfo) {
-        let self_element_id = self.inner.element_id.get();
-        let self_content_element_id = self.inner.content_element_id.get();
-        let is_hud_layer = |source_element_id: Option<ElementId>| {
+        let self_element_id = self
+            .inner
+            .element_id
+            .get()
+            .map(crate::paint::composition::LayerSourceId::from_element_id);
+        let self_content_element_id = self
+            .inner
+            .content_element_id
+            .get()
+            .map(crate::paint::composition::LayerSourceId::from_element_id);
+        let is_hud_layer = |source_element_id| {
             source_element_id == self_element_id || source_element_id == self_content_element_id
         };
         let active_layer_ids = info

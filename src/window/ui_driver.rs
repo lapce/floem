@@ -1,14 +1,15 @@
 use floem_reactive::Scope;
 use rustc_hash::FxHashMap;
-use std::collections::HashMap;
 
 use crate::{
     compositor_surface::CompositorSurfaceId,
     context::{LayoutChanged, StyleCx, UpdateCx, VisualChanged},
     event::{
         CustomEvent, Event, GlobalEventCx, RouteKind, ScrollTo, UpdatePhaseEvent, WindowEvent,
+        dropped_file::{FileDragEvent, FileDragMove},
     },
     frame::FrameTime,
+    gpu_resources::GpuResources,
     inspector::TimingKind,
     message::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, DEFERRED_UPDATE_MESSAGES,
@@ -16,16 +17,45 @@ use crate::{
     },
     paint::composition::CompositionPlan,
     platform::menu_types::{Menu as MudaMenu, MenuId},
-    style::{StyleSelector, recalc::StyleReason},
-    view::{ViewId, process_pending_scope_reparents},
+    style::{CursorStyle, StyleSelector, recalc::StyleReason},
+    view::{IntoView, VIEW_STORAGE, View, ViewId, process_pending_scope_reparents},
     window::compositor_surface::{CompositorSurfaceEntry, WindowCompositorSurfaces},
     window::handle::{FrameTimingAccumulator, set_current_view},
 };
+use std::{path::PathBuf, rc::Rc};
 
 use super::state::WindowState;
 
 use peniko::kurbo::{self, Point, Size, Vec2};
-use winit::window::ResizeDirection;
+use winit::{
+    cursor::CursorIcon,
+    event::Ime,
+    window::{ResizeDirection, Theme, WindowId},
+};
+
+#[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+use crate::{
+    platform::context_menu::context_menu_view,
+    reactive::{RwSignal, SignalGet},
+    unit::UnitExt,
+    views::{Container, Decorators, Stack},
+};
+
+pub(crate) struct PlatformMenu(MudaMenu);
+
+// The UI owner builds the menu and transfers ownership to the main-thread
+// platform owner exactly once through `PlatformRequest`.
+unsafe impl Send for PlatformMenu {}
+
+impl PlatformMenu {
+    pub(crate) fn new(menu: MudaMenu) -> Self {
+        Self(menu)
+    }
+
+    pub(crate) fn into_inner(self) -> MudaMenu {
+        self.0
+    }
+}
 
 pub(crate) enum PlatformRequest {
     DragWindow,
@@ -41,12 +71,11 @@ pub(crate) enum PlatformRequest {
         effective_scale: f64,
     },
     ShowContextMenu {
-        menu: MudaMenu,
+        menu: PlatformMenu,
         pos: Option<Point>,
     },
     WindowMenu {
-        menu: MudaMenu,
-        actions: HashMap<MenuId, Box<dyn Fn()>>,
+        menu: PlatformMenu,
     },
     SetImeAllowed(bool),
     SetImeCursorArea {
@@ -61,15 +90,59 @@ pub(crate) enum PlatformRequest {
 
 #[derive(Default)]
 pub(crate) struct UiUpdateOutcome {
-    pub(crate) toggle_hud: bool,
     pub(crate) schedule_repaint: bool,
 }
 
+pub(crate) enum UiPlatformEvent {
+    WindowMoved(Point),
+    FocusGained,
+    FocusLost,
+    Pointer(ui_events::pointer::PointerEvent),
+    Key(ui_events::keyboard::KeyboardEvent),
+    Ime(Ime),
+    FileDragEnter {
+        paths: Vec<PathBuf>,
+        position: Point,
+    },
+    FileDragLeave {
+        position: Point,
+    },
+    FileDragDrop {
+        paths: Vec<PathBuf>,
+        position: Point,
+    },
+    FileDragStart {
+        paths: Vec<PathBuf>,
+        position: Point,
+    },
+    FileDragMove {
+        position: Point,
+    },
+    FileDragEnd,
+}
+
 #[derive(Clone)]
-pub(crate) struct UiFrameArtifact {
+pub(crate) struct UiSceneSubmission {
     pub(crate) composition_plan: CompositionPlan,
     pub(crate) compositor_surfaces: FxHashMap<CompositorSurfaceId, CompositorSurfaceEntry>,
     pub(crate) effective_scale: f64,
+}
+
+const _: fn() = || {
+    fn assert_send<T: Send>() {}
+    assert_send::<UiSceneSubmission>();
+    assert_send::<UiPlatformEvent>();
+    assert_send::<PlatformRequest>();
+};
+
+impl UiSceneSubmission {
+    pub(crate) fn has_compositor_surfaces(&self) -> bool {
+        self.composition_plan.has_compositor_surfaces()
+    }
+
+    pub(crate) fn plan_item_count(&self) -> usize {
+        self.composition_plan.items.len()
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -92,6 +165,7 @@ pub(crate) struct WindowUiDriver {
     pub(crate) root_id: ViewId,
     pub(crate) scope: Scope,
     pub(crate) state: WindowState,
+    hud: crate::hud::Hud,
     platform_requests: Vec<PlatformRequest>,
 }
 
@@ -101,12 +175,380 @@ impl WindowUiDriver {
             root_id,
             scope,
             state,
+            hud: crate::hud::Hud::new(),
+            platform_requests: Vec::new(),
+        }
+    }
+
+    pub(crate) fn new_window(
+        window_id: WindowId,
+        root_size: Size,
+        os_theme: Option<Theme>,
+        os_scale: f64,
+        view_fn: impl FnOnce(WindowId) -> Box<dyn View> + Send + 'static,
+    ) -> Self {
+        let root_id = ViewId::new_root();
+        let scope = Scope::new();
+        set_current_view(root_id);
+        super::tracking::store_root_window_id_mapping(root_id, window_id);
+        let hud = crate::hud::Hud::new();
+
+        #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+        let context_menu = scope.create_rw_signal(None);
+
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")))]
+        let main_view = scope.enter(move || view_fn(window_id));
+
+        #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+        let main_view = {
+            let size = scope.create_rw_signal(root_size);
+            scope.enter(move || {
+                let main_view = view_fn(window_id);
+                Stack::new((
+                    Container::new(main_view).style(|s| s.size(100.pct(), 100.pct())),
+                    context_menu_view(scope, context_menu, size),
+                ))
+                .style(|s| s.size(100.pct(), 100.pct()))
+                .into_any()
+            })
+        };
+
+        let hud_view = scope.enter({
+            let hud = hud.clone();
+            move || hud.view().into_any()
+        });
+
+        root_id.set_children([main_view, hud_view]);
+        root_id.set_view(super::handle::WindowView { id: root_id }.into_any());
+
+        let mut state = WindowState::new(root_id, os_theme, os_scale);
+        state.set_root_size(root_size);
+        state.update_screen_size_bp(root_size);
+        state.light_dark_theme = os_theme.unwrap_or(Theme::Light);
+
+        Self {
+            root_id,
+            scope,
+            state,
+            hud,
             platform_requests: Vec::new(),
         }
     }
 
     pub(crate) fn request_platform(&mut self, request: PlatformRequest) {
         self.platform_requests.push(request);
+    }
+
+    pub(crate) fn root_id_for_legacy_tracking(&self) -> ViewId {
+        self.root_id
+    }
+
+    pub(crate) fn clear_root_box_tree(&mut self) {
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            s.box_tree.remove(&self.root_id);
+        });
+    }
+
+    pub(crate) fn dispose_scope(&mut self) {
+        self.scope.dispose();
+    }
+
+    pub(crate) fn remove_root_view(&mut self) {
+        self.state.remove_view(self.root_id);
+    }
+
+    pub(crate) fn record_profile_instant(
+        &mut self,
+        name: &'static str,
+        at: crate::platform::Instant,
+    ) {
+        self.state.record_profile_instant(name, at);
+    }
+
+    pub(crate) fn request_root_paint(&mut self) {
+        set_current_view(self.root_id.root());
+        self.state.request_paint(self.root_id);
+    }
+
+    pub(crate) fn toggle_hud(&mut self) {
+        self.hud.toggle();
+        self.request_root_paint();
+    }
+
+    pub(crate) fn record_present(&mut self, info: &crate::event::PaintPresentInfo) {
+        set_current_view(self.root_id.root());
+        self.hud.record_present(info);
+    }
+
+    pub(crate) fn update_os_scale(&mut self, os_scale: f64) {
+        set_current_view(self.root_id.root());
+        self.state.os_scale = os_scale;
+        self.state.update_default_theme(self.state.light_dark_theme);
+        self.state
+            .mark_style_dirty(self.state.root_view_id.get_element_id());
+        let scale = self.state.effective_scale();
+        self.route_window_event(Event::Window(WindowEvent::ScaleChanged(scale)));
+        self.state.request_paint(self.state.root_view_id);
+    }
+
+    pub(crate) fn set_theme(&mut self, theme: Option<Theme>, change_from_os: bool) -> bool {
+        set_current_view(self.root_id.root());
+        if change_from_os && self.state.theme_overriden {
+            return false;
+        }
+        self.state.mark_style_dirty_selector(
+            self.state.root_view_id.get_element_id(),
+            StyleSelector::DarkMode,
+        );
+        if let Some(theme) = theme {
+            self.state.update_default_theme(theme);
+            self.state.light_dark_theme = theme;
+            if !change_from_os {
+                self.state.theme_overriden = true;
+            }
+        } else {
+            self.state.theme_overriden = false;
+        }
+        self.root_id.request_style(StyleReason::inherited());
+        if let Some(theme) = theme {
+            self.route_window_event(Event::Window(WindowEvent::ThemeChanged(theme)));
+        }
+        true
+    }
+
+    pub(crate) fn resize(&mut self, size: Size, is_maximized: bool) {
+        set_current_view(self.root_id.root());
+        self.state.set_root_size(size);
+        self.state.update_screen_size_bp(size);
+        self.route_window_event(Event::Window(WindowEvent::Resized(size)));
+        let _ = is_maximized;
+        self.state.request_paint(self.state.root_view_id);
+    }
+
+    pub(crate) fn maximize_changed(&mut self, is_maximized: bool) {
+        set_current_view(self.root_id.root());
+        self.route_window_event(Event::Window(WindowEvent::MaximizeChanged(is_maximized)));
+    }
+
+    pub(crate) fn effective_scale(&self) -> f64 {
+        self.state.effective_scale()
+    }
+
+    pub(crate) fn os_scale(&self) -> f64 {
+        self.state.os_scale
+    }
+
+    pub(crate) fn root_physical_size(&self) -> Size {
+        self.state.root_size * self.state.os_scale
+    }
+
+    pub(crate) fn current_theme(&self) -> Theme {
+        self.state.light_dark_theme
+    }
+
+    pub(crate) fn set_profile_events_enabled(&mut self, enabled: bool) {
+        self.state.profile_events_enabled = enabled;
+    }
+
+    pub(crate) fn clear_profile_events(&mut self) {
+        self.state.profile_events.clear();
+    }
+
+    pub(crate) fn take_profile_events(&mut self) -> Vec<crate::inspector::profiler::ProfileEvent> {
+        self.state
+            .profile_events
+            .drain(..)
+            .map(|event| crate::inspector::profiler::ProfileEvent {
+                start: event.start,
+                end: event.end,
+                name: event.name,
+                depth: 0,
+            })
+            .collect()
+    }
+
+    pub(crate) fn file_drag_dropped(&mut self, file_drag_event: FileDragEvent) {
+        self.state.file_drag_paths = None;
+        self.route_window_event(Event::FileDrag(file_drag_event));
+    }
+
+    pub(crate) fn file_drag_start(&mut self, paths: Vec<PathBuf>, position: Point) {
+        let paths: Rc<[PathBuf]> = paths.into();
+        self.state.file_drag_paths = Some(paths.clone());
+        self.route_window_event(Event::FileDrag(FileDragEvent::Move(FileDragMove {
+            paths,
+            position,
+        })));
+    }
+
+    pub(crate) fn file_drag_move(&mut self, position: Point) {
+        if let Some(paths) = &self.state.file_drag_paths {
+            self.route_window_event(Event::FileDrag(FileDragEvent::Move(FileDragMove {
+                paths: paths.clone(),
+                position,
+            })));
+        }
+    }
+
+    pub(crate) fn file_drag_end(&mut self) {
+        self.state.file_drag_paths = None;
+        set_current_view(self.root_id.root());
+        let root_element_id = self.state.root_view_id.get_element_id();
+        GlobalEventCx::new(&mut self.state, root_element_id, Event::Extracted)
+            .update_hover_from_path(&[]);
+    }
+
+    pub(crate) fn route_platform_event(&mut self, event: UiPlatformEvent) -> UiUpdateOutcome {
+        set_current_view(self.root_id.root());
+        match event {
+            UiPlatformEvent::WindowMoved(point) => {
+                self.route_window_event(Event::Window(WindowEvent::Moved(point)));
+            }
+            UiPlatformEvent::FocusGained => {
+                self.route_window_event(Event::Window(WindowEvent::FocusGained));
+            }
+            UiPlatformEvent::FocusLost => {
+                self.route_window_event(Event::Window(WindowEvent::FocusLost));
+            }
+            UiPlatformEvent::Pointer(event) => {
+                self.route_window_event(Event::Pointer(event));
+            }
+            UiPlatformEvent::Key(event) => {
+                self.route_window_event(Event::Key(event));
+            }
+            UiPlatformEvent::Ime(ime) => {
+                let event = match ime {
+                    Ime::Enabled => crate::event::ImeEvent::Enabled,
+                    Ime::Preedit(text, cursor) => crate::event::ImeEvent::Preedit { text, cursor },
+                    Ime::Commit(text) => crate::event::ImeEvent::Commit(text),
+                    Ime::Disabled => crate::event::ImeEvent::Disabled,
+                    Ime::DeleteSurrounding {
+                        before_bytes,
+                        after_bytes,
+                    } => crate::event::ImeEvent::DeleteSurrounding {
+                        before_bytes,
+                        after_bytes,
+                    },
+                };
+                self.route_window_event(Event::Ime(event));
+            }
+            UiPlatformEvent::FileDragDrop { paths, position } => {
+                self.file_drag_dropped(FileDragEvent::Drop(crate::dropped_file::FileDragDropped {
+                    paths: paths.into(),
+                    position,
+                }));
+            }
+            UiPlatformEvent::FileDragEnter { paths, position } => {
+                self.file_drag_dropped(FileDragEvent::Enter(crate::dropped_file::FileDragEnter {
+                    paths: paths.into(),
+                    position,
+                }));
+            }
+            UiPlatformEvent::FileDragLeave { position } => {
+                self.file_drag_dropped(FileDragEvent::Leave(crate::dropped_file::FileDragLeave {
+                    position,
+                }));
+            }
+            UiPlatformEvent::FileDragStart { paths, position } => {
+                self.file_drag_start(paths, position);
+            }
+            UiPlatformEvent::FileDragMove { position } => {
+                self.file_drag_move(position);
+            }
+            UiPlatformEvent::FileDragEnd => {
+                self.file_drag_end();
+            }
+        }
+        self.process_update_messages()
+    }
+
+    pub(crate) fn clear_pending_damage(&mut self) {
+        self.state.clear_pending_damage();
+    }
+
+    pub(crate) fn user_scale(&self) -> f64 {
+        self.state.user_scale
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+    pub(crate) fn last_pointer_position(&self) -> Point {
+        self.state.last_pointer.0
+    }
+
+    pub(crate) fn has_context_menu_action(&self, id: &MenuId) -> bool {
+        self.state.context_menu.contains_key(id)
+    }
+
+    pub(crate) fn run_context_menu_action(&mut self, id: &MenuId) -> bool {
+        set_current_view(self.root_id.root());
+        if let Some(action) = self.state.context_menu.get(id) {
+            (*action)();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn has_window_menu_action(&self, id: &MenuId) -> bool {
+        self.state.window_menu.contains_key(id)
+    }
+
+    pub(crate) fn run_window_menu_action(&mut self, id: &MenuId) -> bool {
+        set_current_view(self.root_id.root());
+        if let Some(action) = self.state.window_menu.get(id) {
+            (*action)();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn resolve_cursor_icon(&mut self) -> Option<CursorIcon> {
+        if self.state.needs_cursor_resolution {
+            let mut temp = None;
+            for hover in self.state.hover_state.current_path() {
+                if hover.is_view()
+                    && let Some(cursor) = hover.owning_id().state().borrow().cursor()
+                {
+                    temp = Some(cursor);
+                }
+                if let Some(cursor) = self.state.element_id_cursors.get(hover) {
+                    temp = Some(*cursor);
+                }
+            }
+            self.state.needs_cursor_resolution = false;
+            self.state.cursor = temp;
+        }
+        let cursor = match self.state.cursor {
+            Some(CursorStyle::Default) => CursorIcon::Default,
+            Some(CursorStyle::Pointer) => CursorIcon::Pointer,
+            Some(CursorStyle::Progress) => CursorIcon::Progress,
+            Some(CursorStyle::Wait) => CursorIcon::Wait,
+            Some(CursorStyle::Crosshair) => CursorIcon::Crosshair,
+            Some(CursorStyle::Text) => CursorIcon::Text,
+            Some(CursorStyle::Move) => CursorIcon::Move,
+            Some(CursorStyle::Grab) => CursorIcon::Grab,
+            Some(CursorStyle::Grabbing) => CursorIcon::Grabbing,
+            Some(CursorStyle::ColResize) => CursorIcon::ColResize,
+            Some(CursorStyle::RowResize) => CursorIcon::RowResize,
+            Some(CursorStyle::WResize) => CursorIcon::WResize,
+            Some(CursorStyle::EResize) => CursorIcon::EResize,
+            Some(CursorStyle::NwResize) => CursorIcon::NwResize,
+            Some(CursorStyle::NeResize) => CursorIcon::NeResize,
+            Some(CursorStyle::SwResize) => CursorIcon::SwResize,
+            Some(CursorStyle::SeResize) => CursorIcon::SeResize,
+            Some(CursorStyle::SResize) => CursorIcon::SResize,
+            Some(CursorStyle::NResize) => CursorIcon::NResize,
+            Some(CursorStyle::NeswResize) => CursorIcon::NeswResize,
+            Some(CursorStyle::NwseResize) => CursorIcon::NwseResize,
+            None => CursorIcon::Default,
+        };
+        if cursor != self.state.last_cursor_icon {
+            self.state.last_cursor_icon = cursor;
+            Some(cursor)
+        } else {
+            None
+        }
     }
 
     pub(crate) fn take_platform_requests(&mut self) -> Vec<PlatformRequest> {
@@ -154,8 +596,8 @@ impl WindowUiDriver {
     }
 
     pub(crate) fn process_update_messages(&mut self) -> UiUpdateOutcome {
-        let mut outcome = UiUpdateOutcome::default();
         set_current_view(self.root_id.root());
+        let mut outcome = UiUpdateOutcome::default();
         loop {
             let msgs = self.take_update_messages();
             if msgs.is_empty() {
@@ -271,14 +713,17 @@ impl WindowUiDriver {
                         let (menu, registry) = menu.build();
                         cx.window_state.context_menu.clear();
                         cx.window_state.update_context_menu(registry);
-                        self.request_platform(PlatformRequest::ShowContextMenu { menu, pos });
+                        self.request_platform(PlatformRequest::ShowContextMenu {
+                            menu: PlatformMenu::new(menu),
+                            pos,
+                        });
                     }
                     #[cfg(not(target_arch = "wasm32"))]
                     UpdateMessage::WindowMenu { menu } => {
                         let (menu, registry) = menu.build();
+                        cx.window_state.update_window_menu(registry);
                         self.request_platform(PlatformRequest::WindowMenu {
-                            menu,
-                            actions: registry,
+                            menu: PlatformMenu::new(menu),
                         });
                     }
                     UpdateMessage::SetWindowTitle { title } => {
@@ -302,7 +747,8 @@ impl WindowUiDriver {
                         self.request_platform(PlatformRequest::CaptureMetalFrame);
                     }
                     UpdateMessage::ToggleHud => {
-                        outcome.toggle_hud = true;
+                        self.toggle_hud();
+                        outcome.schedule_repaint = true;
                     }
                     UpdateMessage::AddOverlay { view } => {
                         self.root_id.add_child(view);
@@ -326,6 +772,9 @@ impl WindowUiDriver {
                     }
                     UpdateMessage::WindowVisible(visible) => {
                         self.request_platform(PlatformRequest::WindowVisible(visible));
+                    }
+                    UpdateMessage::RequestAnimationFrame { callback } => {
+                        self.state.begin_frame_callbacks.push(callback);
                     }
                     UpdateMessage::ViewTransitionAnimComplete(id) => {
                         let num_waiting =
@@ -400,6 +849,7 @@ impl WindowUiDriver {
     }
 
     pub(crate) fn process_deferred_update_messages(&mut self) {
+        set_current_view(self.root_id.root());
         self.process_central_messages();
         let msgs = DEFERRED_UPDATE_MESSAGES
             .with(|msgs| msgs.borrow_mut().remove(&self.root_id).unwrap_or_default());
@@ -413,6 +863,7 @@ impl WindowUiDriver {
     }
 
     pub(crate) fn route_window_event(&mut self, event: Event) {
+        set_current_view(self.root_id.root());
         let root_element_id = self.state.root_view_id.get_element_id();
         GlobalEventCx::new(&mut self.state, root_element_id, event).route_window_event();
     }
@@ -468,21 +919,46 @@ impl WindowUiDriver {
     }
 
     pub(crate) fn run_begin_frame_callbacks(&mut self, frame_time: FrameTime) {
+        set_current_view(self.root_id.root());
         let callbacks = self.state.take_begin_frame_callbacks();
         for callback in callbacks {
             callback(frame_time);
         }
     }
 
-    pub(crate) fn frame_artifact(
+    pub(crate) fn scene_submission(
         &self,
         compositor_surfaces: &WindowCompositorSurfaces,
-    ) -> UiFrameArtifact {
-        UiFrameArtifact {
+    ) -> UiSceneSubmission {
+        UiSceneSubmission {
             composition_plan: self.state.composition_plan.clone(),
             compositor_surfaces: compositor_surfaces.entries().clone(),
             effective_scale: self.state.effective_scale(),
         }
+    }
+
+    pub(crate) fn prepare_display_list(
+        &mut self,
+        gpu_resources: Option<GpuResources>,
+        has_layer_host: bool,
+        record_paint_order: bool,
+        compositor_surfaces: &WindowCompositorSurfaces,
+        timing: &mut FrameTimingAccumulator,
+    ) -> UiSceneSubmission {
+        set_current_view(self.root_id.root());
+        let start = crate::platform::Instant::now();
+        let mut cx = crate::paint::GlobalPaintCx {
+            window_state: &mut self.state,
+            gpu_resources,
+            has_layer_host,
+            record_paint_order,
+        };
+        cx.prepare_display_list(self.root_id);
+        let submission = self.scene_submission(compositor_surfaces);
+        let end = crate::platform::Instant::now();
+        timing.push_absolute_span("Paint", start, end, TimingKind::Paint);
+        timing.push_absolute_span("Scene", start, end, TimingKind::Paint);
+        submission
     }
 
     pub(crate) fn frame_status(&self) -> UiFrameStatus {
@@ -500,6 +976,7 @@ impl WindowUiDriver {
         active_frame_time: Option<FrameTime>,
         timing: &mut FrameTimingAccumulator,
     ) {
+        set_current_view(self.root_id.root());
         let start = crate::platform::Instant::now();
         let style_now = active_frame_time
             .map(|frame_time| frame_time.now)
@@ -529,6 +1006,7 @@ impl WindowUiDriver {
     }
 
     pub(crate) fn layout(&mut self, timing: &mut FrameTimingAccumulator) {
+        set_current_view(self.root_id.root());
         let start = crate::platform::Instant::now();
         self.state.compute_layout();
         let taffy_end = crate::platform::Instant::now();
@@ -550,6 +1028,7 @@ impl WindowUiDriver {
     }
 
     pub(crate) fn update_box_tree_from_layout(&mut self, timing: &mut FrameTimingAccumulator) {
+        set_current_view(self.root_id.root());
         let start = crate::platform::Instant::now();
         self.state.update_box_tree_from_layout();
         let root_element_id = self.state.root_view_id.get_element_id();
@@ -564,6 +1043,7 @@ impl WindowUiDriver {
     }
 
     pub(crate) fn process_pending_box_tree_updates(&mut self, timing: &mut FrameTimingAccumulator) {
+        set_current_view(self.root_id.root());
         let start = crate::platform::Instant::now();
         self.state.process_pending_box_tree_updates();
         let root_element_id = self.state.root_view_id.get_element_id();
@@ -580,6 +1060,7 @@ impl WindowUiDriver {
     }
 
     pub(crate) fn commit_box_tree(&mut self, timing: &mut FrameTimingAccumulator) {
+        set_current_view(self.root_id.root());
         let start = crate::platform::Instant::now();
         self.state.commit_box_tree();
         self.state.needs_box_tree_commit = false;

@@ -2,10 +2,11 @@ use super::profiler::profiler;
 use crate::{
     AnyView, ElementId, IntoView, View, ViewId,
     action::inspect,
-    app::{AppUpdateEvent, add_app_update_event},
+    app::{AppUpdateEvent, UserEvent, add_app_update_event},
     event::{EventPropagation, listener},
     inspector::{
-        CAPTURE, Capture, CaptureView, CapturedElement, InspectorSelection, RUNNING, add_event,
+        CAPTURE, Capture, CaptureView, CapturedElement, INSPECTOR_WINDOW, InspectorSelection,
+        RUNNING, add_event,
         data::{CapturedData, CapturedDatas},
         find_view, header, selected_view, selection_matches_view, stats, update_select_element_id,
         update_select_view_id,
@@ -40,12 +41,16 @@ const OS_MOD: Modifiers = if cfg!(target_os = "macos") {
 };
 
 pub fn capture(window_id: WindowId) {
-    let capture = CAPTURE.with(|c| *c);
-
     if !RUNNING.get() {
         new_window(
             move |inspector_window_id| {
+                INSPECTOR_WINDOW.set(Some(inspector_window_id));
+                let capture = CAPTURE.with(|c| *c);
                 let selected = RwSignal::new(0);
+                crate::Application::send_proxy_event(UserEvent::InspectorCaptureWindow {
+                    window_id,
+                    inspector_window_id,
+                });
 
                 let tab_item = |name, index| {
                     Label::new(name)
@@ -66,12 +71,18 @@ pub fn capture(window_id: WindowId) {
                         0 => dyn_container(
                             move || capture.get(),
                             move |capture_value| {
-                                inspector_view(window_id, capture, &capture_value).into_any()
+                                inspector_view(
+                                    window_id,
+                                    inspector_window_id,
+                                    capture,
+                                    &capture_value,
+                                )
+                                .into_any()
                             },
                         )
                         .style(|s| s.width_full().height_full())
                         .into_any(),
-                        1 => profiler(window_id).into_any(),
+                        1 => profiler(window_id, inspector_window_id).into_any(),
                         _ => panic!(),
                     },
                 )
@@ -101,6 +112,7 @@ pub fn capture(window_id: WindowId) {
                     )
                     .on_event(el::WindowClosed, |_, _| {
                         RUNNING.set(false);
+                        INSPECTOR_WINDOW.set(None);
                         EventPropagation::Continue
                     })
                     .on_event_stop(
@@ -142,19 +154,23 @@ pub fn capture(window_id: WindowId) {
         );
     }
 
-    add_app_update_event(AppUpdateEvent::CaptureWindow {
-        window_id,
-        capture: capture.write_only(),
-    })
+    if let Some(inspector_window_id) = INSPECTOR_WINDOW.get() {
+        crate::Application::send_proxy_event(UserEvent::InspectorCaptureWindow {
+            window_id,
+            inspector_window_id,
+        });
+    }
 }
 
 fn inspector_view(
     window_id: WindowId,
+    inspector_window_id: WindowId,
     capture_s: RwSignal<Option<Rc<Capture>>>,
     capture: &Option<Rc<Capture>>,
 ) -> impl IntoView {
     let view = if let Some(capture) = capture {
-        capture_view(window_id, capture_s, capture.clone()).into_any()
+        let _ = capture_s;
+        capture_view(window_id, inspector_window_id, capture.clone()).into_any()
     } else {
         Label::new("No capture").into_any()
     };
@@ -180,7 +196,7 @@ fn inspector_view(
 
 fn capture_view(
     window_id: WindowId,
-    capture_s: RwSignal<Option<Rc<Capture>>>,
+    inspector_window_id: WindowId,
     capture: Rc<Capture>,
 ) -> impl IntoView {
     let capture_view = CaptureView {
@@ -227,9 +243,9 @@ fn capture_view(
         ().into_any()
     };
     let recapture = Button::new("Recapture").action(move || {
-        add_app_update_event(AppUpdateEvent::CaptureWindow {
+        crate::Application::send_proxy_event(UserEvent::InspectorCaptureWindow {
             window_id,
-            capture: capture_s.write_only(),
+            inspector_window_id,
         })
     });
     let metal_capture = Button::new("Capture Metal")
@@ -430,9 +446,9 @@ fn capture_view(
                 if *key == Key::Named(NamedKey::F5)
                     || (*key == Key::Character("r".to_string()) && modifiers.contains(OS_MOD))
                 {
-                    add_app_update_event(AppUpdateEvent::CaptureWindow {
+                    crate::Application::send_proxy_event(UserEvent::InspectorCaptureWindow {
                         window_id,
-                        capture: capture_s.write_only(),
+                        inspector_window_id,
                     });
                 }
             },

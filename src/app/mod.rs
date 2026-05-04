@@ -3,8 +3,6 @@ pub(crate) mod delegate;
 pub(crate) mod handle;
 
 use std::{
-    cell::RefCell,
-    rc::Rc,
     sync::Arc,
     sync::atomic::{AtomicBool, Ordering},
 };
@@ -15,7 +13,7 @@ use crossbeam::channel::{Receiver, Sender, unbounded as channel};
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::{Receiver, Sender, channel};
 
-use floem_reactive::{Runtime, WriteSignal};
+use floem_reactive::Runtime;
 use parking_lot::Mutex;
 use raw_window_handle::HasDisplayHandle;
 use winit::{
@@ -30,8 +28,6 @@ use crate::{
     compositor_surface::{
         CompositorSurfaceContent, CompositorSurfaceId, CompositorSurfaceProviderHandle,
     },
-    frame::FrameTime,
-    inspector::{Capture, profiler::Profile},
     paint::composition::CompositionKey,
     platform::clipboard::Clipboard,
     view::IntoView,
@@ -45,9 +41,14 @@ pub(crate) type AppEventCallback = dyn Fn(AppEvent);
 static EVENT_LOOP_PROXY: Mutex<Option<(EventLoopProxy, Sender<UserEvent>)>> = Mutex::new(None);
 static APP_UPDATE_POSTED: AtomicBool = AtomicBool::new(false);
 
-thread_local! {
-    pub(crate) static APP_UPDATE_EVENTS: RefCell<Vec<AppUpdateEvent>> = Default::default();
-}
+static APP_UPDATE_EVENTS: Mutex<Vec<UncheckedAppUpdateEvent>> = Mutex::new(Vec::new());
+
+struct UncheckedAppUpdateEvent(AppUpdateEvent);
+
+// App update events are delivered to the main application loop. Some legacy
+// variants still carry UI-thread-local callbacks; those variants need to be
+// retired as the thread split continues.
+unsafe impl Send for UncheckedAppUpdateEvent {}
 
 pub struct AppConfig {
     pub(crate) exit_on_close: bool,
@@ -146,7 +147,7 @@ impl AppConfig {
 ///
 /// To build an application and windows with more configuration, see [`Application`].
 #[cfg_attr(debug_assertions, track_caller)]
-pub fn launch<V: IntoView + 'static>(app_view: impl FnOnce() -> V + 'static) {
+pub fn launch<V: IntoView + 'static>(app_view: impl FnOnce() -> V + Send + 'static) {
     Application::new().window(move |_| app_view(), None).run()
 }
 
@@ -208,53 +209,42 @@ pub(crate) enum UserEvent {
         tick: FrameTick,
         token: TimerToken,
     },
+    InspectorCaptureWindow {
+        window_id: WindowId,
+        inspector_window_id: WindowId,
+    },
+    InspectorProfileWindow {
+        window_id: WindowId,
+        inspector_window_id: WindowId,
+        stop: bool,
+    },
 }
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum AppUpdateEvent {
-    NewWindow {
-        window_creation: WindowCreation,
-    },
-    CloseWindow {
-        window_id: WindowId,
-    },
-    RequestCloseWindow {
-        window_id: WindowId,
-    },
-    CaptureWindow {
-        window_id: WindowId,
-        capture: WriteSignal<Option<Rc<Capture>>>,
-    },
-    CaptureMetalFrame {
-        window_id: WindowId,
-    },
-    ProfileWindow {
-        window_id: WindowId,
-        end_profile: Option<WriteSignal<Option<Rc<Profile>>>>,
-    },
-    RequestTimer {
-        timer: Timer,
-    },
-    RequestAnimationFrame {
-        window_id: WindowId,
-        callback: Box<dyn FnOnce(FrameTime)>,
-    },
-    CancelTimer {
-        timer: TimerToken,
-    },
-    MenuAction {
-        action_id: MenuId,
-    },
-    ThemeChanged {
-        theme: Theme,
-    },
+    NewWindow { window_creation: WindowCreation },
+    CloseWindow { window_id: WindowId },
+    RequestCloseWindow { window_id: WindowId },
+    CaptureMetalFrame { window_id: WindowId },
+    RequestTimer { timer: Timer },
+    CancelTimer { timer: TimerToken },
+    MenuAction { action_id: MenuId },
+    ThemeChanged { theme: Theme },
 }
 
 pub(crate) fn add_app_update_event(event: AppUpdateEvent) {
-    APP_UPDATE_EVENTS.with(|events| {
-        events.borrow_mut().push(event);
-    });
+    APP_UPDATE_EVENTS
+        .lock()
+        .push(UncheckedAppUpdateEvent(event));
     Application::request_update();
+}
+
+pub(crate) fn drain_app_update_events() -> Vec<AppUpdateEvent> {
+    APP_UPDATE_EVENTS
+        .lock()
+        .drain(..)
+        .map(|event| event.0)
+        .collect()
 }
 
 /// Drain the pending app update events and return how many of them were
@@ -262,19 +252,15 @@ pub(crate) fn add_app_update_event(event: AppUpdateEvent) {
 /// the `handle_default_behaviors` close logic.
 #[doc(hidden)]
 pub fn take_close_window_event_count(window_id: WindowId) -> usize {
-    APP_UPDATE_EVENTS.with(|events| {
-        let mut events = events.borrow_mut();
-        let count = events
-            .iter()
-            .filter(
-                |e| matches!(e, AppUpdateEvent::CloseWindow { window_id: id } if *id == window_id),
-            )
-            .count();
-        events.retain(
-            |e| !matches!(e, AppUpdateEvent::CloseWindow { window_id: id } if *id == window_id),
-        );
-        count
-    })
+    let mut events = APP_UPDATE_EVENTS.lock();
+    let count = events
+        .iter()
+        .filter(|e| matches!(e.0, AppUpdateEvent::CloseWindow { window_id: id } if id == window_id))
+        .count();
+    events.retain(
+        |e| !matches!(e.0, AppUpdateEvent::CloseWindow { window_id: id } if id == window_id),
+    );
+    count
 }
 
 /// Floem top level application
@@ -391,7 +377,7 @@ impl Application {
     /// `WindowConfig::default()`.
     pub fn window<V: IntoView + 'static>(
         mut self,
-        app_view: impl FnOnce(WindowId) -> V + 'static,
+        app_view: impl FnOnce(WindowId) -> V + Send + 'static,
         config: Option<WindowConfig>,
     ) -> Self {
         self.initial_windows.push(WindowCreation {

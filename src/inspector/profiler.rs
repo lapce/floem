@@ -1,5 +1,5 @@
 use super::{TimingKind, TimingReport, TimingThread};
-use crate::app::{AppUpdateEvent, add_app_update_event};
+use crate::app::UserEvent;
 use crate::context::{LayoutChanged, LayoutChangedListener, PaintCx, StyleCx};
 use crate::event::{Event, EventPropagation, PointerScrollEventExt, listener};
 use crate::prelude::palette::css;
@@ -2015,7 +2015,7 @@ thread_local! {
     };
 }
 
-pub fn profiler(window_id: WindowId) -> impl IntoView {
+pub fn profiler(window_id: WindowId, inspector_window_id: WindowId) -> impl IntoView {
     let profiling = RwSignal::new(false);
     let profile = PROFILE.with(|c| *c);
 
@@ -2028,13 +2028,10 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
             }
         }))
         .action(move || {
-            add_app_update_event(AppUpdateEvent::ProfileWindow {
+            crate::Application::send_proxy_event(UserEvent::InspectorProfileWindow {
                 window_id,
-                end_profile: if profiling.get() {
-                    Some(profile.write_only())
-                } else {
-                    None
-                },
+                inspector_window_id,
+                stop: profiling.get(),
             });
             profiling.set(!profiling.get());
         })
@@ -2067,9 +2064,10 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
         .style(|s| s.size_full())
         .on_event_cont(listener::WindowClosed, move |_, _| {
             if profiling.get() {
-                add_app_update_event(AppUpdateEvent::ProfileWindow {
+                crate::Application::send_proxy_event(UserEvent::InspectorProfileWindow {
                     window_id,
-                    end_profile: Some(profile.write_only()),
+                    inspector_window_id,
+                    stop: true,
                 });
             }
         })

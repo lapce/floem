@@ -1,5 +1,6 @@
 use rustc_hash::FxHashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::{
     compositor_surface::{
@@ -24,6 +25,15 @@ pub(crate) struct WindowCompositorSurfaces {
 }
 
 impl WindowCompositorSurfaces {
+    pub(crate) fn from_entries(
+        entries: FxHashMap<CompositorSurfaceId, CompositorSurfaceEntry>,
+    ) -> Self {
+        Self {
+            entries,
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn entries(&self) -> &FxHashMap<CompositorSurfaceId, CompositorSurfaceEntry> {
         &self.entries
     }
@@ -71,7 +81,7 @@ impl WindowCompositorSurfaces {
             let Some(entry) = self.entries.get_mut(&planned_surface.surface_id) else {
                 continue;
             };
-            let Some(provider) = &entry.provider else {
+            let Some(provider) = entry.provider.clone() else {
                 continue;
             };
             let Ok(mut provider) = provider.lock() else {
@@ -88,6 +98,10 @@ impl WindowCompositorSurfaces {
                     provider.current_presents_without_transaction();
                 entry.content_dirty = true;
                 entry.version = entry.version.wrapping_add(1);
+            }
+            if let Some(latency) = poll_update.producer_observed_latency {
+                entry.record_producer_latency(latency);
+                frame_update.record_producer_latency(planned_surface.surface_id, latency);
             }
             let size_px = planned_surface.source_size * effective_scale;
             let target = match (provider.can_accept_frame_target(), gpu_resources) {
@@ -171,6 +185,10 @@ impl WindowCompositorSurfaces {
                 entry.content_dirty = true;
                 entry.version = entry.version.wrapping_add(1);
             }
+            if let Some(latency) = update.producer_observed_latency {
+                entry.record_producer_latency(latency);
+                frame_update.record_producer_latency(planned_surface.surface_id, latency);
+            }
             let post_update = provider.poll_current_content();
             frame_update.request_next_frame |= post_update.request_next_frame;
             if post_update.content_changed {
@@ -182,6 +200,10 @@ impl WindowCompositorSurfaces {
                     provider.current_presents_without_transaction();
                 entry.content_dirty = true;
                 entry.version = entry.version.wrapping_add(1);
+            }
+            if let Some(latency) = post_update.producer_observed_latency {
+                entry.record_producer_latency(latency);
+                frame_update.record_producer_latency(planned_surface.surface_id, latency);
             }
             self.pending_outcomes.push(CompositorSurfaceOutcome {
                 surface_id: planned_surface.surface_id,
@@ -247,6 +269,14 @@ impl WindowCompositorSurfaces {
             }
         }
     }
+
+    pub(crate) fn max_producer_work_estimate(&self) -> Duration {
+        self.entries
+            .values()
+            .map(|entry| entry.producer_work_estimate)
+            .max()
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Default)]
@@ -254,6 +284,7 @@ pub(crate) struct WindowCompositorSurfaceFrameUpdate {
     pub content_changed: bool,
     pub request_next_frame: bool,
     pub changed_surfaces: Vec<CompositorSurfaceId>,
+    pub producer_latency: Vec<(CompositorSurfaceId, Duration)>,
 }
 
 impl WindowCompositorSurfaceFrameUpdate {
@@ -262,6 +293,10 @@ impl WindowCompositorSurfaceFrameUpdate {
         if !self.changed_surfaces.contains(&surface_id) {
             self.changed_surfaces.push(surface_id);
         }
+    }
+
+    fn record_producer_latency(&mut self, surface_id: CompositorSurfaceId, latency: Duration) {
+        self.producer_latency.push((surface_id, latency));
     }
 }
 
@@ -606,6 +641,7 @@ pub(crate) struct CompositorSurfaceEntry {
     pub content_dirty: bool,
     pub version: u64,
     pub previous_outcome: Option<CompositorSurfaceOutcome>,
+    producer_work_estimate: Duration,
 }
 
 impl Default for CompositorSurfaceEntry {
@@ -617,6 +653,23 @@ impl Default for CompositorSurfaceEntry {
             content_dirty: false,
             version: 0,
             previous_outcome: None,
+            producer_work_estimate: Duration::ZERO,
         }
     }
+}
+
+impl CompositorSurfaceEntry {
+    fn record_producer_latency(&mut self, observed: Duration) {
+        self.producer_work_estimate =
+            smooth_duration_estimate(self.producer_work_estimate, observed);
+    }
+}
+
+fn smooth_duration_estimate(previous: Duration, observed: Duration) -> Duration {
+    if observed >= previous {
+        return observed;
+    }
+    let previous_ns = previous.as_nanos();
+    let observed_ns = observed.as_nanos();
+    Duration::from_nanos(((previous_ns * 7 + observed_ns) / 8).min(u64::MAX as u128) as u64)
 }

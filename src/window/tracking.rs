@@ -27,9 +27,32 @@ pub fn store_window_id_mapping(
     with_window_map_mut(move |m| m.add(root_id, window_id, window.clone()));
 }
 
+pub(crate) fn store_root_window_id_mapping(root_id: ViewId, window_id: WindowId) {
+    with_window_map_mut(move |m| m.add_root(root_id, window_id));
+}
+
+pub(crate) fn store_platform_window_mapping(
+    window_id: WindowId,
+    window: &Arc<dyn winit::window::Window>,
+) {
+    with_window_map_mut(move |m| m.add_window(window_id, window.clone()));
+}
+
 /// Remove the mapping from `root_id` -> `window_id` -> `window` for the given triple.
 pub fn remove_window_id_mapping(root_id: &ViewId, window_id: &WindowId) {
     with_window_map_mut(move |m| m.remove(root_id, window_id));
+}
+
+pub(crate) fn remove_root_window_id_mapping(root_id: &ViewId) {
+    with_window_map_mut(move |m| {
+        m.window_id_for_root_view_id.remove(root_id);
+    });
+}
+
+pub(crate) fn remove_platform_window_mapping(window_id: &WindowId) {
+    with_window_map_mut(move |m| {
+        m.window_for_window_id.remove(window_id);
+    });
 }
 
 /// Maps root-id:window-id:window triples, so a view can get its root and
@@ -42,8 +65,16 @@ struct WindowMapping {
 
 impl WindowMapping {
     fn add(&mut self, root: ViewId, window_id: WindowId, window: Arc<dyn Window>) {
-        self.window_for_window_id.insert(window_id, window);
+        self.add_root(root, window_id);
+        self.add_window(window_id, window);
+    }
+
+    fn add_root(&mut self, root: ViewId, window_id: WindowId) {
         self.window_id_for_root_view_id.insert(root, window_id);
+    }
+
+    fn add_window(&mut self, window_id: WindowId, window: Arc<dyn Window>) {
+        self.window_for_window_id.insert(window_id, window);
     }
 
     fn remove(&mut self, root: &ViewId, window_id: &WindowId) {

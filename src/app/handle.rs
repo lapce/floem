@@ -9,9 +9,9 @@ use web_time::Instant;
 #[cfg(target_arch = "wasm32")]
 use wgpu::web_sys;
 
-use floem_reactive::{Runtime, SignalUpdate};
+use floem_reactive::Runtime;
 use peniko::kurbo::{Point, Size};
-use std::{collections::HashMap, rc::Rc, time::Duration};
+use std::{collections::HashMap, time::Duration};
 use ui_events::{
     ScrollDelta,
     pointer::{
@@ -25,7 +25,7 @@ use winit::{
     window::{Theme, WindowId},
 };
 
-use super::{APP_UPDATE_EVENTS, AppConfig, AppEventCallback, AppUpdateEvent, UserEvent};
+use super::{AppConfig, AppEventCallback, AppUpdateEvent, UserEvent, drain_app_update_events};
 use crate::{
     AppEvent, Application,
     action::{Timer, TimerToken},
@@ -466,8 +466,8 @@ impl ApplicationHandle {
                         gpu_resources: Some(gpu_resources.clone()),
                         surface_caps: Some(surface_caps),
                         transparent: handle.transparent,
-                        scale: handle.ui.state.effective_scale(),
-                        size: handle.ui.state.root_size * handle.ui.state.os_scale,
+                        scale: handle.ui.effective_scale(),
+                        size: handle.ui.root_physical_size(),
                         maximum_drawable_count: handle.maximum_drawable_count,
                     };
                     self.scene_renderer_pool
@@ -477,9 +477,7 @@ impl ApplicationHandle {
                     handle.gpu_resources = self.gpu_resources.clone();
                     handle.init_renderer();
                     if let Some(gpu_resources) = handle.gpu_resources.clone() {
-                        handle.event(crate::event::Event::Window(
-                            crate::event::WindowEvent::GpuResourcesReady(gpu_resources),
-                        ));
+                        handle.ui.route_gpu_resources_ready(gpu_resources);
                     }
                 } else {
                     panic!("Sent a gpu resource update after it had already been initialized");
@@ -584,6 +582,49 @@ impl ApplicationHandle {
             } => {
                 self.process_deferred_frame_tick(window_id, tick, token, event_loop);
             }
+            UserEvent::InspectorCaptureWindow {
+                window_id,
+                inspector_window_id,
+            } => {
+                let capture = self.capture_window(window_id);
+                if let Some(capture) = capture
+                    && let Some(inspector) = self.window_handles.get(&inspector_window_id)
+                {
+                    inspector.ui.set_inspector_capture(capture);
+                }
+            }
+            UserEvent::InspectorProfileWindow {
+                window_id,
+                inspector_window_id,
+                stop,
+            } => {
+                if stop {
+                    let profile = self.window_handles.get_mut(&window_id).and_then(|handle| {
+                        handle.profile.take().map(|mut profile| {
+                            profile.current.events.extend(handle.take_profile_events());
+                            if profile.current.timing.is_none() {
+                                profile.current.timing = handle.pending_profile_timing();
+                            }
+                            handle.ui.set_profile_events_enabled(false);
+                            if !profile.current.events.is_empty()
+                                || profile.current.timing.is_some()
+                            {
+                                profile.next_frame();
+                            }
+                            profile
+                        })
+                    });
+                    if let Some(profile) = profile
+                        && let Some(inspector) = self.window_handles.get(&inspector_window_id)
+                    {
+                        inspector.ui.set_inspector_profile(profile);
+                    }
+                } else if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                    handle.ui.set_profile_events_enabled(true);
+                    handle.ui.clear_profile_events();
+                    handle.profile = Some(Profile::default());
+                }
+            }
         }
     }
 
@@ -604,10 +645,7 @@ impl ApplicationHandle {
     }
 
     fn drain_app_update_events(&mut self, event_loop: &dyn ActiveEventLoop) {
-        let events = APP_UPDATE_EVENTS.with(|events| {
-            let mut events = events.borrow_mut();
-            std::mem::take(&mut *events)
-        });
+        let events = drain_app_update_events();
 
         for event in events {
             match event {
@@ -622,28 +660,14 @@ impl ApplicationHandle {
                 }
                 AppUpdateEvent::RequestCloseWindow { window_id } => {
                     if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                        handle.event(crate::event::Event::Window(
-                            crate::event::WindowEvent::CloseRequested,
-                        ));
+                        handle.ui.route_close_requested();
                     }
                 }
                 AppUpdateEvent::RequestTimer { timer } => {
                     self.request_timer(timer, event_loop);
                 }
-                AppUpdateEvent::RequestAnimationFrame {
-                    window_id,
-                    callback,
-                } => {
-                    if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                        handle.note_animation_frame_demand();
-                        handle.ui.state.begin_frame_callbacks.push(callback);
-                    }
-                }
                 AppUpdateEvent::CancelTimer { timer } => {
                     self.remove_timer(timer, event_loop);
-                }
-                AppUpdateEvent::CaptureWindow { window_id, capture } => {
-                    capture.set(self.capture_window(window_id).map(Rc::new));
                 }
                 AppUpdateEvent::CaptureMetalFrame { window_id } => {
                     #[cfg(target_os = "macos")]
@@ -653,38 +677,11 @@ impl ApplicationHandle {
                     #[cfg(not(target_os = "macos"))]
                     let _ = window_id;
                 }
-                AppUpdateEvent::ProfileWindow {
-                    window_id,
-                    end_profile,
-                } => {
-                    let handle = self.window_handles.get_mut(&window_id);
-                    if let Some(handle) = handle {
-                        if let Some(profile) = end_profile {
-                            profile.set(handle.profile.take().map(|mut profile| {
-                                profile.current.events.extend(handle.take_profile_events());
-                                if profile.current.timing.is_none() {
-                                    profile.current.timing = handle.pending_profile_timing();
-                                }
-                                handle.ui.state.profile_events_enabled = false;
-                                if !profile.current.events.is_empty()
-                                    || profile.current.timing.is_some()
-                                {
-                                    profile.next_frame();
-                                }
-                                Rc::new(profile)
-                            }));
-                        } else {
-                            handle.ui.state.profile_events_enabled = true;
-                            handle.ui.state.profile_events.clear();
-                            handle.profile = Some(Profile::default());
-                        }
-                    }
-                }
                 #[cfg(not(target_arch = "wasm32"))]
                 AppUpdateEvent::MenuAction { action_id } => {
                     for (_, handle) in self.window_handles.iter_mut() {
-                        if handle.ui.state.context_menu.contains_key(&action_id)
-                            || handle.window_menu_actions.contains_key(&action_id)
+                        if handle.ui.has_context_menu_action(&action_id)
+                            || handle.ui.has_window_menu_action(&action_id)
                         {
                             handle.menu_action(&action_id);
                             break;
@@ -694,7 +691,7 @@ impl ApplicationHandle {
                 #[cfg(target_arch = "wasm32")]
                 AppUpdateEvent::MenuAction { action_id } => {
                     for (_, handle) in self.window_handles.iter_mut() {
-                        if handle.ui.state.context_menu.contains_key(&action_id) {
+                        if handle.ui.has_context_menu_action(&action_id) {
                             handle.menu_action(&action_id);
                             break;
                         }
@@ -703,7 +700,6 @@ impl ApplicationHandle {
                 AppUpdateEvent::ThemeChanged { theme } => {
                     self.config.global_theme_override = Some(theme);
                     for window_handle in self.window_handles.values_mut() {
-                        window_handle.ui.state.light_dark_theme = theme;
                         window_handle.set_theme(Some(theme), false);
                     }
                 }
@@ -761,7 +757,7 @@ impl ApplicationHandle {
         let event_scale = self
             .window_handles
             .get(&window_id)
-            .map(|window_handle| window_handle.ui.state.effective_scale())
+            .map(|window_handle| window_handle.ui.effective_scale())
             .unwrap_or(1.0);
         let discrete_input = matches!(
             &event,
@@ -829,8 +825,7 @@ impl ApplicationHandle {
             WindowEvent::ActivationTokenDone { .. } => {}
             WindowEvent::SurfaceResized(size) => {
                 let surface_size = size;
-                let size: LogicalSize<f64> =
-                    surface_size.to_logical(window_handle.ui.state.os_scale);
+                let size: LogicalSize<f64> = surface_size.to_logical(window_handle.ui.os_scale());
                 let size = Size::new(size.width, size.height);
                 if std::env::var_os("FLOEM_RESIZE_DIAG").is_some() {
                     eprintln!(
@@ -840,7 +835,7 @@ impl ApplicationHandle {
                         surface_size.height,
                         size.width,
                         size.height,
-                        window_handle.ui.state.effective_scale(),
+                        window_handle.ui.effective_scale(),
                     );
                 }
                 window_handle.size(size);
@@ -849,16 +844,14 @@ impl ApplicationHandle {
             }
             WindowEvent::Moved(position) => {
                 let position: LogicalPosition<f64> =
-                    position.to_logical(window_handle.ui.state.os_scale);
+                    position.to_logical(window_handle.ui.os_scale());
                 let point = Point::new(position.x, position.y);
                 window_handle.position(point);
                 window_handle.refresh_frame_source_target();
             }
             WindowEvent::CloseRequested => {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    handle.event(crate::event::Event::Window(
-                        crate::event::WindowEvent::CloseRequested,
-                    ));
+                    handle.ui.route_close_requested();
                 }
             }
             WindowEvent::Destroyed => {
@@ -1048,7 +1041,7 @@ impl ApplicationHandle {
     pub(crate) fn new_window(
         &mut self,
         event_loop: &dyn ActiveEventLoop,
-        view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View>>,
+        view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View> + Send>,
         override_theme: Option<Theme>,
         #[allow(unused_variables)] WindowConfig {
             size,

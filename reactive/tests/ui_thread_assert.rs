@@ -51,4 +51,11 @@ fn assert_ui_thread_reports_caller_and_set_location() {
             "assert_ui_thread should panic off UI thread"
         );
     }
+
+    std::thread::spawn(|| {
+        Runtime::init_on_ui_thread();
+        Runtime::assert_ui_thread();
+    })
+    .join()
+    .expect("registered UI thread should be accepted");
 }

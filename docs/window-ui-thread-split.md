@@ -37,12 +37,12 @@ The main thread should treat UI view ids as opaque ids. It should not borrow vie
 
 ## Boundary Types
 
-The split should be expressed with narrow message/artifact types before adding a real thread:
+The split should be expressed with narrow message/submission types before adding a real thread:
 
 - `UiWindowDriver`: owns UI state and exposes the synchronous version of the future UI-thread API.
 - `UiWindowEvent`: main-to-UI event input after platform reduction.
 - `UiFrameRequest`: main-to-UI frame request containing timing, size/scale/theme changes, and demand.
-- `UiFrameArtifact`: UI-to-main output containing a composition plan, timings/profile events, active surface placement metadata, and requested platform side effects.
+- `UiSceneSubmission`: UI-to-main frame output containing the lowered composition plan and enough scene data for main to schedule render-pool work without borrowing UI state.
 - `PlatformRequest`: UI-to-main side effects such as cursor, IME, title, menu, drag/resize window, visibility, and capture requests.
 - `CompositorRuntime`: main-owned runtime split out of current `WindowCompositor`.
 
@@ -104,7 +104,7 @@ Before using a real thread, make `WindowHandle` talk to `UiWindowDriver` through
 Success criteria:
 
 - Main/UI ordering is explicit.
-- Stale frame artifacts can be dropped by generation.
+- Stale scene submissions can be dropped by generation.
 - Resize and monitor changes carry generation ids.
 
 ### 5. Move UI Driver to a Dedicated Thread
@@ -114,7 +114,7 @@ Once the boundary compiles cleanly, move `UiWindowDriver` to a dedicated thread.
 Success criteria:
 
 - Main thread receives events, forwards UI events/frame requests, and keeps compositor commits responsive.
-- UI thread produces frame artifacts asynchronously.
+- UI thread produces scene submissions asynchronously.
 - Main can keep servicing `present_without_transaction` surfaces while UI is busy.
 
 ## Review Checklist While Working
@@ -123,7 +123,7 @@ Success criteria:
 - Does this code borrow `VIEW_STORAGE`, route events, or mutate style/layout/paint state? If yes, it should trend toward UI-owned.
 - Does this code commit, publish, or attach compositor resources? If yes, it should remain main-owned.
 - Can a slow style/layout pass block an external surface that opted into present-without-transaction? If yes, the ownership is still wrong.
-- Is there a synchronous call from main to UI in a path that must stay responsive? If yes, it needs a queued message or stale artifact handling.
+- Is there a synchronous call from main to UI in a path that must stay responsive? If yes, it needs a queued message or stale-submission handling.
 
 ## Current Progress
 
@@ -134,12 +134,12 @@ Success criteria:
 - Moved root view id and reactive scope behind `WindowUiDriver`.
 - Added `PlatformRequest` plumbing for low-risk main-thread side effects.
 - Moved `compositor.apply_plan(...)` out of `GlobalPaintCx`; paint now updates the `CompositionPlan`, and `WindowHandle` applies that plan to the compositor runtime.
-- Added `UiFrameArtifact` as the in-process artifact boundary for compositor consumption.
+- Added `UiSceneSubmission` as the in-process scene-submission boundary for compositor consumption.
 - Moved `WindowCompositor` out of `WindowState`; `WindowHandle` now owns it as `compositor_runtime`.
 - Added `CompositorRuntime` as the main-thread ownership name for the staged compositor runtime.
 - Moved `WindowCompositorSurfaces` out of `WindowState`; `WindowHandle` now owns compositor-surface providers/content/frame-pull state.
 - Changed compositor-surface user events to update main-owned compositor-surface state through `WindowHandle` methods.
-- Changed frame rendering/commit paths to pass `UiFrameArtifact` explicitly into compositor work.
+- Changed frame rendering/commit paths to pass `UiSceneSubmission` explicitly into compositor work.
 - Moved style/layout/box-tree frame preparation bodies onto `WindowUiDriver`; `WindowHandle` now delegates those UI-owned phases.
 - Moved next-frame promotion and begin-frame callback execution behind `WindowUiDriver`.
 - Moved UI dirty/prepare predicates (`needs_style`, layout/box-tree checks, pending box-tree updates, current prepare work) behind `WindowUiDriver`.
@@ -166,7 +166,8 @@ Success criteria:
 
 ### Next
 
-- Expand `UiFrameArtifact` so frame preparation returns all UI-produced frame output instead of letting `WindowHandle` pull it from UI state.
-- Continue splitting `WindowCompositor` internals now that ownership has moved to main.
+- Expand `UiSceneSubmission` so the UI side lowers the display list, packages scene-render work, and submits it to the render pool/compositor boundary; main should not pull `CompositionPlan` or view state from UI.
+- Continue splitting `WindowCompositor` internals so render-job scheduling can be driven by the UI scene submission while layer-host commits stay main-owned.
 - Move UI event/update driving behind `WindowUiDriver` methods instead of keeping those methods on `WindowHandle`.
 - Add the real UI-thread worker/proxy now that frame/update loops have explicit UI outputs.
+- Keep `ViewId`, root scope, and app view construction exclusively on the UI side. The remaining `root_id_for_legacy_tracking` access is transitional and must not become part of the threaded API.

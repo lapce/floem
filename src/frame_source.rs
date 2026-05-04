@@ -9,14 +9,6 @@ use subduction::{FrameSourceTarget, frame_source::FrameSource as SubductionFrame
 use subduction_core::output::OutputId;
 use winit::window::{Window as WinitWindow, WindowId};
 
-#[cfg(target_os = "macos")]
-use {
-    objc2::rc::Retained,
-    objc2_app_kit::NSView,
-    raw_window_handle::RawWindowHandle,
-    subduction::apple::{AppleDisplayLinkThread, AppleDisplayLinkView},
-};
-
 pub(crate) fn frame_pacing_diag_enabled() -> bool {
     std::env::var_os("FLOEM_FRAME_PACING_DIAG").is_some()
 }
@@ -33,24 +25,7 @@ pub(crate) fn window_frame_interval(window: &dyn WinitWindow) -> Duration {
 #[derive(Debug)]
 pub(crate) struct FrameSource {
     window_id: WindowId,
-    output_id: OutputId,
     inner: SubductionFrameSource,
-    #[cfg(target_os = "macos")]
-    display_link: Option<MacDisplayLink>,
-    #[cfg(target_os = "macos")]
-    target_view: Option<AppleDisplayLinkView>,
-    #[cfg(target_os = "macos")]
-    target_refresh_millihertz: Option<u32>,
-    #[cfg(target_os = "macos")]
-    active: bool,
-}
-
-#[cfg(target_os = "macos")]
-#[derive(Debug)]
-struct MacDisplayLink {
-    _link: AppleDisplayLinkThread,
-    view: AppleDisplayLinkView,
-    refresh_millihertz: Option<u32>,
 }
 
 pub(crate) fn new_window_frame_source(window_id: WindowId, output_id: u32) -> FrameSource {
@@ -63,19 +38,7 @@ pub(crate) fn new_window_frame_source(window_id: WindowId, output_id: u32) -> Fr
         }
         Application::send_proxy_event(UserEvent::FrameTick { window_id, tick });
     });
-    FrameSource {
-        window_id,
-        output_id: OutputId(output_id),
-        inner,
-        #[cfg(target_os = "macos")]
-        display_link: None,
-        #[cfg(target_os = "macos")]
-        target_view: None,
-        #[cfg(target_os = "macos")]
-        target_refresh_millihertz: None,
-        #[cfg(target_os = "macos")]
-        active: false,
-    }
+    FrameSource { window_id, inner }
 }
 
 impl FrameSource {
@@ -103,12 +66,6 @@ impl FrameSource {
                 self.window_id, target.monitor_name, target.refresh_millihertz,
             );
         }
-        #[cfg(target_os = "macos")]
-        self.refresh_macos_display_link(
-            raw_window_handle,
-            self.output_id,
-            target.refresh_millihertz,
-        );
         self.inner.refresh_target(target);
     }
 
@@ -163,108 +120,6 @@ impl FrameSource {
     }
 
     pub(crate) fn set_active(&mut self, active: bool) {
-        #[cfg(target_os = "macos")]
-        {
-            if self.active == active {
-                return;
-            }
-            self.active = active;
-            if active {
-                self.ensure_macos_display_link();
-            } else {
-                self.display_link = None;
-            }
-            return;
-        }
-
-        #[cfg(not(target_os = "macos"))]
         self.inner.set_active(active);
-    }
-}
-
-#[cfg(target_os = "macos")]
-impl FrameSource {
-    fn refresh_macos_display_link(
-        &mut self,
-        raw_window_handle: Option<RawWindowHandle>,
-        output: OutputId,
-        refresh_millihertz: Option<u32>,
-    ) {
-        let Some(view) = macos_display_link_view(raw_window_handle) else {
-            self.target_view = None;
-            self.target_refresh_millihertz = None;
-            self.display_link = None;
-            return;
-        };
-        self.target_view = Some(view.clone());
-        self.target_refresh_millihertz = refresh_millihertz;
-
-        if let Some(display_link) = self.display_link.as_ref()
-            && display_link.view.is_same_view(&view)
-            && display_link.refresh_millihertz == refresh_millihertz
-        {
-            return;
-        }
-
-        self.display_link = None;
-        self.ensure_macos_display_link_with(view, output, refresh_millihertz);
-    }
-
-    fn ensure_macos_display_link(&mut self) {
-        let Some(view) = self.target_view.clone() else {
-            return;
-        };
-        self.ensure_macos_display_link_with(view, self.output_id, self.target_refresh_millihertz);
-    }
-
-    fn ensure_macos_display_link_with(
-        &mut self,
-        view: AppleDisplayLinkView,
-        output: OutputId,
-        refresh_millihertz: Option<u32>,
-    ) {
-        if !self.active {
-            return;
-        }
-        if let Some(display_link) = self.display_link.as_ref()
-            && display_link.view.is_same_view(&view)
-            && display_link.refresh_millihertz == refresh_millihertz
-        {
-            return;
-        }
-
-        let window_id = self.window_id;
-        let link = AppleDisplayLinkThread::spawn_for_view_with_preferred_frame_rate_millihertz(
-            move |tick| {
-                if frame_pacing_diag_enabled() {
-                    eprintln!(
-                        "floem frame pacing display link callback window={:?} tick={} predicted={:?} refresh={:?}",
-                        window_id, tick.frame_index, tick.predicted_present, tick.refresh_interval,
-                    );
-                }
-                Application::send_proxy_event(UserEvent::FrameTick { window_id, tick });
-            },
-            output,
-            view.clone(),
-            refresh_millihertz,
-        );
-        self.display_link = Some(MacDisplayLink {
-            _link: link,
-            view,
-            refresh_millihertz,
-        });
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn macos_display_link_view(raw_window: Option<RawWindowHandle>) -> Option<AppleDisplayLinkView> {
-    match raw_window? {
-        RawWindowHandle::AppKit(handle) => {
-            // SAFETY: raw-window-handle guarantees this is a valid NSView
-            // pointer for the lifetime of the window handle.
-            unsafe { Retained::retain(handle.ns_view.as_ptr().cast::<NSView>()) }
-                .map(AppleDisplayLinkView::new)
-        }
-        _ => None,
     }
 }

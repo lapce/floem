@@ -1319,7 +1319,9 @@ impl<'a> SceneRunBuilder<'a> {
             key: CompositionKey::SceneRun {
                 run_index: *run_index,
             },
-            source_element_id: self.ranges.first().map(|range| range.element_id),
+            source_element_id: self.ranges.first().map(|range| {
+                crate::paint::composition::LayerSourceId::from_element_id(range.element_id)
+            }),
             debug_name: self
                 .ranges
                 .first()

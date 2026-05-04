@@ -1,11 +1,8 @@
-#[cfg(not(target_arch = "wasm32"))]
-use std::collections::HashMap;
 use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 
-use crate::event::{PaintPresentInfo, PaintPresentLayer, UpdatePhaseEvent};
+use crate::event::{PaintPresentInfo, PaintPresentLayer};
 use crate::paint::{PaintState, renderer::SharedSceneFragmentRendererPool};
 use crate::platform::menu_types::{Menu as MudaMenu, MenuId};
-use crate::style::StyleSelector;
 use crate::style::recalc::StyleReason;
 #[cfg(target_os = "windows")]
 use muda::MenuTheme as MudaMenuTheme;
@@ -24,7 +21,9 @@ use winit::window::{
 use crate::action::TimerToken;
 use crate::frame_source::{FrameSource, new_window_frame_source};
 use crate::gpu_resources::GpuResources;
-use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
+#[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+use floem_reactive::RwSignal;
+use floem_reactive::Scope;
 use imaging::Brush;
 use peniko::color::palette;
 use peniko::kurbo::{Point, Size};
@@ -35,18 +34,18 @@ use understory_frame_pacing::{
     FrameTimingEstimate, Time as PacingTime, plan_frame,
 };
 use winit::{
-    cursor::CursorIcon,
     dpi::{LogicalPosition, LogicalSize, PhysicalSize},
     event::Ime,
     window::{Window, WindowId},
 };
 
-use super::tracking::{remove_window_id_mapping, store_window_id_mapping};
+use super::tracking::{store_platform_window_mapping, store_window_id_mapping};
 use super::{
     compositor::CompositorRuntime,
     compositor_surface::WindowCompositorSurfaces,
     state::WindowState,
-    ui_driver::{PlatformRequest, UiFrameArtifact, WindowUiDriver},
+    ui_driver::{PlatformRequest, UiPlatformEvent, UiSceneSubmission},
+    ui_runtime::WindowUiRuntime,
 };
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::platform::context_menu::context_menu_view;
@@ -54,16 +53,13 @@ use crate::platform::context_menu::context_menu_view;
 use crate::reactive::SignalWith;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::unit::UnitExt;
-use crate::view::{LayoutTree, VIEW_STORAGE};
+use crate::view::LayoutTree;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::views::{Container, Decorators, Stack};
 use crate::{
     Application,
     app::UserEvent,
-    event::{
-        Event, GlobalEventCx, ImeEvent, WindowEvent, clear_hit_test_cache,
-        dropped_file::FileDragEvent,
-    },
+    event::{Event, clear_hit_test_cache, dropped_file::FileDragEvent},
     frame::{FrameDemand, FrameTime},
     inspector::{
         self, Capture, CaptureState, CapturedView, TimingKind, TimingReport, TimingThread,
@@ -73,7 +69,7 @@ use crate::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE,
         DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES,
     },
-    style::{CursorStyle, Style},
+    style::Style,
     theme::default_theme,
     view::{IntoView, View, ViewId},
 };
@@ -82,6 +78,7 @@ const COMPOSITOR_DEADLINE_FUDGE: Duration = Duration::from_millis(1);
 const DEFAULT_FRAME_WORK_ESTIMATE: Duration = Duration::from_millis(2);
 const DEFAULT_GPU_WORK_ESTIMATE: Duration = Duration::ZERO;
 const DEFAULT_TIMER_WAKEUP_ESTIMATE: Duration = Duration::from_millis(1);
+const DEFAULT_LAYER_HOST_COMMIT_ESTIMATE: Duration = Duration::from_millis(1);
 /// The top-level window handle that owns the winit `Window`.
 /// Meant only for use with the root view of the application.
 /// Owns the UI driver and is responsible for
@@ -91,11 +88,11 @@ const DEFAULT_TIMER_WAKEUP_ESTIMATE: Duration = Duration::from_millis(1);
 pub(crate) struct WindowHandle {
     pub(crate) window: Arc<dyn winit::window::Window>,
     window_id: WindowId,
-    pub(crate) ui: WindowUiDriver,
+    pub(crate) ui: WindowUiRuntime,
     compositor_runtime: CompositorRuntime,
     compositor_surfaces: WindowCompositorSurfaces,
     pub(crate) paint_state: PaintState,
-    size: RwSignal<Size>,
+    size: Size,
     default_theme: Option<Style>,
     pub(crate) profile: Option<Profile>,
     is_maximized: bool,
@@ -104,8 +101,6 @@ pub(crate) struct WindowHandle {
     pub(crate) window_position: Point,
     #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
     pub(crate) context_menu: RwSignal<Option<(MudaMenu, Point, bool)>>,
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) window_menu_actions: HashMap<MenuId, Box<dyn Fn()>>,
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) window_menu: Option<MudaMenu>,
     pub(crate) event_reducer: WindowEventReducer,
@@ -129,7 +124,7 @@ pub(crate) struct WindowHandle {
     frame_work_estimate: Duration,
     gpu_work_estimate: Duration,
     timer_wakeup_estimate: Duration,
-    hud: crate::hud::Hud,
+    layer_host_commit_estimate: Duration,
     pending_presented_layers: Vec<crate::window::compositor::PresentedLayer>,
     pending_active_layers: Vec<crate::window::compositor::PresentedLayer>,
 }
@@ -164,6 +159,7 @@ struct PendingCompositorCommit {
 #[derive(Clone, Copy)]
 struct PendingLayerHostCommit {
     submitted_at: Instant,
+    commit_requested_at: Instant,
     frame_time: Option<FrameTime>,
 }
 
@@ -381,25 +377,13 @@ impl FrameTimingAccumulator {
 
 impl Drop for WindowHandle {
     fn drop(&mut self) {
-        VIEW_STORAGE.with_borrow_mut(|s| {
-            s.box_tree.remove(&self.ui.root_id);
-        })
+        self.ui.clear_root_box_tree();
     }
 }
 
 impl WindowHandle {
     pub(crate) fn take_profile_events(&mut self) -> Vec<crate::inspector::profiler::ProfileEvent> {
-        self.ui
-            .state
-            .profile_events
-            .drain(..)
-            .map(|event| crate::inspector::profiler::ProfileEvent {
-                start: event.start,
-                end: event.end,
-                name: event.name,
-                depth: 0,
-            })
-            .collect()
+        self.ui.take_profile_events()
     }
 
     pub(crate) fn pending_profile_timing(&self) -> Option<TimingReport> {
@@ -407,7 +391,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn record_profile_instant(&mut self, name: &'static str, at: Instant) {
-        self.ui.state.record_profile_instant(name, at);
+        self.ui.record_profile_instant(name, at);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -419,56 +403,26 @@ impl WindowHandle {
         scene_renderer_pool: SharedSceneFragmentRendererPool,
         required_features: wgpu::Features,
         backends: Option<wgpu::Backends>,
-        view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
+        view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + Send + 'static,
         transparent: bool,
         apply_default_theme: bool,
         maximum_drawable_count: u32,
     ) -> Self {
-        let window_view_id = ViewId::new_root();
         let window_winit_id = window.id();
-        let scope = Scope::new();
         let os_scale = window.scale_factor();
         let size: LogicalSize<f64> = window.surface_size().to_logical(os_scale);
         let size = Size::new(size.width, size.height);
-        let size = scope.create_rw_signal(Size::new(size.width, size.height));
         let os_theme = window.theme();
         // let current_theme = apply_theme.unwrap_or(os_theme.unwrap_or(winit::window::Theme::Light));
         let is_maximized = window.is_maximized();
 
-        set_current_view(window_view_id);
-
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
-        let context_menu = scope.create_rw_signal(None);
-
-        #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")))]
-        let main_view = scope.enter(move || view_fn(window_winit_id));
-
-        #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
-        let view = scope.enter(move || {
-            let main_view = view_fn(window_id);
-            Stack::new((
-                Container::new(main_view).style(|s| s.size(100.pct(), 100.pct())),
-                context_menu_view(scope, context_menu, size),
-            ))
-            .style(|s| s.size(100.pct(), 100.pct()))
-            .into_any()
-        });
-
-        let hud = crate::hud::Hud::new();
-        let hud_view = scope.enter({
-            let hud = hud.clone();
-            move || hud.view().into_any()
-        });
-
-        window_view_id.set_children([main_view, hud_view]);
-        // window_view_id.add_child(hud_view);
-
-        let window_view = WindowView { id: window_view_id };
-        window_view_id.set_view(window_view.into_any());
+        let context_menu = Scope::new().create_rw_signal(None);
 
         let window: Arc<dyn Window> = window.into();
-        store_window_id_mapping(window_view_id, window_winit_id, &window);
-        let frame_size = size.get_untracked() * os_scale;
+        store_platform_window_mapping(window_winit_id, &window);
+        let ui = WindowUiRuntime::new_threaded(window_winit_id, size, os_theme, os_scale, view_fn);
+        let frame_size = size * os_scale;
         let prefer_gpu_installers = !crate::paint::renderer::force_cpu_requested();
 
         let paint_state = if let Some(resources) = gpu_resources.clone() {
@@ -490,21 +444,16 @@ impl WindowHandle {
 
         let paint_state_initialized = paint_state.is_initialized();
 
-        let window_state = WindowState::new(window_view_id, os_theme, os_scale);
-
         let mut window_handle = Self {
             window,
             window_id: window_winit_id,
             paint_state,
             size,
             default_theme: match apply_default_theme {
-                true => Some(default_theme(
-                    window_state.light_dark_theme,
-                    window_state.effective_scale(),
-                )),
+                true => Some(default_theme(ui.current_theme(), ui.effective_scale())),
                 false => None,
             },
-            ui: WindowUiDriver::new(window_view_id, scope, window_state),
+            ui,
             compositor_runtime: CompositorRuntime::default(),
             compositor_surfaces: WindowCompositorSurfaces::default(),
             is_maximized,
@@ -514,8 +463,6 @@ impl WindowHandle {
             window_position: Point::ZERO,
             #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
             context_menu,
-            #[cfg(not(target_arch = "wasm32"))]
-            window_menu_actions: HashMap::new(),
             #[cfg(not(target_arch = "wasm32"))]
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
@@ -539,14 +486,14 @@ impl WindowHandle {
             frame_work_estimate: DEFAULT_FRAME_WORK_ESTIMATE,
             gpu_work_estimate: DEFAULT_GPU_WORK_ESTIMATE,
             timer_wakeup_estimate: DEFAULT_TIMER_WAKEUP_ESTIMATE,
-            hud,
+            layer_host_commit_estimate: DEFAULT_LAYER_HOST_COMMIT_ESTIMATE,
             pending_presented_layers: Vec::new(),
             pending_active_layers: Vec::new(),
         };
         if paint_state_initialized {
             window_handle.init_renderer();
             if let Some(gpu_resources) = window_handle.gpu_resources.clone() {
-                window_handle.event(Event::Window(WindowEvent::GpuResourcesReady(gpu_resources)));
+                window_handle.ui.route_gpu_resources_ready(gpu_resources);
             }
         }
 
@@ -554,23 +501,12 @@ impl WindowHandle {
             .compositor_runtime
             .ensure_platform_presenter(window_winit_id, window_handle.window.as_ref());
         window_handle.refresh_frame_source_target();
-        window_handle.ui.state.set_root_size(size.get_untracked());
-        window_handle
-            .ui
-            .state
-            .update_screen_size_bp(size.get_untracked());
         window_handle.process_update_no_paint();
 
-        window_handle.ui.state.light_dark_theme = os_theme.unwrap_or(winit::window::Theme::Light);
-
-        window_handle.event(Event::Window(WindowEvent::ThemeChanged(
-            window_handle.ui.state.light_dark_theme,
-        )));
-        window_handle.ui.state.mark_style_dirty_selector(
-            window_handle.ui.root_id.get_element_id(),
-            StyleSelector::DarkMode,
-        );
-        window_handle.size(size.get_untracked());
+        window_handle
+            .ui
+            .set_theme(Some(window_handle.ui.current_theme()), true);
+        window_handle.size(size);
         window_handle
     }
 
@@ -659,7 +595,6 @@ impl WindowHandle {
         let mock_window = MockWindow::with_size(size_val.width as u32, size_val.height as u32);
         let window_id = mock_window.id();
         let id = root_id;
-        let size = scope.create_rw_signal(size_val);
         let os_theme = mock_window.theme();
         let is_maximized = mock_window.is_maximized();
 
@@ -689,12 +624,12 @@ impl WindowHandle {
             window,
             window_id,
             paint_state,
-            size,
+            size: size_val,
             default_theme: Some(default_theme(
                 window_state.light_dark_theme,
                 window_state.effective_scale(),
             )),
-            ui: WindowUiDriver::new(id, scope, window_state),
+            ui: WindowUiRuntime::new_direct(id, scope, window_state),
             compositor_runtime: CompositorRuntime::default(),
             compositor_surfaces: WindowCompositorSurfaces::default(),
             is_maximized,
@@ -704,8 +639,6 @@ impl WindowHandle {
             window_position: Point::ZERO,
             #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
             context_menu: scope.create_rw_signal(None),
-            #[cfg(not(target_arch = "wasm32"))]
-            window_menu_actions: HashMap::new(),
             #[cfg(not(target_arch = "wasm32"))]
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
@@ -729,14 +662,15 @@ impl WindowHandle {
             frame_work_estimate: DEFAULT_FRAME_WORK_ESTIMATE,
             gpu_work_estimate: DEFAULT_GPU_WORK_ESTIMATE,
             timer_wakeup_estimate: DEFAULT_TIMER_WAKEUP_ESTIMATE,
-            hud: crate::hud::Hud::new(),
+            layer_host_commit_estimate: DEFAULT_LAYER_HOST_COMMIT_ESTIMATE,
             pending_presented_layers: Vec::new(),
             pending_active_layers: Vec::new(),
         };
 
-        window_handle.ui.state.set_root_size(size.get_untracked());
-
-        window_handle.ui.state.light_dark_theme = os_theme.unwrap_or(winit::window::Theme::Light);
+        window_handle.ui.with_direct(|ui| {
+            ui.state.set_root_size(size_val);
+            ui.state.light_dark_theme = os_theme.unwrap_or(winit::window::Theme::Light);
+        });
 
         // Run initial style and layout passes
         window_handle.process_update_messages();
@@ -744,8 +678,7 @@ impl WindowHandle {
         // and populates has_style_selectors for selector detection
         window_handle
             .ui
-            .root_id
-            .request_style(StyleReason::full_recalc());
+            .with_direct(|ui| ui.root_id.request_style(StyleReason::full_recalc()));
         window_handle.process_update_messages();
         let mut initial_timing = FrameTimingAccumulator::default();
         window_handle.style(&mut initial_timing);
@@ -774,21 +707,19 @@ impl WindowHandle {
         // driven frame turn and leaves the window blank until another event
         // arrives.
         self.window.set_visible(true);
-        self.ui.state.request_paint(self.ui.state.root_view_id);
+        self.ui.request_root_paint();
         self.refresh_frame_activity();
         Application::request_update();
     }
 
     pub fn event(&mut self, event: Event) {
-        set_current_view(self.ui.root_id.root());
-
         // Check event type for platform-specific context menu handling
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
         let is_pointer_down = matches!(&event, Event::Pointer(PointerEvent::Down { .. }));
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
         let is_pointer_up = matches!(&event, Event::Pointer(PointerEvent::Up { .. }));
 
-        self.ui.route_window_event(event);
+        self.ui.route_event_local(event);
 
         // Platform-specific context menu handling
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -814,82 +745,58 @@ impl WindowHandle {
         }
     }
 
+    fn apply_ui_outcome(&mut self, outcome: crate::window::ui_driver::UiUpdateOutcome) {
+        if outcome.schedule_repaint {
+            self.schedule_repaint();
+        }
+        self.apply_pending_platform_requests();
+    }
+
+    fn route_platform_event(&mut self, event: UiPlatformEvent) {
+        let outcome = self.ui.route_platform_event(event);
+        self.apply_ui_outcome(outcome);
+    }
+
     pub(crate) fn window_id(&self) -> WindowId {
         self.window_id
     }
 
     pub(crate) fn os_scale(&mut self, os_scale: f64) {
-        self.ui.state.os_scale = os_scale;
-        self.ui
-            .state
-            .update_default_theme(self.ui.state.light_dark_theme);
-        self.ui
-            .state
-            .mark_style_dirty(self.ui.state.root_view_id.get_element_id());
-        let scale = self.ui.state.effective_scale();
-        self.event(Event::Window(WindowEvent::ScaleChanged(scale)));
-        self.ui.state.request_paint(self.ui.state.root_view_id);
+        self.ui.update_os_scale(os_scale);
         self.schedule_repaint();
     }
 
     pub(crate) fn set_theme(&mut self, theme: Option<winit::window::Theme>, change_from_os: bool) {
-        if change_from_os && self.ui.state.theme_overriden {
-            // if the window theme has been set manually then changes from the os shouldn't do anything
+        if !self.ui.set_theme(theme, change_from_os) {
             return;
         }
-        self.ui.state.mark_style_dirty_selector(
-            self.ui.state.root_view_id.get_element_id(),
-            StyleSelector::DarkMode,
-        );
         if let Some(theme) = theme {
-            // Only override the theme with the default if the user did not provide one
             if self.default_theme.is_some() {
-                self.default_theme = Some(default_theme(theme, self.ui.state.effective_scale()));
-            }
-            // Update the default theme in WindowState for style computation
-            self.ui.state.update_default_theme(theme);
-            self.ui.state.light_dark_theme = theme;
-            if !change_from_os {
-                self.ui.state.theme_overriden = true
+                self.default_theme = Some(default_theme(theme, self.ui.effective_scale()));
             }
             #[cfg(target_os = "windows")]
             {
                 self.set_menu_theme_for_windows(theme);
             }
-            // Mark dark mode changed if theme actually changed
-            // if theme != old_theme {}
-        } else {
-            self.ui.state.theme_overriden = false;
         }
         if !change_from_os {
             self.window.set_theme(theme);
         }
-        self.ui.root_id.request_style(StyleReason::inherited());
-        if let Some(theme) = theme {
-            self.event(Event::Window(WindowEvent::ThemeChanged(theme)));
-        }
     }
 
     pub(crate) fn size(&mut self, size: Size) {
-        self.size.set(size);
+        self.size = size;
         self.record_frame_demand(FrameDemand::CONTINUOUS_INPUT);
         self.preempt_active_frame_for_resize();
 
-        // Update root size first so any style work triggered by resize observes
-        // the new width instead of the previous frame's value.
-        self.ui.state.set_root_size(size);
-
-        self.ui.state.update_screen_size_bp(size);
-        self.event(Event::Window(WindowEvent::Resized(size)));
-
         let is_maximized = self.window.is_maximized();
+        self.ui.resize(size, is_maximized);
         if is_maximized != self.is_maximized {
             self.is_maximized = is_maximized;
-            self.event(Event::Window(WindowEvent::MaximizeChanged(is_maximized)));
+            self.ui.maximize_changed(is_maximized);
         }
 
         self.resize_present_surface_to_window();
-        self.ui.state.request_paint(self.ui.state.root_view_id);
         self.schedule_repaint();
     }
 
@@ -928,46 +835,45 @@ impl WindowHandle {
 
     pub(crate) fn position(&mut self, point: Point) {
         self.window_position = point;
-        self.event(Event::Window(WindowEvent::Moved(point)));
+        self.route_platform_event(UiPlatformEvent::WindowMoved(point));
     }
 
     pub(crate) fn file_drag_dropped(&mut self, file_drag_event: FileDragEvent) {
-        // Store paths in window state for tracking during drag
-        self.ui.state.file_drag_paths = None;
-        self.event(Event::FileDrag(file_drag_event));
-    }
-
-    pub(crate) fn file_drag_start(&mut self, paths: Vec<std::path::PathBuf>, position: Point) {
-        // Store paths and dispatch as a move event to trigger hit testing
-        let paths_rc: Rc<[std::path::PathBuf]> = paths.into();
-        self.ui.state.file_drag_paths = Some(paths_rc.clone());
-        self.event(Event::FileDrag(FileDragEvent::Move(
-            crate::event::dropped_file::FileDragMove {
-                paths: paths_rc,
-                position,
-            },
-        )));
-    }
-
-    pub(crate) fn file_drag_move(&mut self, position: Point) {
-        if let Some(paths) = &self.ui.state.file_drag_paths {
-            self.event(Event::FileDrag(FileDragEvent::Move(
-                crate::event::dropped_file::FileDragMove {
-                    paths: paths.clone(),
-                    position,
-                },
-            )));
+        match file_drag_event {
+            FileDragEvent::Enter(enter) => {
+                self.route_platform_event(UiPlatformEvent::FileDragEnter {
+                    paths: enter.paths.iter().cloned().collect(),
+                    position: enter.position,
+                })
+            }
+            FileDragEvent::Drop(drop) => self.route_platform_event(UiPlatformEvent::FileDragDrop {
+                paths: drop.paths.iter().cloned().collect(),
+                position: drop.position,
+            }),
+            FileDragEvent::Move(move_event) => {
+                self.route_platform_event(UiPlatformEvent::FileDragStart {
+                    paths: move_event.paths.iter().cloned().collect(),
+                    position: move_event.position,
+                })
+            }
+            FileDragEvent::Leave(leave) => {
+                self.route_platform_event(UiPlatformEvent::FileDragLeave {
+                    position: leave.position,
+                })
+            }
         }
     }
 
+    pub(crate) fn file_drag_start(&mut self, paths: Vec<std::path::PathBuf>, position: Point) {
+        self.route_platform_event(UiPlatformEvent::FileDragStart { paths, position });
+    }
+
+    pub(crate) fn file_drag_move(&mut self, position: Point) {
+        self.route_platform_event(UiPlatformEvent::FileDragMove { position });
+    }
+
     pub(crate) fn file_drag_end(&mut self) {
-        // Clear paths and file hover state
-        self.ui.state.file_drag_paths = None;
-        set_current_view(self.ui.root_id.root());
-        let root_element_id = self.ui.state.root_view_id.get_element_id();
-        GlobalEventCx::new(&mut self.ui.state, root_element_id, Event::Extracted)
-            .update_hover_from_path(&[]);
-        self.process_update_messages_only();
+        self.route_platform_event(UiPlatformEvent::FileDragEnd);
         self.refresh_frame_activity();
     }
 
@@ -981,20 +887,20 @@ impl WindowHandle {
         } else if is_altgr {
             self.modifiers.set(Modifiers::ALT_GRAPH, false);
         }
-        self.event(Event::Key(key_event));
+        self.route_platform_event(UiPlatformEvent::Key(key_event));
         if toggle_hud {
             self.toggle_hud();
         }
     }
 
     fn toggle_hud(&mut self) {
-        self.hud.toggle();
-        self.ui.state.request_paint(self.ui.root_id);
+        self.ui.toggle_hud();
+        self.ui.request_root_paint();
         self.refresh_frame_activity();
     }
 
     pub(crate) fn pointer_event(&mut self, pointer_event: PointerEvent) {
-        self.event(Event::Pointer(pointer_event));
+        self.route_platform_event(UiPlatformEvent::Pointer(pointer_event));
     }
 
     pub(crate) fn focused(&mut self, focused: bool) {
@@ -1003,30 +909,39 @@ impl WindowHandle {
             if let Some(window_menu) = &self.window_menu {
                 window_menu.init_for_nsapp();
             }
-            self.event(Event::Window(WindowEvent::FocusGained));
+            self.route_platform_event(UiPlatformEvent::FocusGained);
         } else {
-            self.event(Event::Window(WindowEvent::FocusLost));
+            self.route_platform_event(UiPlatformEvent::FocusLost);
         }
     }
 
     fn style(&mut self, timing: &mut FrameTimingAccumulator) {
-        self.ui.style(self.active_frame_time, timing);
+        let next = self
+            .ui
+            .style(self.active_frame_time, std::mem::take(timing));
+        *timing = next;
     }
 
     fn layout(&mut self, timing: &mut FrameTimingAccumulator) {
-        self.ui.layout(timing);
+        let next = self.ui.layout(std::mem::take(timing));
+        *timing = next;
     }
 
     fn update_box_tree_from_layout(&mut self, timing: &mut FrameTimingAccumulator) {
-        self.ui.update_box_tree_from_layout(timing);
+        let next = self.ui.update_box_tree_from_layout(std::mem::take(timing));
+        *timing = next;
     }
 
     fn process_pending_box_tree_updates(&mut self, timing: &mut FrameTimingAccumulator) {
-        self.ui.process_pending_box_tree_updates(timing);
+        let next = self
+            .ui
+            .process_pending_box_tree_updates(std::mem::take(timing));
+        *timing = next;
     }
 
     fn commit_box_tree(&mut self, timing: &mut FrameTimingAccumulator) {
-        self.ui.commit_box_tree(timing);
+        let next = self.ui.commit_box_tree(std::mem::take(timing));
+        *timing = next;
     }
 
     /// Promotes frame-clock work into the current update turn.
@@ -1058,29 +973,28 @@ impl WindowHandle {
         true
     }
 
-    fn prepare_current_frame_artifact(&mut self) -> Option<UiFrameArtifact> {
+    fn prepare_current_scene_submission(&mut self) -> Option<UiSceneSubmission> {
         if !self.paint_state.is_initialized() {
             return None;
         }
 
         let mut timing = std::mem::take(&mut self.pending_timing);
-        if !self.prepare_display_list_for_render(&mut timing) {
-            self.pending_timing = timing;
-            return None;
-        }
+        let scene_submission = self.prepare_display_list_for_render(&mut timing)?;
         self.pending_timing = timing;
-        Some(self.ui.frame_artifact(&self.compositor_surfaces))
+        Some(scene_submission)
     }
 
     fn pull_compositor_surface_frame(&mut self) -> bool {
-        let artifact = self.ui.frame_artifact(&self.compositor_surfaces);
+        let submission = self
+            .ui
+            .scene_submission(self.compositor_surfaces.entries().clone());
         let main_frame_time = self.current_frame_time();
         self.active_frame_time = Some(main_frame_time);
         let update = self.compositor_surfaces.pull_frame(
             |_| main_frame_time,
-            &artifact.composition_plan,
+            &submission.composition_plan,
             &mut self.compositor_runtime,
-            artifact.effective_scale,
+            submission.effective_scale,
             self.gpu_resources.as_ref(),
         );
         if update.content_changed {
@@ -1102,20 +1016,20 @@ impl WindowHandle {
         true
     }
 
-    fn pull_compositor_surfaces_for_window_present(&mut self) {
-        let artifact = self.ui.frame_artifact(&self.compositor_surfaces);
-        if !artifact.composition_plan.has_compositor_surfaces()
-            || !self.compositor_surfaces.has_frame_pull()
-        {
-            return;
+    fn pull_compositor_surfaces_for_window_present(&mut self) -> bool {
+        let submission = self
+            .ui
+            .scene_submission(self.compositor_surfaces.entries().clone());
+        if !submission.has_compositor_surfaces() || !self.compositor_surfaces.has_frame_pull() {
+            return false;
         }
 
         let frame_time = self.current_frame_time();
         let update = self.compositor_surfaces.pull_frame(
             |_| frame_time,
-            &artifact.composition_plan,
+            &submission.composition_plan,
             &mut self.compositor_runtime,
-            artifact.effective_scale,
+            submission.effective_scale,
             self.gpu_resources.as_ref(),
         );
         if update.content_changed {
@@ -1127,19 +1041,21 @@ impl WindowHandle {
         }
         if crate::frame_source::frame_pacing_diag_enabled() {
             eprintln!(
-                "floem frame pacing external present-update window={:?} content_changed={} changed_surfaces={} request_next_frame={}",
+                "floem frame pacing external present-update window={:?} content_changed={} changed_surfaces={} request_next_frame={} producer_latency_count={}",
                 self.window_id,
                 update.content_changed,
                 update.changed_surfaces.len(),
                 update.request_next_frame,
+                update.producer_latency.len(),
             );
         }
+        update.content_changed
     }
 
-    pub(crate) fn render_compositor_scene_layers(
+    pub(crate) fn render_compositor_scene_submission(
         &mut self,
         reason: &'static str,
-        artifact: &UiFrameArtifact,
+        submission: &UiSceneSubmission,
     ) -> Option<usize> {
         if !self.paint_state.is_initialized() {
             return None;
@@ -1155,23 +1071,23 @@ impl WindowHandle {
         if crate::frame_source::frame_pacing_diag_enabled() {
             let status = self.ui.frame_status();
             eprintln!(
-                "floem window render_compositor_scene_layers reason={} window={:?} frame={} pending_paint={} pending_render={} root_size={:?} plan_items={}",
+                "floem window render_compositor_scene_submission reason={} window={:?} frame={} pending_paint={} pending_render={} root_size={:?} plan_items={}",
                 reason,
                 self.window_id,
                 frame_index,
                 status.has_pending_paint,
                 status.has_pending_render,
                 status.root_size,
-                artifact.composition_plan.items.len(),
+                submission.plan_item_count(),
             );
         }
         let scheduled_scene_frames = self.compositor_runtime.render_scene_layers(
             self.window_id,
-            &artifact.composition_plan,
-            &artifact.compositor_surfaces,
+            &submission.composition_plan,
+            &submission.compositor_surfaces,
             gpu_resources,
             &renderer_pool,
-            artifact.effective_scale,
+            submission.effective_scale,
         );
         let end = Instant::now();
         self.pending_timing.push_absolute_span(
@@ -1238,7 +1154,13 @@ impl WindowHandle {
                 self.pending_scene_frame_work_started_at.take(),
                 self.pending_scene_frame_work_cpu_end_at.take(),
             ) {
-                let observed_frame_work = cpu_end.saturating_duration_since(started_at);
+                // The compositor deadline cares about when the app thread can
+                // observe all scene fragments as ready, not just when render
+                // worker CPU encoding ended. Include GPU wait and cross-thread
+                // delivery/dispatch latency in the pacing estimate so a fast
+                // render that is scheduled late does not train the deadline too
+                // aggressively.
+                let observed_frame_work = now.max(cpu_end).saturating_duration_since(started_at);
                 self.frame_work_estimate =
                     smooth_duration_estimate(self.frame_work_estimate, observed_frame_work)
                         .max(Duration::from_micros(500));
@@ -1337,10 +1259,10 @@ impl WindowHandle {
     fn commit_compositor_frame(
         &mut self,
         reason: &'static str,
-        artifact: &UiFrameArtifact,
+        submission: &UiSceneSubmission,
     ) -> Option<usize> {
         let start = Instant::now();
-        let scheduled_scene_frames = self.render_compositor_scene_layers(reason, artifact)?;
+        let scheduled_scene_frames = self.render_compositor_scene_submission(reason, submission)?;
         let deadline = self
             .active_compositor_deadline_instant()
             .unwrap_or_else(|| self.current_frame_time().interval.deadline_max);
@@ -1436,7 +1358,7 @@ impl WindowHandle {
         self.pending_active_layers = commit.active_layers;
         self.pending_compositor_commit = None;
         if self.waits_for_layer_host_commit_feedback() {
-            self.arm_layer_host_commit_feedback(submitted_at);
+            self.arm_layer_host_commit_feedback(submitted_at, start);
         } else {
             let frame_time = self.active_frame_time;
             self.route_paint_present_event(submitted_at, frame_time);
@@ -1644,36 +1566,29 @@ impl WindowHandle {
         }
     }
 
-    fn prepare_display_list_for_render(&mut self, timing: &mut FrameTimingAccumulator) -> bool {
+    fn prepare_display_list_for_render(
+        &mut self,
+        timing: &mut FrameTimingAccumulator,
+    ) -> Option<UiSceneSubmission> {
         if !self.paint_state.is_initialized() {
-            return false;
+            return None;
         }
-        let start = Instant::now();
-        let id = self.ui.root_id;
-        let gpu_resources = self.gpu_resources.clone();
-        let window = self.window.clone();
-        let record_paint_order = crate::paint::is_paint_order_tracking_enabled();
-        let window_state = &mut self.ui.state;
-        let mut cx = crate::paint::GlobalPaintCx {
-            window_state,
-            gpu_resources,
-            window,
-            has_layer_host: self.compositor_runtime.has_layer_host(),
-            record_paint_order,
-        };
-        cx.prepare_display_list(id);
-        let artifact = self.ui.frame_artifact(&self.compositor_surfaces);
-        self.apply_frame_artifact_to_compositor(&artifact);
-        let end = Instant::now();
-        timing.push_absolute_span("Paint", start, end, TimingKind::Paint);
-        timing.push_absolute_span("Scene", start, end, TimingKind::Paint);
-        true
+        let (submission, next_timing) = self.ui.prepare_display_list(
+            self.gpu_resources.clone(),
+            self.compositor_runtime.has_layer_host(),
+            crate::paint::is_paint_order_tracking_enabled(),
+            self.compositor_surfaces.entries().clone(),
+            std::mem::take(timing),
+        );
+        *timing = next_timing;
+        self.apply_scene_submission_to_compositor(&submission);
+        Some(submission)
     }
 
-    fn apply_frame_artifact_to_compositor(&mut self, artifact: &UiFrameArtifact) {
+    fn apply_scene_submission_to_compositor(&mut self, submission: &UiSceneSubmission) {
         let _composition_diff = self.compositor_runtime.apply_plan(
-            &artifact.composition_plan,
-            &artifact.compositor_surfaces,
+            &submission.composition_plan,
+            &submission.compositor_surfaces,
             self.gpu_resources.as_ref(),
         );
     }
@@ -1686,7 +1601,7 @@ impl WindowHandle {
     /// directly for an off-pipeline paint. Timing is recorded into
     /// `pending_timing` as a side effect because paint is the primary action.
     pub fn paint(&mut self, _frame_id: u64) -> bool {
-        if self.prepare_current_frame_artifact().is_none() {
+        if self.prepare_current_scene_submission().is_none() {
             return false;
         }
         self.pull_compositor_surfaces_for_window_present();
@@ -1862,14 +1777,18 @@ impl WindowHandle {
     }
 
     fn has_ready_compositor_commit(&self) -> bool {
-        self.pending_compositor_commit.is_some()
-            && !self.compositor_runtime.has_pending_scene_renders()
+        !self.compositor_runtime.has_pending_scene_renders()
             && self.compositor_runtime.has_pending_commit_work()
     }
 
-    fn arm_layer_host_commit_feedback(&mut self, submitted_at: Instant) -> bool {
+    fn arm_layer_host_commit_feedback(
+        &mut self,
+        submitted_at: Instant,
+        commit_requested_at: Instant,
+    ) -> bool {
         self.pending_layer_host_commit = Some(PendingLayerHostCommit {
             submitted_at,
+            commit_requested_at,
             frame_time: self.active_frame_time,
         });
         true
@@ -1897,7 +1816,7 @@ impl WindowHandle {
         content: crate::compositor_surface::CompositorSurfaceContent,
     ) {
         self.compositor_surfaces.set_content(surface_id, content);
-        self.ui.state.request_paint(self.ui.state.root_view_id);
+        self.ui.request_root_paint();
     }
 
     pub(crate) fn set_compositor_surface_provider(
@@ -1906,7 +1825,7 @@ impl WindowHandle {
         provider: crate::compositor_surface::CompositorSurfaceProviderHandle,
     ) {
         self.compositor_surfaces.set_provider(surface_id, provider);
-        self.ui.state.request_paint(self.ui.state.root_view_id);
+        self.ui.request_root_paint();
     }
 
     pub(crate) fn request_compositor_surface_frame(
@@ -1920,7 +1839,7 @@ impl WindowHandle {
     #[cfg(target_os = "macos")]
     pub(crate) fn capture_next_metal_frame(&mut self) {
         request_next_metal_capture();
-        self.ui.state.request_paint(self.ui.state.root_view_id);
+        self.ui.request_root_paint();
         self.note_animation_frame_demand();
         self.schedule_repaint();
     }
@@ -1982,7 +1901,9 @@ impl WindowHandle {
         );
         let start_before_present_estimate = self
             .frame_work_estimate
+            .saturating_add(self.compositor_surfaces.max_producer_work_estimate())
             .saturating_add(self.gpu_work_estimate)
+            .saturating_add(self.layer_host_commit_estimate)
             .saturating_add(COMPOSITOR_DEADLINE_FUDGE)
             .saturating_add(self.timer_wakeup_estimate);
         let estimate = FrameTimingEstimate {
@@ -2103,8 +2024,8 @@ impl WindowHandle {
             return FrameSchedule::default();
         }
 
-        let status = self.compositor_work_status();
-        let frame_demand = self.status_frame_demand(status);
+        let mut status = self.compositor_work_status();
+        let mut frame_demand = self.status_frame_demand(status);
         let frame_time = self.frame_time_at(now);
 
         if self.has_ready_compositor_commit()
@@ -2116,10 +2037,13 @@ impl WindowHandle {
                     self.window_id,
                 );
             }
+            status = self.compositor_work_status();
+            frame_demand = self.status_frame_demand(status);
         }
 
         let has_compositor_surface_pull = self.has_compositor_surface_pull();
         let has_new_frame_work = self.compositor_frame_scheduler.needs_frame_source(status);
+        let ui_status = self.ui.frame_status();
         if crate::frame_source::frame_pacing_diag_enabled() {
             eprintln!(
                 "floem frame advance work window={:?} has_new={} surface_pull={} current_prepare={} scene_pending={} commit_ready={} pending_begin={} active_work={}",
@@ -2230,18 +2154,20 @@ impl WindowHandle {
 
         let mut ui_status = self.ui.frame_status();
         if ui_status.has_pending_paint || ui_status.has_pending_render {
-            let frame_artifact = self.prepare_current_frame_artifact();
-            if frame_artifact.is_some() {
-                self.pull_compositor_surfaces_for_window_present();
+            let mut scene_submission = self.prepare_current_scene_submission();
+            if scene_submission.is_some() && self.pull_compositor_surfaces_for_window_present() {
+                // Pulling a compositor-surface provider can synchronously drain
+                // newly submitted content. Rebuild the submission so scene
+                // layers that sample the surface capture the updated content
+                // version instead of rendering one frame behind.
+                scene_submission = self.prepare_current_scene_submission();
             }
-            let frame_artifact =
-                frame_artifact.map(|_| self.ui.frame_artifact(&self.compositor_surfaces));
-            let scheduled_scene_frames = if let Some(frame_artifact) = frame_artifact.as_ref() {
-                self.commit_compositor_frame("frame", frame_artifact)
+            let scheduled_scene_frames = if let Some(scene_submission) = scene_submission.as_ref() {
+                self.commit_compositor_frame("frame", scene_submission)
             } else {
                 None
             };
-            let prepared_plan = frame_artifact.is_some();
+            let prepared_plan = scene_submission.is_some();
             ui_status = self.ui.frame_status();
             if scheduled_scene_frames.is_none()
                 && (ui_status.has_pending_paint || ui_status.has_pending_render)
@@ -2267,8 +2193,11 @@ impl WindowHandle {
             }
         } else if self.has_active_compositor_frame_work() {
             let submitted_at = Instant::now();
-            let frame_artifact = self.ui.frame_artifact(&self.compositor_surfaces);
-            let scheduled_scene_frames = self.commit_compositor_frame("external", &frame_artifact);
+            let scene_submission = self
+                .ui
+                .scene_submission(self.compositor_surfaces.entries().clone());
+            let scheduled_scene_frames =
+                self.commit_compositor_frame("external", &scene_submission);
             let _ = submitted_at;
             if crate::frame_source::frame_pacing_diag_enabled() {
                 eprintln!(
@@ -2313,7 +2242,7 @@ impl WindowHandle {
         presented_at: Instant,
         submitted_frame_time: Option<FrameTime>,
     ) -> bool {
-        self.ui.state.clear_pending_damage();
+        self.ui.clear_pending_damage();
         let feedback_matches_active = self
             .active_frame_time
             .zip(submitted_frame_time)
@@ -2429,6 +2358,10 @@ impl WindowHandle {
             return;
         };
         let submitted_at = pending.submitted_at;
+        let commit_feedback_latency =
+            committed_at.saturating_duration_since(pending.commit_requested_at);
+        self.layer_host_commit_estimate =
+            smooth_duration_estimate(self.layer_host_commit_estimate, commit_feedback_latency);
         self.route_paint_present_event(committed_at, pending.frame_time);
         let pacing_presented_at = self
             .active_frame_time
@@ -2461,6 +2394,7 @@ impl WindowHandle {
                 .saturating_duration_since(submitted_at)
                 .as_secs_f64()
                 * 1000.0;
+            let commit_feedback_ms = commit_feedback_latency.as_secs_f64() * 1000.0;
             let presented_late_ms = frame_time.interval.predicted_present.and_then(|predicted| {
                 (committed_at > predicted).then(|| {
                     committed_at
@@ -2473,12 +2407,13 @@ impl WindowHandle {
                 || submitted_to_commit_ms > interval_ms * 1.5
             {
                 eprintln!(
-                    "floem stutter layer-host-feedback window={:?} frame={} commit_margin={:?}ms presented_late={:?}ms submitted_to_commit={:.3}ms interval={:.3}ms",
+                    "floem stutter layer-host-feedback window={:?} frame={} commit_margin={:?}ms presented_late={:?}ms submitted_to_commit={:.3}ms commit_feedback={:.3}ms interval={:.3}ms",
                     self.window_id,
                     frame_time.frame_index,
                     commit_margin_ms,
                     presented_late_ms,
                     submitted_to_commit_ms,
+                    commit_feedback_ms,
                     interval_ms,
                 );
             }
@@ -2530,11 +2465,7 @@ impl WindowHandle {
             layers,
             active_layers,
         };
-        self.hud.record_present(&info);
-        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent(
-            info,
-        )));
-        self.ui.route_window_event(event);
+        self.ui.route_paint_present(info);
     }
 
     fn capture_image(&mut self) -> crate::paint::renderer::CaptureOutput {
@@ -2567,15 +2498,17 @@ impl WindowHandle {
         }
         let renderer_pool = self.scene_renderer_pool.get()?;
 
-        let frame_artifact = self.ui.frame_artifact(&self.compositor_surfaces);
-        let _ = self.render_compositor_scene_layers("capture", &frame_artifact);
-        let extent = surface_extent(self.ui.state.root_size, self.ui.state.os_scale);
+        let scene_submission = self
+            .ui
+            .scene_submission(self.compositor_surfaces.entries().clone());
+        let _ = self.render_compositor_scene_submission("capture", &scene_submission);
+        let extent = surface_extent(self.ui.root_physical_size(), 1.0);
         let frame_size = Size::new(f64::from(extent.width), f64::from(extent.height));
         let background = self.capture_background();
         let capture = match self.compositor_runtime.capture_scene(
-            &self.ui.state.composition_plan,
+            &scene_submission.composition_plan,
             frame_size,
-            self.ui.state.effective_scale(),
+            scene_submission.effective_scale,
             background,
         ) {
             Ok(capture) => capture,
@@ -2616,7 +2549,9 @@ impl WindowHandle {
     pub(crate) fn capture(&mut self) -> Capture {
         // Capture the view before we run `style` and `layout` to catch missing `request_style`` or
         // `request_layout` flags.
-        let root = CapturedView::capture(self.ui.root_id, &mut self.ui.state);
+        let root = self
+            .ui
+            .call_inspector_capture(|ui| CapturedView::capture(ui.root_id, &mut ui.state));
 
         fn get_taffy_depth(taffy: Rc<RefCell<LayoutTree>>, root: taffy::tree::NodeId) -> usize {
             let children = taffy.borrow().children(root).unwrap();
@@ -2634,7 +2569,9 @@ impl WindowHandle {
 
         let mut update = FrameTimingAccumulator::default();
         self.style(&mut update);
-        let taffy_root_node = self.ui.root_id.state().borrow().layout_id;
+        let taffy_root_node = self
+            .ui
+            .call_inspector_capture(|ui| ui.root_id.state().borrow().layout_id);
         self.layout(&mut update);
         self.commit_box_tree(&mut update);
         let mut timing = FrameTimingAccumulator::default();
@@ -2642,13 +2579,19 @@ impl WindowHandle {
         let capture_output = self.capture_image();
         update.absorb(timing);
         let timings = update.build_timing_report();
-        let window_size = self.ui.state.root_size;
-        let state = CaptureState::collect_from(self.ui.root_id, &self.ui.state);
+        let (window_size, state, taffy, taffy_node_count) = self.ui.call_inspector_capture(|ui| {
+            (
+                ui.state.root_size,
+                CaptureState::collect_from(ui.root_id, &ui.state),
+                ui.root_id.taffy(),
+                ui.root_id.taffy().borrow().total_node_count(),
+            )
+        });
 
         let capture = Capture {
             timings,
-            taffy_node_count: self.ui.root_id.taffy().borrow().total_node_count(),
-            taffy_depth: get_taffy_depth(self.ui.root_id.taffy(), taffy_root_node),
+            taffy_node_count,
+            taffy_depth: get_taffy_depth(taffy, taffy_root_node),
             window: capture_output.image,
             window_capture_error: capture_output.error,
             window_size,
@@ -2768,8 +2711,7 @@ impl WindowHandle {
 
         self.set_cursor();
 
-        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Complete));
-        self.ui.route_window_event(event);
+        self.ui.route_update_phase_complete();
 
         true
     }
@@ -2832,8 +2774,7 @@ impl WindowHandle {
 
         self.set_cursor();
 
-        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Complete));
-        self.ui.route_window_event(event);
+        self.ui.route_update_phase_complete();
     }
 
     fn apply_platform_request(&mut self, request: PlatformRequest) {
@@ -2882,10 +2823,10 @@ impl WindowHandle {
                 self.window.set_theme(theme);
             }
             PlatformRequest::ShowContextMenu { menu, pos } => {
-                self.show_context_menu(menu, pos);
+                self.show_context_menu(menu.into_inner(), pos);
             }
-            PlatformRequest::WindowMenu { menu, actions } => {
-                self.window_menu_actions = actions;
+            PlatformRequest::WindowMenu { menu } => {
+                let menu = menu.into_inner();
                 #[cfg(target_os = "macos")]
                 {
                     menu.init_for_nsapp();
@@ -2968,13 +2909,7 @@ impl WindowHandle {
 
     pub(crate) fn process_update_messages(&mut self) {
         let outcome = self.ui.process_update_messages();
-        if outcome.toggle_hud {
-            self.toggle_hud();
-        }
-        if outcome.schedule_repaint {
-            self.schedule_repaint();
-        }
-        self.apply_pending_platform_requests();
+        self.apply_ui_outcome(outcome);
     }
 
     fn process_deferred_update_messages(&mut self) {
@@ -3006,49 +2941,8 @@ impl WindowHandle {
     }
 
     fn set_cursor(&mut self) {
-        if self.ui.state.needs_cursor_resolution {
-            let mut temp = None;
-            for hover in self.ui.state.hover_state.current_path() {
-                if hover.is_view()
-                    && let Some(cursor) = hover.owning_id().state().borrow().cursor()
-                {
-                    temp = Some(cursor);
-                }
-                // it is important that the node cursors override the widget cursor because non View nodes will have a widget that maps to the parent View that they are associated with
-                if let Some(cursor) = self.ui.state.element_id_cursors.get(hover) {
-                    temp = Some(*cursor);
-                }
-            }
-            self.ui.state.needs_cursor_resolution = false;
-            self.ui.state.cursor = temp;
-        }
-        let cursor = match self.ui.state.cursor {
-            Some(CursorStyle::Default) => CursorIcon::Default,
-            Some(CursorStyle::Pointer) => CursorIcon::Pointer,
-            Some(CursorStyle::Progress) => CursorIcon::Progress,
-            Some(CursorStyle::Wait) => CursorIcon::Wait,
-            Some(CursorStyle::Crosshair) => CursorIcon::Crosshair,
-            Some(CursorStyle::Text) => CursorIcon::Text,
-            Some(CursorStyle::Move) => CursorIcon::Move,
-            Some(CursorStyle::Grab) => CursorIcon::Grab,
-            Some(CursorStyle::Grabbing) => CursorIcon::Grabbing,
-            Some(CursorStyle::ColResize) => CursorIcon::ColResize,
-            Some(CursorStyle::RowResize) => CursorIcon::RowResize,
-            Some(CursorStyle::WResize) => CursorIcon::WResize,
-            Some(CursorStyle::EResize) => CursorIcon::EResize,
-            Some(CursorStyle::NwResize) => CursorIcon::NwResize,
-            Some(CursorStyle::NeResize) => CursorIcon::NeResize,
-            Some(CursorStyle::SwResize) => CursorIcon::SwResize,
-            Some(CursorStyle::SeResize) => CursorIcon::SeResize,
-            Some(CursorStyle::SResize) => CursorIcon::SResize,
-            Some(CursorStyle::NResize) => CursorIcon::NResize,
-            Some(CursorStyle::NeswResize) => CursorIcon::NeswResize,
-            Some(CursorStyle::NwseResize) => CursorIcon::NwseResize,
-            None => CursorIcon::Default,
-        };
-        if cursor != self.ui.state.last_cursor_icon {
+        if let Some(cursor) = self.ui.resolve_cursor_icon() {
             self.window.set_cursor(cursor.into());
-            self.ui.state.last_cursor_icon = cursor;
         }
     }
 
@@ -3057,9 +2951,9 @@ impl WindowHandle {
     }
 
     pub(crate) fn destroy(&mut self) {
-        self.event(Event::Window(WindowEvent::Closed));
-        self.ui.scope.dispose();
-        remove_window_id_mapping(&self.ui.root_id, &self.window_id);
+        self.ui.route_closed();
+        self.ui.dispose_scope();
+        self.ui.remove_window_tracking(&self.window_id);
     }
 
     #[cfg(target_os = "macos")]
@@ -3074,8 +2968,8 @@ impl WindowHandle {
 
         if let RawWindowHandle::AppKit(handle) = self.window.window_handle().unwrap().as_raw() {
             let ns_view = handle.ns_view.as_ptr() as usize;
-            let scale = self.ui.state.user_scale;
-            let height = self.size.get_untracked().height;
+            let scale = self.ui.user_scale();
+            let height = self.size.height;
             let logical_pos = pos.map(|pos| (pos.x * scale, (height - pos.y) * scale));
 
             struct SendMenu(MudaMenu);
@@ -3115,8 +3009,8 @@ impl WindowHandle {
                     isize::from(handle.hwnd),
                     pos.map(|pos| {
                         Position::Logical(LogicalPosition::new(
-                            pos.x * self.ui.state.user_scale,
-                            pos.y * self.ui.state.user_scale,
+                            pos.x * self.ui.user_scale(),
+                            pos.y * self.ui.user_scale(),
                         ))
                     }),
                 );
@@ -3164,19 +3058,15 @@ impl WindowHandle {
 
     #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
     pub(crate) fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
-        let pos = pos.unwrap_or(self.ui.state.last_pointer.0);
-        let pos = Point::new(
-            pos.x / self.ui.state.user_scale,
-            pos.y / self.ui.state.user_scale,
-        );
+        let scale = self.ui.user_scale();
+        let pos = pos.unwrap_or(self.ui.last_pointer_position());
+        let pos = Point::new(pos.x / scale, pos.y / scale);
         self.context_menu.set(Some((menu, pos, false)));
     }
 
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn menu_action(&mut self, id: &MenuId) {
-        set_current_view(self.ui.root_id);
-        if let Some(action) = self.ui.state.context_menu.get(id) {
-            (*action)();
+        if self.ui.run_context_menu_action(id) {
             self.process_update_messages_only();
             self.refresh_frame_activity();
         }
@@ -3184,33 +3074,17 @@ impl WindowHandle {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn menu_action(&mut self, id: &MenuId) {
-        set_current_view(self.ui.root_id);
-        if let Some(action) = self.ui.state.context_menu.get(id) {
-            (*action)();
+        if self.ui.run_context_menu_action(id) {
             self.process_update_messages_only();
             self.refresh_frame_activity();
-        } else if let Some(action) = self.window_menu_actions.get(id) {
-            (*action)();
+        } else if self.ui.run_window_menu_action(id) {
             self.process_update_messages_only();
             self.refresh_frame_activity();
         }
     }
 
     pub(crate) fn ime(&mut self, ime: Ime) {
-        let floem_ime = match ime {
-            Ime::Enabled => ImeEvent::Enabled,
-            Ime::Preedit(text, cursor) => ImeEvent::Preedit { text, cursor },
-            Ime::Commit(text) => ImeEvent::Commit(text),
-            Ime::Disabled => ImeEvent::Disabled,
-            Ime::DeleteSurrounding {
-                before_bytes,
-                after_bytes,
-            } => ImeEvent::DeleteSurrounding {
-                before_bytes,
-                after_bytes,
-            },
-        };
-        self.event(Event::Ime(floem_ime));
+        self.route_platform_event(UiPlatformEvent::Ime(ime));
     }
 
     pub(crate) fn modifiers_changed(&mut self, modifiers: Modifiers) {
@@ -3229,7 +3103,7 @@ impl WindowHandle {
     pub(crate) fn cleanup(&mut self) {
         // Dispose the reactive scope FIRST to clean up effects.
         // This stops any reactive effects from running during cleanup.
-        self.ui.scope.dispose();
+        self.ui.dispose_scope();
 
         // Clear ALL message queues to prevent stale messages from affecting
         // future windows that might reuse the same ViewId slots.
@@ -3249,7 +3123,7 @@ impl WindowHandle {
         });
 
         // Remove all views starting from the root
-        self.ui.state.remove_view(self.ui.root_id);
+        self.ui.remove_root_view();
 
         // Clear all caches that might hold stale ViewId references.
         // This is crucial for test isolation when tests run on the same thread.
@@ -3258,7 +3132,7 @@ impl WindowHandle {
         // Remove the window from the global window tracking map.
         // This is crucial for test isolation - if not done, the old root ViewId
         // will still be considered a "known root" when the ViewId slot is reused.
-        remove_window_id_mapping(&self.ui.root_id, &self.window_id);
+        self.ui.remove_window_tracking(&self.window_id);
     }
 }
 
@@ -3275,8 +3149,8 @@ pub(crate) fn set_current_view(id: ViewId) {
 }
 
 /// A view representing a window which manages the main window view and any overlays.
-struct WindowView {
-    id: ViewId,
+pub(crate) struct WindowView {
+    pub(crate) id: ViewId,
 }
 
 impl View for WindowView {

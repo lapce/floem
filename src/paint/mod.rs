@@ -123,7 +123,6 @@ fn record_paint(id: ViewId) {
 pub struct GlobalPaintCx<'a> {
     pub window_state: &'a mut WindowState,
     pub gpu_resources: Option<GpuResources>,
-    pub window: Arc<dyn Window>,
     pub has_layer_host: bool,
     /// Whether to record paint order for testing. Cached from thread-local at creation.
     pub(crate) record_paint_order: bool,
