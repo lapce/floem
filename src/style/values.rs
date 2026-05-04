@@ -4,12 +4,13 @@
 mod values_extended_scene;
 pub(crate) use values_extended_scene::scene_debug_view_with_size;
 
+use crate::effects::Brush;
 use crate::text::{FontWeight, LineHeightValue};
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
 use peniko::color::{HueDirection, palette};
 use peniko::kurbo::{self, Affine, Point, Shape, Stroke, Vec2};
 use peniko::{
-    Brush, Color, ColorStop, ColorStops, Gradient, GradientKind, ImageQuality, ImageSampler,
+    Color, ColorStop, ColorStops, Gradient, GradientKind, ImageQuality, ImageSampler,
     InterpolationAlphaSpace, LinearGradientPosition,
 };
 use smallvec::SmallVec;
@@ -1207,15 +1208,15 @@ impl StylePropValue for Stroke {
     }
 }
 
-impl IntoView for imaging::Brush {
+impl IntoView for Brush {
     type V = AnyView;
     type Intermediate = AnyView;
 
     fn into_intermediate(self) -> Self::Intermediate {
         match self {
-            imaging::Brush::Solid(color) => color.into_any(),
-            imaging::Brush::Gradient(grad) => grad.into_any(),
-            imaging::Brush::Image(image) => Stack::vertical((
+            Brush::Solid(color) => color.into_any(),
+            Brush::Gradient(grad) => grad.into_any(),
+            Brush::Image(image) => Stack::vertical((
                 Label::new("image brush").style(|s| {
                     s.font_size(10.0)
                         .font_bold()
@@ -1243,13 +1244,12 @@ impl IntoView for imaging::Brush {
     }
 }
 
-impl StylePropValue for imaging::Brush {
+impl StylePropValue for Brush {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         Some(self.clone().into_any())
     }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        use imaging::Brush;
         match (self, other) {
             (Brush::Solid(color), Brush::Solid(other)) => Some(Self::Solid(color.lerp(
                 *other,

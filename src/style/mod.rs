@@ -127,8 +127,8 @@
 //!
 //! You can create custom extractors and embed them in your custom views so that you can get out any built in prop, or any of your custom props from the final combined style that is applied to your `View`.
 
+use crate::effects::Brush;
 use crate::text::FontWeight as FontWeightProp;
-use imaging::Brush;
 use peniko::Color;
 use peniko::color::palette;
 use peniko::kurbo::{self, Affine, RoundedRect, Stroke, Vec2};

@@ -2,7 +2,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     compositor_surface::{CompositorSurfaceContent, CompositorSurfaceId, ExternalTexture},
-    effects::CompositorEffect,
+    effects::CompositorShader,
     gpu_resources::GpuResources,
     paint::{
         composition::{
@@ -57,7 +57,7 @@ pub(crate) struct WindowCompositor {
     pending_scene_renders: FxHashMap<CompositionKey, PendingSceneRender>,
     pending_scene_publications: Vec<(subduction::SubmittedContentInfo, subduction::ResourceKey)>,
     published_compositor_surface_versions: FxHashMap<CompositionKey, u64>,
-    effect_renderer: ColorEffectRenderer,
+    effect_renderer: ShaderRenderer,
     pending_layer_changes: Option<FrameChanges>,
     #[cfg(target_os = "macos")]
     metal_capture_active: bool,
@@ -429,7 +429,7 @@ impl WindowCompositor {
                 .items
                 .iter()
                 .filter(|item| {
-                    matches!(item, CompositionItem::Scene(layer) if !layer.color_effects.is_empty())
+                    matches!(item, CompositionItem::Scene(layer) if !layer.color_filters.is_empty())
                 })
                 .count();
             eprintln!(
@@ -752,12 +752,15 @@ impl WindowCompositor {
                 }
                 continue;
             };
-            let scene_texture = if layer.color_effects.is_empty() {
+            let scene_texture = if layer.color_filters.is_empty() {
                 None
             } else {
-                let texture = self.effect_renderer.intermediate_texture(
+                // Scene fragments are rendered asynchronously by the render pool.
+                // Do not reuse this texture across pending scene renders: another
+                // effect layer can otherwise clear or overwrite the input before
+                // this layer's shader chain consumes it.
+                let texture = create_effect_intermediate_texture(
                     &gpu_resources.device,
-                    EffectIntermediateTextureRole::SceneInput,
                     size,
                     format,
                     "floem compositor effect scene input",
@@ -774,7 +777,7 @@ impl WindowCompositor {
             let render_size = Size::new(f64::from(width), f64::from(height));
             if crate::frame_source::frame_pacing_diag_enabled() {
                 eprintln!(
-                    "floem compositor scene render call={} key={:?} revision={} size={}x{} bounds={:?} transform={:?} commands={} external_images={} color_effects={}",
+                    "floem compositor scene render call={} key={:?} revision={} size={}x{} bounds={:?} transform={:?} commands={} external_images={} color_filters={}",
                     render_call_id,
                     layer.key,
                     layer.content_revision,
@@ -784,7 +787,7 @@ impl WindowCompositor {
                     layer.transform,
                     layer.scene.commands().len(),
                     layer.external_images.len(),
-                    layer.color_effects.len(),
+                    layer.color_filters.len(),
                 );
             }
             let render_submitted = renderer_pool.submit(
@@ -828,7 +831,7 @@ impl WindowCompositor {
                     layer_state: SceneCompositorLayer::from_layer(layer, compositor_surfaces),
                     lease,
                     scene_texture,
-                    effects: layer.color_effects.clone(),
+                    effects: layer.color_filters.clone(),
                     format,
                     size,
                     effective_scale,
@@ -901,7 +904,7 @@ impl WindowCompositor {
             };
             if self.unsupported_publications.insert(failure) {
                 eprintln!(
-                    "floem compositor: scene layer failed compositor color effect pass: {err}",
+                    "floem compositor: scene layer failed compositor color filter pass: {err}",
                 );
             }
             return false;
@@ -909,7 +912,7 @@ impl WindowCompositor {
         #[cfg(debug_assertions)]
         if crate::frame_source::frame_pacing_diag_enabled() && !pending.effects.is_empty() {
             eprintln!(
-                "floem compositor scene effect rendered call={} key={:?} revision={} effects={}",
+                "floem compositor scene effect rendered call={} key={:?} revision={} shaders={}",
                 pending.render_call_id,
                 key,
                 pending.content_revision,
@@ -1279,7 +1282,7 @@ struct PendingSceneRender {
     layer_state: SceneCompositorLayer,
     lease: subduction::wgpu::SurfaceFrameLease,
     scene_texture: Option<wgpu::Texture>,
-    effects: Vec<CompositorEffect>,
+    effects: Vec<CompositorShader>,
     format: wgpu::TextureFormat,
     size: wgpu::Extent3d,
     effective_scale: f64,
@@ -1430,7 +1433,7 @@ pub(crate) struct SceneRenderSignature {
     format: wgpu::TextureFormat,
     target_size: wgpu::Extent3d,
     external_versions: Vec<(CompositorSurfaceId, u64)>,
-    color_effect_hashes: Vec<u64>,
+    color_filter_hashes: Vec<u64>,
 }
 
 fn scene_render_signature(
@@ -1465,8 +1468,8 @@ fn scene_render_signature(
                 )
             })
             .collect(),
-        color_effect_hashes: layer
-            .color_effects
+        color_filter_hashes: layer
+            .color_filters
             .iter()
             .map(|effect| compositor_effect_dependency_hash(effect, frame_index))
             .collect(),
@@ -1474,12 +1477,12 @@ fn scene_render_signature(
 }
 
 #[derive(Default)]
-struct ColorEffectRenderer {
-    pipelines: FxHashMap<ColorEffectPipelineKey, ColorEffectPipeline>,
+struct ShaderRenderer {
+    pipelines: FxHashMap<ShaderPipelineKey, ShaderPipeline>,
     intermediate_textures: FxHashMap<EffectIntermediateTextureRole, EffectIntermediateTexture>,
 }
 
-impl ColorEffectRenderer {
+impl ShaderRenderer {
     fn intermediate_texture(
         &mut self,
         device: &wgpu::Device,
@@ -1519,7 +1522,7 @@ impl ColorEffectRenderer {
         output: &wgpu::Texture,
         format: wgpu::TextureFormat,
         size: wgpu::Extent3d,
-        effects: &[CompositorEffect],
+        effects: &[CompositorShader],
         frame_index: u64,
         effective_scale: f64,
     ) -> Result<(), String> {
@@ -1528,7 +1531,7 @@ impl ColorEffectRenderer {
         };
         if crate::frame_source::frame_pacing_diag_enabled() {
             eprintln!(
-                "floem compositor color effect chain call={} key={:?} revision={} effects={} size={}x{}",
+                "floem compositor color filter chain call={} key={:?} revision={} shaders={} size={}x{}",
                 render_call_id,
                 key,
                 frame_index,
@@ -1546,7 +1549,7 @@ impl ColorEffectRenderer {
                 EffectIntermediateTextureRole::Ping,
                 size,
                 format,
-                "floem compositor color effect ping",
+                "floem compositor color filter ping",
             ));
             if leading.len() > 1 {
                 ping_pong.push(self.intermediate_texture(
@@ -1554,7 +1557,7 @@ impl ColorEffectRenderer {
                     EffectIntermediateTextureRole::Pong,
                     size,
                     format,
-                    "floem compositor color effect pong",
+                    "floem compositor color filter pong",
                 ));
             }
         }
@@ -1599,37 +1602,37 @@ impl ColorEffectRenderer {
         output: &wgpu::Texture,
         format: wgpu::TextureFormat,
         size: wgpu::Extent3d,
-        effect: &CompositorEffect,
+        effect: &CompositorShader,
         frame_index: u64,
         effective_scale: f64,
     ) -> Result<(), String> {
         let pipeline = self.pipeline(device, format, effect)?;
         let input_view = input.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("floem compositor color effect input view"),
+            label: Some("floem compositor color filter input view"),
             ..Default::default()
         });
         let output_view = output.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("floem compositor color effect output view"),
+            label: Some("floem compositor color filter output view"),
             ..Default::default()
         });
-        let args = padded_uniform_bytes(effect_args(effect));
+        let args = padded_uniform_bytes(&effect_args(effect));
         let args_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("floem compositor color effect args"),
+            label: Some("floem compositor color filter args"),
             size: args.len() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         queue.write_buffer(&args_buffer, 0, &args);
-        let frame_bytes = color_effect_frame_bytes(frame_index, effective_scale, size);
+        let frame_bytes = color_filter_frame_bytes(effective_scale, size);
         let frame_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("floem compositor color effect frame"),
+            label: Some("floem compositor color filter frame"),
             size: frame_bytes.len() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         queue.write_buffer(&frame_buffer, 0, &frame_bytes);
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("floem compositor color effect bind group"),
+            label: Some("floem compositor color filter bind group"),
             layout: &pipeline.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -1651,10 +1654,10 @@ impl ColorEffectRenderer {
             ],
         });
         let encoder_label = format!(
-            "floem compositor color effect encoder call={render_call_id} revision={frame_index}"
+            "floem compositor color filter encoder call={render_call_id} revision={frame_index}"
         );
         let pass_label = format!(
-            "floem compositor color effect pass call={render_call_id} revision={frame_index}"
+            "floem compositor color filter pass call={render_call_id} revision={frame_index}"
         );
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some(&encoder_label),
@@ -1689,42 +1692,42 @@ impl ColorEffectRenderer {
         &mut self,
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
-        effect: &CompositorEffect,
-    ) -> Result<&ColorEffectPipeline, String> {
-        let shader_hash = color_effect_shader_hash(effect);
-        let key = ColorEffectPipelineKey {
+        effect: &CompositorShader,
+    ) -> Result<&ShaderPipeline, String> {
+        let shader_hash = color_filter_shader_hash(effect);
+        let key = ShaderPipelineKey {
             shader_hash,
             format,
         };
         if !self.pipelines.contains_key(&key) {
-            let pipeline = ColorEffectPipeline::new(device, format, effect)?;
+            let pipeline = ShaderPipeline::new(device, format, effect)?;
             self.pipelines.insert(key, pipeline);
         }
         self.pipelines
             .get(&key)
-            .ok_or_else(|| "failed to cache color effect pipeline".to_owned())
+            .ok_or_else(|| "failed to cache color filter pipeline".to_owned())
     }
 }
 
-struct ColorEffectPipeline {
+struct ShaderPipeline {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
 }
 
-impl ColorEffectPipeline {
+impl ShaderPipeline {
     fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
-        effect: &CompositorEffect,
+        effect: &CompositorShader,
     ) -> Result<Self, String> {
-        let shader_source = color_effect_shader_source(effect)?;
+        let shader_source = color_filter_shader_source(effect)?;
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some(color_effect_label(effect)),
+            label: Some(color_filter_label(effect)),
             source: wgpu::ShaderSource::Wgsl(shader_source.into()),
         });
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("floem compositor color effect bind group layout"),
+            label: Some("floem compositor color filter bind group layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -1765,12 +1768,12 @@ impl ColorEffectPipeline {
             ],
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("floem compositor color effect pipeline layout"),
+            label: Some("floem compositor color filter pipeline layout"),
             bind_group_layouts: &[&bind_group_layout],
             immediate_size: 0,
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some(color_effect_label(effect)),
+            label: Some(color_filter_label(effect)),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -1795,7 +1798,7 @@ impl ColorEffectPipeline {
             cache: None,
         });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("floem compositor color effect sampler"),
+            label: Some("floem compositor color filter sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -1813,14 +1816,13 @@ impl ColorEffectPipeline {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct ColorEffectPipelineKey {
+struct ShaderPipelineKey {
     shader_hash: u64,
     format: wgpu::TextureFormat,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum EffectIntermediateTextureRole {
-    SceneInput,
     Ping,
     Pong,
 }
@@ -1888,13 +1890,13 @@ fn initialize_texture_for_external_writer(
     queue.submit([encoder.finish()]);
 }
 
-fn color_effect_shader_hash(effect: &CompositorEffect) -> u64 {
+fn color_filter_shader_hash(effect: &CompositorShader) -> u64 {
     let mut hasher = DefaultHasher::new();
     match effect {
-        CompositorEffect::Color(effect) => {
+        CompositorShader::Color(effect) => {
             "color".hash(&mut hasher);
             match &effect.shader {
-                crate::effects::ColorEffectShader::Wgsl {
+                crate::effects::ColorFilterShader::Wgsl {
                     label,
                     fragment_body,
                 } => {
@@ -1902,14 +1904,12 @@ fn color_effect_shader_hash(effect: &CompositorEffect) -> u64 {
                     fragment_body.hash(&mut hasher);
                 }
             }
-            effect.args.bytes.hash(&mut hasher);
             format!("{:?}", effect.color_space).hash(&mut hasher);
-            effect.needs_time.hash(&mut hasher);
         }
-        CompositorEffect::Layer(effect) => {
+        CompositorShader::Layer(effect) => {
             "layer".hash(&mut hasher);
             match &effect.shader {
-                crate::effects::LayerEffectShader::Wgsl {
+                crate::effects::LayerFilterShader::Wgsl {
                     label,
                     fragment_body,
                 } => {
@@ -1917,14 +1917,12 @@ fn color_effect_shader_hash(effect: &CompositorEffect) -> u64 {
                     fragment_body.hash(&mut hasher);
                 }
             }
-            effect.args.bytes.hash(&mut hasher);
             format!("{:?}", effect.color_space).hash(&mut hasher);
-            effect.needs_time.hash(&mut hasher);
         }
-        CompositorEffect::Source(effect) => {
+        CompositorShader::Source(effect) => {
             "source".hash(&mut hasher);
             match &effect.shader {
-                crate::effects::SourceEffectShader::Wgsl {
+                crate::effects::ShaderSourceShader::Wgsl {
                     label,
                     fragment_body,
                 } => {
@@ -1932,107 +1930,100 @@ fn color_effect_shader_hash(effect: &CompositorEffect) -> u64 {
                     fragment_body.hash(&mut hasher);
                 }
             }
-            effect.args.bytes.hash(&mut hasher);
             format!("{:?}", effect.color_space).hash(&mut hasher);
-            effect.needs_time.hash(&mut hasher);
         }
     }
     hasher.finish()
 }
 
-fn compositor_effect_dependency_hash(effect: &CompositorEffect, frame_index: u64) -> u64 {
+fn compositor_effect_dependency_hash(effect: &CompositorShader, _frame_index: u64) -> u64 {
     let mut hasher = DefaultHasher::new();
-    color_effect_shader_hash(effect).hash(&mut hasher);
-    if compositor_effect_needs_time(effect) {
-        frame_index.hash(&mut hasher);
+    color_filter_shader_hash(effect).hash(&mut hasher);
+    effect_args(effect).hash(&mut hasher);
+    match effect {
+        CompositorShader::Color(effect) => effect.args.revision().hash(&mut hasher),
+        CompositorShader::Layer(effect) => effect.args.revision().hash(&mut hasher),
+        CompositorShader::Source(effect) => effect.args.revision().hash(&mut hasher),
     }
     hasher.finish()
 }
 
-fn compositor_effect_needs_time(effect: &CompositorEffect) -> bool {
+fn effect_args(effect: &CompositorShader) -> Vec<u8> {
     match effect {
-        CompositorEffect::Color(effect) => effect.needs_time,
-        CompositorEffect::Layer(effect) => effect.needs_time,
-        CompositorEffect::Source(effect) => effect.needs_time,
+        CompositorShader::Color(effect) => effect.args.bytes(),
+        CompositorShader::Layer(effect) => effect.args.bytes(),
+        CompositorShader::Source(effect) => effect.args.bytes(),
     }
 }
 
-fn effect_args(effect: &CompositorEffect) -> &[u8] {
+fn color_filter_label(effect: &CompositorShader) -> &str {
     match effect {
-        CompositorEffect::Color(effect) => &effect.args.bytes,
-        CompositorEffect::Layer(effect) => &effect.args.bytes,
-        CompositorEffect::Source(effect) => &effect.args.bytes,
-    }
-}
-
-fn color_effect_label(effect: &CompositorEffect) -> &str {
-    match effect {
-        CompositorEffect::Color(effect) => match &effect.shader {
-            crate::effects::ColorEffectShader::Wgsl { label, .. } => {
-                label.as_deref().unwrap_or("floem compositor color effect")
+        CompositorShader::Color(effect) => match &effect.shader {
+            crate::effects::ColorFilterShader::Wgsl { label, .. } => {
+                label.as_deref().unwrap_or("floem compositor color filter")
             }
         },
-        CompositorEffect::Layer(effect) => match &effect.shader {
-            crate::effects::LayerEffectShader::Wgsl { label, .. } => {
-                label.as_deref().unwrap_or("floem compositor layer effect")
+        CompositorShader::Layer(effect) => match &effect.shader {
+            crate::effects::LayerFilterShader::Wgsl { label, .. } => {
+                label.as_deref().unwrap_or("floem compositor layer filter")
             }
         },
-        CompositorEffect::Source(effect) => match &effect.shader {
-            crate::effects::SourceEffectShader::Wgsl { label, .. } => {
-                label.as_deref().unwrap_or("floem compositor source effect")
+        CompositorShader::Source(effect) => match &effect.shader {
+            crate::effects::ShaderSourceShader::Wgsl { label, .. } => {
+                label.as_deref().unwrap_or("floem compositor shader source")
             }
         },
     }
 }
 
-fn color_effect_shader_source(effect: &CompositorEffect) -> Result<String, String> {
+fn color_filter_shader_source(effect: &CompositorShader) -> Result<String, String> {
     let fragment_body = match effect {
-        CompositorEffect::Color(effect) => match &effect.shader {
-            crate::effects::ColorEffectShader::Wgsl { fragment_body, .. } => fragment_body,
+        CompositorShader::Color(effect) => match &effect.shader {
+            crate::effects::ColorFilterShader::Wgsl { fragment_body, .. } => fragment_body,
         },
-        CompositorEffect::Layer(effect) => match &effect.shader {
-            crate::effects::LayerEffectShader::Wgsl { fragment_body, .. } => fragment_body,
+        CompositorShader::Layer(effect) => match &effect.shader {
+            crate::effects::LayerFilterShader::Wgsl { fragment_body, .. } => fragment_body,
         },
-        CompositorEffect::Source(effect) => match &effect.shader {
-            crate::effects::SourceEffectShader::Wgsl { fragment_body, .. } => fragment_body,
+        CompositorShader::Source(effect) => match &effect.shader {
+            crate::effects::ShaderSourceShader::Wgsl { fragment_body, .. } => fragment_body,
         },
     };
     let effect_function = match effect {
-        CompositorEffect::Color(_) => format!(
+        CompositorShader::Color(_) => format!(
             r#"
-fn color_effect(
+fn color_filter(
     position: vec2<f32>,
     uv: vec2<f32>,
     color: vec4<f32>,
-    args: ColorEffectArgs,
-    frame: ColorEffectFrame,
+    args: ShaderArgs,
+    frame: ShaderFrame,
 ) -> vec4<f32> {{
 {}
 }}
 "#,
             fragment_body
         ),
-        CompositorEffect::Layer(_) => format!(
+        CompositorShader::Layer(_) => format!(
             r#"
-fn layer_effect(
+fn layer_filter(
     position: vec2<f32>,
     uv: vec2<f32>,
     color: vec4<f32>,
-    args: ColorEffectArgs,
-    frame: ColorEffectFrame,
+    args: ShaderArgs,
+    frame: ShaderFrame,
 ) -> vec4<f32> {{
 {}
 }}
 "#,
             fragment_body
         ),
-        CompositorEffect::Source(_) => format!(
+        CompositorShader::Source(_) => format!(
             r#"
-fn source_effect(
+fn shader_source(
     position: vec2<f32>,
     uv: vec2<f32>,
-    args: ColorEffectArgs,
-    frame: ColorEffectFrame,
+    args: ShaderArgs,
+    frame: ShaderFrame,
 ) -> vec4<f32> {{
 {}
 }}
@@ -2041,37 +2032,33 @@ fn source_effect(
         ),
     };
     let fragment_return = match effect {
-        CompositorEffect::Color(_) => {
-            "let color = textureSample(input_texture, input_sampler, in.uv);\n    return color_effect(logical_position, in.uv, color, args, frame);"
+        CompositorShader::Color(_) => {
+            "let color = textureSample(input_texture, input_sampler, in.uv);\n    return color_filter(logical_position, in.uv, color, args, frame);"
         }
-        CompositorEffect::Layer(_) => {
-            "let color = textureSample(input_texture, input_sampler, in.uv);\n    return layer_effect(logical_position, in.uv, color, args, frame);"
+        CompositorShader::Layer(_) => {
+            "let color = textureSample(input_texture, input_sampler, in.uv);\n    return layer_filter(logical_position, in.uv, color, args, frame);"
         }
-        CompositorEffect::Source(_) => {
-            "return source_effect(logical_position, in.uv, args, frame);"
+        CompositorShader::Source(_) => {
+            "let color = textureSample(input_texture, input_sampler, in.uv);\n    return shader_source(logical_position, in.uv, args, frame) * color.a;"
         }
     };
     Ok(format!(
         r#"
-struct ColorEffectArgs {{
+struct ShaderArgs {{
     data: vec4<u32>,
 }};
 
-struct ColorEffectFrame {{
-    time_seconds: f32,
-    delta_seconds: f32,
-    frame_index: u32,
-    _pad0: u32,
+struct ShaderFrame {{
     effective_scale: f32,
     target_width: f32,
     target_height: f32,
-    _pad1: f32,
+    _pad0: f32,
 }};
 
 @group(0) @binding(0) var input_texture: texture_2d<f32>;
 @group(0) @binding(1) var input_sampler: sampler;
-@group(0) @binding(2) var<uniform> args: ColorEffectArgs;
-@group(0) @binding(3) var<uniform> frame: ColorEffectFrame;
+@group(0) @binding(2) var<uniform> args: ShaderArgs;
+@group(0) @binding(3) var<uniform> frame: ShaderFrame;
 
 struct VsOut {{
     @builtin(position) position: vec4<f32>,
@@ -2107,24 +2094,14 @@ fn padded_uniform_bytes(bytes: &[u8]) -> Vec<u8> {
     padded
 }
 
-fn color_effect_frame_bytes(
-    frame_index: u64,
-    effective_scale: f64,
-    target_size: wgpu::Extent3d,
-) -> [u8; 32] {
-    let time_seconds = frame_index as f32 / 60.0;
-    let delta_seconds = 1.0 / 60.0f32;
-    let frame_index = frame_index.min(u64::from(u32::MAX)) as u32;
+fn color_filter_frame_bytes(effective_scale: f64, target_size: wgpu::Extent3d) -> [u8; 32] {
     let effective_scale = effective_scale as f32;
     let target_width = target_size.width as f32 / effective_scale;
     let target_height = target_size.height as f32 / effective_scale;
     let mut bytes = [0; 32];
-    bytes[0..4].copy_from_slice(&time_seconds.to_ne_bytes());
-    bytes[4..8].copy_from_slice(&delta_seconds.to_ne_bytes());
-    bytes[8..12].copy_from_slice(&frame_index.to_ne_bytes());
-    bytes[16..20].copy_from_slice(&effective_scale.to_ne_bytes());
-    bytes[20..24].copy_from_slice(&target_width.to_ne_bytes());
-    bytes[24..28].copy_from_slice(&target_height.to_ne_bytes());
+    bytes[0..4].copy_from_slice(&effective_scale.to_ne_bytes());
+    bytes[4..8].copy_from_slice(&target_width.to_ne_bytes());
+    bytes[8..12].copy_from_slice(&target_height.to_ne_bytes());
     bytes
 }
 
@@ -2192,7 +2169,7 @@ pub(crate) struct SceneCompositorLayer {
     pub source_element_id: Option<LayerSourceId>,
     pub debug_name: Option<String>,
     pub external_images: Vec<SceneExternalImageCompositorLayer>,
-    pub color_effects: Vec<CompositorEffect>,
+    pub color_filters: Vec<CompositorShader>,
     pub transform: peniko::kurbo::Affine,
     pub clip: Option<peniko::kurbo::RoundedRect>,
     pub bounds: peniko::kurbo::Rect,
@@ -2219,7 +2196,7 @@ impl SceneCompositorLayer {
                     SceneExternalImageCompositorLayer::from_image(image, compositor_surfaces)
                 })
                 .collect(),
-            color_effects: layer.color_effects.clone(),
+            color_filters: layer.color_filters.clone(),
             transform: layer.transform,
             clip: layer.clip,
             bounds: layer.bounds,
@@ -2366,16 +2343,16 @@ pub(crate) struct CompositorDiff {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::effects::{ColorEffect, SourceEffect};
+    use crate::effects::{ColorFilter, ShaderSource};
 
-    fn layer_with_effect(effect: CompositorEffect) -> SceneLayer {
+    fn layer_with_effect(effect: CompositorShader) -> SceneLayer {
         SceneLayer {
             key: CompositionKey::SceneRun { run_index: 0 },
             source_element_id: None,
             debug_name: None,
             scene: Scene::new(),
             external_images: Vec::new(),
-            color_effects: vec![effect],
+            color_filters: vec![effect],
             content_revision: 1,
             transform: Affine::IDENTITY,
             clip: None,
@@ -2396,8 +2373,8 @@ mod tests {
 
     #[test]
     fn timeless_effect_signature_ignores_frame_index() {
-        let effect = ColorEffect::wgsl("return color;");
-        let layer = layer_with_effect(CompositorEffect::Color(effect));
+        let effect = ColorFilter::wgsl("return color;");
+        let layer = layer_with_effect(CompositorShader::Color(effect));
         let compositor_surfaces = FxHashMap::default();
         let a = scene_render_signature(
             &layer,
@@ -2422,36 +2399,9 @@ mod tests {
     }
 
     #[test]
-    fn time_dependent_effect_signature_tracks_frame_index() {
-        let effect = ColorEffect::wgsl("return color;").needs_time();
-        let layer = layer_with_effect(CompositorEffect::Color(effect));
-        let compositor_surfaces = FxHashMap::default();
-        let a = scene_render_signature(
-            &layer,
-            &compositor_surfaces,
-            2.0,
-            wgpu::TextureFormat::Bgra8Unorm,
-            extent(200, 160),
-            Affine::IDENTITY,
-            10,
-        );
-        let b = scene_render_signature(
-            &layer,
-            &compositor_surfaces,
-            2.0,
-            wgpu::TextureFormat::Bgra8Unorm,
-            extent(200, 160),
-            Affine::IDENTITY,
-            11,
-        );
-
-        assert_ne!(a, b);
-    }
-
-    #[test]
     fn effect_signature_tracks_target_size() {
-        let effect = ColorEffect::wgsl("return color;");
-        let layer = layer_with_effect(CompositorEffect::Color(effect));
+        let effect = ColorFilter::wgsl("return color;");
+        let layer = layer_with_effect(CompositorShader::Color(effect));
         let compositor_surfaces = FxHashMap::default();
         let a = scene_render_signature(
             &layer,
@@ -2476,14 +2426,14 @@ mod tests {
     }
 
     #[test]
-    fn source_effect_time_dependency_tracks_frame_index_only_when_requested() {
-        let timeless = SourceEffect::wgsl("return vec4<f32>(uv, 0.0, 1.0);");
-        let timed = SourceEffect::wgsl("return vec4<f32>(uv, 0.0, 1.0);").needs_time();
+    fn effect_signature_tracks_explicit_args_not_frame_index() {
+        let base = ShaderSource::wgsl("return vec4<f32>(uv, 0.0, 1.0);").with_args(vec![1]);
+        let changed = ShaderSource::wgsl("return vec4<f32>(uv, 0.0, 1.0);").with_args(vec![2]);
         let compositor_surfaces = FxHashMap::default();
 
-        let timeless_layer = layer_with_effect(CompositorEffect::Source(timeless));
-        let timeless_a = scene_render_signature(
-            &timeless_layer,
+        let base_layer = layer_with_effect(CompositorShader::Source(base));
+        let base_a = scene_render_signature(
+            &base_layer,
             &compositor_surfaces,
             2.0,
             wgpu::TextureFormat::Bgra8Unorm,
@@ -2491,8 +2441,8 @@ mod tests {
             Affine::IDENTITY,
             10,
         );
-        let timeless_b = scene_render_signature(
-            &timeless_layer,
+        let base_b = scene_render_signature(
+            &base_layer,
             &compositor_surfaces,
             2.0,
             wgpu::TextureFormat::Bgra8Unorm,
@@ -2500,20 +2450,11 @@ mod tests {
             Affine::IDENTITY,
             11,
         );
-        assert_eq!(timeless_a, timeless_b);
+        assert_eq!(base_a, base_b);
 
-        let timed_layer = layer_with_effect(CompositorEffect::Source(timed));
-        let timed_a = scene_render_signature(
-            &timed_layer,
-            &compositor_surfaces,
-            2.0,
-            wgpu::TextureFormat::Bgra8Unorm,
-            extent(200, 160),
-            Affine::IDENTITY,
-            10,
-        );
-        let timed_b = scene_render_signature(
-            &timed_layer,
+        let changed_layer = layer_with_effect(CompositorShader::Source(changed));
+        let changed_signature = scene_render_signature(
+            &changed_layer,
             &compositor_surfaces,
             2.0,
             wgpu::TextureFormat::Bgra8Unorm,
@@ -2521,6 +2462,6 @@ mod tests {
             Affine::IDENTITY,
             11,
         );
-        assert_ne!(timed_a, timed_b);
+        assert_ne!(base_a, changed_signature);
     }
 }

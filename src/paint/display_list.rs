@@ -7,8 +7,8 @@
 
 use crate::text::GlyphRunRef;
 use imaging::{
-    BlurredRoundedRect, Brush, ClipRef, FillRef, Filter, GeometryRef, GroupRef, PaintSink,
-    StrokeRef,
+    BlurredRoundedRect, Brush as ImagingBrush, ClipRef, FillRef, Filter as ImagingFilter,
+    GeometryRef, GroupRef as ImagingGroupRef, PaintSink, StrokeRef,
     record::{
         Clip, Command, Draw, DrawId, Geometry, Glyph as ImagingGlyph, Scene, replay_transformed,
     },
@@ -27,10 +27,7 @@ use understory_box_tree::NodeFlags;
 use crate::{
     BoxTree, ElementId,
     compositor_surface::CompositorSurfaceId,
-    effects::{
-        ColorEffect, CompositorEffect, EffectComposite, EffectFilter, EffectGroupRef, LayerEffect,
-        SourceEffect,
-    },
+    effects::{Composite, CompositorShader, Filter, GroupRef, Image, LayerFilter},
     paint::composition::{
         CompositionItem, CompositionKey, CompositionPlan, CompositorSurfaceLayer, PaintStage,
         SceneExternalImage, SceneLayer,
@@ -89,7 +86,7 @@ pub(crate) fn transform_diff_class(original: Affine, current: Affine) -> Transfo
 #[derive(Clone)]
 pub(crate) struct ElementStage {
     pub scene: Scene,
-    pub color_effects: Vec<ColorEffectCommand>,
+    pub color_filters: Vec<ShaderCommand>,
     pub transform_class: TransformClass,
     pub content_revision: u64,
     stack_index: StageStackIndex,
@@ -99,7 +96,7 @@ impl Default for ElementStage {
     fn default() -> Self {
         Self {
             scene: Scene::new(),
-            color_effects: Vec::new(),
+            color_filters: Vec::new(),
             transform_class: TransformClass::Affine,
             content_revision: 0,
             stack_index: StageStackIndex::default(),
@@ -108,13 +105,13 @@ impl Default for ElementStage {
 }
 
 impl ElementStage {
-    pub(crate) fn set_scene(&mut self, scene: Scene, mut color_effects: Vec<ColorEffectCommand>) {
-        color_effects.sort_by_key(|effect| effect.command_index);
+    pub(crate) fn set_scene(&mut self, scene: Scene, mut color_filters: Vec<ShaderCommand>) {
+        color_filters.sort_by_key(|effect| effect.command_index);
         self.transform_class = scene_transform_class(&scene);
         self.stack_index = StageStackIndex::build(&scene);
-        self.stack_index.apply_effect_commands(&color_effects);
+        self.stack_index.apply_effect_commands(&color_filters);
         self.scene = scene;
-        self.color_effects = color_effects;
+        self.color_filters = color_filters;
         self.content_revision = self.content_revision.wrapping_add(1);
     }
 }
@@ -156,7 +153,7 @@ impl StageStackIndex {
         }
     }
 
-    fn apply_effect_commands(&mut self, effects: &[ColorEffectCommand]) {
+    fn apply_effect_commands(&mut self, effects: &[ShaderCommand]) {
         self.effect_depth_before_command.fill(0);
         let mut events = effects.iter().collect::<Vec<_>>();
         events.sort_by_key(|event| event.command_index);
@@ -165,8 +162,8 @@ impl StageStackIndex {
         for command_index in 0..self.effect_depth_before_command.len() {
             while event_index < events.len() && events[event_index].command_index == command_index {
                 match &events[event_index].kind {
-                    ColorEffectCommandKind::Push(_) => depth = depth.saturating_add(1),
-                    ColorEffectCommandKind::Pop => depth = depth.saturating_sub(1),
+                    ShaderCommandKind::Push(_) => depth = depth.saturating_add(1),
+                    ShaderCommandKind::Pop => depth = depth.saturating_sub(1),
                 }
                 event_index += 1;
             }
@@ -195,27 +192,27 @@ impl StageStackIndex {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ColorEffectCommand {
+pub(crate) struct ShaderCommand {
     pub command_index: usize,
-    pub kind: ColorEffectCommandKind,
+    pub kind: ShaderCommandKind,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum ColorEffectCommandKind {
-    Push(CompositorEffect),
+pub(crate) enum ShaderCommandKind {
+    Push(CompositorShader),
     Pop,
 }
 
-enum EffectGroupClose {
+enum ShaderGroupClose {
     Group,
-    ColorEffect,
+    ColorFilter,
 }
 
 #[doc(hidden)]
 pub struct StageRecorder {
     scene: Scene,
-    color_effects: Vec<ColorEffectCommand>,
-    effect_group_stack: Vec<Vec<EffectGroupClose>>,
+    color_filters: Vec<ShaderCommand>,
+    effect_group_stack: Vec<Vec<ShaderGroupClose>>,
 }
 
 impl StageRecorder {
@@ -223,7 +220,7 @@ impl StageRecorder {
         let scene = mem::take(&mut stage.scene);
         Self {
             scene,
-            color_effects: mem::take(&mut stage.color_effects),
+            color_filters: mem::take(&mut stage.color_filters),
             effect_group_stack: Vec::new(),
         }
     }
@@ -231,49 +228,25 @@ impl StageRecorder {
     pub(crate) fn finish(self, stage: &mut ElementStage) {
         debug_assert!(
             self.effect_group_stack.is_empty(),
-            "unbalanced Floem effect groups"
+            "unbalanced Floem shader groups"
         );
-        stage.set_scene(self.scene, self.color_effects);
+        stage.set_scene(self.scene, self.color_filters);
     }
 
     pub(crate) fn clear(&mut self) {
         self.scene.clear();
-        self.color_effects.clear();
+        self.color_filters.clear();
         self.effect_group_stack.clear();
     }
 
-    pub fn source_effect_rect(&mut self, rect: Rect, effect: SourceEffect) {
-        self.push_effect_group(
-            crate::effects::group_ref().with_filters(&[EffectFilter::SourceEffect(effect)]),
-        );
-        self.fill(FillRef::new(
-            GeometryRef::Rect(rect),
-            peniko::Color::TRANSPARENT,
-        ));
-        self.pop_effect_group();
-    }
-
-    pub fn push_color_effect(&mut self, effect: ColorEffect) {
-        let filters = [EffectFilter::ColorEffect(effect)];
-        self.push_effect_group(crate::effects::group_ref().with_filters(&filters));
-    }
-
-    pub fn pop_color_effect(&mut self) {
-        self.pop_effect_group();
-    }
-
-    pub fn push_effect_group(&mut self, group: EffectGroupRef<'_>) {
-        let has_compositor_effect = group.filters.iter().any(|filter| {
-            matches!(
-                filter,
-                EffectFilter::ColorEffect(_)
-                    | EffectFilter::LayerEffect(_)
-                    | EffectFilter::SourceEffect(_)
-            )
-        });
+    pub fn push_effect_group(&mut self, group: GroupRef<'_>) {
+        let has_compositor_effect = group
+            .filters
+            .iter()
+            .any(|filter| matches!(filter, Filter::Color(_) | Filter::Layer(_)));
         let composite = match group.composite {
-            EffectComposite::Imaging(composite) => composite,
-            EffectComposite::Shader(effect) => {
+            Composite::Imaging(composite) => composite,
+            Composite::Shader(effect) => {
                 panic!(
                     "shader composite effects require a backdrop render pass and are not implemented yet: {effect:?}"
                 )
@@ -286,14 +259,12 @@ impl StageRecorder {
                 .filters
                 .iter()
                 .filter_map(|filter| match filter {
-                    EffectFilter::Imaging(filter) => Some(*filter),
-                    EffectFilter::ColorEffect(_)
-                    | EffectFilter::LayerEffect(_)
-                    | EffectFilter::SourceEffect(_) => None,
+                    Filter::Imaging(filter) => Some(*filter),
+                    Filter::Color(_) | Filter::Layer(_) => None,
                 })
                 .collect::<Vec<_>>()
         };
-        let erased_group = GroupRef::new()
+        let erased_group = ImagingGroupRef::new()
             .with_filters(&imaging_filters)
             .with_composite(composite);
         let erased_group = if let Some(clip) = group.clip {
@@ -302,7 +273,7 @@ impl StageRecorder {
             erased_group
         };
         let erased_group = if let Some(mask) = group.mask {
-            GroupRef {
+            ImagingGroupRef {
                 clip: erased_group.clip,
                 mask: Some(mask),
                 filters: erased_group.filters,
@@ -312,27 +283,26 @@ impl StageRecorder {
             erased_group
         };
         PaintSink::push_group(&mut self.scene, erased_group);
-        let mut close_ops = vec![EffectGroupClose::Group];
+        let mut close_ops = vec![ShaderGroupClose::Group];
 
         if has_compositor_effect {
             for filter in group.filters {
                 let effect = match filter {
-                    EffectFilter::Imaging(filter) => CompositorEffect::Layer(
+                    Filter::Imaging(filter) => CompositorShader::Layer(
                         compositor_effect_for_imaging_filter(*filter).unwrap_or_else(|| {
                             panic!(
                                 "cannot preserve ordered mixed filter chain with unsupported Imaging filter: {filter:?}"
                             )
                         }),
                     ),
-                    EffectFilter::ColorEffect(effect) => CompositorEffect::Color(effect.clone()),
-                    EffectFilter::LayerEffect(effect) => CompositorEffect::Layer(effect.clone()),
-                    EffectFilter::SourceEffect(effect) => CompositorEffect::Source(effect.clone()),
+                    Filter::Color(effect) => CompositorShader::Color(effect.clone()),
+                    Filter::Layer(effect) => CompositorShader::Layer(effect.clone()),
                 };
-                self.color_effects.push(ColorEffectCommand {
+                self.color_filters.push(ShaderCommand {
                     command_index: self.current_command_index(),
-                    kind: ColorEffectCommandKind::Push(effect),
+                    kind: ShaderCommandKind::Push(effect),
                 });
-                close_ops.push(EffectGroupClose::ColorEffect);
+                close_ops.push(ShaderGroupClose::ColorFilter);
             }
         }
 
@@ -343,24 +313,53 @@ impl StageRecorder {
         let close_ops = self
             .effect_group_stack
             .pop()
-            .expect("unbalanced Floem effect group pop");
+            .expect("unbalanced Floem shader group pop");
         for op in close_ops.into_iter().rev() {
             match op {
-                EffectGroupClose::Group => self.scene.pop_group(),
-                EffectGroupClose::ColorEffect => self.pop_compositor_color_effect(),
+                ShaderGroupClose::Group => self.scene.pop_group(),
+                ShaderGroupClose::ColorFilter => self.pop_compositor_color_filter(),
             }
         }
     }
 
-    fn pop_compositor_color_effect(&mut self) {
-        self.color_effects.push(ColorEffectCommand {
+    fn pop_compositor_color_filter(&mut self) {
+        self.color_filters.push(ShaderCommand {
             command_index: self.current_command_index(),
-            kind: ColorEffectCommandKind::Pop,
+            kind: ShaderCommandKind::Pop,
         });
     }
 
     fn current_command_index(&self) -> usize {
         self.scene.commands().len()
+    }
+}
+
+impl StageRecorder {
+    fn shader_source_fill(
+        &mut self,
+        transform: Affine,
+        fill_rule: Fill,
+        brush_transform: Option<Affine>,
+        shape: GeometryRef<'_>,
+        composite: imaging::Composite,
+        source: crate::effects::ShaderSource,
+    ) {
+        PaintSink::push_group(&mut self.scene, ImagingGroupRef::new());
+        self.color_filters.push(ShaderCommand {
+            command_index: self.current_command_index(),
+            kind: ShaderCommandKind::Push(CompositorShader::Source(source)),
+        });
+        let shape = shape.to_owned();
+        let _ = self.scene.draw(Draw::Fill {
+            transform,
+            fill_rule,
+            brush: peniko::Color::WHITE.into(),
+            brush_transform,
+            shape,
+            composite,
+        });
+        self.pop_compositor_color_filter();
+        self.scene.pop_group();
     }
 }
 
@@ -370,17 +369,17 @@ impl imaging::ImagingSceneSink for StageRecorder {
     }
 }
 
-fn compositor_effect_for_imaging_filter(filter: Filter) -> Option<LayerEffect> {
+fn compositor_effect_for_imaging_filter(filter: ImagingFilter) -> Option<LayerFilter> {
     match filter {
-        Filter::Blur {
+        ImagingFilter::Blur {
             std_deviation_x,
             std_deviation_y,
         } => {
             let id = u64::from(std_deviation_x.to_bits())
                 | (u64::from(std_deviation_y.to_bits()) << 32) ^ 0xB10E_0000_0000_0000;
             Some(
-                LayerEffect::wgsl_with_id(
-                    crate::effects::ColorEffectId(id),
+                LayerFilter::wgsl_with_id(
+                    crate::effects::ColorFilterId(id),
                     format!(
                         r#"
 let radius = vec2<f32>({std_deviation_x:?}, {std_deviation_y:?});
@@ -405,7 +404,7 @@ return acc;
     }
 }
 
-impl PaintSink<EffectFilter, EffectComposite> for StageRecorder {
+impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
     fn push_context(&mut self, context: imaging::ContextRef<'_>) {
         self.scene.push_context(context.label, context.source);
     }
@@ -423,7 +422,7 @@ impl PaintSink<EffectFilter, EffectComposite> for StageRecorder {
         self.scene.pop_clip();
     }
 
-    fn push_group(&mut self, group: EffectGroupRef<'_>) {
+    fn push_group(&mut self, group: GroupRef<'_>) {
         self.push_effect_group(group);
     }
 
@@ -431,8 +430,72 @@ impl PaintSink<EffectFilter, EffectComposite> for StageRecorder {
         self.pop_effect_group();
     }
 
-    fn fill(&mut self, draw: FillRef<'_>) {
-        PaintSink::fill(&mut self.scene, draw);
+    fn fill(&mut self, draw: FillRef<'_, crate::effects::Brush>) {
+        let FillRef {
+            transform,
+            fill_rule,
+            brush,
+            brush_transform,
+            shape,
+            composite,
+        } = draw;
+        match brush {
+            crate::effects::Brush::Solid(color) => {
+                PaintSink::fill(
+                    &mut self.scene,
+                    FillRef {
+                        transform,
+                        fill_rule,
+                        brush: color.into(),
+                        brush_transform,
+                        shape,
+                        composite,
+                    },
+                );
+            }
+            crate::effects::Brush::Gradient(gradient) => {
+                PaintSink::fill(
+                    &mut self.scene,
+                    FillRef {
+                        transform,
+                        fill_rule,
+                        brush: ImagingBrush::Gradient(gradient),
+                        brush_transform,
+                        shape,
+                        composite,
+                    },
+                );
+            }
+            crate::effects::Brush::Image(image) => {
+                let peniko::ImageBrush { image, sampler } = image.0;
+                match image {
+                    Image::Imaging(image) => {
+                        let image = imaging::ImageBrush(peniko::ImageBrush { image, sampler });
+                        PaintSink::fill(
+                            &mut self.scene,
+                            FillRef {
+                                transform,
+                                fill_rule,
+                                brush: ImagingBrush::Image(image),
+                                brush_transform,
+                                shape,
+                                composite,
+                            },
+                        );
+                    }
+                    Image::Source(source) => {
+                        self.shader_source_fill(
+                            transform,
+                            fill_rule,
+                            brush_transform,
+                            shape,
+                            composite,
+                            source.source,
+                        );
+                    }
+                }
+            }
+        }
     }
 
     fn stroke(&mut self, draw: StrokeRef<'_>) {
@@ -816,8 +879,8 @@ impl RetainedDisplayList {
         let mut scoped_effects = Vec::new();
 
         for command_index in 0..=command_count {
-            while effect_index < stage.color_effects.len()
-                && stage.color_effects[effect_index]
+            while effect_index < stage.color_filters.len()
+                && stage.color_filters[effect_index]
                     .command_index
                     .min(command_count)
                     == command_index
@@ -835,11 +898,11 @@ impl RetainedDisplayList {
                     &property_state.with_effects(&scoped_effects),
                 );
                 range_start = command_index;
-                match &stage.color_effects[effect_index].kind {
-                    ColorEffectCommandKind::Push(effect) => {
+                match &stage.color_filters[effect_index].kind {
+                    ShaderCommandKind::Push(effect) => {
                         scoped_effects.push(effect.clone());
                     }
-                    ColorEffectCommandKind::Pop => {
+                    ShaderCommandKind::Pop => {
                         let _ = scoped_effects.pop();
                     }
                 }
@@ -1118,7 +1181,7 @@ impl DisplayNode {
 #[derive(Clone, Debug, Default, PartialEq)]
 struct PropertyState {
     clips: Vec<PropertyClip>,
-    effects: Vec<CompositorEffect>,
+    effects: Vec<CompositorShader>,
 }
 
 impl PropertyState {
@@ -1128,7 +1191,7 @@ impl PropertyState {
         next
     }
 
-    fn with_effects(&self, effects: &[CompositorEffect]) -> Self {
+    fn with_effects(&self, effects: &[CompositorShader]) -> Self {
         let mut next = self.clone();
         next.effects.extend_from_slice(effects);
         next
@@ -1329,7 +1392,7 @@ impl<'a> SceneRunBuilder<'a> {
                 .filter(|name| !name.is_empty()),
             scene,
             external_images: mem::take(&mut self.external_images),
-            color_effects: property_state.effects,
+            color_filters: property_state.effects,
             content_revision: scene_state_revision,
             transform: Affine::translate(bounds.origin().to_vec2()),
             clip: None,
@@ -1486,7 +1549,7 @@ fn promotable_external_image_fill(
     let Geometry::Rect(rect) = shape else {
         return None;
     };
-    let Brush::Image(image) = brush else {
+    let ImagingBrush::Image(image) = brush else {
         return None;
     };
     if image.sampler.x_extend != peniko::Extend::Pad
@@ -1545,11 +1608,11 @@ fn external_images_in_command(
 }
 
 fn external_images_in_brush(
-    brush: &Brush,
+    brush: &ImagingBrush,
     rect: Rect,
     effective_scale: f64,
 ) -> Option<SceneExternalImage> {
-    let Brush::Image(image) = brush else {
+    let ImagingBrush::Image(image) = brush else {
         return None;
     };
     let imaging::Image::External(external) = image.image else {
@@ -2122,11 +2185,11 @@ impl PaintSink for SanitizingSink<'_> {
         self.inner.pop_clip();
     }
 
-    fn push_group(&mut self, group: GroupRef<'_>) {
+    fn push_group(&mut self, group: ImagingGroupRef<'_>) {
         let clip = group
             .clip
             .map(|clip| sanitize_clip_ref(clip, self.render_size));
-        let group = GroupRef {
+        let group = ImagingGroupRef {
             clip: clip.as_ref().map(Clip::as_ref),
             mask: group.mask.clone(),
             filters: group.filters,
@@ -2275,7 +2338,7 @@ fn constrain_infinite_rect(rect: Rect, transform: Affine, render_size: Size) -> 
 mod tests {
     use super::*;
     use crate::ViewId;
-    use imaging::{Composite, Filter, ImageBrush};
+    use imaging::{Composite, Filter as ImagingFilter, ImageBrush};
     use peniko::{Color, Fill};
 
     fn fill_draw(rect: Rect, transform: Affine) -> Draw {
@@ -2316,7 +2379,7 @@ mod tests {
         Draw::Fill {
             transform: Affine::IDENTITY,
             fill_rule: Fill::NonZero,
-            brush: Brush::Image(ImageBrush::from(image)),
+            brush: ImagingBrush::Image(imaging::ImageBrush::from(image)),
             brush_transform: None,
             shape: Geometry::Rect(rect),
             composite: Composite::default(),
@@ -2330,17 +2393,17 @@ mod tests {
     }
 
     #[test]
-    fn stage_recorder_preserves_order_for_mixed_imaging_and_color_effect_filters() {
+    fn stage_recorder_preserves_order_for_mixed_imaging_and_color_filter_filters() {
         let mut stage = ElementStage::default();
         let mut recorder = StageRecorder::from_stage(&mut stage);
-        let effect = ColorEffect::wgsl("return color;");
+        let effect = crate::effects::ColorFilter::wgsl("return color;");
         let filters = [
-            EffectFilter::Imaging(Filter::Blur {
+            Filter::Imaging(ImagingFilter::Blur {
                 std_deviation_x: 2.0,
                 std_deviation_y: 2.0,
             }),
-            EffectFilter::ColorEffect(effect.clone()),
-            EffectFilter::Imaging(Filter::Blur {
+            Filter::Color(effect.clone()),
+            Filter::Imaging(ImagingFilter::Blur {
                 std_deviation_x: 5.0,
                 std_deviation_y: 5.0,
             }),
@@ -2364,58 +2427,65 @@ mod tests {
         };
         assert!(stage.scene.group(final_group).filters.is_empty());
 
-        assert_eq!(stage.color_effects.len(), 6);
+        assert_eq!(stage.color_filters.len(), 6);
         assert_eq!(
             stage
-                .color_effects
+                .color_filters
                 .iter()
                 .map(|command| command.command_index)
                 .collect::<Vec<_>>(),
             vec![1, 1, 1, 2, 2, 2]
         );
         assert!(matches!(
-            &stage.color_effects[0].kind,
-            ColorEffectCommandKind::Push(CompositorEffect::Layer(_))
+            &stage.color_filters[0].kind,
+            ShaderCommandKind::Push(CompositorShader::Layer(_))
         ));
         assert_eq!(
-            stage.color_effects[1],
-            ColorEffectCommand {
+            stage.color_filters[1],
+            ShaderCommand {
                 command_index: 1,
-                kind: ColorEffectCommandKind::Push(CompositorEffect::Color(effect.clone())),
+                kind: ShaderCommandKind::Push(CompositorShader::Color(effect.clone())),
             }
         );
         assert!(matches!(
-            &stage.color_effects[2].kind,
-            ColorEffectCommandKind::Push(CompositorEffect::Layer(_))
+            &stage.color_filters[2].kind,
+            ShaderCommandKind::Push(CompositorShader::Layer(_))
         ));
         assert!(
-            stage.color_effects[3..]
+            stage.color_filters[3..]
                 .iter()
-                .all(|command| matches!(command.kind, ColorEffectCommandKind::Pop))
+                .all(|command| matches!(command.kind, ShaderCommandKind::Pop))
         );
     }
 
     #[test]
-    fn source_effect_rect_records_placeholder_draw_inside_source_effect() {
+    fn shader_source_fill_records_placeholder_draw_inside_shader_source() {
         let mut stage = ElementStage::default();
         let mut recorder = StageRecorder::from_stage(&mut stage);
-        let effect = crate::effects::SourceEffect::wgsl("return vec4<f32>(uv, 0.0, 1.0);");
+        let effect = crate::effects::ShaderSource::wgsl("return vec4<f32>(uv, 0.0, 1.0);");
 
-        recorder.source_effect_rect(Rect::new(1.0, 2.0, 11.0, 22.0), effect.clone());
+        recorder.shader_source_fill(
+            Affine::IDENTITY,
+            Fill::NonZero,
+            None,
+            GeometryRef::RoundedRect(Rect::new(1.0, 2.0, 11.0, 22.0).to_rounded_rect(4.0)),
+            imaging::Composite::default(),
+            effect.clone(),
+        );
         recorder.finish(&mut stage);
 
         assert!(matches!(
             stage.scene.commands(),
             [Command::PushGroup(_), Command::Draw(_), Command::PopGroup]
         ));
-        assert_eq!(stage.color_effects.len(), 2);
+        assert_eq!(stage.color_filters.len(), 2);
         assert!(matches!(
-            &stage.color_effects[0].kind,
-            ColorEffectCommandKind::Push(CompositorEffect::Source(recorded)) if recorded == &effect
+            &stage.color_filters[0].kind,
+            ShaderCommandKind::Push(CompositorShader::Source(recorded)) if recorded == &effect
         ));
         assert!(matches!(
-            stage.color_effects[1].kind,
-            ColorEffectCommandKind::Pop
+            stage.color_filters[1].kind,
+            ShaderCommandKind::Pop
         ));
     }
 
@@ -3264,7 +3334,7 @@ mod tests {
             panic!("expected fill draw");
         };
         assert!(
-            matches!(brush, Brush::Image(image) if matches!(image.image, imaging::Image::External(_)))
+            matches!(brush, ImagingBrush::Image(image) if matches!(image.image, imaging::Image::External(_)))
         );
     }
 
@@ -3379,7 +3449,7 @@ mod tests {
             panic!("expected fill draw");
         };
         assert!(
-            matches!(brush, Brush::Image(image) if matches!(image.image, imaging::Image::External(_)))
+            matches!(brush, ImagingBrush::Image(image) if matches!(image.image, imaging::Image::External(_)))
         );
     }
 

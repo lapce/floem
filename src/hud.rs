@@ -1,5 +1,5 @@
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     collections::{BTreeMap, BTreeSet, VecDeque},
     rc::Rc,
 };
@@ -11,9 +11,9 @@ use peniko::{
 };
 
 use crate::{
-    ElementId,
     context::PaintCx,
     event::PaintPresentInfo,
+    paint::composition::LayerSourceId,
     platform::{Duration, Instant},
     prelude::*,
     style::Position,
@@ -36,8 +36,8 @@ pub(crate) struct Hud {
 
 struct HudInner {
     visible: RwSignal<bool>,
-    element_id: Cell<Option<ElementId>>,
-    content_element_id: Cell<Option<ElementId>>,
+    layer_source_ids: Rc<RefCell<Vec<LayerSourceId>>>,
+    text_cache: RefCell<HudTextCache>,
     reports: RefCell<BTreeMap<u32, LayerReport>>,
     metrics: RwSignal<HudMetrics>,
 }
@@ -111,13 +111,89 @@ impl Default for LayerMetrics {
     }
 }
 
+#[derive(Default)]
+struct HudTextCache {
+    layouts: BTreeMap<HudTextKey, TextLayout>,
+}
+
+impl HudTextCache {
+    fn draw_text(
+        &mut self,
+        cx: &mut PaintCx<'_>,
+        origin: Point,
+        text: &str,
+        font_size: f32,
+        weight: FontWeight,
+        color: Color,
+        width: f64,
+        monospace: bool,
+    ) {
+        const MAX_TEXT_LAYOUTS: usize = 1024;
+        if self.layouts.len() > MAX_TEXT_LAYOUTS {
+            self.layouts.clear();
+        }
+
+        let key = HudTextKey::new(text, font_size, weight, color, width, monospace);
+        let layout = self.layouts.entry(key).or_insert_with(|| {
+            let attrs = Attrs::new()
+                .font_size(font_size)
+                .weight(weight)
+                .color(color);
+            let mut layout = if monospace {
+                let family = [FamilyOwned::Monospace];
+                TextLayout::new_with_text(
+                    text,
+                    AttrsList::new(attrs.family(&family)),
+                    Some(Alignment::Start),
+                )
+            } else {
+                TextLayout::new_with_text(text, AttrsList::new(attrs), Some(Alignment::Start))
+            };
+            layout.set_size(width.max(1.0) as f32, 24.0);
+            layout
+        });
+        layout.draw(cx, origin);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct HudTextKey {
+    text: String,
+    font_size_milli: u32,
+    weight_milli: u32,
+    color_rgba: u32,
+    width_milli: u32,
+    monospace: bool,
+}
+
+impl HudTextKey {
+    fn new(
+        text: &str,
+        font_size: f32,
+        weight: FontWeight,
+        color: Color,
+        width: f64,
+        monospace: bool,
+    ) -> Self {
+        let rgba = color.to_rgba8();
+        Self {
+            text: text.to_owned(),
+            font_size_milli: (font_size * 1000.0).round() as u32,
+            weight_milli: (weight.value() * 1000.0).round() as u32,
+            color_rgba: u32::from_be_bytes([rgba.r, rgba.g, rgba.b, rgba.a]),
+            width_milli: (width * 1000.0).round() as u32,
+            monospace,
+        }
+    }
+}
+
 impl Hud {
     pub(crate) fn new() -> Self {
         Self {
             inner: Rc::new(HudInner {
                 visible: RwSignal::new(false),
-                element_id: Cell::new(None),
-                content_element_id: Cell::new(None),
+                layer_source_ids: Rc::new(RefCell::new(Vec::new())),
+                text_cache: RefCell::new(HudTextCache::default()),
                 reports: RefCell::new(BTreeMap::new()),
                 metrics: RwSignal::new(HudMetrics::default()),
             }),
@@ -135,18 +211,13 @@ impl Hud {
     }
 
     pub(crate) fn record_present(&self, info: &PaintPresentInfo) {
-        let self_element_id = self
-            .inner
-            .element_id
-            .get()
-            .map(crate::paint::composition::LayerSourceId::from_element_id);
-        let self_content_element_id = self
-            .inner
-            .content_element_id
-            .get()
-            .map(crate::paint::composition::LayerSourceId::from_element_id);
-        let is_hud_layer = |source_element_id| {
-            source_element_id == self_element_id || source_element_id == self_content_element_id
+        let is_hud_layer = |source_element_id: Option<LayerSourceId>| {
+            source_element_id.is_some_and(|source_element_id| {
+                self.inner
+                    .layer_source_ids
+                    .borrow()
+                    .contains(&source_element_id)
+            })
         };
         let active_layer_ids = info
             .active_layers
@@ -198,11 +269,11 @@ impl Hud {
     }
 
     pub(crate) fn view(&self) -> Overlay {
-        let visible = self.inner.visible;
+        let inner = self.inner.clone();
         let metrics = self.inner.metrics;
         let hud_canvas = canvas(move |cx, size| {
-            if visible.get() {
-                draw_hud(cx, size, &metrics.get());
+            if inner.visible.get() {
+                draw_hud(cx, size, &inner.metrics.get(), &inner.text_cache);
             }
         })
         .style(move |s| {
@@ -210,21 +281,33 @@ impl Hud {
             s.width(HUD_WIDTH)
                 .height(hud_height_for_layer_count(metrics.layers.len()))
         });
-        self.inner
-            .content_element_id
-            .set(Some(hud_canvas.id().get_element_id()));
+        register_hud_source(
+            &self.inner.layer_source_ids,
+            hud_canvas.id().get_element_id(),
+        );
+        let visible = self.inner.visible;
         let stack = hud_canvas.scroll().style(move |s| {
-            s.position(Position::Absolute)
+            let style = s
+                .position(Position::Absolute)
                 .inset_top(12.0)
                 .inset_right(12.0)
                 .width(HUD_WIDTH)
                 .max_height(HUD_MAX_HEIGHT)
                 .z_index(1000)
                 .pointer_events_none()
-                .wants_layer(true)
+                .wants_layer(true);
+            if !visible.get() { style.hide() } else { style }
         });
-        self.inner.element_id.set(Some(stack.id().get_element_id()));
+        register_hud_source(&self.inner.layer_source_ids, stack.id().get_element_id());
         Overlay::new(stack)
+    }
+}
+
+fn register_hud_source(sources: &Rc<RefCell<Vec<LayerSourceId>>>, id: crate::ElementId) {
+    let source = LayerSourceId::from_element_id(id);
+    let mut sources = sources.borrow_mut();
+    if !sources.contains(&source) {
+        sources.push(source);
     }
 }
 
@@ -285,11 +368,17 @@ fn metrics_from_report(report: &LayerReport) -> LayerMetrics {
     metrics
 }
 
-fn draw_hud(cx: &mut PaintCx<'_>, size: Size, metrics: &HudMetrics) {
+fn draw_hud(
+    cx: &mut PaintCx<'_>,
+    size: Size,
+    metrics: &HudMetrics,
+    text_cache: &RefCell<HudTextCache>,
+) {
     draw_hud_header(
         cx,
         Size::new(size.width, HUD_HEADER_HEIGHT.min(size.height)),
         metrics,
+        text_cache,
     );
     let mut y = HUD_HEADER_HEIGHT + 4.0;
     for layer in &metrics.layers {
@@ -297,12 +386,18 @@ fn draw_hud(cx: &mut PaintCx<'_>, size: Size, metrics: &HudMetrics) {
             cx,
             Rect::new(0.0, y, size.width, y + HUD_LAYER_HEIGHT),
             layer,
+            text_cache,
         );
         y += HUD_LAYER_HEIGHT + 4.0;
     }
 }
 
-fn draw_hud_header(cx: &mut PaintCx<'_>, size: Size, metrics: &HudMetrics) {
+fn draw_hud_header(
+    cx: &mut PaintCx<'_>,
+    size: Size,
+    metrics: &HudMetrics,
+    text_cache: &RefCell<HudTextCache>,
+) {
     let bounds = Rect::ZERO.with_size(size);
     let panel = bounds.to_rounded_rect(11.0);
     cx.painter
@@ -317,6 +412,7 @@ fn draw_hud_header(cx: &mut PaintCx<'_>, size: Size, metrics: &HudMetrics) {
         .draw();
 
     draw_text(
+        text_cache,
         cx,
         Point::new(10.0, 7.0),
         "FLOEM HUD",
@@ -325,6 +421,7 @@ fn draw_hud_header(cx: &mut PaintCx<'_>, size: Size, metrics: &HudMetrics) {
         Color::from_rgba8(122, 255, 176, 235),
     );
     draw_monospace_text(
+        text_cache,
         cx,
         Point::new(10.0, 24.0),
         "dl   = missed compositor deadline",
@@ -333,6 +430,7 @@ fn draw_hud_header(cx: &mut PaintCx<'_>, size: Size, metrics: &HudMetrics) {
         Color::from_rgba8(184, 255, 205, 210),
     );
     draw_monospace_text(
+        text_cache,
         cx,
         Point::new(10.0, 38.0),
         "miss = missed present cadence",
@@ -342,6 +440,7 @@ fn draw_hud_header(cx: &mut PaintCx<'_>, size: Size, metrics: &HudMetrics) {
     );
     if metrics.layers.is_empty() {
         draw_text(
+            text_cache,
             cx,
             Point::new(10.0, 47.0),
             "Waiting for layer presents",
@@ -349,11 +448,15 @@ fn draw_hud_header(cx: &mut PaintCx<'_>, size: Size, metrics: &HudMetrics) {
             FontWeight::NORMAL,
             Color::from_rgba8(184, 255, 205, 220),
         );
-        return;
     }
 }
 
-fn draw_layer_canvas(cx: &mut PaintCx<'_>, bounds: Rect, metrics: &LayerMetrics) {
+fn draw_layer_canvas(
+    cx: &mut PaintCx<'_>,
+    bounds: Rect,
+    metrics: &LayerMetrics,
+    text_cache: &RefCell<HudTextCache>,
+) {
     cx.painter
         .fill(
             bounds.to_rounded_rect(9.0),
@@ -376,10 +479,16 @@ fn draw_layer_canvas(cx: &mut PaintCx<'_>, bounds: Rect, metrics: &LayerMetrics)
             bounds.y1 - 3.0,
         ),
         metrics,
+        text_cache,
     );
 }
 
-fn draw_layer_report(cx: &mut PaintCx<'_>, rect: Rect, metrics: &LayerMetrics) {
+fn draw_layer_report(
+    cx: &mut PaintCx<'_>,
+    rect: Rect,
+    metrics: &LayerMetrics,
+    text_cache: &RefCell<HudTextCache>,
+) {
     let graph_rect = Rect::new(rect.x1 - 76.0, rect.y0 + 7.0, rect.x1 - 7.0, rect.y1 - 7.0);
     let text_width = (graph_rect.x0 - rect.x0 - 13.0).max(1.0);
     cx.painter
@@ -393,6 +502,7 @@ fn draw_layer_report(cx: &mut PaintCx<'_>, rect: Rect, metrics: &LayerMetrics) {
         name.push_str("...");
     }
     draw_text_with_width(
+        text_cache,
         cx,
         Point::new(rect.x0 + 7.0, rect.y0 + 4.0),
         &name,
@@ -402,6 +512,7 @@ fn draw_layer_report(cx: &mut PaintCx<'_>, rect: Rect, metrics: &LayerMetrics) {
         text_width,
     );
     draw_text_with_width(
+        text_cache,
         cx,
         Point::new(rect.x0 + 7.0, rect.y0 + 17.0),
         &format!("{:>5.1} FPS", metrics.fps),
@@ -415,6 +526,7 @@ fn draw_layer_report(cx: &mut PaintCx<'_>, rect: Rect, metrics: &LayerMetrics) {
         .map(|ms| format!("{ms:.1}ms"))
         .unwrap_or_else(|| "--".to_owned());
     draw_text_with_width(
+        text_cache,
         cx,
         Point::new(rect.x0 + 86.0, rect.y0 + 18.0),
         &format!("{:>4.1}ms", metrics.avg_ms),
@@ -424,6 +536,7 @@ fn draw_layer_report(cx: &mut PaintCx<'_>, rect: Rect, metrics: &LayerMetrics) {
         text_width - 79.0,
     );
     draw_text_with_width(
+        text_cache,
         cx,
         Point::new(rect.x0 + 7.0, rect.y0 + 32.0),
         &format!(
@@ -484,6 +597,7 @@ fn draw_graph(cx: &mut PaintCx<'_>, rect: Rect, metrics: &LayerMetrics) {
 }
 
 fn draw_text(
+    cache: &RefCell<HudTextCache>,
     cx: &mut PaintCx<'_>,
     origin: Point,
     text: &str,
@@ -491,10 +605,11 @@ fn draw_text(
     weight: FontWeight,
     color: Color,
 ) {
-    draw_text_with_width(cx, origin, text, font_size, weight, color, 220.0);
+    draw_text_with_width(cache, cx, origin, text, font_size, weight, color, 220.0);
 }
 
 fn draw_monospace_text(
+    cache: &RefCell<HudTextCache>,
     cx: &mut PaintCx<'_>,
     origin: Point,
     text: &str,
@@ -502,23 +617,13 @@ fn draw_monospace_text(
     weight: FontWeight,
     color: Color,
 ) {
-    let family = [FamilyOwned::Monospace];
-    let mut layout = TextLayout::new_with_text(
-        text,
-        AttrsList::new(
-            Attrs::new()
-                .family(&family)
-                .font_size(font_size)
-                .weight(weight)
-                .color(color),
-        ),
-        Some(Alignment::Start),
-    );
-    layout.set_size(220.0, 24.0);
-    layout.draw(cx, origin);
+    cache
+        .borrow_mut()
+        .draw_text(cx, origin, text, font_size, weight, color, 220.0, true);
 }
 
 fn draw_text_with_width(
+    cache: &RefCell<HudTextCache>,
     cx: &mut PaintCx<'_>,
     origin: Point,
     text: &str,
@@ -527,16 +632,7 @@ fn draw_text_with_width(
     color: Color,
     width: f64,
 ) {
-    let mut layout = TextLayout::new_with_text(
-        text,
-        AttrsList::new(
-            Attrs::new()
-                .font_size(font_size)
-                .weight(weight)
-                .color(color),
-        ),
-        Some(Alignment::Start),
-    );
-    layout.set_size(width.max(1.0) as f32, 24.0);
-    layout.draw(cx, origin);
+    cache
+        .borrow_mut()
+        .draw_text(cx, origin, text, font_size, weight, color, width, false);
 }

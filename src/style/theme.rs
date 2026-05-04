@@ -19,7 +19,6 @@ use crate::{
         slider::{SliderClass, SliderCustomExprStyle, SliderCustomStyle},
     },
 };
-use imaging::Brush;
 use peniko::{Color, color::palette::css};
 use smallvec::smallvec;
 

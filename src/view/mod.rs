@@ -56,8 +56,8 @@ pub use state::*;
 pub(crate) use storage::*;
 pub use tuple::*;
 
+use crate::effects::Brush;
 use floem_reactive::{Effect, ReadSignal, RwSignal, Scope, SignalGet, UpdaterEffect};
-use imaging::Brush;
 use peniko::kurbo::*;
 use smallvec::SmallVec;
 use std::any::Any;

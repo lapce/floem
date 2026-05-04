@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     action::{TimerToken, exec_after, set_ime_allowed},
-    imaging::Brush,
+    effects::Brush,
     kurbo::{Point, Rect, Size, Vec2},
     peniko::{Color, color::palette},
     prop, prop_extractor,

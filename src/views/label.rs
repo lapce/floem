@@ -1,5 +1,6 @@
 use std::{any::Any, cell::RefCell, fmt::Display, rc::Rc};
 
+use crate::effects::Brush;
 use crate::{
     Clipboard, ViewId,
     context::{EventCx, LayoutChangedListener, PaintCx, UpdateCx},
@@ -20,7 +21,6 @@ use crate::{
     views::editor::SelectionColor,
 };
 use floem_reactive::UpdaterEffect;
-use imaging::Brush;
 use peniko::{
     color::palette::{self},
     kurbo::Point,

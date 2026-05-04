@@ -424,7 +424,7 @@ mod tests {
                 rect: Rect::new(0.0, 0.0, 100.0, 50.0),
                 source_size: Size::new(100.0, 50.0),
             }],
-            color_effects: Vec::new(),
+            color_filters: Vec::new(),
             content_revision: 0,
             transform: peniko::kurbo::Affine::IDENTITY,
             clip: None,

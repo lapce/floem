@@ -2,8 +2,8 @@
 
 use std::ops::RangeInclusive;
 
+use crate::effects::Brush;
 use floem_reactive::{SignalGet, SignalUpdate, UpdaterEffect};
-use imaging::Brush;
 use peniko::color::palette;
 use peniko::kurbo::{Circle, Point, RoundedRect, RoundedRectRadii, Shape};
 use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};

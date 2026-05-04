@@ -9,7 +9,7 @@ pub(crate) mod composition;
 pub mod display_list;
 pub mod renderer;
 
-use crate::effects::{EffectComposite, EffectFilter};
+use crate::effects::{Composite, Filter};
 use crate::gpu_resources::{GpuResourceError, GpuResources};
 pub use border_path_iter::{BorderPath, BorderPathEvent};
 use imaging::{PaintSink, Painter};
@@ -134,7 +134,7 @@ pub struct PaintCx<'a> {
     /// Reference to global paint state
     pub window_state: &'a mut WindowState,
     gpu_resources: Option<&'a GpuResources>,
-    pub painter: Painter<'a, StageRecorder, EffectFilter, EffectComposite>,
+    pub painter: Painter<'a, StageRecorder, Filter, Composite, crate::effects::Brush>,
     is_vger: bool,
     /// The target visual node being painted
     pub target_id: ElementId,

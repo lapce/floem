@@ -19,12 +19,12 @@ use winit::window::{
 };
 
 use crate::action::TimerToken;
+use crate::effects::Brush;
 use crate::frame_source::{FrameSource, new_window_frame_source};
 use crate::gpu_resources::GpuResources;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use floem_reactive::RwSignal;
 use floem_reactive::Scope;
-use imaging::Brush;
 use peniko::color::palette;
 use peniko::kurbo::{Point, Size};
 use understory_frame_pacing::{

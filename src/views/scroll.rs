@@ -1,8 +1,8 @@
 #![deny(missing_docs)]
 //! Scroll View
 
+use crate::effects::Brush;
 use floem_reactive::Effect;
-use imaging::Brush;
 use peniko::Color;
 use peniko::kurbo::{Affine, Axis, Point, Rect, RoundedRect, RoundedRectRadii, Stroke, Vec2};
 use std::time::Duration;

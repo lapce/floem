@@ -5,12 +5,17 @@ use std::{
 
 use bytemuck::{Pod, Zeroable};
 use floem::{
-    Application, CompositorSurfaceImage, CompositorSurfaceProducer,
-    CompositorSurfaceProducerConfig, GpuResources, LayerEffect, SourceEffect,
-    action::{capture_metal, inspect},
+    Application, Brush as FloemBrush, Composite, CompositorSurfaceImage, CompositorSurfaceProducer,
+    CompositorSurfaceProducerConfig, Filter as FloemFilter, GpuResources, ImageBrush, LayerFilter,
+    ShaderSource, ShaderUniform,
+    action::{capture_metal, inspect, request_animation_frame},
+    context::PaintCx,
     group_ref,
-    imaging::{Brush, ClipRef, Filter, ImageBrush},
-    kurbo::{Affine, Circle, Point, Rect, Size},
+    imaging::{
+        Brush as ImagingBrush, ClipRef, ExternalImage, Filter as ImagingFilter, GeometryRef,
+        ImageBrush as ImagingImageBrush, ImagingSceneSink, PaintSink, Painter,
+    },
+    kurbo::{Affine, Point, Rect, Size, Vec2},
     peniko::Color,
     prelude::*,
     style::{ObjectFit, ObjectPosition, Position},
@@ -34,7 +39,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 .font_weight(FontWeight::BOLD)
                 .color(Color::from_rgb8(246, 241, 226))
         }),
-        "The cube is rendered by a compositor-surface producer into a Floem/Subduction-owned wgpu texture. Floem can publish that compositor-owned frame as a native layer, or sample the same frame through imaging as an external image brush. This example uses the cube texture as an image brush for the large glyph fill, then flattens the surrounding clip, blur, and checkerboard layer effect into one ordered render pass when direct layer promotion is not legal. Press F10 for the HUD, F11 for the inspector, or F12 to capture the next Metal frame."
+        "The cube is rendered by a compositor-surface producer into a Floem/Subduction-owned wgpu texture. Floem can publish that compositor-owned frame as a native layer, or sample the same frame through imaging as an external image brush. This example uses the cube texture as an image brush for the large glyph fill, then flattens the surrounding clip, blur, and checkerboard layer filter into one ordered render pass when direct layer promotion is not legal. Press F10 for the HUD, F11 for the inspector, or F12 to capture the next Metal frame."
             .style(|s| {
                 s.font_size(14.0)
                     .line_height(1.35)
@@ -74,156 +79,16 @@ fn app_view(window_id: WindowId) -> impl IntoView {
 
 fn cube_canvas(surface_image: CompositorSurfaceImage) -> impl IntoView {
     let cube_image = surface_image.image((300., 300.).into());
+    let shimmer_uniforms = ShaderUniform::new([0.0_f32; 4]);
+    let source_uniforms = ShaderUniform::new([0.0_f32; 4]);
+    drive_shimmer_uniforms(shimmer_uniforms.clone(), None);
+    drive_shimmer_uniforms(source_uniforms.clone(), None);
+    let canvas_cube_image = cube_image;
     let canvas = canvas(move |cx, size| {
-        let canvas = Rect::ZERO.with_size(size);
-        let cube_rect = centered_rect(size, Size::new(440.0, 330.0));
-        cx.painter
-            .fill(canvas.to_rounded_rect(32.0), Color::from_rgb8(19, 28, 30))
-            .draw();
-
-        for index in 0..6 {
-            let x = cube_rect.x0 + 54.0 + f64::from(index) * 66.0;
-            cx.painter
-                .fill(
-                    Circle::new(Point::new(x, cube_rect.y1 + 48.0), 6.0),
-                    Color::from_rgba8(236, 196, 126, 145),
-                )
-                .draw();
-        }
-
-        let brush = Brush::Image(ImageBrush::from(cube_image));
-        let label_rect = Rect::new(
-            cube_rect.x0 - 18.0,
-            cube_rect.y0 + 138.0,
-            cube_rect.x1 + 18.0,
-            cube_rect.y0 + 192.0,
-        );
-        let label_text_rect = Rect::new(
-            label_rect.x0 + 32.0,
-            label_rect.y0 + 6.0,
-            label_rect.x1 - 132.0,
-            label_rect.y1 - 6.0,
-        );
-        let source_panel = SourceEffect::wgsl(
-            r#"
-let cell = floor(position / vec2<f32>(22.0, 22.0));
-let checker = (cell.x + cell.y) - 2.0 * floor((cell.x + cell.y) * 0.5);
-let stripe = 0.5 + 0.5 * sin((position.x + position.y) * 0.035);
-let base = mix(vec3<f32>(0.08, 0.20, 0.22), vec3<f32>(0.13, 0.34, 0.36), checker);
-return vec4<f32>(base + stripe * 0.035, 0.58);
-"#,
-        )
-        .with_label("cube source shader panel")
-        .with_color_space(subduction::wgpu::SurfaceColorSpace::ExtendedLinearSrgb);
-        cx.painter.sink_mut().source_effect_rect(
-            Rect::new(
-                cube_rect.x0 - 92.0,
-                cube_rect.y0 + 58.0,
-                cube_rect.x1 + 92.0,
-                cube_rect.y1 - 52.0,
-            ),
-            source_panel,
-        );
-
-        let checkerboard_effect = LayerEffect::wgsl(
-            r#"
-let sampled = textureSample(input_texture, input_sampler, uv);
-let cell = floor(position / vec2<f32>(28.0, 28.0));
-let checker = (cell.x + cell.y) - 2.0 * floor((cell.x + cell.y) * 0.5);
-let tint_a = vec3<f32>(1.12, 0.94, 0.72);
-let tint_b = vec3<f32>(0.72, 1.03, 1.12);
-let tint = mix(tint_a, tint_b, checker);
-return vec4<f32>(sampled.rgb * tint, sampled.a);
-"#,
-        )
-        .with_label("cube checkerboard layer effect")
-        .with_color_space(subduction::wgpu::SurfaceColorSpace::ExtendedLinearSrgb);
-        let filters = [checkerboard_effect.into(), Filter::blur(5.).into()];
-        cx.painter.with_group(
-            group_ref().with_filters(&filters).with_clip(ClipRef::Fill {
-                transform: Affine::IDENTITY,
-                shape: floem::imaging::GeometryRef::RoundedRect(
-                    Rect::new(72.0, 76.0, size.width - 72.0, size.height - 76.0)
-                        .to_rounded_rect(30.0),
-                ),
-                fill_rule: floem::peniko::Fill::NonZero,
-            }),
-            |p| {
-                p.fill(
-                    Rect::new(72.0, 76.0, size.width - 72.0, size.height - 76.0)
-                        .to_rounded_rect(30.0),
-                    Color::from_rgb8(25, 47, 50),
-                )
-                .draw();
-
-                p.fill(
-                    label_rect.to_rounded_rect(20.0),
-                    Color::from_rgba8(247, 226, 164, 230),
-                )
-                .draw();
-            },
-        );
-
-        let mut text = TextLayout::new_with_text(
-            "TEXTURE BRUSH",
-            AttrsList::new(Attrs::new().font_size(34.0).weight(FontWeight::BOLD)),
-            Some(Alignment::Center),
-        );
-        text.set_size(
-            label_text_rect.width() as f32,
-            label_text_rect.height() as f32,
-        );
-        let text_size = text.size();
-        let origin = Point::new(
-            label_text_rect.x0,
-            label_text_rect.y0 + ((label_text_rect.height() - text_size.height) * 0.5).max(0.0),
-        );
-        text.draw_with_painter_brush(
-            cx.painter.as_imaging_dyn(),
-            origin,
-            floem::kurbo::Vec2::ZERO,
-            cx.effective_scale,
-            &brush,
-            Some(Affine::translate((
-                cube_rect.x0 - origin.x,
-                cube_rect.y0 - origin.y,
-            ))),
-        );
-
-        // cx.painter
-        //     .fill(
-        //         Rect::new(
-        //             label_rect.x0 + 32.0,
-        //             label_rect.y0 + 17.0,
-        //             label_rect.x1 - 102.0,
-        //             label_rect.y0 + 36.0,
-        //         )
-        //         .to_rounded_rect(9.0),
-        //         Color::from_rgba8(35, 45, 42, 210),
-        //     )
-        //     .draw();
-        // cx.painter
-        //     .fill(
-        //         Rect::new(
-        //             label_rect.x1 - 116.0,
-        //             label_rect.y0 + 14.0,
-        //             label_rect.x1 - 46.0,
-        //             label_rect.y0 + 40.0,
-        //         )
-        //         .to_rounded_rect(13.0),
-        //         Color::from_rgba8(18, 139, 128, 230),
-        //     )
-        //     .draw();
-
-        // cx.painter
-        //     .stroke(
-        //         cube_rect.inflate(14.0, 14.0).to_rounded_rect(26.0),
-        //         &Stroke::new(4.0),
-        //         Color::from_rgba8(250, 238, 205, 225),
-        //     )
-        //     .draw();
-
-        cx.painter.fill(canvas, &brush).draw();
+        let layout = CubeCanvasLayout::new(size);
+        layout.paint_source_panel(cx, source_uniforms.clone());
+        layout.paint_filtered_panel(cx, canvas_cube_image);
+        layout.paint_shimmer(cx, shimmer_uniforms.clone());
     })
     .style(|s| {
         s.width(780.0)
@@ -241,6 +106,208 @@ return vec4<f32>(sampled.rgb * tint, sampled.a);
                 .object_fit(ObjectFit::ScaleDown)
         }),
     )
+}
+
+struct CubeCanvasLayout {
+    canvas: Rect,
+    cube: Rect,
+    filtered_panel: Rect,
+    label: Rect,
+    label_text: Rect,
+}
+
+impl CubeCanvasLayout {
+    fn new(size: Size) -> Self {
+        let canvas = Rect::ZERO.with_size(size);
+        let cube = centered_rect(size, Size::new(440.0, 330.0));
+        let filtered_panel = Rect::new(72.0, 76.0, size.width - 72.0, size.height - 76.0);
+        let label = Rect::new(
+            cube.x0 - 18.0,
+            cube.y0 + 138.0,
+            cube.x1 + 18.0,
+            cube.y0 + 192.0,
+        );
+        let label_text = Rect::new(
+            label.x0 + 32.0,
+            label.y0 + 6.0,
+            label.x1 - 132.0,
+            label.y1 - 6.0,
+        );
+
+        Self {
+            canvas,
+            cube,
+            filtered_panel,
+            label,
+            label_text,
+        }
+    }
+
+    fn paint_background(&self, cx: &mut PaintCx<'_>) {
+        cx.painter
+            .fill(self.canvas, Color::from_rgb8(19, 28, 30))
+            .draw();
+    }
+
+    fn paint_source_panel(&self, cx: &mut PaintCx<'_>, uniforms: ShaderUniform<[f32; 4]>) {
+        let source = source_panel_shader(uniforms);
+        cx.painter
+            .fill(
+                self.canvas.to_rounded_rect(32.0),
+                FloemBrush::Image(ImageBrush::from(source.image(self.canvas.size()))),
+            )
+            .draw();
+    }
+
+    fn paint_filtered_panel(&self, cx: &mut PaintCx<'_>, canvas_cube_image: ExternalImage) {
+        let filters = [checkerboard_filter().into(), ImagingFilter::blur(5.).into()];
+        let effective_scale = cx.effective_scale;
+        cx.painter.with_group(
+            group_ref().with_filters(&filters).with_clip(ClipRef::Fill {
+                transform: Affine::IDENTITY,
+                shape: GeometryRef::RoundedRect(self.filtered_panel.to_rounded_rect(30.0)),
+                fill_rule: floem::peniko::Fill::NonZero,
+            }),
+            move |p| {
+                p.fill(
+                    self.filtered_panel.to_rounded_rect(30.0),
+                    Color::from_rgb8(25, 47, 50),
+                )
+                .draw();
+
+                p.fill(
+                    self.label.to_rounded_rect(20.0),
+                    Color::from_rgba8(247, 226, 164, 230),
+                )
+                .draw();
+                self.paint_texture_text(p, effective_scale, canvas_cube_image);
+            },
+        );
+    }
+
+    fn paint_shimmer(&self, cx: &mut PaintCx<'_>, uniforms: ShaderUniform<[f32; 4]>) {
+        let filters = [shimmer_filter(uniforms).into()];
+        cx.painter
+            .with_group(group_ref().with_filters(&filters), |painter| {
+                painter
+                    .fill(
+                        self.label.to_rounded_rect(20.0),
+                        Color::from_rgba8(255, 230, 178, 82),
+                    )
+                    .draw();
+            });
+    }
+
+    fn paint_texture_text<S>(
+        &self,
+        painter: &mut Painter<'_, S, FloemFilter, Composite, FloemBrush>,
+        effective_scale: f64,
+        cube_image: ExternalImage,
+    ) where
+        S: PaintSink<FloemFilter, Composite, FloemBrush> + ImagingSceneSink + ?Sized,
+    {
+        let brush = ImagingBrush::Image(ImagingImageBrush::from(cube_image));
+        let mut text = TextLayout::new_with_text(
+            "TEXTURE BRUSH",
+            AttrsList::new(Attrs::new().font_size(34.0).weight(FontWeight::BOLD)),
+            Some(Alignment::Center),
+        );
+        text.set_size(
+            self.label_text.width() as f32,
+            self.label_text.height() as f32,
+        );
+        let text_size = text.size();
+        let origin = Point::new(
+            self.label_text.x0,
+            self.label_text.y0 + ((self.label_text.height() - text_size.height) * 0.5).max(0.0),
+        );
+        text.draw_with_painter_brush(
+            painter.as_imaging_dyn(),
+            origin,
+            Vec2::ZERO,
+            effective_scale,
+            &brush,
+            Some(Affine::translate((
+                self.cube.x0 - origin.x,
+                self.cube.y0 - origin.y,
+            ))),
+        );
+    }
+}
+
+fn source_panel_shader(uniforms: ShaderUniform<[f32; 4]>) -> ShaderSource {
+    ShaderSource::wgsl(
+        r#"
+let seconds = bitcast<f32>(args.data.x);
+let drift = vec2<f32>(seconds * 34.0, seconds * -21.0);
+let wave = vec2<f32>(
+    sin(position.y * 0.027 + seconds * 1.7),
+    cos(position.x * 0.023 - seconds * 1.3),
+) * 15.0;
+let twist_center = vec2<f32>(frame.target_width, frame.target_height) * 0.5;
+let from_center = position - twist_center;
+let radius = length(from_center);
+let angle = sin(radius * 0.017 - seconds * 1.9) * 0.22;
+let warped = vec2<f32>(
+    from_center.x * cos(angle) - from_center.y * sin(angle),
+    from_center.x * sin(angle) + from_center.y * cos(angle),
+) + twist_center + drift + wave;
+let cell = floor(warped / vec2<f32>(22.0, 22.0));
+let checker = (cell.x + cell.y) - 2.0 * floor((cell.x + cell.y) * 0.5);
+let stripe = 0.5 + 0.5 * sin((warped.x + warped.y) * 0.035 + seconds * 2.4);
+let base = mix(vec3<f32>(0.08, 0.20, 0.22), vec3<f32>(0.13, 0.34, 0.36), checker);
+let glow = 0.5 + 0.5 * sin(radius * 0.025 - seconds * 3.1);
+return vec4<f32>(base + stripe * 0.045 + glow * 0.025, 0.58);
+"#,
+    )
+    .with_label("cube source shader panel")
+    .with_uniforms(uniforms)
+    .with_color_space(subduction::wgpu::SurfaceColorSpace::ExtendedLinearSrgb)
+}
+
+fn checkerboard_filter() -> LayerFilter {
+    LayerFilter::wgsl(
+        r#"
+let sampled = textureSample(input_texture, input_sampler, uv);
+let cell = floor(position / vec2<f32>(28.0, 28.0));
+let checker = (cell.x + cell.y) - 2.0 * floor((cell.x + cell.y) * 0.5);
+let tint_a = vec3<f32>(1.12, 0.94, 0.72);
+let tint_b = vec3<f32>(0.72, 1.03, 1.12);
+let tint = mix(tint_a, tint_b, checker);
+return vec4<f32>(sampled.rgb * tint, sampled.a);
+"#,
+    )
+    .with_label("cube checkerboard layer filter")
+    .with_color_space(subduction::wgpu::SurfaceColorSpace::ExtendedLinearSrgb)
+}
+
+fn shimmer_filter(uniforms: ShaderUniform<[f32; 4]>) -> LayerFilter {
+    LayerFilter::wgsl(
+        r#"
+let sampled = textureSample(input_texture, input_sampler, uv);
+let seconds = bitcast<f32>(args.data.x);
+let wave = 0.5 + 0.5 * sin(position.x * 0.025 + position.y * 0.018 + seconds * 2.6);
+let edge = smoothstep(0.76, 1.0, wave);
+let highlight = vec3<f32>(0.95, 0.58, 0.20) * edge * 0.32;
+return vec4<f32>(sampled.rgb + highlight, sampled.a);
+"#,
+    )
+    .with_label("cube animated shimmer")
+    .with_uniforms(uniforms)
+    .with_color_space(subduction::wgpu::SurfaceColorSpace::ExtendedLinearSrgb)
+}
+
+fn drive_shimmer_uniforms(uniforms: ShaderUniform<[f32; 4]>, origin: Option<Instant>) {
+    request_animation_frame(move |frame_time| {
+        let present = frame_time
+            .interval
+            .predicted_present
+            .unwrap_or(frame_time.now);
+        let origin = origin.unwrap_or(present);
+        let seconds = present.saturating_duration_since(origin).as_secs_f32();
+        uniforms.set([seconds, (seconds * 1.7).sin(), (seconds * 1.3).cos(), 0.0]);
+        drive_shimmer_uniforms(uniforms, Some(origin));
+    });
 }
 
 fn centered_rect(container: Size, size: Size) -> Rect {

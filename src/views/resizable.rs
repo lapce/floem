@@ -4,11 +4,11 @@ use crate::{
     BoxTree, ElementId, ViewId,
     context::{EventCx, PaintCx, UpdateCx},
     easing::Linear,
+    effects::Brush,
     event::{
         DragEvent, DragSourceEvent, Event, EventPropagation, InteractionEvent, Phase,
         listener::UpdatePhaseLayout,
     },
-    imaging::Brush,
     prelude::*,
     prop, prop_extractor,
     style::{

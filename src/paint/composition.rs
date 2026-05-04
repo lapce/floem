@@ -2,7 +2,7 @@ use std::hash::{Hash, Hasher};
 
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size};
 
-use crate::{ElementId, compositor_surface::CompositorSurfaceId, effects::CompositorEffect};
+use crate::{ElementId, compositor_surface::CompositorSurfaceId, effects::CompositorShader};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LayerSourceId(u64);
@@ -63,7 +63,7 @@ pub(crate) struct SceneLayer {
     pub debug_name: Option<String>,
     pub scene: imaging::record::Scene,
     pub external_images: Vec<SceneExternalImage>,
-    pub color_effects: Vec<CompositorEffect>,
+    pub color_filters: Vec<CompositorShader>,
     pub content_revision: u64,
     pub transform: Affine,
     pub clip: Option<RoundedRect>,

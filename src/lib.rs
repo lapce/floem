@@ -252,9 +252,10 @@ pub use compositor_surface::{
     CompositorSurfaceProvider, CompositorSurfaceProviderHandle, ExternalTexture,
 };
 pub use effects::{
-    ColorEffect, ColorEffectArgs, ColorEffectFrameUniform, ColorEffectShader, CompositeEffect,
-    CompositorEffect, EffectComposite, EffectFilter, EffectGroupRef, LayerEffect,
-    LayerEffectShader, SourceEffect, SourceEffectShader, group_ref,
+    AnimatableShaderUniforms, Brush, ColorFilter, ColorFilterShader, Composite, CompositorShader,
+    Filter, GroupRef, Image, ImageBrush, ImageBrushRef, ImageRef, LayerFilter, LayerFilterShader,
+    ShaderArgs, ShaderComposite, ShaderFrameUniform, ShaderSource, ShaderSourceImage,
+    ShaderSourceShader, ShaderTransition, ShaderUniform, ShaderUniforms, group_ref,
 };
 pub use external_surface::{
     ExternalSurface, ExternalSurfaceError, ExternalSurfaceHandle, ExternalSurfaceId,

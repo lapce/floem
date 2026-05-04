@@ -3,8 +3,8 @@
 //! This module provides composite style types that represent multi-value
 //! CSS properties like borders and padding.
 
+use crate::effects::Brush;
 use crate::text::FontWeight;
-use imaging::Brush;
 use parley::style::{OverflowWrap, WordBreakStrength};
 use peniko::Color;
 use peniko::color::palette;

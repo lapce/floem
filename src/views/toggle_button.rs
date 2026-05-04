@@ -4,8 +4,8 @@
 
 use std::time::Duration;
 
+use crate::effects::Brush;
 use floem_reactive::{Effect, SignalGet, SignalUpdate};
-use imaging::Brush;
 use peniko::kurbo::{Point, Rect, Shape, Size};
 use ui_events::pointer::PointerEvent;
 
