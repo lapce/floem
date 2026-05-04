@@ -66,6 +66,14 @@ pub(crate) struct WindowCompositor {
     metal_capture_frame_had_scene_render: bool,
 }
 
+/// Main-thread compositor runtime.
+///
+/// This alias marks the ownership boundary described in
+/// `docs/window-ui-thread-split.md`: this state owns the Subduction layer host,
+/// layer store, scene render publications, and compositor commits. The concrete
+/// implementation is still named `WindowCompositor` while the split is staged.
+pub(crate) type CompositorRuntime = WindowCompositor;
+
 #[derive(Clone, Debug)]
 pub(crate) struct PresentedLayer {
     pub layer_id: LayerId,

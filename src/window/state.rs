@@ -21,9 +21,6 @@ use std::rc::Rc;
 use crate::{
     BoxTree, ElementId,
     action::add_update_message,
-    compositor_surface::{
-        CompositorSurfaceContent, CompositorSurfaceId, CompositorSurfaceProviderHandle,
-    },
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
@@ -122,8 +119,6 @@ pub struct WindowState {
     pub(crate) box_tree: Rc<RefCell<BoxTree>>,
     pub(crate) display_list: RetainedDisplayList,
     pub(crate) composition_plan: CompositionPlan,
-    pub(crate) compositor: crate::window::compositor::WindowCompositor,
-    pub(crate) compositor_surfaces: crate::window::compositor_surface::WindowCompositorSurfaces,
     pub(crate) last_paint_stats: PaintStats,
 
     /// Per-pointer capture tracking inspired by Chromium's PointerEventManager.
@@ -251,9 +246,6 @@ impl WindowState {
             box_tree,
             display_list: RetainedDisplayList::default(),
             composition_plan: CompositionPlan::new(),
-            compositor: crate::window::compositor::WindowCompositor::default(),
-            compositor_surfaces:
-                crate::window::compositor_surface::WindowCompositorSurfaces::default(),
             last_paint_stats: PaintStats::default(),
             pointer_capture_target: PointerCaptureMap::new(),
             pending_pointer_capture_target: PointerCaptureMap::new(),
@@ -314,28 +306,8 @@ impl WindowState {
         }
     }
 
-    pub(crate) fn set_compositor_surface_content(
-        &mut self,
-        surface_id: CompositorSurfaceId,
-        content: CompositorSurfaceContent,
-    ) {
-        self.compositor_surfaces.set_content(surface_id, content);
-        self.request_paint(self.root_view_id);
-    }
-
-    pub(crate) fn set_compositor_surface_provider(
-        &mut self,
-        surface_id: CompositorSurfaceId,
-        provider: CompositorSurfaceProviderHandle,
-    ) {
-        self.compositor_surfaces.set_provider(surface_id, provider);
-        self.request_paint(self.root_view_id);
-    }
-
     pub(crate) fn has_next_frame_work(&self) -> bool {
         self.has_next_window_frame_work()
-            || (self.composition_plan.has_compositor_surfaces()
-                && self.compositor_surfaces.has_frame_pull())
     }
 
     pub(crate) fn has_next_window_frame_work(&self) -> bool {

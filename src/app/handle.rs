@@ -45,12 +45,6 @@ use crate::{
     },
 };
 
-struct PendingContextMenu {
-    window_id: WindowId,
-    menu: super::MenuWrapper,
-    pos: Option<Point>,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum PointerCoalesceKind {
     Move,
@@ -243,7 +237,6 @@ pub(crate) struct ApplicationHandle {
     pending_frame_ticks: HashMap<winit::window::WindowId, PendingFrameTick>,
     pointer_coalesce_until: HashMap<winit::window::WindowId, Instant>,
     pending_pointer_events: HashMap<PointerCoalesceKey, PendingPointerEvent>,
-    pending_context_menus: Vec<PendingContextMenu>,
     pub(crate) event_listener: Option<Box<AppEventCallback>>,
     pub(crate) gpu_resources: Option<GpuResources>,
     pub(crate) scene_renderer_pool: SharedSceneFragmentRendererPool,
@@ -262,7 +255,6 @@ impl ApplicationHandle {
             pending_frame_ticks: HashMap::new(),
             pointer_coalesce_until: HashMap::new(),
             pending_pointer_events: HashMap::new(),
-            pending_context_menus: Vec::new(),
             event_listener: None,
             gpu_resources,
             scene_renderer_pool: SharedSceneFragmentRendererPool::default(),
@@ -474,8 +466,8 @@ impl ApplicationHandle {
                         gpu_resources: Some(gpu_resources.clone()),
                         surface_caps: Some(surface_caps),
                         transparent: handle.transparent,
-                        scale: handle.window_state.effective_scale(),
-                        size: handle.window_state.root_size * handle.window_state.os_scale,
+                        scale: handle.ui.state.effective_scale(),
+                        size: handle.ui.state.root_size * handle.ui.state.os_scale,
                         maximum_drawable_count: handle.maximum_drawable_count,
                     };
                     self.scene_renderer_pool
@@ -493,26 +485,13 @@ impl ApplicationHandle {
                     panic!("Sent a gpu resource update after it had already been initialized");
                 }
             }
-            UserEvent::ShowContextMenu {
-                window_id,
-                menu,
-                pos,
-            } => {
-                self.pending_context_menus.push(PendingContextMenu {
-                    window_id,
-                    menu,
-                    pos,
-                });
-            }
             UserEvent::CompositorSurfaceContent {
                 window_id,
                 surface_id,
                 content,
             } => {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    handle
-                        .window_state
-                        .set_compositor_surface_content(surface_id, content);
+                    handle.set_compositor_surface_content(surface_id, content);
                     handle.refresh_frame_activity();
                 }
                 self.request_update();
@@ -522,11 +501,7 @@ impl ApplicationHandle {
                 surface_id,
             } => {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    handle
-                        .window_state
-                        .compositor_surfaces
-                        .request_frame(surface_id);
-                    handle.note_compositor_surface_frame_demand();
+                    handle.request_compositor_surface_frame(surface_id);
                     handle.refresh_frame_activity();
                 }
                 self.request_update();
@@ -537,9 +512,7 @@ impl ApplicationHandle {
                 provider,
             } => {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    handle
-                        .window_state
-                        .set_compositor_surface_provider(surface_id, provider);
+                    handle.set_compositor_surface_provider(surface_id, provider);
                     handle.refresh_frame_activity();
                 }
                 self.request_update();
@@ -663,7 +636,7 @@ impl ApplicationHandle {
                 } => {
                     if let Some(handle) = self.window_handles.get_mut(&window_id) {
                         handle.note_animation_frame_demand();
-                        handle.window_state.begin_frame_callbacks.push(callback);
+                        handle.ui.state.begin_frame_callbacks.push(callback);
                     }
                 }
                 AppUpdateEvent::CancelTimer { timer } => {
@@ -692,7 +665,7 @@ impl ApplicationHandle {
                                 if profile.current.timing.is_none() {
                                     profile.current.timing = handle.pending_profile_timing();
                                 }
-                                handle.window_state.profile_events_enabled = false;
+                                handle.ui.state.profile_events_enabled = false;
                                 if !profile.current.events.is_empty()
                                     || profile.current.timing.is_some()
                                 {
@@ -701,8 +674,8 @@ impl ApplicationHandle {
                                 Rc::new(profile)
                             }));
                         } else {
-                            handle.window_state.profile_events_enabled = true;
-                            handle.window_state.profile_events.clear();
+                            handle.ui.state.profile_events_enabled = true;
+                            handle.ui.state.profile_events.clear();
                             handle.profile = Some(Profile::default());
                         }
                     }
@@ -710,7 +683,7 @@ impl ApplicationHandle {
                 #[cfg(not(target_arch = "wasm32"))]
                 AppUpdateEvent::MenuAction { action_id } => {
                     for (_, handle) in self.window_handles.iter_mut() {
-                        if handle.window_state.context_menu.contains_key(&action_id)
+                        if handle.ui.state.context_menu.contains_key(&action_id)
                             || handle.window_menu_actions.contains_key(&action_id)
                         {
                             handle.menu_action(&action_id);
@@ -721,7 +694,7 @@ impl ApplicationHandle {
                 #[cfg(target_arch = "wasm32")]
                 AppUpdateEvent::MenuAction { action_id } => {
                     for (_, handle) in self.window_handles.iter_mut() {
-                        if handle.window_state.context_menu.contains_key(&action_id) {
+                        if handle.ui.state.context_menu.contains_key(&action_id) {
                             handle.menu_action(&action_id);
                             break;
                         }
@@ -730,7 +703,7 @@ impl ApplicationHandle {
                 AppUpdateEvent::ThemeChanged { theme } => {
                     self.config.global_theme_override = Some(theme);
                     for window_handle in self.window_handles.values_mut() {
-                        window_handle.window_state.light_dark_theme = theme;
+                        window_handle.ui.state.light_dark_theme = theme;
                         window_handle.set_theme(Some(theme), false);
                     }
                 }
@@ -788,7 +761,7 @@ impl ApplicationHandle {
         let event_scale = self
             .window_handles
             .get(&window_id)
-            .map(|window_handle| window_handle.window_state.effective_scale())
+            .map(|window_handle| window_handle.ui.state.effective_scale())
             .unwrap_or(1.0);
         let discrete_input = matches!(
             &event,
@@ -857,7 +830,7 @@ impl ApplicationHandle {
             WindowEvent::SurfaceResized(size) => {
                 let surface_size = size;
                 let size: LogicalSize<f64> =
-                    surface_size.to_logical(window_handle.window_state.os_scale);
+                    surface_size.to_logical(window_handle.ui.state.os_scale);
                 let size = Size::new(size.width, size.height);
                 if std::env::var_os("FLOEM_RESIZE_DIAG").is_some() {
                     eprintln!(
@@ -867,7 +840,7 @@ impl ApplicationHandle {
                         surface_size.height,
                         size.width,
                         size.height,
-                        window_handle.window_state.effective_scale(),
+                        window_handle.ui.state.effective_scale(),
                     );
                 }
                 window_handle.size(size);
@@ -876,7 +849,7 @@ impl ApplicationHandle {
             }
             WindowEvent::Moved(position) => {
                 let position: LogicalPosition<f64> =
-                    position.to_logical(window_handle.window_state.os_scale);
+                    position.to_logical(window_handle.ui.state.os_scale);
                 let point = Point::new(position.x, position.y);
                 window_handle.position(point);
                 window_handle.refresh_frame_source_target();
@@ -1394,15 +1367,6 @@ impl ApplicationHandle {
             }
         }
         self.fire_timer(event_loop);
-    }
-
-    pub(crate) fn flush_deferred_context_menus(&mut self) {
-        let pending = std::mem::take(&mut self.pending_context_menus);
-        for item in pending {
-            if let Some(handle) = self.window_handles.get_mut(&item.window_id) {
-                handle.show_context_menu(item.menu.0, item.pos);
-            }
-        }
     }
 }
 

@@ -5,6 +5,7 @@ pub(crate) mod id;
 pub mod mock;
 pub(crate) mod state;
 pub(crate) mod tracking;
+pub(crate) mod ui_driver;
 
 pub use crate::paint::renderer::{GpuRendererChooserCx, NewRendererCx};
 pub use id::{Urgency, WindowIdExt};

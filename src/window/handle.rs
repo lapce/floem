@@ -2,9 +2,7 @@
 use std::collections::HashMap;
 use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 
-use crate::event::{
-    CustomEvent, PaintPresentInfo, PaintPresentLayer, RouteKind, ScrollTo, UpdatePhaseEvent,
-};
+use crate::event::{PaintPresentInfo, PaintPresentLayer, UpdatePhaseEvent};
 use crate::paint::{PaintState, renderer::SharedSceneFragmentRendererPool};
 use crate::platform::menu_types::{Menu as MudaMenu, MenuId};
 use crate::style::StyleSelector;
@@ -29,7 +27,7 @@ use crate::gpu_resources::GpuResources;
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
 use imaging::Brush;
 use peniko::color::palette;
-use peniko::kurbo::{self, Point, Size};
+use peniko::kurbo::{Point, Size};
 use understory_frame_pacing::{
     BeginFrameTiming, CompositorCommitReason, CompositorCommitResult, CompositorFrameAction,
     CompositorFrameScheduler, CompositorWorkStatus, DisplayTiming as PacingDisplayTiming,
@@ -43,9 +41,13 @@ use winit::{
     window::{Window, WindowId},
 };
 
-use super::state::WindowState;
 use super::tracking::{remove_window_id_mapping, store_window_id_mapping};
-use crate::app::MenuWrapper;
+use super::{
+    compositor::CompositorRuntime,
+    compositor_surface::WindowCompositorSurfaces,
+    state::WindowState,
+    ui_driver::{PlatformRequest, UiFrameArtifact, WindowUiDriver},
+};
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::platform::context_menu::context_menu_view;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -58,7 +60,6 @@ use crate::views::{Container, Decorators, Stack};
 use crate::{
     Application,
     app::UserEvent,
-    context::{LayoutChanged, StyleCx, UpdateCx, VisualChanged},
     event::{
         Event, GlobalEventCx, ImeEvent, WindowEvent, clear_hit_test_cache,
         dropped_file::FileDragEvent,
@@ -70,7 +71,7 @@ use crate::{
     },
     message::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE,
-        DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES, UpdateMessage,
+        DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES,
     },
     style::{CursorStyle, Style},
     theme::default_theme,
@@ -83,18 +84,16 @@ const DEFAULT_GPU_WORK_ESTIMATE: Duration = Duration::ZERO;
 const DEFAULT_TIMER_WAKEUP_ESTIMATE: Duration = Duration::from_millis(1);
 /// The top-level window handle that owns the winit `Window`.
 /// Meant only for use with the root view of the application.
-/// Owns the [`WindowState`] and is responsible for
-/// - processing all requests to update the [`WindowState`] from the reactive system
+/// Owns the UI driver and is responsible for
+/// - processing all requests to update UI state from the reactive system
 /// - processing all requests to update the animation state from the reactive system
 /// - requesting a new animation frame from the backend
 pub(crate) struct WindowHandle {
     pub(crate) window: Arc<dyn winit::window::Window>,
     window_id: WindowId,
-    /// The root view ID for this window.
-    pub(crate) id: ViewId,
-    /// Reactive Scope for this `WindowHandle`
-    scope: Scope,
-    pub(crate) window_state: WindowState,
+    pub(crate) ui: WindowUiDriver,
+    compositor_runtime: CompositorRuntime,
+    compositor_surfaces: WindowCompositorSurfaces,
     pub(crate) paint_state: PaintState,
     size: RwSignal<Size>,
     default_theme: Option<Style>,
@@ -194,7 +193,7 @@ fn smooth_duration_estimate(previous: Duration, observed: Duration) -> Duration 
 }
 
 #[derive(Clone, Debug, Default)]
-struct FrameTimingAccumulator {
+pub(crate) struct FrameTimingAccumulator {
     anchor: Option<Instant>,
     spans: Vec<inspector::TimingSpan>,
 }
@@ -223,7 +222,7 @@ impl FrameTimingAccumulator {
         self.spans.extend(other.spans);
     }
 
-    fn push_absolute_span(
+    pub(crate) fn push_absolute_span(
         &mut self,
         label: &'static str,
         start: Instant,
@@ -383,14 +382,15 @@ impl FrameTimingAccumulator {
 impl Drop for WindowHandle {
     fn drop(&mut self) {
         VIEW_STORAGE.with_borrow_mut(|s| {
-            s.box_tree.remove(&self.id);
+            s.box_tree.remove(&self.ui.root_id);
         })
     }
 }
 
 impl WindowHandle {
     pub(crate) fn take_profile_events(&mut self) -> Vec<crate::inspector::profiler::ProfileEvent> {
-        self.window_state
+        self.ui
+            .state
             .profile_events
             .drain(..)
             .map(|event| crate::inspector::profiler::ProfileEvent {
@@ -407,7 +407,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn record_profile_instant(&mut self, name: &'static str, at: Instant) {
-        self.window_state.record_profile_instant(name, at);
+        self.ui.state.record_profile_instant(name, at);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -495,8 +495,6 @@ impl WindowHandle {
         let mut window_handle = Self {
             window,
             window_id: window_winit_id,
-            id: window_view_id,
-            scope,
             paint_state,
             size,
             default_theme: match apply_default_theme {
@@ -506,7 +504,9 @@ impl WindowHandle {
                 )),
                 false => None,
             },
-            window_state,
+            ui: WindowUiDriver::new(window_view_id, scope, window_state),
+            compositor_runtime: CompositorRuntime::default(),
+            compositor_surfaces: WindowCompositorSurfaces::default(),
             is_maximized,
             transparent,
             profile: None,
@@ -551,27 +551,25 @@ impl WindowHandle {
         }
 
         window_handle
-            .window_state
-            .compositor
+            .compositor_runtime
             .ensure_platform_presenter(window_winit_id, window_handle.window.as_ref());
         window_handle.refresh_frame_source_target();
+        window_handle.ui.state.set_root_size(size.get_untracked());
         window_handle
-            .window_state
-            .set_root_size(size.get_untracked());
-        window_handle
-            .window_state
+            .ui
+            .state
             .update_screen_size_bp(size.get_untracked());
         window_handle.process_update_no_paint();
 
-        window_handle.window_state.light_dark_theme =
-            os_theme.unwrap_or(winit::window::Theme::Light);
+        window_handle.ui.state.light_dark_theme = os_theme.unwrap_or(winit::window::Theme::Light);
 
         window_handle.event(Event::Window(WindowEvent::ThemeChanged(
-            window_handle.window_state.light_dark_theme,
+            window_handle.ui.state.light_dark_theme,
         )));
-        window_handle
-            .window_state
-            .mark_style_dirty_selector(window_handle.id.get_element_id(), StyleSelector::DarkMode);
+        window_handle.ui.state.mark_style_dirty_selector(
+            window_handle.ui.root_id.get_element_id(),
+            StyleSelector::DarkMode,
+        );
         window_handle.size(size.get_untracked());
         window_handle
     }
@@ -690,15 +688,15 @@ impl WindowHandle {
         let mut window_handle = Self {
             window,
             window_id,
-            id,
-            scope,
             paint_state,
             size,
             default_theme: Some(default_theme(
                 window_state.light_dark_theme,
                 window_state.effective_scale(),
             )),
-            window_state,
+            ui: WindowUiDriver::new(id, scope, window_state),
+            compositor_runtime: CompositorRuntime::default(),
+            compositor_surfaces: WindowCompositorSurfaces::default(),
             is_maximized,
             transparent: false,
             profile: None,
@@ -736,18 +734,18 @@ impl WindowHandle {
             pending_active_layers: Vec::new(),
         };
 
-        window_handle
-            .window_state
-            .set_root_size(size.get_untracked());
+        window_handle.ui.state.set_root_size(size.get_untracked());
 
-        window_handle.window_state.light_dark_theme =
-            os_theme.unwrap_or(winit::window::Theme::Light);
+        window_handle.ui.state.light_dark_theme = os_theme.unwrap_or(winit::window::Theme::Light);
 
         // Run initial style and layout passes
         window_handle.process_update_messages();
         // Mark root view as needing style so initial style pass runs compute_combined
         // and populates has_style_selectors for selector detection
-        window_handle.id.request_style(StyleReason::full_recalc());
+        window_handle
+            .ui
+            .root_id
+            .request_style(StyleReason::full_recalc());
         window_handle.process_update_messages();
         let mut initial_timing = FrameTimingAccumulator::default();
         window_handle.style(&mut initial_timing);
@@ -776,14 +774,13 @@ impl WindowHandle {
         // driven frame turn and leaves the window blank until another event
         // arrives.
         self.window.set_visible(true);
-        self.window_state
-            .request_paint(self.window_state.root_view_id);
+        self.ui.state.request_paint(self.ui.state.root_view_id);
         self.refresh_frame_activity();
         Application::request_update();
     }
 
     pub fn event(&mut self, event: Event) {
-        set_current_view(self.id.root());
+        set_current_view(self.ui.root_id.root());
 
         // Check event type for platform-specific context menu handling
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -791,8 +788,7 @@ impl WindowHandle {
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
         let is_pointer_up = matches!(&event, Event::Pointer(PointerEvent::Up { .. }));
 
-        let root_element_id = self.window_state.root_view_id.get_element_id();
-        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+        self.ui.route_window_event(event);
 
         // Platform-specific context menu handling
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
@@ -823,38 +819,38 @@ impl WindowHandle {
     }
 
     pub(crate) fn os_scale(&mut self, os_scale: f64) {
-        self.window_state.os_scale = os_scale;
-        self.window_state
-            .update_default_theme(self.window_state.light_dark_theme);
-        self.window_state
-            .mark_style_dirty(self.window_state.root_view_id.get_element_id());
-        let scale = self.window_state.effective_scale();
+        self.ui.state.os_scale = os_scale;
+        self.ui
+            .state
+            .update_default_theme(self.ui.state.light_dark_theme);
+        self.ui
+            .state
+            .mark_style_dirty(self.ui.state.root_view_id.get_element_id());
+        let scale = self.ui.state.effective_scale();
         self.event(Event::Window(WindowEvent::ScaleChanged(scale)));
-        self.window_state
-            .request_paint(self.window_state.root_view_id);
+        self.ui.state.request_paint(self.ui.state.root_view_id);
         self.schedule_repaint();
     }
 
     pub(crate) fn set_theme(&mut self, theme: Option<winit::window::Theme>, change_from_os: bool) {
-        if change_from_os && self.window_state.theme_overriden {
+        if change_from_os && self.ui.state.theme_overriden {
             // if the window theme has been set manually then changes from the os shouldn't do anything
             return;
         }
-        self.window_state.mark_style_dirty_selector(
-            self.window_state.root_view_id.get_element_id(),
+        self.ui.state.mark_style_dirty_selector(
+            self.ui.state.root_view_id.get_element_id(),
             StyleSelector::DarkMode,
         );
         if let Some(theme) = theme {
             // Only override the theme with the default if the user did not provide one
             if self.default_theme.is_some() {
-                self.default_theme =
-                    Some(default_theme(theme, self.window_state.effective_scale()));
+                self.default_theme = Some(default_theme(theme, self.ui.state.effective_scale()));
             }
             // Update the default theme in WindowState for style computation
-            self.window_state.update_default_theme(theme);
-            self.window_state.light_dark_theme = theme;
+            self.ui.state.update_default_theme(theme);
+            self.ui.state.light_dark_theme = theme;
             if !change_from_os {
-                self.window_state.theme_overriden = true
+                self.ui.state.theme_overriden = true
             }
             #[cfg(target_os = "windows")]
             {
@@ -863,12 +859,12 @@ impl WindowHandle {
             // Mark dark mode changed if theme actually changed
             // if theme != old_theme {}
         } else {
-            self.window_state.theme_overriden = false;
+            self.ui.state.theme_overriden = false;
         }
         if !change_from_os {
             self.window.set_theme(theme);
         }
-        self.id.request_style(StyleReason::inherited());
+        self.ui.root_id.request_style(StyleReason::inherited());
         if let Some(theme) = theme {
             self.event(Event::Window(WindowEvent::ThemeChanged(theme)));
         }
@@ -881,9 +877,9 @@ impl WindowHandle {
 
         // Update root size first so any style work triggered by resize observes
         // the new width instead of the previous frame's value.
-        self.window_state.set_root_size(size);
+        self.ui.state.set_root_size(size);
 
-        self.window_state.update_screen_size_bp(size);
+        self.ui.state.update_screen_size_bp(size);
         self.event(Event::Window(WindowEvent::Resized(size)));
 
         let is_maximized = self.window.is_maximized();
@@ -893,16 +889,15 @@ impl WindowHandle {
         }
 
         self.resize_present_surface_to_window();
-        self.window_state
-            .request_paint(self.window_state.root_view_id);
+        self.ui.state.request_paint(self.ui.state.root_view_id);
         self.schedule_repaint();
     }
 
     fn preempt_active_frame_for_resize(&mut self) {
         if !self.compositor_frame_scheduler.has_active_frame()
             && self.pending_compositor_commit.is_none()
-            && !self.window_state.compositor.has_pending_scene_renders()
-            && !self.window_state.compositor.has_pending_commit_work()
+            && !self.compositor_runtime.has_pending_scene_renders()
+            && !self.compositor_runtime.has_pending_commit_work()
         {
             return;
         }
@@ -911,8 +906,7 @@ impl WindowHandle {
             pending.token.cancel();
         }
         let discarded = self
-            .window_state
-            .compositor
+            .compositor_runtime
             .discard_pending_scene_frame_work("resize");
         self.pending_scene_frame_work_started_at = None;
         self.pending_scene_frame_work_cpu_end_at = None;
@@ -939,14 +933,14 @@ impl WindowHandle {
 
     pub(crate) fn file_drag_dropped(&mut self, file_drag_event: FileDragEvent) {
         // Store paths in window state for tracking during drag
-        self.window_state.file_drag_paths = None;
+        self.ui.state.file_drag_paths = None;
         self.event(Event::FileDrag(file_drag_event));
     }
 
     pub(crate) fn file_drag_start(&mut self, paths: Vec<std::path::PathBuf>, position: Point) {
         // Store paths and dispatch as a move event to trigger hit testing
         let paths_rc: Rc<[std::path::PathBuf]> = paths.into();
-        self.window_state.file_drag_paths = Some(paths_rc.clone());
+        self.ui.state.file_drag_paths = Some(paths_rc.clone());
         self.event(Event::FileDrag(FileDragEvent::Move(
             crate::event::dropped_file::FileDragMove {
                 paths: paths_rc,
@@ -956,7 +950,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn file_drag_move(&mut self, position: Point) {
-        if let Some(paths) = &self.window_state.file_drag_paths {
+        if let Some(paths) = &self.ui.state.file_drag_paths {
             self.event(Event::FileDrag(FileDragEvent::Move(
                 crate::event::dropped_file::FileDragMove {
                     paths: paths.clone(),
@@ -968,10 +962,10 @@ impl WindowHandle {
 
     pub(crate) fn file_drag_end(&mut self) {
         // Clear paths and file hover state
-        self.window_state.file_drag_paths = None;
-        set_current_view(self.id.root());
-        let root_element_id = self.window_state.root_view_id.get_element_id();
-        GlobalEventCx::new(&mut self.window_state, root_element_id, Event::Extracted)
+        self.ui.state.file_drag_paths = None;
+        set_current_view(self.ui.root_id.root());
+        let root_element_id = self.ui.state.root_view_id.get_element_id();
+        GlobalEventCx::new(&mut self.ui.state, root_element_id, Event::Extracted)
             .update_hover_from_path(&[]);
         self.process_update_messages_only();
         self.refresh_frame_activity();
@@ -995,7 +989,7 @@ impl WindowHandle {
 
     fn toggle_hud(&mut self) {
         self.hud.toggle();
-        self.window_state.request_paint(self.id);
+        self.ui.state.request_paint(self.ui.root_id);
         self.refresh_frame_activity();
     }
 
@@ -1016,200 +1010,23 @@ impl WindowHandle {
     }
 
     fn style(&mut self, timing: &mut FrameTimingAccumulator) {
-        let start = Instant::now();
-        // Transitions need a monotonic style sample time. During a backend frame
-        // tick, use the tick's semantic frame time so animation work is
-        // frame-consistent. Outside a frame tick, do not ask the frame clock for
-        // `current_frame_time()`: it may return the last planned presentation
-        // timestamp, which can stay unchanged across event/update-only style
-        // passes and make transitions produce no intermediate deltas.
-        let style_now = self
-            .active_frame_time
-            .map(|frame_time| frame_time.now)
-            .unwrap_or_else(Instant::now);
-        // Loop until no more views need styling
-        // This handles the case where styling a parent marks children dirty
-        // (e.g., when inherited properties change)
-        loop {
-            // Build explicit traversal order
-            let traversal = self.window_state.build_style_traversal(self.id);
-            if traversal.is_empty() {
-                break;
-            }
-
-            // Style each view in order, passing the global change for first iteration
-            for (view_id, traversal_reason) in traversal {
-                let cx = &mut StyleCx::new_at(
-                    &mut self.window_state,
-                    view_id,
-                    traversal_reason,
-                    style_now,
-                );
-                cx.style_view();
-            }
-        }
-
-        // Clear pending child changes after style pass completes
-        let root_element_id = self.window_state.root_view_id.get_element_id();
-        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Style));
-        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
-        let end = Instant::now();
-        timing.push_absolute_span("Style", start, end, TimingKind::Style);
+        self.ui.style(self.active_frame_time, timing);
     }
 
     fn layout(&mut self, timing: &mut FrameTimingAccumulator) {
-        let start = Instant::now();
-        self.window_state.compute_layout();
-        let taffy_end = Instant::now();
-        // Update box tree from layout after layout completes
-        let box_tree_start = taffy_end;
-        self.window_state.update_box_tree_from_layout();
-        let box_tree_end = Instant::now();
-
-        let root_element_id = self.window_state.root_view_id.get_element_id();
-        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Layout));
-        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
-        timing.push_absolute_span("Layout", start, box_tree_end, TimingKind::Layout);
-        timing.push_absolute_span("Taffy", start, taffy_end, TimingKind::Layout);
-        timing.push_absolute_span(
-            "BoxTreeUpdate",
-            box_tree_start,
-            box_tree_end,
-            TimingKind::BoxTree,
-        );
+        self.ui.layout(timing);
     }
 
     fn update_box_tree_from_layout(&mut self, timing: &mut FrameTimingAccumulator) {
-        let start = Instant::now();
-        self.window_state.update_box_tree_from_layout();
-        let root_element_id = self.window_state.root_view_id.get_element_id();
-        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreeUpdate));
-        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
-        let end = Instant::now();
-        timing.push_absolute_span("BoxTreeUpdate", start, end, TimingKind::BoxTree);
+        self.ui.update_box_tree_from_layout(timing);
     }
 
     fn process_pending_box_tree_updates(&mut self, timing: &mut FrameTimingAccumulator) {
-        let start = Instant::now();
-        self.window_state.process_pending_box_tree_updates();
-        let root_element_id = self.window_state.root_view_id.get_element_id();
-        let event = Event::Window(WindowEvent::UpdatePhase(
-            UpdatePhaseEvent::BoxTreePendingUpdates,
-        ));
-        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
-        let end = Instant::now();
-        timing.push_absolute_span("BoxTreePendingUpdates", start, end, TimingKind::BoxTree);
+        self.ui.process_pending_box_tree_updates(timing);
     }
 
     fn commit_box_tree(&mut self, timing: &mut FrameTimingAccumulator) {
-        let start = Instant::now();
-        self.window_state.commit_box_tree();
-        self.window_state.needs_box_tree_commit = false;
-
-        let has_layout_listener: smallvec::SmallVec<[ViewId; 64]> = self
-            .window_state
-            .listeners
-            .get(&LayoutChanged::listener_key())
-            .into_iter()
-            .flatten()
-            .copied()
-            .collect();
-        for id in has_layout_listener {
-            if let Some(layout) = id.get_layout() {
-                let window_origin = id.get_layout_window_origin();
-                let new_box = kurbo::Rect::from_origin_size(
-                    (layout.location.x as f64, layout.location.y as f64),
-                    (layout.size.width as f64, layout.size.height as f64),
-                );
-                let new_content_box = kurbo::Rect::from_origin_size(
-                    (layout.content_box_x() as f64, layout.content_box_y() as f64),
-                    (
-                        layout.content_box_width() as f64,
-                        layout.content_box_height() as f64,
-                    ),
-                );
-                let new_layout = LayoutChanged {
-                    new_box,
-                    new_content_box,
-                    new_window_origin: window_origin,
-                };
-                let (old_layout, element_id) = {
-                    let state = id.state();
-                    let mut state = state.borrow_mut();
-                    let old: Option<LayoutChanged> = state.layout;
-                    state.layout = Some(new_layout);
-                    let element_id = state.element_id;
-                    (old, element_id)
-                };
-                if old_layout.is_none_or(|old| old != new_layout) {
-                    use crate::context::Phases;
-                    use crate::event::RouteKind;
-                    GlobalEventCx::new(
-                        &mut self.window_state,
-                        element_id,
-                        Event::new_custom(new_layout),
-                    )
-                    .route_normal(
-                        RouteKind::Directed {
-                            target: element_id,
-                            phases: Phases::TARGET,
-                        },
-                        None,
-                    );
-                }
-            }
-        }
-
-        let needs_moved: smallvec::SmallVec<[ViewId; 64]> = self
-            .window_state
-            .listeners
-            .get(&VisualChanged::listener_key())
-            .into_iter()
-            .flatten()
-            .copied()
-            .collect();
-        for id in needs_moved {
-            let transform = id.get_visual_transform();
-            let visual_aabb = id.get_visual_rect();
-            let element_id = id.get_element_id();
-
-            let new_visual = VisualChanged {
-                new_visual_aabb: visual_aabb,
-                new_world_transform: transform,
-            };
-
-            let old_visual = {
-                let state = id.state();
-                let mut state = state.borrow_mut();
-                let old = state.visual_change;
-                state.visual_change = Some(new_visual);
-                old
-            };
-
-            if old_visual.is_none_or(|old| old != new_visual) {
-                use crate::context::Phases;
-                use crate::event::RouteKind;
-                GlobalEventCx::new(
-                    &mut self.window_state,
-                    element_id,
-                    Event::new_custom(new_visual),
-                )
-                .route_normal(
-                    RouteKind::Directed {
-                        target: element_id,
-                        phases: Phases::TARGET,
-                    },
-                    None,
-                );
-            }
-        }
-
-        let root_element_id = self.window_state.root_view_id.get_element_id();
-        let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::BoxTreeCommit));
-        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
-
-        let end = Instant::now();
-        timing.push_absolute_span("BoxTreeCommit", start, end, TimingKind::BoxTree);
+        self.ui.commit_box_tree(timing);
     }
 
     /// Promotes frame-clock work into the current update turn.
@@ -1221,7 +1038,7 @@ impl WindowHandle {
     /// callbacks produce. It deliberately does not paint or commit.
     pub(crate) fn prepare_frame(&mut self) -> bool {
         let has_current_prepare_work = self.has_current_frame_prepare_work();
-        if !has_current_prepare_work && !self.window_state.has_next_frame_work() {
+        if !has_current_prepare_work && !self.ui.has_next_frame_work() {
             return false;
         }
 
@@ -1229,7 +1046,7 @@ impl WindowHandle {
         if self.active_frame_time.is_none() {
             self.active_frame_time = Some(self.frame_time_at(prepare_start));
         }
-        self.window_state.promote_next_frame_work();
+        self.ui.promote_next_frame_work();
         self.run_begin_frame_callbacks();
         self.process_update_no_paint();
         self.pending_timing.push_absolute_span(
@@ -1241,35 +1058,34 @@ impl WindowHandle {
         true
     }
 
-    fn prepare_current_composition_plan(&mut self) -> bool {
+    fn prepare_current_frame_artifact(&mut self) -> Option<UiFrameArtifact> {
         if !self.paint_state.is_initialized() {
-            return false;
+            return None;
         }
 
         let mut timing = std::mem::take(&mut self.pending_timing);
         if !self.prepare_display_list_for_render(&mut timing) {
             self.pending_timing = timing;
-            return false;
+            return None;
         }
         self.pending_timing = timing;
-        true
+        Some(self.ui.frame_artifact(&self.compositor_surfaces))
     }
 
     fn pull_compositor_surface_frame(&mut self) -> bool {
-        let effective_scale = self.window_state.effective_scale();
+        let artifact = self.ui.frame_artifact(&self.compositor_surfaces);
         let main_frame_time = self.current_frame_time();
         self.active_frame_time = Some(main_frame_time);
-        let update = self.window_state.compositor_surfaces.pull_frame(
+        let update = self.compositor_surfaces.pull_frame(
             |_| main_frame_time,
-            &self.window_state.composition_plan,
-            &mut self.window_state.compositor,
-            effective_scale,
+            &artifact.composition_plan,
+            &mut self.compositor_runtime,
+            artifact.effective_scale,
             self.gpu_resources.as_ref(),
         );
         if update.content_changed {
             for surface_id in &update.changed_surfaces {
-                self.window_state
-                    .compositor
+                self.compositor_runtime
                     .invalidate_compositor_surface_content(*surface_id);
             }
             self.record_frame_demand(FrameDemand::COMPOSITOR_SURFACE);
@@ -1287,25 +1103,24 @@ impl WindowHandle {
     }
 
     fn pull_compositor_surfaces_for_window_present(&mut self) {
-        if !self.window_state.composition_plan.has_compositor_surfaces()
-            || !self.window_state.compositor_surfaces.has_frame_pull()
+        let artifact = self.ui.frame_artifact(&self.compositor_surfaces);
+        if !artifact.composition_plan.has_compositor_surfaces()
+            || !self.compositor_surfaces.has_frame_pull()
         {
             return;
         }
 
-        let effective_scale = self.window_state.effective_scale();
         let frame_time = self.current_frame_time();
-        let update = self.window_state.compositor_surfaces.pull_frame(
+        let update = self.compositor_surfaces.pull_frame(
             |_| frame_time,
-            &self.window_state.composition_plan,
-            &mut self.window_state.compositor,
-            effective_scale,
+            &artifact.composition_plan,
+            &mut self.compositor_runtime,
+            artifact.effective_scale,
             self.gpu_resources.as_ref(),
         );
         if update.content_changed {
             for surface_id in &update.changed_surfaces {
-                self.window_state
-                    .compositor
+                self.compositor_runtime
                     .invalidate_compositor_surface_content(*surface_id);
             }
             self.record_frame_demand(FrameDemand::COMPOSITOR_SURFACE);
@@ -1321,7 +1136,11 @@ impl WindowHandle {
         }
     }
 
-    pub(crate) fn render_compositor_scene_layers(&mut self, reason: &'static str) -> Option<usize> {
+    pub(crate) fn render_compositor_scene_layers(
+        &mut self,
+        reason: &'static str,
+        artifact: &UiFrameArtifact,
+    ) -> Option<usize> {
         if !self.paint_state.is_initialized() {
             return None;
         }
@@ -1333,26 +1152,26 @@ impl WindowHandle {
         let Some(gpu_resources) = self.gpu_resources.as_ref() else {
             return None;
         };
-        let plan = self.window_state.composition_plan.clone();
         if crate::frame_source::frame_pacing_diag_enabled() {
+            let status = self.ui.frame_status();
             eprintln!(
                 "floem window render_compositor_scene_layers reason={} window={:?} frame={} pending_paint={} pending_render={} root_size={:?} plan_items={}",
                 reason,
                 self.window_id,
                 frame_index,
-                self.window_state.has_pending_paint(),
-                self.window_state.has_pending_render(),
-                self.window_state.root_size,
-                plan.items.len(),
+                status.has_pending_paint,
+                status.has_pending_render,
+                status.root_size,
+                artifact.composition_plan.items.len(),
             );
         }
-        let scheduled_scene_frames = self.window_state.compositor.render_scene_layers(
+        let scheduled_scene_frames = self.compositor_runtime.render_scene_layers(
             self.window_id,
-            &plan,
-            self.window_state.compositor_surfaces.entries(),
+            &artifact.composition_plan,
+            &artifact.compositor_surfaces,
             gpu_resources,
             &renderer_pool,
-            self.window_state.effective_scale(),
+            artifact.effective_scale,
         );
         let end = Instant::now();
         self.pending_timing.push_absolute_span(
@@ -1378,12 +1197,9 @@ impl WindowHandle {
             return false;
         };
         let start = Instant::now();
-        let completed = self.window_state.compositor.complete_scene_render(
-            key,
-            signature,
-            rendered,
-            gpu_resources,
-        );
+        let completed =
+            self.compositor_runtime
+                .complete_scene_render(key, signature, rendered, gpu_resources);
         if completed {
             self.pending_timing.push_absolute_span_on_thread(
                 "Render",
@@ -1414,7 +1230,7 @@ impl WindowHandle {
                     .map(|end| end.max(render_end))
                     .unwrap_or(render_end),
             );
-            if self.window_state.compositor.has_pending_scene_renders() {
+            if self.compositor_runtime.has_pending_scene_renders() {
                 return true;
             }
             let now = Instant::now().max(gpu_end);
@@ -1459,7 +1275,7 @@ impl WindowHandle {
                             * 1000.0,
                         pending.deadline,
                         now,
-                        self.window_state.compositor.has_pending_commit_work(),
+                        self.compositor_runtime.has_pending_commit_work(),
                     );
                 }
             }
@@ -1496,8 +1312,8 @@ impl WindowHandle {
                             scene_ready_generation,
                             reason,
                             result,
-                            self.window_state.compositor.has_pending_scene_renders(),
-                            self.window_state.compositor.has_pending_commit_work(),
+                            self.compositor_runtime.has_pending_scene_renders(),
+                            self.compositor_runtime.has_pending_commit_work(),
                         );
                     }
                     let committed = result == CompositorCommitResult::Committed;
@@ -1518,9 +1334,13 @@ impl WindowHandle {
         completed
     }
 
-    fn commit_compositor_frame(&mut self, reason: &'static str) -> Option<usize> {
+    fn commit_compositor_frame(
+        &mut self,
+        reason: &'static str,
+        artifact: &UiFrameArtifact,
+    ) -> Option<usize> {
         let start = Instant::now();
-        let scheduled_scene_frames = self.render_compositor_scene_layers(reason)?;
+        let scheduled_scene_frames = self.render_compositor_scene_layers(reason, artifact)?;
         let deadline = self
             .active_compositor_deadline_instant()
             .unwrap_or_else(|| self.current_frame_time().interval.deadline_max);
@@ -1549,7 +1369,7 @@ impl WindowHandle {
                     self.commit_requested_compositor_frame(compositor_commit_reason_label(reason));
             }
             _ => {
-                if !self.window_state.compositor.has_pending_scene_renders() {
+                if !self.compositor_runtime.has_pending_scene_renders() {
                     let _ = self.commit_requested_compositor_frame(reason);
                 }
             }
@@ -1589,15 +1409,13 @@ impl WindowHandle {
             .map(|pending| pending.submitted_at)
             .unwrap_or(start);
         let commit = if independent_compositor_surface_only {
-            self.window_state
-                .compositor
+            self.compositor_runtime
                 .commit_independent_compositor_surface_work(&gpu_resources.queue)
         } else {
-            self.window_state
-                .compositor
+            self.compositor_runtime
                 .commit_ready_layer_tree(&gpu_resources.queue)
         };
-        let scene_pending_at_commit = self.window_state.compositor.has_pending_scene_renders();
+        let scene_pending_at_commit = self.compositor_runtime.has_pending_scene_renders();
         let Some(commit) = commit else {
             if crate::frame_source::frame_pacing_diag_enabled() {
                 eprintln!(
@@ -1605,11 +1423,11 @@ impl WindowHandle {
                     reason,
                     self.window_id,
                     scene_pending_at_commit,
-                    self.window_state.compositor.has_pending_commit_work(),
+                    self.compositor_runtime.has_pending_commit_work(),
                     self.pending_compositor_commit.is_some(),
                 );
             }
-            if !scene_pending_at_commit && !self.window_state.compositor.has_pending_commit_work() {
+            if !scene_pending_at_commit && !self.compositor_runtime.has_pending_commit_work() {
                 self.pending_compositor_commit = None;
             }
             return CompositorCommitResult::NoWork;
@@ -1643,7 +1461,7 @@ impl WindowHandle {
                 self.window_id,
                 start.saturating_duration_since(submitted_at).as_secs_f64() * 1000.0,
                 scene_pending_at_commit,
-                self.window_state.compositor.has_pending_commit_work(),
+                self.compositor_runtime.has_pending_commit_work(),
             );
         }
         CompositorCommitResult::Committed
@@ -1677,7 +1495,7 @@ impl WindowHandle {
             .wrapping_add(1)
             .max(1);
         let token = TimerToken::next();
-        if self.window_state.compositor.has_pending_scene_renders() {
+        if self.compositor_runtime.has_pending_scene_renders() {
             self.pending_scene_frame_work_started_at
                 .get_or_insert(self.active_begin_frame_started_at.unwrap_or(submitted_at));
             self.pending_scene_frame_work_cpu_end_at = None;
@@ -1692,7 +1510,7 @@ impl WindowHandle {
                 generation,
                 token,
                 submitted_at,
-                scene_ready_at: if self.window_state.compositor.has_pending_scene_renders() {
+                scene_ready_at: if self.compositor_runtime.has_pending_scene_renders() {
                     None
                 } else {
                     Some(now)
@@ -1708,7 +1526,7 @@ impl WindowHandle {
                 generation,
                 deadline.saturating_duration_since(now).as_secs_f64() * 1000.0,
                 now.saturating_duration_since(submitted_at).as_secs_f64() * 1000.0,
-                self.window_state.compositor.has_pending_scene_renders(),
+                self.compositor_runtime.has_pending_scene_renders(),
             );
         }
         if deadline <= now {
@@ -1717,16 +1535,15 @@ impl WindowHandle {
     }
 
     fn commit_compositor_deadline_now(&mut self, generation: u64) -> bool {
-        let pending_scene = self.window_state.compositor.has_pending_scene_renders();
-        let pending_commit_work = self.window_state.compositor.has_pending_commit_work();
+        let pending_scene = self.compositor_runtime.has_pending_scene_renders();
+        let pending_commit_work = self.compositor_runtime.has_pending_commit_work();
         let reason = match self.compositor_frame_scheduler.on_deadline() {
             CompositorFrameAction::Commit { reason, .. } => compositor_commit_reason_label(reason),
             _ => "deadline",
         };
         if pending_scene {
             if self
-                .window_state
-                .compositor
+                .compositor_runtime
                 .has_independent_compositor_surface_commit_work()
             {
                 let result = self.attempt_independent_compositor_surface_commit("deadline-surface");
@@ -1783,7 +1600,7 @@ impl WindowHandle {
                         * 1000.0)
                 }
             });
-            if self.window_state.compositor.has_pending_scene_renders() || late_by_ms > 0.5 {
+            if self.compositor_runtime.has_pending_scene_renders() || late_by_ms > 0.5 {
                 eprintln!(
                     "floem stutter compositor-deadline window={:?} generation={} late_by={:.3}ms submitted_age={:.3}ms scene_ready_vs_deadline={:?}ms pending_scene={} pending_commit_work={}",
                     self.window_id,
@@ -1793,8 +1610,8 @@ impl WindowHandle {
                         .as_secs_f64()
                         * 1000.0,
                     scene_ready_vs_deadline_ms,
-                    self.window_state.compositor.has_pending_scene_renders(),
-                    self.window_state.compositor.has_pending_commit_work(),
+                    self.compositor_runtime.has_pending_scene_renders(),
+                    self.compositor_runtime.has_pending_commit_work(),
                 );
             }
         }
@@ -1803,8 +1620,8 @@ impl WindowHandle {
                 "floem compositor deadline fire window={:?} generation={} pending_scene={} pending_commit_work={}",
                 self.window_id,
                 generation,
-                self.window_state.compositor.has_pending_scene_renders(),
-                self.window_state.compositor.has_pending_commit_work(),
+                self.compositor_runtime.has_pending_scene_renders(),
+                self.compositor_runtime.has_pending_commit_work(),
             );
         }
         self.commit_compositor_deadline_now(generation)
@@ -1832,22 +1649,33 @@ impl WindowHandle {
             return false;
         }
         let start = Instant::now();
-        let id = self.id;
+        let id = self.ui.root_id;
         let gpu_resources = self.gpu_resources.clone();
         let window = self.window.clone();
         let record_paint_order = crate::paint::is_paint_order_tracking_enabled();
-        let window_state = &mut self.window_state;
+        let window_state = &mut self.ui.state;
         let mut cx = crate::paint::GlobalPaintCx {
             window_state,
             gpu_resources,
             window,
+            has_layer_host: self.compositor_runtime.has_layer_host(),
             record_paint_order,
         };
         cx.prepare_display_list(id);
+        let artifact = self.ui.frame_artifact(&self.compositor_surfaces);
+        self.apply_frame_artifact_to_compositor(&artifact);
         let end = Instant::now();
         timing.push_absolute_span("Paint", start, end, TimingKind::Paint);
         timing.push_absolute_span("Scene", start, end, TimingKind::Paint);
         true
+    }
+
+    fn apply_frame_artifact_to_compositor(&mut self, artifact: &UiFrameArtifact) {
+        let _composition_diff = self.compositor_runtime.apply_plan(
+            &artifact.composition_plan,
+            &artifact.compositor_surfaces,
+            self.gpu_resources.as_ref(),
+        );
     }
 
     /// Executes one paint pass.
@@ -1858,7 +1686,7 @@ impl WindowHandle {
     /// directly for an off-pipeline paint. Timing is recorded into
     /// `pending_timing` as a side effect because paint is the primary action.
     pub fn paint(&mut self, _frame_id: u64) -> bool {
-        if !self.prepare_current_composition_plan() {
+        if self.prepare_current_frame_artifact().is_none() {
             return false;
         }
         self.pull_compositor_surfaces_for_window_present();
@@ -1879,7 +1707,7 @@ impl WindowHandle {
     }
 
     fn waits_for_layer_host_commit_feedback(&self) -> bool {
-        cfg!(target_os = "macos") && self.window_state.compositor.has_layer_host()
+        cfg!(target_os = "macos") && self.compositor_runtime.has_layer_host()
     }
 
     fn record_frame_demand(&mut self, demand: FrameDemand) {
@@ -1994,24 +1822,26 @@ impl WindowHandle {
     }
 
     fn compositor_work_status(&self) -> CompositorWorkStatus {
+        let status = self.ui.frame_status();
         CompositorWorkStatus {
             can_draw: self.window_is_visible(),
-            needs_frame_work: self.window_state.has_next_frame_work()
+            needs_frame_work: self.ui.has_next_frame_work()
                 || self.has_current_frame_prepare_work()
-                || !self.window_state.begin_frame_callbacks.is_empty()
-                || self.window_state.has_pending_paint()
-                || self.window_state.has_pending_render()
+                || self.ui.has_begin_frame_callbacks()
+                || status.has_pending_paint
+                || status.has_pending_render
                 || self.has_compositor_surface_pull(),
-            scene_jobs_pending: self.window_state.compositor.has_pending_scene_renders(),
-            commit_ready: self.window_state.compositor.has_pending_commit_work(),
+            scene_jobs_pending: self.compositor_runtime.has_pending_scene_renders(),
+            commit_ready: self.compositor_runtime.has_pending_commit_work(),
         }
     }
 
     fn has_compositor_surface_pull(&self) -> bool {
-        !self.window_state.has_pending_paint()
-            && !self.window_state.has_pending_render()
-            && self.window_state.composition_plan.has_compositor_surfaces()
-            && self.window_state.compositor_surfaces.has_frame_pull()
+        let status = self.ui.frame_status();
+        !status.has_pending_paint
+            && !status.has_pending_render
+            && status.has_compositor_surfaces
+            && self.compositor_surfaces.has_frame_pull()
     }
 
     fn status_frame_demand(&self, status: CompositorWorkStatus) -> FrameDemand {
@@ -2027,14 +1857,14 @@ impl WindowHandle {
 
     fn has_active_compositor_frame_work(&self) -> bool {
         self.pending_compositor_commit.is_some()
-            || self.window_state.compositor.has_pending_scene_renders()
-            || self.window_state.compositor.has_pending_commit_work()
+            || self.compositor_runtime.has_pending_scene_renders()
+            || self.compositor_runtime.has_pending_commit_work()
     }
 
     fn has_ready_compositor_commit(&self) -> bool {
         self.pending_compositor_commit.is_some()
-            && !self.window_state.compositor.has_pending_scene_renders()
-            && self.window_state.compositor.has_pending_commit_work()
+            && !self.compositor_runtime.has_pending_scene_renders()
+            && self.compositor_runtime.has_pending_commit_work()
     }
 
     fn arm_layer_host_commit_feedback(&mut self, submitted_at: Instant) -> bool {
@@ -2061,11 +1891,36 @@ impl WindowHandle {
         self.record_frame_demand(FrameDemand::COMPOSITOR_SURFACE);
     }
 
+    pub(crate) fn set_compositor_surface_content(
+        &mut self,
+        surface_id: crate::compositor_surface::CompositorSurfaceId,
+        content: crate::compositor_surface::CompositorSurfaceContent,
+    ) {
+        self.compositor_surfaces.set_content(surface_id, content);
+        self.ui.state.request_paint(self.ui.state.root_view_id);
+    }
+
+    pub(crate) fn set_compositor_surface_provider(
+        &mut self,
+        surface_id: crate::compositor_surface::CompositorSurfaceId,
+        provider: crate::compositor_surface::CompositorSurfaceProviderHandle,
+    ) {
+        self.compositor_surfaces.set_provider(surface_id, provider);
+        self.ui.state.request_paint(self.ui.state.root_view_id);
+    }
+
+    pub(crate) fn request_compositor_surface_frame(
+        &mut self,
+        surface_id: crate::compositor_surface::CompositorSurfaceId,
+    ) {
+        self.compositor_surfaces.request_frame(surface_id);
+        self.note_compositor_surface_frame_demand();
+    }
+
     #[cfg(target_os = "macos")]
     pub(crate) fn capture_next_metal_frame(&mut self) {
         request_next_metal_capture();
-        self.window_state
-            .request_paint(self.window_state.root_view_id);
+        self.ui.state.request_paint(self.ui.state.root_view_id);
         self.note_animation_frame_demand();
         self.schedule_repaint();
     }
@@ -2078,7 +1933,7 @@ impl WindowHandle {
             .and_then(|resources| MetalCaptureScopeGuard::begin_frame(&resources.queue))
             .is_some()
         {
-            self.window_state.compositor.mark_metal_capture_active();
+            self.compositor_runtime.mark_metal_capture_active();
         }
     }
 
@@ -2098,14 +1953,11 @@ impl WindowHandle {
     }
 
     fn run_begin_frame_callbacks(&mut self) {
-        if self.window_state.begin_frame_callbacks.is_empty() {
+        if !self.ui.has_begin_frame_callbacks() {
             return;
         }
         let frame_time = self.current_frame_time();
-        let callbacks = self.window_state.take_begin_frame_callbacks();
-        for callback in callbacks {
-            callback(frame_time);
-        }
+        self.ui.run_begin_frame_callbacks(frame_time);
     }
 
     fn receive_frame_tick(&mut self, tick: subduction_core::timing::FrameTick) {
@@ -2215,17 +2067,18 @@ impl WindowHandle {
         self.begin_metal_capture_on_frame_tick();
 
         let now = Instant::now();
+        let ui_status = self.ui.frame_status();
         if crate::frame_source::frame_pacing_diag_enabled() {
             eprintln!(
                 "floem frame advance begin window={:?} next_work={} next_window_work={} compositor_frame_pull={} plan_surfaces={} begin_callbacks={} pending_paint={} pending_render={} can_render={} status_demand={:?} active_begin={} pending_begin={} active_work={} pending_deadline={}",
                 self.window_id,
-                self.window_state.has_next_frame_work(),
-                self.window_state.has_next_window_frame_work(),
-                self.window_state.compositor_surfaces.has_frame_pull(),
-                self.window_state.composition_plan.has_compositor_surfaces(),
-                !self.window_state.begin_frame_callbacks.is_empty(),
-                self.window_state.has_pending_paint(),
-                self.window_state.has_pending_render(),
+                self.ui.has_next_frame_work(),
+                ui_status.has_next_window_frame_work,
+                self.compositor_surfaces.has_frame_pull(),
+                ui_status.has_compositor_surfaces,
+                self.ui.has_begin_frame_callbacks(),
+                ui_status.has_pending_paint,
+                ui_status.has_pending_render,
                 self.window_is_visible(),
                 self.status_frame_demand(self.compositor_work_status()),
                 self.compositor_frame_scheduler.has_active_frame(),
@@ -2236,7 +2089,7 @@ impl WindowHandle {
         }
         // Begin-frame callbacks are animation-timeline work; classify the
         // opportunity before the frame clock computes pacing.
-        if !self.window_state.begin_frame_callbacks.is_empty() {
+        if self.ui.has_begin_frame_callbacks() {
             self.record_frame_demand(FrameDemand::ANIMATION);
         }
         let window_visible = self.window_is_visible();
@@ -2300,8 +2153,8 @@ impl WindowHandle {
                 status.scene_jobs_pending,
                 status.commit_ready,
                 self.pending_compositor_commit.is_some(),
-                self.window_state.has_pending_paint(),
-                self.window_state.has_pending_render(),
+                ui_status.has_pending_paint,
+                ui_status.has_pending_render,
             );
         }
         let begin_timing = self.begin_frame_timing_for_frame_time(frame_time, now);
@@ -2347,8 +2200,8 @@ impl WindowHandle {
                         self.pending_compositor_commit.is_some(),
                         (pending.timing.deadline - pending.timing.now).as_nanos() as f64
                             / 1_000_000.0,
-                        self.window_state.compositor.has_pending_scene_renders(),
-                        self.window_state.compositor.has_pending_commit_work(),
+                        self.compositor_runtime.has_pending_scene_renders(),
+                        self.compositor_runtime.has_pending_commit_work(),
                     );
                 }
                 if crate::frame_source::frame_pacing_diag_enabled() {
@@ -2375,27 +2228,32 @@ impl WindowHandle {
             self.pull_compositor_surface_frame();
         }
 
-        if self.window_state.has_pending_paint() || self.window_state.has_pending_render() {
-            let prepared_plan = self.prepare_current_composition_plan();
-            if prepared_plan {
+        let mut ui_status = self.ui.frame_status();
+        if ui_status.has_pending_paint || ui_status.has_pending_render {
+            let frame_artifact = self.prepare_current_frame_artifact();
+            if frame_artifact.is_some() {
                 self.pull_compositor_surfaces_for_window_present();
             }
-            let scheduled_scene_frames = if prepared_plan {
-                self.commit_compositor_frame("frame")
+            let frame_artifact =
+                frame_artifact.map(|_| self.ui.frame_artifact(&self.compositor_surfaces));
+            let scheduled_scene_frames = if let Some(frame_artifact) = frame_artifact.as_ref() {
+                self.commit_compositor_frame("frame", frame_artifact)
             } else {
                 None
             };
+            let prepared_plan = frame_artifact.is_some();
+            ui_status = self.ui.frame_status();
             if scheduled_scene_frames.is_none()
-                && (self.window_state.has_pending_paint() || self.window_state.has_pending_render())
+                && (ui_status.has_pending_paint || ui_status.has_pending_render)
             {
                 eprintln!(
                     "floem stutter no-render-scheduled window={:?} prepared_plan={} pending_paint={} pending_render={} scene_pending={} commit_ready={}",
                     self.window_id,
                     prepared_plan,
-                    self.window_state.has_pending_paint(),
-                    self.window_state.has_pending_render(),
-                    self.window_state.compositor.has_pending_scene_renders(),
-                    self.window_state.compositor.has_pending_commit_work(),
+                    ui_status.has_pending_paint,
+                    ui_status.has_pending_render,
+                    self.compositor_runtime.has_pending_scene_renders(),
+                    self.compositor_runtime.has_pending_commit_work(),
                 );
             }
             if crate::frame_source::frame_pacing_diag_enabled() {
@@ -2403,13 +2261,14 @@ impl WindowHandle {
                     "floem frame advance rendered window={:?} scheduled={} pending_paint={} pending_render={}",
                     self.window_id,
                     scheduled_scene_frames.is_some(),
-                    self.window_state.has_pending_paint(),
-                    self.window_state.has_pending_render(),
+                    ui_status.has_pending_paint,
+                    ui_status.has_pending_render,
                 );
             }
         } else if self.has_active_compositor_frame_work() {
             let submitted_at = Instant::now();
-            let scheduled_scene_frames = self.commit_compositor_frame("external");
+            let frame_artifact = self.ui.frame_artifact(&self.compositor_surfaces);
+            let scheduled_scene_frames = self.commit_compositor_frame("external", &frame_artifact);
             let _ = submitted_at;
             if crate::frame_source::frame_pacing_diag_enabled() {
                 eprintln!(
@@ -2434,13 +2293,14 @@ impl WindowHandle {
         }
 
         if crate::frame_source::frame_pacing_diag_enabled() {
+            let ui_status = self.ui.frame_status();
             eprintln!(
                 "floem frame advance end window={:?} prepared={} next_work={} pending_paint={} pending_render={} schedule=none",
                 self.window_id,
                 prepared,
-                self.window_state.has_next_frame_work(),
-                self.window_state.has_pending_paint(),
-                self.window_state.has_pending_render(),
+                self.ui.has_next_frame_work(),
+                ui_status.has_pending_paint,
+                ui_status.has_pending_render,
             );
         }
 
@@ -2453,7 +2313,7 @@ impl WindowHandle {
         presented_at: Instant,
         submitted_frame_time: Option<FrameTime>,
     ) -> bool {
-        self.window_state.clear_pending_damage();
+        self.ui.state.clear_pending_damage();
         let feedback_matches_active = self
             .active_frame_time
             .zip(submitted_frame_time)
@@ -2556,13 +2416,11 @@ impl WindowHandle {
             self.active_frame_time = None;
         }
         let frame_index = self.next_frame_id.saturating_sub(1);
-        self.window_state
-            .compositor_surfaces
-            .release_outcomes(|outcome| {
-                outcome.frame_index = frame_index;
-                outcome.outcome.draw_completed = presented;
-                outcome.outcome.missed_deadline = missed_deadline;
-            });
+        self.compositor_surfaces.release_outcomes(|outcome| {
+            outcome.frame_index = frame_index;
+            outcome.outcome.draw_completed = presented;
+            outcome.outcome.missed_deadline = missed_deadline;
+        });
         presented
     }
 
@@ -2673,11 +2531,10 @@ impl WindowHandle {
             active_layers,
         };
         self.hud.record_present(&info);
-        let root_element_id = self.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::PaintPresent(
             info,
         )));
-        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+        self.ui.route_window_event(event);
     }
 
     fn capture_image(&mut self) -> crate::paint::renderer::CaptureOutput {
@@ -2701,7 +2558,7 @@ impl WindowHandle {
         &mut self,
         total_start: Instant,
     ) -> Option<crate::paint::renderer::CaptureOutput> {
-        if !self.window_state.compositor.has_layer_host() {
+        if !self.compositor_runtime.has_layer_host() {
             return None;
         }
         let gpu_resources = self.gpu_resources.clone()?;
@@ -2710,14 +2567,15 @@ impl WindowHandle {
         }
         let renderer_pool = self.scene_renderer_pool.get()?;
 
-        let _ = self.render_compositor_scene_layers("capture");
-        let extent = surface_extent(self.window_state.root_size, self.window_state.os_scale);
+        let frame_artifact = self.ui.frame_artifact(&self.compositor_surfaces);
+        let _ = self.render_compositor_scene_layers("capture", &frame_artifact);
+        let extent = surface_extent(self.ui.state.root_size, self.ui.state.os_scale);
         let frame_size = Size::new(f64::from(extent.width), f64::from(extent.height));
         let background = self.capture_background();
-        let capture = match self.window_state.compositor.capture_scene(
-            &self.window_state.composition_plan,
+        let capture = match self.compositor_runtime.capture_scene(
+            &self.ui.state.composition_plan,
             frame_size,
-            self.window_state.effective_scale(),
+            self.ui.state.effective_scale(),
             background,
         ) {
             Ok(capture) => capture,
@@ -2758,7 +2616,7 @@ impl WindowHandle {
     pub(crate) fn capture(&mut self) -> Capture {
         // Capture the view before we run `style` and `layout` to catch missing `request_style`` or
         // `request_layout` flags.
-        let root = CapturedView::capture(self.id, &mut self.window_state);
+        let root = CapturedView::capture(self.ui.root_id, &mut self.ui.state);
 
         fn get_taffy_depth(taffy: Rc<RefCell<LayoutTree>>, root: taffy::tree::NodeId) -> usize {
             let children = taffy.borrow().children(root).unwrap();
@@ -2776,7 +2634,7 @@ impl WindowHandle {
 
         let mut update = FrameTimingAccumulator::default();
         self.style(&mut update);
-        let taffy_root_node = self.id.state().borrow().layout_id;
+        let taffy_root_node = self.ui.root_id.state().borrow().layout_id;
         self.layout(&mut update);
         self.commit_box_tree(&mut update);
         let mut timing = FrameTimingAccumulator::default();
@@ -2784,13 +2642,13 @@ impl WindowHandle {
         let capture_output = self.capture_image();
         update.absorb(timing);
         let timings = update.build_timing_report();
-        let window_size = self.window_state.root_size;
-        let state = CaptureState::collect_from(self.id, &self.window_state);
+        let window_size = self.ui.state.root_size;
+        let state = CaptureState::collect_from(self.ui.root_id, &self.ui.state);
 
         let capture = Capture {
             timings,
-            taffy_node_count: self.id.taffy().borrow().total_node_count(),
-            taffy_depth: get_taffy_depth(self.id.taffy(), taffy_root_node),
+            taffy_node_count: self.ui.root_id.taffy().borrow().total_node_count(),
+            taffy_depth: get_taffy_depth(self.ui.root_id.taffy(), taffy_root_node),
             window: capture_output.image,
             window_capture_error: capture_output.error,
             window_size,
@@ -2851,8 +2709,7 @@ impl WindowHandle {
                 let needs_layout = self.needs_layout();
                 let needs_box_update = self.needs_box_tree_update();
                 let needs_box = self.needs_box_tree_commit();
-                let has_pending_box_updates =
-                    !self.window_state.views_needing_box_tree_update.is_empty();
+                let has_pending_box_updates = self.ui.has_pending_box_tree_updates();
                 if !needs_layout
                     && !needs_style
                     && !needs_box
@@ -2880,7 +2737,7 @@ impl WindowHandle {
                     self.pending_timing = timing;
                 }
 
-                if !self.window_state.views_needing_box_tree_update.is_empty() {
+                if self.ui.has_pending_box_tree_updates() {
                     let mut timing = std::mem::take(&mut self.pending_timing);
                     self.process_pending_box_tree_updates(&mut timing);
                     self.pending_timing = timing;
@@ -2911,9 +2768,8 @@ impl WindowHandle {
 
         self.set_cursor();
 
-        let root_element_id = self.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Complete));
-        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+        self.ui.route_window_event(event);
 
         true
     }
@@ -2927,8 +2783,7 @@ impl WindowHandle {
                 let needs_layout = self.needs_layout();
                 let needs_box_update = self.needs_box_tree_update();
                 let needs_box = self.needs_box_tree_commit();
-                let has_pending_box_updates =
-                    !self.window_state.views_needing_box_tree_update.is_empty();
+                let has_pending_box_updates = self.ui.has_pending_box_tree_updates();
                 if !needs_layout
                     && !needs_style
                     && !needs_box
@@ -2957,7 +2812,7 @@ impl WindowHandle {
                 }
 
                 // Process any pending individual box tree updates after layout
-                if !self.window_state.views_needing_box_tree_update.is_empty() {
+                if self.ui.has_pending_box_tree_updates() {
                     let mut timing = std::mem::take(&mut self.pending_timing);
                     self.process_pending_box_tree_updates(&mut timing);
                     self.pending_timing = timing;
@@ -2977,410 +2832,197 @@ impl WindowHandle {
 
         self.set_cursor();
 
-        let root_element_id = self.window_state.root_view_id.get_element_id();
         let event = Event::Window(WindowEvent::UpdatePhase(UpdatePhaseEvent::Complete));
-        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+        self.ui.route_window_event(event);
     }
 
-    fn process_central_messages(&self) {
-        CENTRAL_UPDATE_MESSAGES.with_borrow_mut(|central_msgs| {
-            if !central_msgs.is_empty() {
-                UPDATE_MESSAGES.with_borrow_mut(|msgs| {
-                    // We need to retain any messages which are for a view that either belongs
-                    // to a different window, or which does not yet have a root
-                    let removed_central_msgs =
-                        std::mem::replace(central_msgs, Vec::with_capacity(central_msgs.len()));
-                    for (id, msg) in removed_central_msgs {
-                        if let Some(root) = id.try_root() {
-                            let msgs = msgs.entry(root).or_default();
-                            msgs.push(msg);
-                        }
-                    }
-                });
+    fn apply_platform_request(&mut self, request: PlatformRequest) {
+        match request {
+            PlatformRequest::DragWindow => {
+                let _ = self.window.drag_window();
             }
-        });
+            PlatformRequest::FocusWindow => {
+                self.window.focus_window();
+            }
+            PlatformRequest::DragResizeWindow(direction) => {
+                let _ = self.window.drag_resize_window(direction);
+            }
+            PlatformRequest::ToggleWindowMaximized => {
+                self.window.set_maximized(!self.window.is_maximized());
+            }
+            PlatformRequest::SetWindowMaximized(maximized) => {
+                self.window.set_maximized(maximized);
+            }
+            PlatformRequest::MinimizeWindow => {
+                self.window.set_minimized(true);
+            }
+            PlatformRequest::SetWindowDelta(delta) => {
+                let pos = self.window_position + delta;
+                self.window
+                    .set_outer_position(winit::dpi::Position::Logical(
+                        winit::dpi::LogicalPosition::new(pos.x, pos.y),
+                    ));
+            }
+            PlatformRequest::SetWindowTitle(title) => {
+                self.window.set_title(&title);
+            }
+            PlatformRequest::SetWindowTheme {
+                theme,
+                effective_scale,
+            } => {
+                if let Some(theme) = theme {
+                    if self.default_theme.is_some() {
+                        self.default_theme = Some(default_theme(theme, effective_scale));
+                    }
+                    #[cfg(target_os = "windows")]
+                    {
+                        self.set_menu_theme_for_windows(theme);
+                    }
+                }
+                self.window.set_theme(theme);
+            }
+            PlatformRequest::ShowContextMenu { menu, pos } => {
+                self.show_context_menu(menu, pos);
+            }
+            PlatformRequest::WindowMenu { menu, actions } => {
+                self.window_menu_actions = actions;
+                #[cfg(target_os = "macos")]
+                {
+                    menu.init_for_nsapp();
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    self.init_menu_for_windows(&menu);
+                }
+                self.window_menu = Some(menu);
+            }
+            PlatformRequest::SetImeAllowed(allowed) => {
+                if self.window.ime_capabilities().is_some() != allowed {
+                    let ime = if allowed {
+                        let position = LogicalPosition::new(0, 0);
+                        let size = LogicalSize::new(0, 0);
+                        let request_data = ImeRequestData::default()
+                            .with_cursor_area(position.into(), size.into())
+                            .with_hint_and_purpose(ImeHint::NONE, ImePurpose::Normal);
 
-        CENTRAL_DEFERRED_UPDATE_MESSAGES.with(|central_msgs| {
-            if !central_msgs.borrow().is_empty() {
-                DEFERRED_UPDATE_MESSAGES.with(|msgs| {
-                    let mut msgs = msgs.borrow_mut();
-                    let removed_central_msgs = std::mem::replace(
-                        &mut *central_msgs.borrow_mut(),
-                        Vec::with_capacity(msgs.len()),
-                    );
-                    for (id, msg) in removed_central_msgs {
-                        if let Some(root) = id.try_root() {
-                            let msgs = msgs.entry(root).or_default();
-                            msgs.push((id, msg));
-                        }
-                    }
-                });
+                        ImeRequest::Enable(
+                            ImeEnableRequest::new(
+                                ImeCapabilities::new()
+                                    .with_hint_and_purpose()
+                                    .with_cursor_area(),
+                                request_data,
+                            )
+                            .unwrap(),
+                        )
+                    } else {
+                        ImeRequest::Disable
+                    };
+
+                    self.window.request_ime_update(ime).unwrap();
+                }
             }
-        });
+            PlatformRequest::SetImeCursorArea {
+                position,
+                size,
+                user_scale,
+            } => {
+                if self
+                    .window
+                    .ime_capabilities()
+                    .map(|caps| caps.cursor_area())
+                    .unwrap_or(false)
+                {
+                    let position = winit::dpi::Position::Logical(winit::dpi::LogicalPosition::new(
+                        position.x * user_scale,
+                        position.y * user_scale,
+                    ));
+                    let size = winit::dpi::Size::Logical(winit::dpi::LogicalSize::new(
+                        size.width * user_scale,
+                        size.height * user_scale,
+                    ));
+                    self.window
+                        .request_ime_update(ImeRequest::Update(
+                            ImeRequestData::default().with_cursor_area(position, size),
+                        ))
+                        .unwrap();
+                }
+            }
+            PlatformRequest::Inspect => {
+                inspector::capture(self.window_id);
+            }
+            PlatformRequest::CaptureMetalFrame => {
+                #[cfg(target_os = "macos")]
+                self.capture_next_metal_frame();
+            }
+            PlatformRequest::WindowVisible(visible) => {
+                self.window.set_visible(visible);
+            }
+        }
+    }
+
+    fn apply_pending_platform_requests(&mut self) {
+        for request in self.ui.take_platform_requests() {
+            self.apply_platform_request(request);
+        }
     }
 
     pub(crate) fn process_update_messages(&mut self) {
-        set_current_view(self.id.root());
-        loop {
-            self.process_central_messages();
-            let msgs =
-                UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().remove(&self.id).unwrap_or_default());
-            if msgs.is_empty() {
-                break;
-            }
-            for msg in msgs {
-                let mut cx = UpdateCx {
-                    window_state: &mut self.window_state,
-                };
-                match msg {
-                    UpdateMessage::RequestStyle(id, reason) => {
-                        self.window_state.request_style_with(id, reason);
-                    }
-                    UpdateMessage::RequestLayout => {
-                        self.window_state.request_layout();
-                    }
-                    UpdateMessage::MarkViewLayoutDirty(id) => {
-                        let _ = id.mark_view_layout_dirty();
-                    }
-                    UpdateMessage::RequestBoxTreeUpdate => {
-                        self.window_state.request_box_tree_update();
-                    }
-                    UpdateMessage::RequestBoxTreeUpdateForView(view_id) => {
-                        self.window_state.request_box_tree_update_for_view(view_id);
-                    }
-                    UpdateMessage::RequestBoxTreeCommit => {
-                        self.window_state.request_box_tree_commit();
-                    }
-                    UpdateMessage::RequestPaint(id) => {
-                        cx.window_state.request_paint(id);
-                    }
-                    UpdateMessage::Focus(id) => {
-                        // because we do not call route, the processing messages event is not sent.
-                        // this is desirable because the process messages event will be sent explicitly another time.
-                        let keyboard_navigation = cx.window_state.keyboard_navigation;
-                        let root_element_id = cx.window_state.root_view_id.get_element_id();
-                        GlobalEventCx::new(
-                            cx.window_state,
-                            root_element_id,
-                            Event::Window(WindowEvent::UpdatePhase(
-                                UpdatePhaseEvent::ProcessingMessages,
-                            )),
-                        )
-                        .update_focus(id, keyboard_navigation);
-                    }
-                    UpdateMessage::ClearFocus => {
-                        // because we do not call route, the processing messages event is not sent.
-                        // this is desirable because the process messages event will be sent explicitly another time.
-                        let root_element_id = cx.window_state.root_view_id.get_element_id();
-                        GlobalEventCx::new(
-                            cx.window_state,
-                            root_element_id,
-                            Event::Window(WindowEvent::UpdatePhase(
-                                UpdatePhaseEvent::ProcessingMessages,
-                            )),
-                        )
-                        .clear_focus();
-                    }
-                    UpdateMessage::SetPointerCapture {
-                        element_id: view_id,
-                        pointer_id,
-                    } => {
-                        cx.window_state.set_pointer_capture(pointer_id, view_id);
-                    }
-                    UpdateMessage::ReleasePointerCapture {
-                        element_id: view_id,
-                        pointer_id,
-                    } => {
-                        cx.window_state.release_pointer_capture(pointer_id, view_id);
-                    }
-                    UpdateMessage::ScrollTo { id, rect } => {
-                        let event = ScrollTo { id, rect };
-                        let event = Event::new_custom(event);
-                        GlobalEventCx::new(&mut self.window_state, self.id.get_element_id(), event)
-                            .route_normal(RouteKind::bubble_from(id), None);
-                    }
-                    UpdateMessage::State { id, state } => {
-                        let view = id.view();
-                        view.borrow_mut().update(&mut cx, state);
-                    }
-                    UpdateMessage::DragWindow => {
-                        let _ = self.window.drag_window();
-                    }
-                    UpdateMessage::FocusWindow => {
-                        self.window.focus_window();
-                    }
-                    UpdateMessage::DragResizeWindow(direction) => {
-                        let _ = self.window.drag_resize_window(direction);
-                    }
-                    UpdateMessage::ToggleWindowMaximized => {
-                        self.window.set_maximized(!self.window.is_maximized());
-                    }
-                    UpdateMessage::SetWindowMaximized(maximized) => {
-                        self.window.set_maximized(maximized);
-                    }
-                    UpdateMessage::MinimizeWindow => {
-                        self.window.set_minimized(true);
-                    }
-                    UpdateMessage::SetWindowDelta(delta) => {
-                        let pos = self.window_position + delta;
-                        self.window
-                            .set_outer_position(winit::dpi::Position::Logical(
-                                winit::dpi::LogicalPosition::new(pos.x, pos.y),
-                            ));
-                    }
-                    UpdateMessage::WindowScale(scale) => {
-                        cx.window_state.user_scale = scale;
-                        cx.window_state
-                            .update_default_theme(cx.window_state.light_dark_theme);
-                        cx.window_state
-                            .mark_style_dirty(cx.window_state.root_view_id.get_element_id());
-                        let scale = cx.window_state.effective_scale();
-                        let root_view_id = cx.window_state.root_view_id;
-                        self.event(Event::Window(WindowEvent::ScaleChanged(scale)));
-                        self.id.request_layout();
-                        self.window_state.request_paint(root_view_id);
-                        self.schedule_repaint();
-                    }
-                    UpdateMessage::ShowContextMenu { menu, pos } => {
-                        let (menu, registry) = menu.build();
-                        cx.window_state.context_menu.clear();
-                        cx.window_state.update_context_menu(registry);
-
-                        // Queue the context menu to show after this event completes
-                        Application::send_proxy_event(UserEvent::ShowContextMenu {
-                            window_id: self.window_id,
-                            menu: MenuWrapper(menu),
-                            pos,
-                        });
-                    }
-                    UpdateMessage::WindowMenu { menu } => {
-                        self.window_menu_actions.clear();
-                        let (menu, registry) = menu.build();
-                        self.window_menu_actions = registry;
-                        #[cfg(target_os = "macos")]
-                        {
-                            menu.init_for_nsapp();
-                        }
-                        #[cfg(target_os = "windows")]
-                        {
-                            self.init_menu_for_windows(&menu);
-                        }
-                        self.window_menu = Some(menu);
-                    }
-                    UpdateMessage::SetWindowTitle { title } => {
-                        self.window.set_title(&title);
-                    }
-                    UpdateMessage::SetImeAllowed { allowed } => {
-                        if self.window.ime_capabilities().is_some() != allowed {
-                            let ime = if allowed {
-                                let position = LogicalPosition::new(0, 0);
-                                let size = LogicalSize::new(0, 0);
-                                let request_data = ImeRequestData::default()
-                                    .with_cursor_area(position.into(), size.into())
-                                    .with_hint_and_purpose(ImeHint::NONE, ImePurpose::Normal);
-
-                                ImeRequest::Enable(
-                                    ImeEnableRequest::new(
-                                        ImeCapabilities::new()
-                                            .with_hint_and_purpose()
-                                            .with_cursor_area(),
-                                        request_data,
-                                    )
-                                    .unwrap(),
-                                )
-                            } else {
-                                ImeRequest::Disable
-                            };
-
-                            self.window.request_ime_update(ime).unwrap();
-                        }
-                    }
-                    UpdateMessage::SetImeCursorArea { position, size } => {
-                        if self
-                            .window
-                            .ime_capabilities()
-                            .map(|caps| caps.cursor_area())
-                            .unwrap_or(false)
-                        {
-                            let position =
-                                winit::dpi::Position::Logical(winit::dpi::LogicalPosition::new(
-                                    position.x * self.window_state.user_scale,
-                                    position.y * self.window_state.user_scale,
-                                ));
-                            let size = winit::dpi::Size::Logical(winit::dpi::LogicalSize::new(
-                                size.width * self.window_state.user_scale,
-                                size.height * self.window_state.user_scale,
-                            ));
-                            self.window
-                                .request_ime_update(ImeRequest::Update(
-                                    ImeRequestData::default().with_cursor_area(position, size),
-                                ))
-                                .unwrap();
-                        }
-                    }
-                    UpdateMessage::Inspect => {
-                        inspector::capture(self.window_id);
-                    }
-                    UpdateMessage::CaptureMetalFrame => {
-                        #[cfg(target_os = "macos")]
-                        self.capture_next_metal_frame();
-                    }
-                    UpdateMessage::ToggleHud => {
-                        self.toggle_hud();
-                    }
-                    UpdateMessage::AddOverlay { view } => {
-                        self.id.add_child(view);
-                        self.id.request_all();
-                    }
-                    UpdateMessage::RemoveOverlay { id } => {
-                        cx.window_state.remove_view(id);
-                        self.id.request_all();
-                    }
-                    UpdateMessage::RegisterListener(key, id) => {
-                        cx.window_state.listeners.entry(key).or_default().push(id);
-                        id.state().borrow_mut().registered_listener_keys.push(key);
-                    }
-                    UpdateMessage::RemoveListener(key, id) => {
-                        if let Some(ids) = cx.window_state.listeners.get_mut(&key) {
-                            ids.retain(|v| *v != id);
-                        }
-                        if let Ok(mut state) = id.state().try_borrow_mut() {
-                            state.registered_listener_keys.retain(|k| *k != key);
-                        }
-                    }
-                    UpdateMessage::WindowVisible(visible) => {
-                        self.window.set_visible(visible);
-                    }
-                    UpdateMessage::ViewTransitionAnimComplete(id) => {
-                        let num_waiting =
-                            id.state().borrow().num_waiting_animations.saturating_sub(1);
-                        id.state().borrow_mut().num_waiting_animations = num_waiting;
-                    }
-                    UpdateMessage::SetTheme(theme) => {
-                        self.set_theme(theme, false);
-
-                        #[cfg(target_os = "windows")]
-                        if let Some(new) = theme {
-                            self.set_menu_theme_for_windows(new);
-                        }
-                    }
-                    UpdateMessage::RemoveViews(view_ids) => {
-                        for view_id in view_ids {
-                            cx.window_state.remove_view(view_id);
-                        }
-                    }
-                    UpdateMessage::AddChild {
-                        parent_id,
-                        mut child,
-                    } => {
-                        // Resolve scope by looking up parent's scope
-                        let scope = parent_id.find_scope().unwrap_or_else(Scope::current);
-                        let view = child.build(scope);
-                        parent_id.add_child(view);
-                        parent_id.request_all();
-                    }
-                    UpdateMessage::AddChildren {
-                        parent_id,
-                        mut children,
-                    } => {
-                        // Resolve scope by looking up parent's scope
-                        let scope = parent_id.find_scope().unwrap_or_else(Scope::current);
-                        let views = children.build(scope);
-                        parent_id.append_children(views);
-                        parent_id.request_all();
-                    }
-                    UpdateMessage::SetupReactiveChildren { mut setup } => {
-                        setup.run();
-                    }
-                    UpdateMessage::RouteEvent {
-                        id,
-                        event,
-                        route_kind: dispatch_kind,
-                        triggered_by,
-                    } => {
-                        let cx = GlobalEventCx::new(&mut self.window_state, id, *event);
-                        cx.route_normal(dispatch_kind, triggered_by.as_deref());
-                    }
-                }
-            }
+        let outcome = self.ui.process_update_messages();
+        if outcome.toggle_hud {
+            self.toggle_hud();
         }
-        // After all messages are processed, re-parent any scopes that couldn't find
-        // a parent scope earlier (because the view tree wasn't fully assembled yet).
-        crate::view::process_pending_scope_reparents();
-        let root_element_id = self.window_state.root_view_id.get_element_id();
-        let event = Event::Window(WindowEvent::UpdatePhase(
-            UpdatePhaseEvent::ProcessingMessages,
-        ));
-        GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
+        if outcome.schedule_repaint {
+            self.schedule_repaint();
+        }
+        self.apply_pending_platform_requests();
     }
 
     fn process_deferred_update_messages(&mut self) {
-        self.process_central_messages();
-        let msgs = DEFERRED_UPDATE_MESSAGES
-            .with(|msgs| msgs.borrow_mut().remove(&self.id).unwrap_or_default());
-        let mut cx = UpdateCx {
-            window_state: &mut self.window_state,
-        };
-        for (id, state) in msgs {
-            let view = id.view();
-            view.borrow_mut().update(&mut cx, state);
-        }
+        self.ui.process_deferred_update_messages();
     }
 
     fn needs_layout(&mut self) -> bool {
-        self.window_state.needs_layout
+        self.ui.needs_layout()
     }
 
     fn needs_box_tree_commit(&mut self) -> bool {
-        self.window_state.needs_box_tree_commit
-            || self.window_state.box_tree.borrow().needs_commit()
+        self.ui.needs_box_tree_commit()
     }
 
     fn needs_box_tree_update(&mut self) -> bool {
-        self.window_state.needs_box_tree_from_layout
+        self.ui.needs_box_tree_update()
     }
 
     fn needs_style(&mut self) -> bool {
-        !self.window_state.style_dirty.is_empty()
+        self.ui.needs_style()
     }
 
     fn has_current_frame_prepare_work(&self) -> bool {
-        !self.window_state.style_dirty.is_empty()
-            || self.window_state.needs_layout
-            || self.window_state.needs_box_tree_from_layout
-            || self.window_state.needs_box_tree_commit
-            || self.window_state.box_tree.borrow().needs_commit()
-            || !self.window_state.views_needing_box_tree_update.is_empty()
-            || self.has_deferred_update_messages()
+        self.ui.has_current_frame_prepare_work()
     }
 
     fn has_deferred_update_messages(&self) -> bool {
-        DEFERRED_UPDATE_MESSAGES.with(|m| {
-            m.borrow()
-                .get(&self.id)
-                .map(|m| !m.is_empty())
-                .unwrap_or(false)
-        })
+        self.ui.has_deferred_update_messages()
     }
 
     fn set_cursor(&mut self) {
-        if self.window_state.needs_cursor_resolution {
+        if self.ui.state.needs_cursor_resolution {
             let mut temp = None;
-            for hover in self.window_state.hover_state.current_path() {
+            for hover in self.ui.state.hover_state.current_path() {
                 if hover.is_view()
                     && let Some(cursor) = hover.owning_id().state().borrow().cursor()
                 {
                     temp = Some(cursor);
                 }
                 // it is important that the node cursors override the widget cursor because non View nodes will have a widget that maps to the parent View that they are associated with
-                if let Some(cursor) = self.window_state.element_id_cursors.get(hover) {
+                if let Some(cursor) = self.ui.state.element_id_cursors.get(hover) {
                     temp = Some(*cursor);
                 }
             }
-            self.window_state.needs_cursor_resolution = false;
-            self.window_state.cursor = temp;
+            self.ui.state.needs_cursor_resolution = false;
+            self.ui.state.cursor = temp;
         }
-        let cursor = match self.window_state.cursor {
+        let cursor = match self.ui.state.cursor {
             Some(CursorStyle::Default) => CursorIcon::Default,
             Some(CursorStyle::Pointer) => CursorIcon::Pointer,
             Some(CursorStyle::Progress) => CursorIcon::Progress,
@@ -3404,9 +3046,9 @@ impl WindowHandle {
             Some(CursorStyle::NwseResize) => CursorIcon::NwseResize,
             None => CursorIcon::Default,
         };
-        if cursor != self.window_state.last_cursor_icon {
+        if cursor != self.ui.state.last_cursor_icon {
             self.window.set_cursor(cursor.into());
-            self.window_state.last_cursor_icon = cursor;
+            self.ui.state.last_cursor_icon = cursor;
         }
     }
 
@@ -3416,8 +3058,8 @@ impl WindowHandle {
 
     pub(crate) fn destroy(&mut self) {
         self.event(Event::Window(WindowEvent::Closed));
-        self.scope.dispose();
-        remove_window_id_mapping(&self.id, &self.window_id);
+        self.ui.scope.dispose();
+        remove_window_id_mapping(&self.ui.root_id, &self.window_id);
     }
 
     #[cfg(target_os = "macos")]
@@ -3432,7 +3074,7 @@ impl WindowHandle {
 
         if let RawWindowHandle::AppKit(handle) = self.window.window_handle().unwrap().as_raw() {
             let ns_view = handle.ns_view.as_ptr() as usize;
-            let scale = self.window_state.user_scale;
+            let scale = self.ui.state.user_scale;
             let height = self.size.get_untracked().height;
             let logical_pos = pos.map(|pos| (pos.x * scale, (height - pos.y) * scale));
 
@@ -3473,8 +3115,8 @@ impl WindowHandle {
                     isize::from(handle.hwnd),
                     pos.map(|pos| {
                         Position::Logical(LogicalPosition::new(
-                            pos.x * self.window_state.user_scale,
-                            pos.y * self.window_state.user_scale,
+                            pos.x * self.ui.state.user_scale,
+                            pos.y * self.ui.state.user_scale,
                         ))
                     }),
                 );
@@ -3489,8 +3131,8 @@ impl WindowHandle {
         if let RawWindowHandle::Win32(handle) = self.window.window_handle().unwrap().as_raw() {
             unsafe {
                 let menu_theme = match (
-                    self.window_state.theme_overriden,
-                    self.window_state.light_dark_theme,
+                    self.ui.state.theme_overriden,
+                    self.ui.state.light_dark_theme,
                 ) {
                     (false, winit::window::Theme::Light) => MudaMenuTheme::Light,
                     (false, winit::window::Theme::Dark) => MudaMenuTheme::Dark,
@@ -3522,18 +3164,18 @@ impl WindowHandle {
 
     #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
     pub(crate) fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
-        let pos = pos.unwrap_or(self.window_state.last_pointer.0);
+        let pos = pos.unwrap_or(self.ui.state.last_pointer.0);
         let pos = Point::new(
-            pos.x / self.window_state.user_scale,
-            pos.y / self.window_state.user_scale,
+            pos.x / self.ui.state.user_scale,
+            pos.y / self.ui.state.user_scale,
         );
         self.context_menu.set(Some((menu, pos, false)));
     }
 
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn menu_action(&mut self, id: &MenuId) {
-        set_current_view(self.id);
-        if let Some(action) = self.window_state.context_menu.get(id) {
+        set_current_view(self.ui.root_id);
+        if let Some(action) = self.ui.state.context_menu.get(id) {
             (*action)();
             self.process_update_messages_only();
             self.refresh_frame_activity();
@@ -3542,8 +3184,8 @@ impl WindowHandle {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn menu_action(&mut self, id: &MenuId) {
-        set_current_view(self.id);
-        if let Some(action) = self.window_state.context_menu.get(id) {
+        set_current_view(self.ui.root_id);
+        if let Some(action) = self.ui.state.context_menu.get(id) {
             (*action)();
             self.process_update_messages_only();
             self.refresh_frame_activity();
@@ -3587,7 +3229,7 @@ impl WindowHandle {
     pub(crate) fn cleanup(&mut self) {
         // Dispose the reactive scope FIRST to clean up effects.
         // This stops any reactive effects from running during cleanup.
-        self.scope.dispose();
+        self.ui.scope.dispose();
 
         // Clear ALL message queues to prevent stale messages from affecting
         // future windows that might reuse the same ViewId slots.
@@ -3607,7 +3249,7 @@ impl WindowHandle {
         });
 
         // Remove all views starting from the root
-        self.window_state.remove_view(self.id);
+        self.ui.state.remove_view(self.ui.root_id);
 
         // Clear all caches that might hold stale ViewId references.
         // This is crucial for test isolation when tests run on the same thread.
@@ -3616,7 +3258,7 @@ impl WindowHandle {
         // Remove the window from the global window tracking map.
         // This is crucial for test isolation - if not done, the old root ViewId
         // will still be considered a "known root" when the ViewId slot is reused.
-        remove_window_id_mapping(&self.id, &self.window_id);
+        remove_window_id_mapping(&self.ui.root_id, &self.window_id);
     }
 }
 
@@ -3670,7 +3312,7 @@ mod tests {
         let window_handle = WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
 
         // Just verify creation doesn't panic
-        assert!(window_handle.window_state.os_scale > 0.0);
+        assert!(window_handle.ui.state.os_scale > 0.0);
     }
 
     /// Test that headless WindowHandle can dispatch events.
@@ -3788,7 +3430,8 @@ mod tests {
         // Create a view ID that belongs to this root but is not in the tree.
         let orphan = ViewId::new();
         window_handle
-            .window_state
+            .ui
+            .state
             .mark_style_dirty(orphan.get_element_id());
 
         // Must quiesce immediately instead of repeatedly trying to style an unreachable view.
@@ -3799,7 +3442,7 @@ mod tests {
             "process_update_budgeted should quiesce when style dirty contains unreachable views"
         );
         assert!(
-            window_handle.window_state.style_dirty.is_empty(),
+            window_handle.ui.state.style_dirty.is_empty(),
             "unreachable style dirty entries should be drained"
         );
     }
@@ -3821,15 +3464,15 @@ mod tests {
 
         let mut window_handle =
             WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
-        window_handle.window_state.clear_pending_paint();
+        window_handle.ui.state.clear_pending_paint();
 
         crate::action::set_window_scale(1.5);
         window_handle.process_update_no_paint();
 
-        assert_eq!(window_handle.window_state.user_scale, 1.5);
-        assert_eq!(window_handle.window_state.effective_scale(), 1.5);
+        assert_eq!(window_handle.ui.state.user_scale, 1.5);
+        assert_eq!(window_handle.ui.state.effective_scale(), 1.5);
         assert_eq!(observed_scale.get(), 1.5);
-        assert!(window_handle.window_state.has_pending_paint());
+        assert!(window_handle.ui.state.has_pending_paint());
     }
 
     #[test]
@@ -3845,27 +3488,27 @@ mod tests {
 
         // Settle the initial layout/box tree state, then clear any bootstrapping paint/render work.
         window_handle.process_update_no_paint();
-        window_handle.window_state.clear_pending_paint();
-        window_handle.window_state.clear_pending_damage();
+        window_handle.ui.state.clear_pending_paint();
+        window_handle.ui.state.clear_pending_damage();
 
         {
-            let mut box_tree = window_handle.window_state.box_tree.borrow_mut();
+            let mut box_tree = window_handle.ui.state.box_tree.borrow_mut();
             box_tree.set_world_position(element_id.0, Some(Point::new(25.0, 0.0)));
         }
-        window_handle.window_state.needs_box_tree_commit = true;
+        window_handle.ui.state.needs_box_tree_commit = true;
 
         window_handle.process_update_no_paint();
 
         assert!(
-            !window_handle.window_state.has_pending_paint(),
+            !window_handle.ui.state.has_pending_paint(),
             "pure box-tree damage should not require explicit paint dirtiness"
         );
         assert!(
-            !window_handle.window_state.pending_damage_rects.is_empty(),
+            !window_handle.ui.state.pending_damage_rects.is_empty(),
             "box-tree commit damage should be retained as pending render work"
         );
         assert!(
-            window_handle.window_state.has_pending_render(),
+            window_handle.ui.state.has_pending_render(),
             "pending box-tree damage alone should keep render submission active"
         );
     }
@@ -3884,22 +3527,24 @@ mod tests {
         let mut window_handle =
             WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
         window_handle.process_update_no_paint();
-        window_handle.window_state.clear_pending_paint();
-        window_handle.window_state.clear_pending_damage();
+        window_handle.ui.state.clear_pending_paint();
+        window_handle.ui.state.clear_pending_damage();
 
-        window_handle.window_state.request_layout();
+        window_handle.ui.state.request_layout();
         window_handle.process_update_no_paint();
 
         assert!(
             !window_handle
-                .window_state
+                .ui
+                .state
                 .dirty_paint_elements
                 .contains(&first_id),
             "unchanged first child should not be paint-dirtied by a no-op layout recompute"
         );
         assert!(
             !window_handle
-                .window_state
+                .ui
+                .state
                 .dirty_paint_elements
                 .contains(&second_id),
             "unchanged second child should not be paint-dirtied by a no-op layout recompute"
@@ -3935,13 +3580,14 @@ mod tests {
             WindowHandle::new_headless(root_id, view, Size::new(800.0, 600.0), 1.0);
 
         window_handle.process_update_no_paint();
-        window_handle.window_state.clear_pending_paint();
-        window_handle.window_state.clear_pending_damage();
+        window_handle.ui.state.clear_pending_paint();
+        window_handle.ui.state.clear_pending_damage();
 
         let runs = Rc::new(Cell::new(0));
         let runs_for_callback = runs.clone();
         window_handle
-            .window_state
+            .ui
+            .state
             .begin_frame_callbacks
             .push(Box::new(move |_| {
                 runs_for_callback.set(runs_for_callback.get() + 1);
@@ -3952,7 +3598,8 @@ mod tests {
 
         let runs_for_second_callback = runs.clone();
         window_handle
-            .window_state
+            .ui
+            .state
             .begin_frame_callbacks
             .push(Box::new(move |_| {
                 runs_for_second_callback.set(runs_for_second_callback.get() + 1);

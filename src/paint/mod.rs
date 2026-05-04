@@ -124,6 +124,7 @@ pub struct GlobalPaintCx<'a> {
     pub window_state: &'a mut WindowState,
     pub gpu_resources: Option<GpuResources>,
     pub window: Arc<dyn Window>,
+    pub has_layer_host: bool,
     /// Whether to record paint order for testing. Cached from thread-local at creation.
     pub(crate) record_paint_order: bool,
 }
@@ -161,7 +162,7 @@ impl GlobalPaintCx<'_> {
     pub(crate) fn paint_with_traversal_into(&mut self, root_id: ViewId, sink: &mut dyn PaintSink) {
         self.prepare_display_list(root_id);
 
-        if self.window_state.compositor.has_layer_host() {
+        if self.has_layer_host {
             return;
         }
 
@@ -254,10 +255,10 @@ impl GlobalPaintCx<'_> {
             rerecord_ids,
             replay_steps: self.window_state.display_list.replay_step_count(),
         };
-        self.apply_composition_plan();
+        self.update_composition_plan();
     }
 
-    fn apply_composition_plan(&mut self) {
+    fn update_composition_plan(&mut self) {
         let effective_scale = self.window_state.effective_scale();
         let mut plan = self
             .window_state
@@ -265,11 +266,6 @@ impl GlobalPaintCx<'_> {
             .lower_composition_plan(effective_scale);
         clip_scene_layers_to_viewport(&mut plan, self.window_state.root_size);
         self.window_state.composition_plan = plan;
-        let _composition_diff = self.window_state.compositor.apply_plan(
-            &self.window_state.composition_plan,
-            self.window_state.compositor_surfaces.entries(),
-            self.gpu_resources.as_ref(),
-        );
     }
 
     fn replay_composition_prefix_to_sink(
