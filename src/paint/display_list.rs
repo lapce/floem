@@ -109,12 +109,15 @@ impl Default for ElementStage {
 impl ElementStage {
     pub(crate) fn set_scene(&mut self, scene: Scene, mut color_filters: Vec<ShaderCommand>) {
         color_filters.sort_by_key(|effect| effect.command_index);
+        let content_changed = self.scene != scene || self.color_filters != color_filters;
         self.transform_class = scene_transform_class(&scene);
         self.stack_index = StageStackIndex::build(&scene);
         self.stack_index.apply_effect_commands(&color_filters);
         self.scene = scene;
         self.color_filters = color_filters;
-        self.content_revision = self.content_revision.wrapping_add(1);
+        if content_changed {
+            self.content_revision = self.content_revision.wrapping_add(1);
+        }
     }
 }
 
@@ -719,6 +722,7 @@ pub(crate) struct ElementSnapshot {
     pub clip: Option<RoundedRect>,
     pub world_transform: Affine,
     pub wants_layer: bool,
+    pub layer_target_fps: Option<f64>,
 }
 
 impl ElementSnapshot {
@@ -728,6 +732,7 @@ impl ElementSnapshot {
             clip: box_tree.clipped_local_clip(element_id.0),
             world_transform: box_tree.world_transform(element_id.0).unwrap_or_default(),
             wants_layer: box_tree.wants_layer(element_id.0),
+            layer_target_fps: box_tree.layer_target_fps(element_id.0),
         }
     }
 
@@ -1009,7 +1014,10 @@ impl RetainedDisplayList {
         };
 
         if snapshot.wants_layer {
-            chunks.push(LoweredChunk::Boundary);
+            chunks.push(LoweredChunk::LayerStart(LayerRunSource {
+                element_id,
+                target_fps: snapshot.layer_target_fps,
+            }));
         }
 
         self.lower_stage_into_plan(
@@ -1049,7 +1057,7 @@ impl RetainedDisplayList {
         );
 
         if snapshot.wants_layer {
-            chunks.push(LoweredChunk::Boundary);
+            chunks.push(LoweredChunk::LayerEnd);
         }
 
         lowering_stack.remove(&slot);
@@ -1426,9 +1434,16 @@ struct PropertyClip {
 
 #[derive(Clone)]
 enum LoweredChunk<'a> {
-    Boundary,
+    LayerStart(LayerRunSource),
+    LayerEnd,
     Scene(LoweredSceneChunk<'a>),
     External(CompositorSurfaceLayer),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct LayerRunSource {
+    element_id: ElementId,
+    target_fps: Option<f64>,
 }
 
 #[derive(Clone)]
@@ -1437,6 +1452,7 @@ struct LoweredSceneChunk<'a> {
     start: usize,
     end: usize,
     external_images: Vec<SceneExternalImage>,
+    layer_target_fps: Option<f64>,
     property_state: PropertyState,
     element_id: ElementId,
     stage_kind: PaintStage,
@@ -1448,16 +1464,30 @@ struct LoweredSceneChunk<'a> {
 fn chunks_into_composition_plan(chunks: Vec<LoweredChunk<'_>>) -> CompositionPlan {
     let mut plan = CompositionPlan::new();
     let mut pending = SceneRunBuilder::default();
+    let mut layer_stack: Vec<LayerRunSource> = Vec::new();
     let mut run_index = 0u32;
 
     for chunk in chunks {
         match chunk {
-            LoweredChunk::Boundary => {
+            LoweredChunk::LayerStart(source) => {
                 pending.flush(&mut plan, &mut run_index);
+                layer_stack.push(source);
+                pending.layer_source = layer_stack.last().copied();
+            }
+            LoweredChunk::LayerEnd => {
+                pending.flush(&mut plan, &mut run_index);
+                layer_stack.pop();
+                pending.layer_source = layer_stack.last().copied();
             }
             LoweredChunk::Scene(scene) => {
+                let layer_source = layer_stack.last().copied();
+                if pending.layer_source != layer_source {
+                    pending.flush(&mut plan, &mut run_index);
+                    pending.layer_source = layer_source;
+                }
                 if !pending.accepts(&scene.property_state) {
                     pending.flush(&mut plan, &mut run_index);
+                    pending.layer_source = layer_source;
                 }
                 pending.push(scene);
             }
@@ -1477,6 +1507,7 @@ fn chunks_into_composition_plan(chunks: Vec<LoweredChunk<'_>>) -> CompositionPla
 struct SceneRunBuilder<'a> {
     ranges: Vec<PendingSceneRange<'a>>,
     external_images: Vec<SceneExternalImage>,
+    layer_source: Option<LayerRunSource>,
     property_state: Option<PropertyState>,
     content_revision: u64,
     bounds: Option<Rect>,
@@ -1489,6 +1520,7 @@ struct PendingSceneRange<'a> {
     scene: &'a Scene,
     start: usize,
     end: usize,
+    layer_target_fps: Option<f64>,
     element_id: ElementId,
     stage_kind: PaintStage,
     transform: Affine,
@@ -1515,6 +1547,7 @@ impl<'a> SceneRunBuilder<'a> {
             scene: chunk.scene,
             start: chunk.start,
             end: chunk.end,
+            layer_target_fps: chunk.layer_target_fps,
             element_id: chunk.element_id,
             stage_kind: chunk.stage_kind,
             transform: chunk.transform,
@@ -1594,18 +1627,35 @@ impl<'a> SceneRunBuilder<'a> {
         let local_content_bounds =
             clipped_content_bounds.map(|rect| rect - bounds.origin().to_vec2());
         let local_effects = transform_shader_passes(&property_state.effects, local_transform);
+        let source_element_id = self
+            .layer_source
+            .map(|source| {
+                crate::paint::composition::LayerSourceId::from_element_id(source.element_id)
+            })
+            .or_else(|| {
+                self.ranges.first().map(|range| {
+                    crate::paint::composition::LayerSourceId::from_element_id(range.element_id)
+                })
+            });
+        let debug_name = self
+            .layer_source
+            .map(|source| source.element_id.owning_id().debug_name())
+            .or_else(|| {
+                self.ranges
+                    .first()
+                    .map(|range| range.element_id.owning_id().debug_name())
+            })
+            .filter(|name| !name.is_empty());
+        let target_fps = self
+            .layer_source
+            .and_then(|source| source.target_fps)
+            .or_else(|| self.ranges.first().and_then(|range| range.layer_target_fps));
         plan.items.push(CompositionItem::Scene(SceneLayer {
             key: CompositionKey::SceneRun {
                 run_index: *run_index,
             },
-            source_element_id: self.ranges.first().map(|range| {
-                crate::paint::composition::LayerSourceId::from_element_id(range.element_id)
-            }),
-            debug_name: self
-                .ranges
-                .first()
-                .map(|range| range.element_id.owning_id().debug_name())
-                .filter(|name| !name.is_empty()),
+            source_element_id,
+            debug_name,
             scene,
             external_images: mem::take(&mut self.external_images),
             color_filters: local_effects,
@@ -1616,6 +1666,7 @@ impl<'a> SceneRunBuilder<'a> {
             content_bounds: local_content_bounds,
             opacity: 1.0,
             promoted: false,
+            target_fps,
         }));
         self.content_revision = 0;
         self.bounds = None;
@@ -1649,6 +1700,7 @@ fn push_scene_range<'a>(
         start,
         end,
         external_images,
+        layer_target_fps: snapshot.layer_target_fps,
         property_state: property_state.clone(),
         element_id,
         stage_kind,
@@ -2325,6 +2377,7 @@ pub mod bench_support {
             clip: None,
             world_transform,
             wants_layer: false,
+            layer_target_fps: None,
         }
     }
 
@@ -2554,7 +2607,7 @@ fn constrain_infinite_rect(rect: Rect, transform: Affine, render_size: Size) -> 
 mod tests {
     use super::*;
     use crate::ViewId;
-    use imaging::{Composite, Filter as ImagingFilter, ImageBrush};
+    use imaging::{Composite, Filter as ImagingFilter};
     use peniko::{Color, Fill};
 
     fn fill_draw(rect: Rect, transform: Affine) -> Draw {
@@ -2609,6 +2662,25 @@ mod tests {
     }
 
     #[test]
+    fn element_stage_revision_tracks_semantic_content_changes() {
+        let mut stage = ElementStage::default();
+        let scene = scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 10.0, 10.0), Affine::IDENTITY));
+
+        stage.set_scene(scene.clone(), Vec::new());
+        let first_revision = stage.content_revision;
+        assert_ne!(first_revision, 0);
+
+        stage.set_scene(scene, Vec::new());
+        assert_eq!(stage.content_revision, first_revision);
+
+        stage.set_scene(
+            scene_with_draw(fill_draw(Rect::new(0.0, 0.0, 12.0, 10.0), Affine::IDENTITY)),
+            Vec::new(),
+        );
+        assert_ne!(stage.content_revision, first_revision);
+    }
+
+    #[test]
     fn stage_recorder_preserves_order_for_mixed_imaging_and_color_filter_filters() {
         let mut stage = ElementStage::default();
         let mut recorder = StageRecorder::from_stage(&mut stage);
@@ -2654,18 +2726,27 @@ mod tests {
         );
         assert!(matches!(
             &stage.color_filters[0].kind,
-            ShaderCommandKind::Push(CompositorShader::Layer(_))
+            ShaderCommandKind::Push(CompositorShaderPass {
+                shader: CompositorShader::Layer(_),
+                ..
+            })
         ));
         assert_eq!(
             stage.color_filters[1],
             ShaderCommand {
                 command_index: 1,
-                kind: ShaderCommandKind::Push(CompositorShader::Color(effect.clone())),
+                kind: ShaderCommandKind::Push(CompositorShaderPass {
+                    shader: CompositorShader::Color(effect.clone()),
+                    clip: None,
+                }),
             }
         );
         assert!(matches!(
             &stage.color_filters[2].kind,
-            ShaderCommandKind::Push(CompositorShader::Layer(_))
+            ShaderCommandKind::Push(CompositorShaderPass {
+                shader: CompositorShader::Layer(_),
+                ..
+            })
         ));
         assert!(
             stage.color_filters[3..]
@@ -2697,7 +2778,10 @@ mod tests {
         assert_eq!(stage.color_filters.len(), 2);
         assert!(matches!(
             &stage.color_filters[0].kind,
-            ShaderCommandKind::Push(CompositorShader::Source(recorded)) if recorded == &effect
+            ShaderCommandKind::Push(CompositorShaderPass {
+                shader: CompositorShader::Source(recorded),
+                ..
+            }) if recorded == &effect
         ));
         assert!(matches!(
             stage.color_filters[1].kind,
@@ -2723,6 +2807,7 @@ mod tests {
             clip,
             world_transform,
             wants_layer: false,
+            layer_target_fps: None,
         }
     }
 

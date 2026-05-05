@@ -24,7 +24,7 @@ use crate::{
 };
 use std::{path::PathBuf, rc::Rc};
 
-use super::state::WindowState;
+use super::state::{BeginFrameCallback, WindowState};
 
 use peniko::kurbo::{self, Point, Size, Vec2};
 use winit::{
@@ -773,8 +773,14 @@ impl WindowUiDriver {
                     UpdateMessage::WindowVisible(visible) => {
                         self.request_platform(PlatformRequest::WindowVisible(visible));
                     }
-                    UpdateMessage::RequestAnimationFrame { callback } => {
-                        self.state.begin_frame_callbacks.push(callback);
+                    UpdateMessage::RequestAnimationFrame {
+                        target_fps,
+                        callback,
+                    } => {
+                        self.state.begin_frame_callbacks.push(BeginFrameCallback {
+                            target_fps,
+                            callback,
+                        });
                     }
                     UpdateMessage::ViewTransitionAnimComplete(id) => {
                         let num_waiting =
@@ -885,8 +891,12 @@ impl WindowUiDriver {
         !self.state.begin_frame_callbacks.is_empty()
     }
 
-    pub(crate) fn promote_next_frame_work(&mut self) {
-        self.state.promote_next_frame_work();
+    pub(crate) fn promote_next_frame_work(&mut self, frame_time: FrameTime) {
+        self.state.promote_next_frame_work_at(Some(frame_time));
+    }
+
+    pub(crate) fn reset_layer_pacing_state(&mut self) {
+        self.state.reset_layer_pacing_state();
     }
 
     pub(crate) fn needs_layout(&self) -> bool {
@@ -920,7 +930,7 @@ impl WindowUiDriver {
 
     pub(crate) fn run_begin_frame_callbacks(&mut self, frame_time: FrameTime) {
         set_current_view(self.root_id.root());
-        let callbacks = self.state.take_begin_frame_callbacks();
+        let callbacks = self.state.take_due_begin_frame_callbacks(frame_time);
         for callback in callbacks {
             callback(frame_time);
         }

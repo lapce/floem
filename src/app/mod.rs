@@ -167,6 +167,9 @@ pub(crate) enum UserEvent {
     GpuResourcesUpdate {
         window_id: WindowId,
     },
+    WindowPaint {
+        window_id: WindowId,
+    },
     CompositorSurfaceContent {
         window_id: WindowId,
         surface_id: CompositorSurfaceId,
@@ -175,6 +178,11 @@ pub(crate) enum UserEvent {
     CompositorSurfaceRequestFrame {
         window_id: WindowId,
         surface_id: CompositorSurfaceId,
+    },
+    CompositorSurfaceTargetFps {
+        window_id: WindowId,
+        surface_id: CompositorSurfaceId,
+        target_fps: Option<f64>,
     },
     CompositorSurfaceProvider {
         window_id: WindowId,

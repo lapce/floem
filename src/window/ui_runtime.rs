@@ -274,8 +274,12 @@ impl WindowUiRuntime {
         self.call(|ui| ui.needs_style())
     }
 
-    pub(crate) fn promote_next_frame_work(&self) {
-        self.call(|ui| ui.promote_next_frame_work());
+    pub(crate) fn promote_next_frame_work(&self, frame_time: FrameTime) {
+        self.call(move |ui| ui.promote_next_frame_work(frame_time));
+    }
+
+    pub(crate) fn reset_layer_pacing_state(&self) {
+        self.call(|ui| ui.reset_layer_pacing_state());
     }
 
     pub(crate) fn run_begin_frame_callbacks(&self, frame_time: FrameTime) {

@@ -15,7 +15,7 @@ use crate::{
 };
 use imaging::{
     Brush as ImagingBrush, Composite, ExternalImage, ExternalImageId, ImageBrush,
-    record::{Draw, Geometry, Scene},
+    record::{Clip, Draw, Geometry, Scene},
 };
 use imaging_wgpu::ResolvedExternalImage;
 use peniko::kurbo::{Affine, Rect, Size};
@@ -78,6 +78,7 @@ pub(crate) struct PresentedLayer {
     pub layer_id: LayerId,
     pub source_element_id: Option<LayerSourceId>,
     pub debug_name: Option<String>,
+    pub target_fps: Option<f64>,
 }
 
 #[derive(Clone, Debug)]
@@ -606,15 +607,18 @@ impl WindowCompositor {
         key: &CompositionKey,
         layer_id: LayerId,
     ) -> Option<PresentedLayer> {
-        let (source_element_id, debug_name) = match self.layers_by_key.get(key) {
-            Some(CompositorLayerState::Scene(layer)) => {
-                (layer.source_element_id, layer.debug_name.clone())
-            }
+        let (source_element_id, debug_name, target_fps) = match self.layers_by_key.get(key) {
+            Some(CompositorLayerState::Scene(layer)) => (
+                layer.source_element_id,
+                layer.debug_name.clone(),
+                layer.target_fps,
+            ),
             Some(CompositorLayerState::CompositorSurface(layer)) => (
                 None,
                 Some(format!("CompositorSurface {:?}", layer.surface_id)),
+                layer.target_fps,
             ),
-            None => (None, None),
+            None => (None, None, None),
         };
         if source_element_id.is_none() && debug_name.as_ref().is_none_or(|name| name.is_empty()) {
             return None;
@@ -623,6 +627,7 @@ impl WindowCompositor {
             layer_id,
             source_element_id,
             debug_name,
+            target_fps,
         })
     }
 
@@ -774,10 +779,16 @@ impl WindowCompositor {
                 Some(texture)
             };
             let render_size = Size::new(f64::from(width), f64::from(height));
-            let effect_mask_scene = if layer.color_filters.is_empty() {
-                None
+            let effect_clip_transform = Affine::translate((-bounds.x0, -bounds.y0));
+            let render_effects =
+                transform_compositor_shader_passes(&layer.color_filters, effect_clip_transform);
+            let EffectClip {
+                analytic: analytic_clip,
+                mask_scene: effect_mask_scene,
+            } = if render_effects.is_empty() {
+                EffectClip::default()
             } else {
-                effect_clip_mask_scene(&layer.color_filters, render_size)
+                classify_effect_clips(&render_effects, render_size)
             };
             let effect_mask_texture = effect_mask_scene.as_ref().map(|_| {
                 let texture = create_effect_intermediate_texture(
@@ -805,9 +816,10 @@ impl WindowCompositor {
                     lease,
                     scene_texture,
                     effect_mask_texture,
+                    analytic_clip,
                     content_ready: false,
                     mask_ready: !has_effect_mask,
-                    effects: layer.color_filters.clone(),
+                    effects: render_effects,
                     format,
                     size,
                     effective_scale,
@@ -872,7 +884,7 @@ impl WindowCompositor {
                 let mask_submitted = renderer_pool.submit(
                     SceneFragmentRenderJob {
                         scene: mask_scene,
-                        base_transform,
+                        base_transform: Affine::scale(effective_scale),
                         clip: None,
                         render_size,
                         texture: mask_texture.clone(),
@@ -967,6 +979,7 @@ impl WindowCompositor {
                 scene_texture,
                 &pending.lease.texture,
                 pending.effect_mask_texture.as_ref(),
+                pending.analytic_clip,
                 pending.format,
                 pending.size,
                 &pending.effects,
@@ -1359,6 +1372,7 @@ struct PendingSceneRender {
     lease: subduction::wgpu::SurfaceFrameLease,
     scene_texture: Option<wgpu::Texture>,
     effect_mask_texture: Option<wgpu::Texture>,
+    analytic_clip: AnalyticClipSet,
     content_ready: bool,
     mask_ready: bool,
     effects: Vec<CompositorShaderPass>,
@@ -1367,6 +1381,66 @@ struct PendingSceneRender {
     effective_scale: f64,
     render_call_id: u64,
     content_revision: u64,
+}
+
+const MAX_ANALYTIC_EFFECT_CLIPS: usize = 4;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct AnalyticClipSet {
+    clips: [Option<AnalyticClip>; MAX_ANALYTIC_EFFECT_CLIPS],
+}
+
+impl AnalyticClipSet {
+    fn len(self) -> usize {
+        self.clips.iter().filter(|clip| clip.is_some()).count()
+    }
+
+    fn scissor_rect(
+        self,
+        effective_scale: f64,
+        size: wgpu::Extent3d,
+    ) -> Option<(u32, u32, u32, u32)> {
+        let mut bounds: Option<Rect> = None;
+        for clip in self.clips.into_iter().flatten() {
+            let rect = clip
+                .inverse_transform
+                .inverse()
+                .transform_rect_bbox(clip.rect);
+            bounds = Some(match bounds {
+                Some(bounds) => bounds.intersect(rect),
+                None => rect,
+            });
+        }
+        let bounds = bounds?;
+        let x0 = (bounds.x0 * effective_scale)
+            .floor()
+            .clamp(0.0, f64::from(size.width)) as u32;
+        let y0 = (bounds.y0 * effective_scale)
+            .floor()
+            .clamp(0.0, f64::from(size.height)) as u32;
+        let x1 = (bounds.x1 * effective_scale)
+            .ceil()
+            .clamp(0.0, f64::from(size.width)) as u32;
+        let y1 = (bounds.y1 * effective_scale)
+            .ceil()
+            .clamp(0.0, f64::from(size.height)) as u32;
+        let width = x1.saturating_sub(x0);
+        let height = y1.saturating_sub(y0);
+        (width > 0 && height > 0).then_some((x0, y0, width, height))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct AnalyticClip {
+    rect: Rect,
+    radii: peniko::kurbo::RoundedRectRadii,
+    inverse_transform: Affine,
+}
+
+#[derive(Default)]
+struct EffectClip {
+    analytic: AnalyticClipSet,
+    mask_scene: Option<Scene>,
 }
 
 fn merge_frame_changes(target: &mut FrameChanges, source: FrameChanges) {
@@ -1621,6 +1695,7 @@ impl ShaderRenderer {
         input: &wgpu::Texture,
         output: &wgpu::Texture,
         clip_mask: Option<&wgpu::Texture>,
+        analytic_clip: AnalyticClipSet,
         format: wgpu::TextureFormat,
         size: wgpu::Extent3d,
         effects: &[CompositorShaderPass],
@@ -1672,6 +1747,7 @@ impl ShaderRenderer {
                 &input_texture,
                 output_texture,
                 None,
+                AnalyticClipSet::default(),
                 format,
                 size,
                 effect,
@@ -1688,6 +1764,7 @@ impl ShaderRenderer {
             &input_texture,
             output,
             clip_mask,
+            analytic_clip,
             format,
             size,
             last,
@@ -1704,6 +1781,7 @@ impl ShaderRenderer {
         input: &wgpu::Texture,
         output: &wgpu::Texture,
         clip_mask: Option<&wgpu::Texture>,
+        analytic_clip: AnalyticClipSet,
         format: wgpu::TextureFormat,
         size: wgpu::Extent3d,
         effect: &CompositorShaderPass,
@@ -1733,7 +1811,8 @@ impl ShaderRenderer {
             mapped_at_creation: false,
         });
         queue.write_buffer(&args_buffer, 0, &args);
-        let frame_bytes = color_filter_frame_bytes(effective_scale, size, clip_mask.is_some());
+        let frame_bytes =
+            color_filter_frame_bytes(effective_scale, size, clip_mask.is_some(), analytic_clip);
         let frame_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("floem compositor color filter frame"),
             size: frame_bytes.len() as u64,
@@ -1796,6 +1875,12 @@ impl ShaderRenderer {
             pass.set_pipeline(&pipeline.pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
             pass.set_viewport(0.0, 0.0, size.width as f32, size.height as f32, 0.0, 1.0);
+            if clip_mask.is_none()
+                && let Some((x, y, width, height)) =
+                    analytic_clip.scissor_rect(effective_scale, size)
+            {
+                pass.set_scissor_rect(x, y, width, height);
+            }
             pass.draw(0..3, 0..1);
         }
         queue.submit([encoder.finish()]);
@@ -1875,7 +1960,9 @@ impl ShaderPipeline {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(32),
+                        min_binding_size: wgpu::BufferSize::new(
+                            16 * (2 + MAX_ANALYTIC_EFFECT_CLIPS as u64 * 4),
+                        ),
                     },
                     count: None,
                 },
@@ -1981,17 +2068,92 @@ fn create_effect_intermediate_texture(
     })
 }
 
-fn effect_clip_mask_scene(effects: &[CompositorShaderPass], render_size: Size) -> Option<Scene> {
+fn classify_effect_clips(effects: &[CompositorShaderPass], render_size: Size) -> EffectClip {
     let clips = effects
         .iter()
         .filter_map(|effect| effect.clip.clone())
         .collect::<Vec<_>>();
     if clips.is_empty() {
+        return EffectClip::default();
+    }
+
+    let analytic = analytic_clip_set(&clips);
+    if analytic.is_some() {
+        return EffectClip {
+            analytic: analytic.unwrap_or_default(),
+            mask_scene: None,
+        };
+    }
+
+    EffectClip {
+        analytic: AnalyticClipSet::default(),
+        mask_scene: effect_clip_mask_scene_from_clips(&clips, render_size),
+    }
+}
+
+fn transform_compositor_shader_passes(
+    effects: &[CompositorShaderPass],
+    transform: Affine,
+) -> Vec<CompositorShaderPass> {
+    effects
+        .iter()
+        .cloned()
+        .map(|mut effect| {
+            if let Some(clip) = &mut effect.clip {
+                prepend_clip_transform(clip, transform);
+            }
+            effect
+        })
+        .collect()
+}
+
+fn prepend_clip_transform(clip: &mut Clip, prefix: Affine) {
+    match clip {
+        Clip::Fill { transform, .. } | Clip::Stroke { transform, .. } => {
+            *transform = prefix * *transform;
+        }
+    }
+}
+
+fn analytic_clip_set(clips: &[Clip]) -> Option<AnalyticClipSet> {
+    if clips.len() > MAX_ANALYTIC_EFFECT_CLIPS {
+        return None;
+    }
+    let mut out = AnalyticClipSet::default();
+    for (index, clip) in clips.iter().enumerate() {
+        out.clips[index] = analytic_clip(clip)?;
+    }
+    Some(out)
+}
+
+fn analytic_clip(clip: &Clip) -> Option<Option<AnalyticClip>> {
+    let Clip::Fill {
+        transform,
+        shape,
+        fill_rule: Fill::NonZero,
+    } = clip
+    else {
+        return None;
+    };
+    let rounded = match shape {
+        Geometry::Rect(rect) => rect.to_rounded_rect(0.0),
+        Geometry::RoundedRect(rounded) => *rounded,
+        Geometry::Path(_) => return None,
+    };
+    Some(Some(AnalyticClip {
+        rect: rounded.rect(),
+        radii: rounded.radii(),
+        inverse_transform: transform.inverse(),
+    }))
+}
+
+fn effect_clip_mask_scene_from_clips(clips: &[Clip], render_size: Size) -> Option<Scene> {
+    if clips.is_empty() {
         return None;
     }
 
     let mut scene = Scene::new();
-    for clip in &clips {
+    for clip in clips {
         scene.push_clip(clip.clone());
     }
     let _ = scene.draw(Draw::Fill {
@@ -2005,7 +2167,7 @@ fn effect_clip_mask_scene(effects: &[CompositorShaderPass], render_size: Size) -
         )),
         composite: Composite::default(),
     });
-    for _ in &clips {
+    for _ in clips {
         scene.pop_clip();
     }
     Some(scene)
@@ -2188,13 +2350,13 @@ fn shader_source(
     };
     let fragment_return = match effect {
         CompositorShader::Color(_) => {
-            "let color = textureSample(input_texture, input_sampler, in.uv);\n    let filtered = color_filter(logical_position, in.uv, color, args, frame);\n    let mask = mix(1.0, textureSample(clip_mask_texture, input_sampler, in.uv).a, frame.clip_mask_enabled);\n    return filtered * mask;"
+            "let color = textureSample(input_texture, input_sampler, in.uv);\n    let filtered = color_filter(logical_position, in.uv, color, args, frame);\n    return filtered * effect_clip_coverage(logical_position, in.uv);"
         }
         CompositorShader::Layer(_) => {
-            "let color = textureSample(input_texture, input_sampler, in.uv);\n    let filtered = layer_filter(logical_position, in.uv, color, args, frame);\n    let mask = mix(1.0, textureSample(clip_mask_texture, input_sampler, in.uv).a, frame.clip_mask_enabled);\n    return filtered * mask;"
+            "let color = textureSample(input_texture, input_sampler, in.uv);\n    let filtered = layer_filter(logical_position, in.uv, color, args, frame);\n    return filtered * effect_clip_coverage(logical_position, in.uv);"
         }
         CompositorShader::Source(_) => {
-            "let color = textureSample(input_texture, input_sampler, in.uv);\n    let mask = mix(1.0, textureSample(clip_mask_texture, input_sampler, in.uv).a, frame.clip_mask_enabled);\n    return shader_source(logical_position, in.uv, args, frame) * color.a * mask;"
+            "let color = textureSample(input_texture, input_sampler, in.uv);\n    return shader_source(logical_position, in.uv, args, frame) * color.a * effect_clip_coverage(logical_position, in.uv);"
         }
     };
     Ok(format!(
@@ -2208,6 +2370,23 @@ struct ShaderFrame {{
     target_width: f32,
     target_height: f32,
     clip_mask_enabled: f32,
+    clip_count: vec4<f32>,
+    clip0_rect: vec4<f32>,
+    clip0_radii: vec4<f32>,
+    clip0_inv0: vec4<f32>,
+    clip0_inv1: vec4<f32>,
+    clip1_rect: vec4<f32>,
+    clip1_radii: vec4<f32>,
+    clip1_inv0: vec4<f32>,
+    clip1_inv1: vec4<f32>,
+    clip2_rect: vec4<f32>,
+    clip2_radii: vec4<f32>,
+    clip2_inv0: vec4<f32>,
+    clip2_inv1: vec4<f32>,
+    clip3_rect: vec4<f32>,
+    clip3_radii: vec4<f32>,
+    clip3_inv0: vec4<f32>,
+    clip3_inv1: vec4<f32>,
 }};
 
 @group(0) @binding(0) var input_texture: texture_2d<f32>;
@@ -2229,6 +2408,51 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {{
     out.position = vec4<f32>(x, y, 0.0, 1.0);
     out.uv = vec2<f32>(x, -y) * 0.5 + vec2<f32>(0.5, 0.5);
     return out;
+}}
+
+fn analytic_clip_local_position(position: vec2<f32>, inv0: vec4<f32>, inv1: vec4<f32>) -> vec2<f32> {{
+    return vec2<f32>(
+        inv0.x * position.x + inv0.z * position.y + inv1.x,
+        inv0.y * position.x + inv0.w * position.y + inv1.y,
+    );
+}}
+
+fn analytic_rounded_rect_coverage(position: vec2<f32>, rect: vec4<f32>, radii: vec4<f32>) -> f32 {{
+    let center = (rect.xy + rect.zw) * 0.5;
+    let half_size = max((rect.zw - rect.xy) * 0.5, vec2<f32>(0.0, 0.0));
+    let p = position - center;
+    let radius = select(
+        select(radii.y, radii.z, p.y >= 0.0),
+        select(radii.x, radii.w, p.y >= 0.0),
+        p.x < 0.0,
+    );
+    let q = abs(p) - max(half_size - vec2<f32>(radius, radius), vec2<f32>(0.0, 0.0));
+    let d = length(max(q, vec2<f32>(0.0, 0.0))) + min(max(q.x, q.y), 0.0) - radius;
+    return clamp(0.5 - d * frame.effective_scale, 0.0, 1.0);
+}}
+
+fn analytic_clip_coverage_for(
+    position: vec2<f32>,
+    index: f32,
+    rect: vec4<f32>,
+    radii: vec4<f32>,
+    inv0: vec4<f32>,
+    inv1: vec4<f32>,
+) -> f32 {{
+    if (frame.clip_count.x <= index) {{
+        return 1.0;
+    }}
+    let local = analytic_clip_local_position(position, inv0, inv1);
+    return analytic_rounded_rect_coverage(local, rect, radii);
+}}
+
+fn effect_clip_coverage(position: vec2<f32>, uv: vec2<f32>) -> f32 {{
+    let mask = mix(1.0, textureSample(clip_mask_texture, input_sampler, uv).a, frame.clip_mask_enabled);
+    return mask
+        * analytic_clip_coverage_for(position, 0.0, frame.clip0_rect, frame.clip0_radii, frame.clip0_inv0, frame.clip0_inv1)
+        * analytic_clip_coverage_for(position, 1.0, frame.clip1_rect, frame.clip1_radii, frame.clip1_inv0, frame.clip1_inv1)
+        * analytic_clip_coverage_for(position, 2.0, frame.clip2_rect, frame.clip2_radii, frame.clip2_inv0, frame.clip2_inv1)
+        * analytic_clip_coverage_for(position, 3.0, frame.clip3_rect, frame.clip3_radii, frame.clip3_inv0, frame.clip3_inv1);
 }}
 
 {}
@@ -2254,16 +2478,60 @@ fn color_filter_frame_bytes(
     effective_scale: f64,
     target_size: wgpu::Extent3d,
     clip_mask_enabled: bool,
-) -> [u8; 32] {
+    analytic_clip: AnalyticClipSet,
+) -> Vec<u8> {
     let effective_scale = effective_scale as f32;
     let target_width = target_size.width as f32 / effective_scale;
     let target_height = target_size.height as f32 / effective_scale;
-    let mut bytes = [0; 32];
-    bytes[0..4].copy_from_slice(&effective_scale.to_ne_bytes());
-    bytes[4..8].copy_from_slice(&target_width.to_ne_bytes());
-    bytes[8..12].copy_from_slice(&target_height.to_ne_bytes());
-    bytes[12..16].copy_from_slice(&(u32::from(clip_mask_enabled) as f32).to_ne_bytes());
+    let mut bytes = Vec::with_capacity(16 * (2 + MAX_ANALYTIC_EFFECT_CLIPS * 4));
+    push_vec4(
+        &mut bytes,
+        [
+            effective_scale,
+            target_width,
+            target_height,
+            u32::from(clip_mask_enabled) as f32,
+        ],
+    );
+    push_vec4(&mut bytes, [analytic_clip.len() as f32, 0.0, 0.0, 0.0]);
+    for clip in analytic_clip.clips {
+        if let Some(clip) = clip {
+            let rect = clip.rect;
+            let radii = clip.radii;
+            let [a, b, c, d, e, f] = clip.inverse_transform.as_coeffs();
+            push_vec4(
+                &mut bytes,
+                [
+                    rect.x0 as f32,
+                    rect.y0 as f32,
+                    rect.x1 as f32,
+                    rect.y1 as f32,
+                ],
+            );
+            push_vec4(
+                &mut bytes,
+                [
+                    radii.top_left as f32,
+                    radii.top_right as f32,
+                    radii.bottom_right as f32,
+                    radii.bottom_left as f32,
+                ],
+            );
+            push_vec4(&mut bytes, [a as f32, b as f32, c as f32, d as f32]);
+            push_vec4(&mut bytes, [e as f32, f as f32, 0.0, 0.0]);
+        } else {
+            for _ in 0..4 {
+                push_vec4(&mut bytes, [0.0; 4]);
+            }
+        }
+    }
     bytes
+}
+
+fn push_vec4(bytes: &mut Vec<u8>, values: [f32; 4]) {
+    for value in values {
+        bytes.extend_from_slice(&value.to_ne_bytes());
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -2339,6 +2607,7 @@ pub(crate) struct SceneCompositorLayer {
     pub content_revision: u64,
     pub command_count: usize,
     pub promoted: bool,
+    pub target_fps: Option<f64>,
 }
 
 impl SceneCompositorLayer {
@@ -2366,6 +2635,7 @@ impl SceneCompositorLayer {
             content_revision: layer.content_revision,
             command_count: layer.scene.commands().len(),
             promoted: layer.promoted,
+            target_fps: layer.target_fps,
         }
     }
 }
@@ -2420,6 +2690,7 @@ pub(crate) struct CompositorSurfaceCompositorLayer {
     pub content_version: u64,
     pub presents_without_transaction: bool,
     pub has_provider: bool,
+    pub target_fps: Option<f64>,
 }
 
 impl CompositorSurfaceCompositorLayer {
@@ -2449,6 +2720,9 @@ impl CompositorSurfaceCompositorLayer {
             has_provider: compositor_surfaces
                 .get(&layer.surface_id)
                 .is_some_and(|entry| entry.provider.is_some()),
+            target_fps: compositor_surfaces
+                .get(&layer.surface_id)
+                .and_then(|entry| entry.target_fps),
         }
     }
 
@@ -2513,7 +2787,10 @@ mod tests {
             debug_name: None,
             scene: Scene::new(),
             external_images: Vec::new(),
-            color_filters: vec![effect],
+            color_filters: vec![CompositorShaderPass {
+                shader: effect,
+                clip: None,
+            }],
             content_revision: 1,
             transform: Affine::IDENTITY,
             clip: None,
@@ -2521,6 +2798,7 @@ mod tests {
             content_bounds: None,
             opacity: 1.0,
             promoted: false,
+            target_fps: None,
         }
     }
 

@@ -118,6 +118,7 @@ pub enum UpdateMessage {
     },
     WindowVisible(bool),
     RequestAnimationFrame {
+        target_fps: Option<f64>,
         callback: Box<dyn FnOnce(crate::frame::FrameTime)>,
     },
     ViewTransitionAnimComplete(ViewId),

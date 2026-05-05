@@ -23,7 +23,9 @@ use peniko::kurbo::Size;
 use subduction::wgpu::SurfaceColorSpace;
 
 use crate::{
+    Application,
     animate::easing::{Bezier, Easing, Linear, Spring},
+    app::UserEvent,
     platform::{Duration, Instant},
 };
 
@@ -1117,7 +1119,7 @@ impl<T: ShaderUniforms + Send + 'static> ShaderUniform<T> {
     fn request_repaint(&self) {
         let window_id = self.inner.state.lock().unwrap().window_id;
         if let Some(window_id) = window_id {
-            crate::window::tracking::force_window_repaint(&window_id);
+            Application::send_proxy_event(UserEvent::WindowPaint { window_id });
         }
     }
 }
@@ -1186,7 +1188,7 @@ impl<T: AnimatableShaderUniforms + Send + 'static> ShaderUniform<T> {
             return;
         }
         let handle = self.clone();
-        crate::action::request_animation_frame(move |frame_time| {
+        crate::action::request_animation_frame(None, move |frame_time| {
             handle.inner.frame_requested.store(false, Ordering::Relaxed);
             let now = frame_time
                 .interval

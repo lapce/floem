@@ -28,6 +28,7 @@ const HUD_WIDTH: f64 = 268.0;
 const HUD_HEADER_HEIGHT: f64 = 58.0;
 const HUD_LAYER_HEIGHT: f64 = 48.0;
 const HUD_MAX_HEIGHT: f64 = 360.0;
+const HUD_TARGET_FPS: f64 = 30.0;
 
 #[derive(Clone)]
 pub(crate) struct Hud {
@@ -40,6 +41,7 @@ struct HudInner {
     text_cache: RefCell<HudTextCache>,
     reports: RefCell<BTreeMap<u32, LayerReport>>,
     metrics: RwSignal<HudMetrics>,
+    last_metrics_update: RefCell<Option<Instant>>,
 }
 
 #[derive(Clone, Debug)]
@@ -196,6 +198,7 @@ impl Hud {
                 text_cache: RefCell::new(HudTextCache::default()),
                 reports: RefCell::new(BTreeMap::new()),
                 metrics: RwSignal::new(HudMetrics::default()),
+                last_metrics_update: RefCell::new(None),
             }),
         }
     }
@@ -207,29 +210,17 @@ impl Hud {
             self.inner
                 .metrics
                 .set(metrics_from_reports(&self.inner.reports.borrow()));
+            *self.inner.last_metrics_update.borrow_mut() = Some(Instant::now());
         }
     }
 
     pub(crate) fn record_present(&self, info: &PaintPresentInfo) {
-        let is_hud_layer = |source_element_id: Option<LayerSourceId>| {
-            source_element_id.is_some_and(|source_element_id| {
-                self.inner
-                    .layer_source_ids
-                    .borrow()
-                    .contains(&source_element_id)
-            })
-        };
         let active_layer_ids = info
             .active_layers
             .iter()
-            .filter(|layer| !is_hud_layer(layer.source_element_id))
             .map(|layer| layer.layer_id)
             .collect::<BTreeSet<_>>();
-        let presented_layers = info
-            .layers
-            .iter()
-            .filter(|layer| !is_hud_layer(layer.source_element_id))
-            .collect::<Vec<_>>();
+        let presented_layers = info.layers.iter().collect::<Vec<_>>();
 
         let presented_at = info.presented_at;
         {
@@ -261,11 +252,23 @@ impl Hud {
             }
         }
 
-        if self.inner.visible.get_untracked() {
+        if self.inner.visible.get_untracked() && self.should_update_metrics(presented_at) {
             self.inner
                 .metrics
                 .set(metrics_from_reports(&self.inner.reports.borrow()));
         }
+    }
+
+    fn should_update_metrics(&self, now: Instant) -> bool {
+        let mut last_update = self.inner.last_metrics_update.borrow_mut();
+        let should_update = last_update.is_none_or(|last_update| {
+            now.saturating_duration_since(last_update)
+                >= Duration::from_secs_f64(1.0 / HUD_TARGET_FPS)
+        });
+        if should_update {
+            *last_update = Some(now);
+        }
+        should_update
     }
 
     pub(crate) fn view(&self) -> Overlay {
@@ -286,7 +289,7 @@ impl Hud {
             hud_canvas.id().get_element_id(),
         );
         let visible = self.inner.visible;
-        let stack = hud_canvas.scroll().style(move |s| {
+        let stack = hud_canvas.scroll().debug_name("floem-hud").style(move |s| {
             let style = s
                 .position(Position::Absolute)
                 .inset_top(12.0)
@@ -295,7 +298,8 @@ impl Hud {
                 .max_height(HUD_MAX_HEIGHT)
                 .z_index(1000)
                 .pointer_events_none()
-                .wants_layer(true);
+                .wants_layer(true)
+                .layer_target_fps(HUD_TARGET_FPS);
             if !visible.get() { style.hide() } else { style }
         });
         register_hud_source(&self.inner.layer_source_ids, stack.id().get_element_id());

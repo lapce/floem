@@ -71,6 +71,7 @@ pub(crate) struct SceneLayer {
     pub content_bounds: Option<Rect>,
     pub opacity: f32,
     pub promoted: bool,
+    pub target_fps: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

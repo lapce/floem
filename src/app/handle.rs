@@ -483,6 +483,13 @@ impl ApplicationHandle {
                     panic!("Sent a gpu resource update after it had already been initialized");
                 }
             }
+            UserEvent::WindowPaint { window_id } => {
+                if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                    handle.ui.request_root_paint();
+                    handle.refresh_frame_activity();
+                }
+                self.request_update();
+            }
             UserEvent::CompositorSurfaceContent {
                 window_id,
                 surface_id,
@@ -500,6 +507,17 @@ impl ApplicationHandle {
             } => {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
                     handle.request_compositor_surface_frame(surface_id);
+                    handle.refresh_frame_activity();
+                }
+                self.request_update();
+            }
+            UserEvent::CompositorSurfaceTargetFps {
+                window_id,
+                surface_id,
+                target_fps,
+            } => {
+                if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                    handle.set_compositor_surface_target_fps(surface_id, target_fps);
                     handle.refresh_frame_activity();
                 }
                 self.request_update();

@@ -177,12 +177,13 @@ impl FocusNavMeta {
 ///
 /// Keeps the `ElementId` used by hit-testing/event routing plus optional
 /// navigation hints for high-quality keyboard focus behavior.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ElementMeta {
     pub element_id: ElementId,
     pub focus: FocusNavMeta,
     pub(crate) retained_transform_boundary: Option<TransformClass>,
     pub(crate) wants_layer: bool,
+    pub(crate) layer_target_fps: Option<f64>,
 }
 
 impl ElementMeta {
@@ -201,6 +202,7 @@ impl ElementMeta {
             },
             retained_transform_boundary: None,
             wants_layer: false,
+            layer_target_fps: None,
         }
     }
 }
@@ -294,6 +296,41 @@ impl BoxTree {
             return false;
         }
         meta.wants_layer = wants_layer;
+        self.metadata.insert(id, meta);
+        true
+    }
+
+    pub(crate) fn layer_target_fps(&self, id: understory_box_tree::NodeId) -> Option<f64> {
+        self.element_meta(id).and_then(|meta| meta.layer_target_fps)
+    }
+
+    pub(crate) fn containing_layer_target_fps(&self, id: ElementId) -> Option<(ElementId, f64)> {
+        let mut current = Some(id.0);
+        while let Some(node_id) = current {
+            if let Some(meta) = self.element_meta(node_id)
+                && meta.wants_layer
+                && let Some(target_fps) = meta.layer_target_fps
+            {
+                return Some((meta.element_id, target_fps));
+            }
+            current = self.parent_of(node_id);
+        }
+        None
+    }
+
+    pub(crate) fn set_layer_target_fps(
+        &mut self,
+        id: understory_box_tree::NodeId,
+        layer_target_fps: Option<f64>,
+    ) -> bool {
+        let Some(mut meta) = self.element_meta(id) else {
+            return false;
+        };
+        let layer_target_fps = layer_target_fps.filter(|fps| fps.is_finite() && *fps > 0.0);
+        if meta.layer_target_fps == layer_target_fps {
+            return false;
+        }
+        meta.layer_target_fps = layer_target_fps;
         self.metadata.insert(id, meta);
         true
     }

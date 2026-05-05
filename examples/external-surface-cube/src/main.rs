@@ -22,6 +22,7 @@ use floem::{
 use wgpu::util::DeviceExt;
 
 const CUBE_SIZE: u32 = 640;
+const CUBE_TARGET_FPS: f64 = 60.0;
 
 fn app_view(window_id: WindowId) -> impl IntoView {
     let (surface_image, cube_producer) = CompositorSurfaceProducer::new_image(
@@ -29,6 +30,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         Size::new(f64::from(CUBE_SIZE), f64::from(CUBE_SIZE)),
         CompositorSurfaceProducerConfig::default(),
     );
+    cube_producer.set_target_fps(Some(CUBE_TARGET_FPS));
 
     (
         "Compositor Surface as Image Brush".style(|s| {
@@ -285,7 +287,7 @@ return vec4<f32>(sampled.rgb + highlight, sampled.a);
 }
 
 fn drive_shimmer_uniforms(uniforms: ShaderUniform<[f32; 4]>, origin: Option<Instant>) {
-    request_animation_frame(move |frame_time| {
+    request_animation_frame(Some(CUBE_TARGET_FPS), move |frame_time| {
         let present = frame_time
             .interval
             .predicted_present

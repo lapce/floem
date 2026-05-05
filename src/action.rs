@@ -195,8 +195,13 @@ pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static)
     token
 }
 
-/// Execute a callback at the next begin-frame opportunity for the current window.
-pub fn request_animation_frame(action: impl FnOnce(FrameTime) + 'static) {
+/// Execute a callback at a begin-frame opportunity for the current window.
+///
+/// Pass `None` to run at the next full-rate frame opportunity. Pass
+/// `Some(fps)` to run at the next display-aligned opportunity no faster than
+/// that target. Target rates are rounded down to a whole multiple of the
+/// current display interval.
+pub fn request_animation_frame(target_fps: Option<f64>, action: impl FnOnce(FrameTime) + 'static) {
     let view = get_current_view();
 
     let action = move |frame_time| {
@@ -207,6 +212,7 @@ pub fn request_animation_frame(action: impl FnOnce(FrameTime) + 'static) {
     };
 
     add_update_message(UpdateMessage::RequestAnimationFrame {
+        target_fps,
         callback: Box::new(action),
     });
     if let Some(window_id) = view.window_id() {

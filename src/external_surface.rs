@@ -118,6 +118,14 @@ impl ExternalSurface {
     pub fn clear(&self) {
         self.handle().clear();
     }
+
+    /// Sets the preferred maximum update rate for this direct compositor layer.
+    ///
+    /// Floem rounds the value down to a display-friendly cadence. `None`
+    /// clears the preference.
+    pub fn set_target_fps(&self, target_fps: Option<f64>) {
+        self.handle().set_target_fps(target_fps);
+    }
 }
 
 /// Sendable handle for updating a direct external surface.
@@ -164,6 +172,15 @@ impl ExternalSurfaceHandle {
             window_id: self.window_id,
             surface_id: self.id.compositor_surface_id(),
             content: CompositorSurfaceContent::Empty,
+        });
+    }
+
+    /// Sets the preferred maximum update rate for this direct compositor layer.
+    pub fn set_target_fps(&self, target_fps: Option<f64>) {
+        Application::send_proxy_event(UserEvent::CompositorSurfaceTargetFps {
+            window_id: self.window_id,
+            surface_id: self.id.compositor_surface_id(),
+            target_fps,
         });
     }
 }

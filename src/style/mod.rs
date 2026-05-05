@@ -1895,6 +1895,12 @@ define_builtin_props!(
     /// available.
     WantsLayer wants_layer {}: bool {} = false,
 
+    /// Preferred maximum update rate for a compositor layer created for this view.
+    ///
+    /// Floem may round this down to a display-friendly cadence and may ignore it
+    /// when the view is not isolated into its own compositor layer.
+    LayerTargetFps layer_target_fps {}: Option<f64> [f64] {} = None,
+
     /// Sets the cursor style when hovering over the view.
     ///
     /// Changes the appearance of the mouse cursor.

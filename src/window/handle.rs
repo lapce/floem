@@ -60,7 +60,7 @@ use crate::{
     Application,
     app::UserEvent,
     event::{Event, clear_hit_test_cache, dropped_file::FileDragEvent},
-    frame::{FrameDemand, FrameTime},
+    frame::{FrameDemand, FrameTime, target_frame_interval as effective_target_frame_interval},
     inspector::{
         self, Capture, CaptureState, CapturedView, TimingKind, TimingReport, TimingThread,
         profiler::Profile,
@@ -961,7 +961,8 @@ impl WindowHandle {
         if self.active_frame_time.is_none() {
             self.active_frame_time = Some(self.frame_time_at(prepare_start));
         }
-        self.ui.promote_next_frame_work();
+        let frame_time = self.current_frame_time();
+        self.ui.promote_next_frame_work(frame_time);
         self.run_begin_frame_callbacks();
         self.process_update_no_paint();
         self.pending_timing.push_absolute_span(
@@ -1841,6 +1842,16 @@ impl WindowHandle {
         self.note_compositor_surface_frame_demand();
     }
 
+    pub(crate) fn set_compositor_surface_target_fps(
+        &mut self,
+        surface_id: crate::compositor_surface::CompositorSurfaceId,
+        target_fps: Option<f64>,
+    ) {
+        self.compositor_surfaces
+            .set_target_fps(surface_id, target_fps);
+        self.ui.request_root_paint();
+    }
+
     #[cfg(target_os = "macos")]
     pub(crate) fn capture_next_metal_frame(&mut self) {
         request_next_metal_capture();
@@ -1862,8 +1873,18 @@ impl WindowHandle {
     }
 
     pub(crate) fn refresh_frame_source_target(&mut self) {
-        self.frame_source
-            .refresh_window_target(self.window.as_ref());
+        if self
+            .frame_source
+            .refresh_window_target(self.window.as_ref())
+        {
+            self.reset_layer_pacing_state();
+        }
+    }
+
+    fn reset_layer_pacing_state(&mut self) {
+        self.ui.reset_layer_pacing_state();
+        self.compositor_surfaces.reset_pacing_state();
+        self.record_frame_demand(FrameDemand::ANIMATION);
     }
 
     pub(crate) fn poll_gpu_callbacks(&self) {
@@ -1885,6 +1906,10 @@ impl WindowHandle {
     }
 
     fn receive_frame_tick(&mut self, tick: subduction_core::timing::FrameTick) {
+        let tick_index_regressed = self
+            .frame_source
+            .latest_tick()
+            .is_some_and(|latest| tick.frame_index <= latest.frame_index);
         if crate::frame_source::frame_pacing_diag_enabled() {
             eprintln!(
                 "floem frame pacing window tick window={:?} tick={}",
@@ -1892,6 +1917,9 @@ impl WindowHandle {
             );
         }
         self.frame_source.receive_frame_tick(tick);
+        if tick_index_regressed {
+            self.reset_layer_pacing_state();
+        }
     }
 
     pub(crate) fn schedule_frame_tick_work(
@@ -2116,6 +2144,12 @@ impl WindowHandle {
                 let _ = self.commit_requested_compositor_frame(reason);
             }
             CompositorFrameAction::Coalesced { active, pending } => {
+                if self.ui.has_begin_frame_callbacks() {
+                    let previous_frame_time = self.active_frame_time.replace(frame_time);
+                    self.run_begin_frame_callbacks();
+                    self.process_update_no_paint();
+                    self.active_frame_time = previous_frame_time;
+                }
                 if self.has_active_compositor_frame_work()
                     || self.pending_compositor_commit.is_some()
                 {
@@ -2442,7 +2476,6 @@ impl WindowHandle {
     }
 
     fn route_paint_present_event(&mut self, presented_at: Instant, frame_time: Option<FrameTime>) {
-        let target_frame_interval = frame_time.map(|frame| frame.frame_interval);
         let missed_deadline =
             frame_time.is_some_and(|frame| presented_at > frame.interval.deadline_max);
         let layers = mem::take(&mut self.pending_presented_layers)
@@ -2451,7 +2484,11 @@ impl WindowHandle {
                 layer_id: layer.layer_id.index(),
                 source_element_id: layer.source_element_id,
                 debug_name: layer.debug_name,
-                target_frame_interval,
+                target_fps: layer.target_fps,
+                target_frame_interval: effective_target_frame_interval(
+                    layer.target_fps,
+                    frame_time,
+                ),
                 missed_deadline,
             })
             .collect::<Vec<_>>();
@@ -2461,7 +2498,11 @@ impl WindowHandle {
                 layer_id: layer.layer_id.index(),
                 source_element_id: layer.source_element_id,
                 debug_name: layer.debug_name,
-                target_frame_interval,
+                target_fps: layer.target_fps,
+                target_frame_interval: effective_target_frame_interval(
+                    layer.target_fps,
+                    frame_time,
+                ),
                 missed_deadline: false,
             })
             .collect::<Vec<_>>();

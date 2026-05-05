@@ -7,7 +7,7 @@ use crate::{
         CompositorSurfaceContent, CompositorSurfaceId, CompositorSurfaceOutcome,
         CompositorSurfaceProviderHandle,
     },
-    frame::FrameTime,
+    frame::{FrameTime, target_frame_due},
     gpu_resources::GpuResources,
     paint::composition::{CompositionItem, CompositionPlan},
 };
@@ -60,6 +60,23 @@ impl WindowCompositorSurfaces {
         entry.version = entry.version.wrapping_add(1);
     }
 
+    pub(crate) fn set_target_fps(
+        &mut self,
+        surface_id: CompositorSurfaceId,
+        target_fps: Option<f64>,
+    ) {
+        let entry = self.entries.entry(surface_id).or_default();
+        entry.target_fps = sanitize_target_fps(target_fps);
+        entry.last_delivered_frame_index = None;
+    }
+
+    pub(crate) fn reset_pacing_state(&mut self) {
+        for entry in self.entries.values_mut() {
+            entry.last_delivered_frame_index = None;
+        }
+        self.needs_frame_pull = true;
+    }
+
     pub(crate) fn request_frame(&mut self, surface_id: CompositorSurfaceId) {
         self.entries.entry(surface_id).or_default();
         self.needs_frame_pull = true;
@@ -77,7 +94,6 @@ impl WindowCompositorSurfaces {
         let mut frame_update = WindowCompositorSurfaceFrameUpdate::default();
         self.pending_outcomes.clear();
         for planned_surface in planned_compositor_surfaces(plan) {
-            let frame_time = frame_time_for_surface(planned_surface.surface_id);
             let Some(entry) = self.entries.get_mut(&planned_surface.surface_id) else {
                 continue;
             };
@@ -102,6 +118,11 @@ impl WindowCompositorSurfaces {
             if let Some(latency) = poll_update.producer_observed_latency {
                 entry.record_producer_latency(latency);
                 frame_update.record_producer_latency(planned_surface.surface_id, latency);
+            }
+            let frame_time = frame_time_for_surface(planned_surface.surface_id);
+            if !entry.should_deliver_frame_opportunity(frame_time) {
+                frame_update.request_next_frame = true;
+                continue;
             }
             let size_px = planned_surface.source_size * effective_scale;
             let target = match (provider.can_accept_frame_target(), gpu_resources) {
@@ -432,6 +453,7 @@ mod tests {
             content_bounds: None,
             opacity: 1.0,
             promoted: false,
+            target_fps: None,
         }));
         plan.items
             .push(CompositionItem::CompositorSurface(CompositorSurfaceLayer {
@@ -641,6 +663,8 @@ pub(crate) struct CompositorSurfaceEntry {
     pub content_dirty: bool,
     pub version: u64,
     pub previous_outcome: Option<CompositorSurfaceOutcome>,
+    pub target_fps: Option<f64>,
+    last_delivered_frame_index: Option<u64>,
     producer_work_estimate: Duration,
 }
 
@@ -653,6 +677,8 @@ impl Default for CompositorSurfaceEntry {
             content_dirty: false,
             version: 0,
             previous_outcome: None,
+            target_fps: None,
+            last_delivered_frame_index: None,
             producer_work_estimate: Duration::ZERO,
         }
     }
@@ -663,6 +689,25 @@ impl CompositorSurfaceEntry {
         self.producer_work_estimate =
             smooth_duration_estimate(self.producer_work_estimate, observed);
     }
+
+    fn should_deliver_frame_opportunity(&mut self, frame_time: FrameTime) -> bool {
+        let Some(target_fps) = self.target_fps else {
+            self.last_delivered_frame_index = Some(frame_time.frame_index);
+            return true;
+        };
+        let should_deliver = target_frame_due(frame_time, Some(target_fps))
+            || self
+                .last_delivered_frame_index
+                .is_some_and(|last| frame_time.frame_index <= last);
+        if should_deliver {
+            self.last_delivered_frame_index = Some(frame_time.frame_index);
+        }
+        should_deliver
+    }
+}
+
+fn sanitize_target_fps(target_fps: Option<f64>) -> Option<f64> {
+    target_fps.filter(|fps| fps.is_finite() && *fps > 0.0)
 }
 
 fn smooth_duration_estimate(previous: Duration, observed: Duration) -> Duration {

@@ -5,7 +5,9 @@ use crate::{
     platform::{Duration, Instant},
 };
 use raw_window_handle::HasWindowHandle;
-use subduction::{FrameSourceTarget, frame_source::FrameSource as SubductionFrameSource};
+use subduction::{
+    FrameSourceDisplayTiming, FrameSourceTarget, frame_source::FrameSource as SubductionFrameSource,
+};
 use subduction_core::output::OutputId;
 use winit::window::{Window as WinitWindow, WindowId};
 
@@ -26,6 +28,7 @@ pub(crate) fn window_frame_interval(window: &dyn WinitWindow) -> Duration {
 pub(crate) struct FrameSource {
     window_id: WindowId,
     inner: SubductionFrameSource,
+    target: Option<FrameSourceTarget>,
 }
 
 pub(crate) fn new_window_frame_source(window_id: WindowId, output_id: u32) -> FrameSource {
@@ -38,7 +41,11 @@ pub(crate) fn new_window_frame_source(window_id: WindowId, output_id: u32) -> Fr
         }
         Application::send_proxy_event(UserEvent::FrameTick { window_id, tick });
     });
-    FrameSource { window_id, inner }
+    FrameSource {
+        window_id,
+        inner,
+        target: None,
+    }
 }
 
 impl FrameSource {
@@ -46,7 +53,22 @@ impl FrameSource {
         self.inner.frame_interval(window_frame_interval(window))
     }
 
-    pub(crate) fn refresh_window_target(&mut self, window: &dyn WinitWindow) {
+    pub(crate) fn display_timing(&self, fallback: Duration) -> DisplayTiming {
+        match self.inner.display_timing(fallback) {
+            FrameSourceDisplayTiming::Fixed { interval_ns } => {
+                DisplayTiming::fixed(Duration::from_nanos(interval_ns))
+            }
+            FrameSourceDisplayTiming::Variable {
+                min_interval_ns,
+                max_interval_ns,
+            } => DisplayTiming::Variable {
+                min_frame_interval: Duration::from_nanos(min_interval_ns),
+                max_frame_interval: Duration::from_nanos(max_interval_ns),
+            },
+        }
+    }
+
+    pub(crate) fn refresh_window_target(&mut self, window: &dyn WinitWindow) -> bool {
         let monitor = window.current_monitor();
         let raw_window_handle = window.window_handle().ok().map(|handle| handle.as_raw());
         let target = FrameSourceTarget {
@@ -66,7 +88,10 @@ impl FrameSource {
                 self.window_id, target.monitor_name, target.refresh_millihertz,
             );
         }
+        let changed = self.target.as_ref() != Some(&target);
+        self.target = Some(target.clone());
         self.inner.refresh_target(target);
+        changed
     }
 
     pub(crate) fn current_frame_time(
@@ -76,6 +101,7 @@ impl FrameSource {
         background_rendering: bool,
     ) -> FrameTime {
         let frame_interval = self.frame_interval(window);
+        let display_timing = self.display_timing(frame_interval);
         if let Some(tick) = self.inner.latest_tick()
             && let Some(predicted_present) = tick.predicted_present
         {
@@ -86,7 +112,7 @@ impl FrameSource {
                     deadline_min: now,
                     deadline_max: predicted_present,
                     predicted_present: Some(predicted_present),
-                    display_timing: DisplayTiming::fixed(frame_interval),
+                    display_timing,
                     present_pacing: PresentPacing::AtTime(predicted_present),
                     background_rendering,
                 },
@@ -102,7 +128,7 @@ impl FrameSource {
                 deadline_min: now,
                 deadline_max: predicted_present,
                 predicted_present: Some(predicted_present),
-                display_timing: DisplayTiming::fixed(frame_interval),
+                display_timing,
                 present_pacing: PresentPacing::AtTime(predicted_present),
                 background_rendering,
             },

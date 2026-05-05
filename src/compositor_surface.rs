@@ -105,11 +105,15 @@ pub struct CompositorSurfaceImage {
 impl CompositorSurfaceImage {
     #[must_use]
     pub fn new(window_id: WindowId, config: CompositorSurfaceConfig) -> Self {
-        Self {
+        let surface = Self {
             id: CompositorSurfaceId::next(),
             window_id,
             config,
+        };
+        if surface.config.target_fps.is_some() {
+            surface.handle().set_target_fps(surface.config.target_fps);
         }
+        surface
     }
 
     #[must_use]
@@ -182,6 +186,14 @@ impl CompositorSurfaceImage {
     pub fn set_provider(&self, provider: CompositorSurfaceProviderHandle) {
         self.handle().set_provider(provider);
     }
+
+    /// Sets the preferred maximum update rate for this surface identity.
+    ///
+    /// This affects producer frame opportunities and direct compositor-layer
+    /// diagnostics for every placement of this image.
+    pub fn set_target_fps(&self, target_fps: Option<f64>) {
+        self.handle().set_target_fps(target_fps);
+    }
 }
 
 /// Configuration for a wgpu-backed [`CompositorSurfaceProducer`].
@@ -196,6 +208,12 @@ pub struct CompositorSurfaceProducerConfig {
     /// Alpha interpretation for completed frames when they are published or
     /// sampled.
     pub alpha_mode: CompositorSurfaceAlphaMode,
+    /// Preferred maximum producer update rate.
+    ///
+    /// Floem rounds this down to a clean multiple of the active display frame
+    /// interval. `None` means the producer may receive every eligible frame
+    /// opportunity.
+    pub target_fps: Option<f64>,
 }
 
 impl Default for CompositorSurfaceProducerConfig {
@@ -203,6 +221,7 @@ impl Default for CompositorSurfaceProducerConfig {
         Self {
             surface: subduction::wgpu::ExternalSurfaceConfig::default(),
             alpha_mode: CompositorSurfaceAlphaMode::Premultiplied,
+            target_fps: None,
         }
     }
 }
@@ -284,6 +303,7 @@ impl CompositorSurfaceProducer {
                 kind: CompositorSurfaceKind::WgpuTexture,
                 alpha_mode: config.alpha_mode,
                 preferred_size: Some(size),
+                target_fps: config.target_fps,
             },
         );
         let producer = Self::new(surface.handle(), config);
@@ -326,6 +346,15 @@ impl CompositorSurfaceProducer {
     ) {
         *self.callback.lock().unwrap() = Some(Box::new(callback));
         self.handle.request_frame();
+    }
+
+    /// Sets the preferred maximum frame callback rate for this producer.
+    ///
+    /// Floem stores this on the associated compositor surface and rounds it
+    /// down to a display-friendly cadence before delivering producer frame
+    /// opportunities.
+    pub fn set_target_fps(&self, target_fps: Option<f64>) {
+        self.handle.set_target_fps(target_fps);
     }
 
     fn provider(&self) -> CompositorSurfaceProducerProvider {
@@ -484,6 +513,7 @@ pub struct CompositorSurfaceConfig {
     pub kind: CompositorSurfaceKind,
     pub alpha_mode: CompositorSurfaceAlphaMode,
     pub preferred_size: Option<Size>,
+    pub target_fps: Option<f64>,
 }
 
 impl CompositorSurfaceConfig {
@@ -493,6 +523,7 @@ impl CompositorSurfaceConfig {
             kind: CompositorSurfaceKind::WgpuTexture,
             alpha_mode: CompositorSurfaceAlphaMode::Premultiplied,
             preferred_size: None,
+            target_fps: None,
         }
     }
 
@@ -502,6 +533,7 @@ impl CompositorSurfaceConfig {
             kind: CompositorSurfaceKind::NativeTexture,
             alpha_mode: CompositorSurfaceAlphaMode::Opaque,
             preferred_size: None,
+            target_fps: None,
         }
     }
 }
@@ -944,6 +976,14 @@ impl CompositorSurfaceHandle {
             window_id: self.window_id,
             surface_id: self.id,
             provider,
+        });
+    }
+
+    pub fn set_target_fps(&self, target_fps: Option<f64>) {
+        Application::send_proxy_event(UserEvent::CompositorSurfaceTargetFps {
+            window_id: self.window_id,
+            surface_id: self.id,
+            target_fps,
         });
     }
 

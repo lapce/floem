@@ -718,6 +718,8 @@ pub struct PaintPresentLayer {
     pub source_element_id: Option<crate::paint::composition::LayerSourceId>,
     /// Debug name for `source_element_id`, if known.
     pub debug_name: Option<String>,
+    /// Preferred maximum update rate for this layer, if one was requested by style.
+    pub target_fps: Option<f64>,
     /// Target interval used when the layer was submitted.
     pub target_frame_interval: Option<Duration>,
     /// Whether the layer missed the submit deadline for that target interval.

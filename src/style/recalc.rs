@@ -251,6 +251,26 @@ impl StyleReason {
         self.flags.contains(StyleReasonFlags::TRANSITION)
     }
 
+    pub fn is_timeline_only(&self) -> bool {
+        let timeline = StyleReasonFlags::ANIMATION | StyleReasonFlags::TRANSITION;
+        let target = StyleReasonFlags::TARGET;
+        if self.flags.is_empty() {
+            return false;
+        }
+        let non_timeline = self.flags - timeline - target;
+        if !non_timeline.is_empty() {
+            return false;
+        }
+        if self.flags.contains(target) {
+            return !self.targets.is_empty()
+                && self
+                    .targets
+                    .iter()
+                    .all(|(_, reason)| reason.is_timeline_only());
+        }
+        self.flags.intersects(timeline)
+    }
+
     pub fn has_selector(&self) -> bool {
         self.flags.contains(StyleReasonFlags::SELECTOR)
     }

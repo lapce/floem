@@ -22,6 +22,7 @@ use crate::{
     BoxTree, ElementId,
     action::add_update_message,
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
+    frame::target_frame_due,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
     paint::display_list::RetainedDisplayList,
@@ -41,6 +42,17 @@ pub(crate) struct FocusNavCache {
     built: bool,
     meta_revision: u64,
     entries: SmallVec<[FocusEntry<ElementId>; 128]>,
+}
+
+pub(crate) struct BeginFrameCallback {
+    pub(crate) target_fps: Option<f64>,
+    pub(crate) callback: Box<dyn FnOnce(FrameTime)>,
+}
+
+impl BeginFrameCallback {
+    fn due_for_frame(&self, frame_time: FrameTime) -> bool {
+        target_frame_due(frame_time, self.target_fps)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -157,6 +169,7 @@ pub struct WindowState {
     pub(crate) user_scale: f64,
     pub(crate) style_dirty: FxHashMap<ViewId, StyleReason>,
     pub(crate) next_frame_style_dirty: FxHashMap<ElementId, StyleReason>,
+    layer_target_last_style_frame: FxHashMap<ElementId, u64>,
     pub(crate) next_frame_needs_layout: bool,
     pub(crate) next_frame_needs_box_tree_from_layout: bool,
     pub(crate) next_frame_needs_box_tree_commit: bool,
@@ -219,7 +232,7 @@ pub struct WindowState {
     pub(crate) focus_nav_cache: FocusNavCache,
     pub(crate) profile_events_enabled: bool,
     pub(crate) profile_events: Vec<QueuedProfileEvent>,
-    pub(crate) begin_frame_callbacks: Vec<Box<dyn FnOnce(FrameTime)>>,
+    pub(crate) begin_frame_callbacks: Vec<BeginFrameCallback>,
     pub(crate) defer_visual_updates_until_present: bool,
 }
 
@@ -257,6 +270,7 @@ impl WindowState {
             screen_size_bp: ScreenSizeBp::Xs,
             dirty_paint_elements: FxHashSet::from_iter([root_element_id]),
             next_frame_style_dirty: FxHashMap::default(),
+            layer_target_last_style_frame: FxHashMap::default(),
             next_frame_needs_layout: false,
             next_frame_needs_box_tree_from_layout: false,
             next_frame_needs_box_tree_commit: false,
@@ -322,14 +336,38 @@ impl WindowState {
             || !self.begin_frame_callbacks.is_empty()
     }
 
-    pub(crate) fn take_begin_frame_callbacks(&mut self) -> Vec<Box<dyn FnOnce(FrameTime)>> {
-        std::mem::take(&mut self.begin_frame_callbacks)
+    pub(crate) fn take_due_begin_frame_callbacks(
+        &mut self,
+        frame_time: FrameTime,
+    ) -> Vec<Box<dyn FnOnce(FrameTime)>> {
+        let callbacks = std::mem::take(&mut self.begin_frame_callbacks);
+        let mut due = Vec::new();
+        let mut pending = Vec::new();
+        for callback in callbacks {
+            if callback.due_for_frame(frame_time) {
+                due.push(callback.callback);
+            } else {
+                pending.push(callback);
+            }
+        }
+        self.begin_frame_callbacks = pending;
+        due
     }
 
     pub(crate) fn promote_next_frame_work(&mut self) {
+        self.promote_next_frame_work_at(None);
+    }
+
+    pub(crate) fn promote_next_frame_work_at(&mut self, frame_time: Option<FrameTime>) {
+        let mut deferred_style = FxHashMap::default();
         for (element_id, reason) in std::mem::take(&mut self.next_frame_style_dirty) {
-            self.mark_style_dirty_with(element_id, reason);
+            if self.should_defer_timeline_style(element_id, &reason, frame_time) {
+                deferred_style.insert(element_id, reason);
+            } else {
+                self.mark_style_dirty_with(element_id, reason);
+            }
         }
+        self.next_frame_style_dirty = deferred_style;
         if self.next_frame_needs_layout {
             self.needs_layout = true;
             self.next_frame_needs_layout = false;
@@ -347,6 +385,62 @@ impl WindowState {
         ));
         self.dirty_paint_elements
             .extend(std::mem::take(&mut self.next_frame_dirty_paint_elements));
+    }
+
+    pub(crate) fn reset_layer_pacing_state(&mut self) {
+        self.layer_target_last_style_frame.clear();
+    }
+
+    fn should_defer_timeline_style(
+        &mut self,
+        element_id: ElementId,
+        reason: &StyleReason,
+        frame_time: Option<FrameTime>,
+    ) -> bool {
+        if !reason.is_timeline_only() {
+            return false;
+        }
+        let Some(frame_time) = frame_time else {
+            return false;
+        };
+        let Some((layer_id, target_fps)) = self.timeline_style_layer_target(element_id, reason)
+        else {
+            return false;
+        };
+        let should_promote = target_frame_due(frame_time, Some(target_fps))
+            || self
+                .layer_target_last_style_frame
+                .get(&layer_id)
+                .is_some_and(|last| frame_time.frame_index <= *last);
+        if should_promote {
+            self.layer_target_last_style_frame
+                .insert(layer_id, frame_time.frame_index);
+        }
+        !should_promote
+    }
+
+    fn timeline_style_layer_target(
+        &self,
+        element_id: ElementId,
+        reason: &StyleReason,
+    ) -> Option<(ElementId, f64)> {
+        let box_tree = self.box_tree.borrow();
+        if reason.has_target() {
+            let mut target = None;
+            for (target_id, target_reason) in &reason.targets {
+                if !target_reason.is_timeline_only() {
+                    return None;
+                }
+                let current = box_tree.containing_layer_target_fps(*target_id)?;
+                if target.is_some_and(|target| target != current) {
+                    return None;
+                }
+                target = Some(current);
+            }
+            target
+        } else {
+            box_tree.containing_layer_target_fps(element_id)
+        }
     }
 
     pub(crate) fn begin_profile_event(&mut self, name: String) -> Option<(Instant, String)> {
@@ -1127,9 +1221,12 @@ impl WindowState {
             }
         }
         if should_request_next_drag_frame {
-            self.begin_frame_callbacks.push(Box::new(move |_| {
-                add_update_message(UpdateMessage::RequestBoxTreeCommit);
-            }));
+            self.begin_frame_callbacks.push(BeginFrameCallback {
+                target_fps: None,
+                callback: Box::new(move |_| {
+                    add_update_message(UpdateMessage::RequestBoxTreeCommit);
+                }),
+            });
         }
 
         // Clean up completed animations
