@@ -1110,12 +1110,7 @@ impl TextInput {
         self.selection = self.selection_from_byte_positions(new_selection.start, new_selection.end);
     }
 
-    fn paint_selection_rect_with_painter(
-        &self,
-        effective_scale: f64,
-        painter: &mut imaging::Painter<'_>,
-    ) {
-        let cursor_color = self.selection_style.selection_color();
+    fn paint_selection_rects(&self, effective_scale: f64, mut paint_rect: impl FnMut(Rect)) {
         let selection = if let Some(selection) = self.selection {
             selection
         } else if let Some(cursor) = self.preedit.as_ref().and_then(|p| p.cursor) {
@@ -1142,7 +1137,7 @@ impl TextInput {
             selection_origin,
             effective_scale,
             |rect| {
-                painter.fill(rect, &cursor_color).draw();
+                paint_rect(rect);
             },
         );
     }
@@ -1538,10 +1533,10 @@ impl View for TextInput {
                         .is_some_and(|p| p.cursor.is_some_and(|c| c.0 != c.1));
 
                 if has_selection {
-                    self.paint_selection_rect_with_painter(
-                        cx.effective_scale,
-                        &mut p.as_imaging_dyn(),
-                    );
+                    let selection_color = self.selection_style.selection_color();
+                    self.paint_selection_rects(cx.effective_scale, |rect| {
+                        p.fill(rect, &selection_color).draw();
+                    });
                 }
             }
         });

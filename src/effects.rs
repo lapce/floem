@@ -17,6 +17,7 @@ use std::{
 use floem_reactive::UpdaterEffect;
 use imaging::{
     Composite as ImagingComposite, Filter as ImagingFilter, GroupRef as ImagingGroupRef,
+    record::Clip,
 };
 use peniko::kurbo::Size;
 use subduction::wgpu::SurfaceColorSpace;
@@ -50,6 +51,13 @@ pub enum CompositorShader {
     Layer(LayerFilter),
     /// A shader pass that fills a target without sampling previous output.
     Source(ShaderSource),
+}
+
+/// A compositor shader pass plus the isolated group clip that constrains its output.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct CompositorShaderPass {
+    pub shader: CompositorShader,
+    pub clip: Option<Clip>,
 }
 
 impl From<ImagingFilter> for Filter {
@@ -110,11 +118,11 @@ impl From<ShaderSourceImage> for Image {
 
 /// Floem brush payload.
 ///
-/// This is Imaging's generic brush container specialized for Floem image
-/// payloads. Renderer-backed images and compositor-generated shader sources
-/// share the same brush path until the display-list recorder lowers source
-/// images into compositor passes.
-pub type Brush<I = ImageBrush, G = peniko::Gradient> = imaging::Brush<I, G>;
+/// This is Imaging's generic brush container fully specialized for Floem image
+/// payloads and Peniko gradients. Renderer-backed images and
+/// compositor-generated shader sources share the same brush path until the
+/// display-list recorder lowers source images into compositor passes.
+pub type Brush = imaging::Brush<ImageBrush, peniko::Gradient>;
 
 /// Borrowed Floem image payload.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -248,8 +256,8 @@ impl From<ShaderSourceImage> for ImageBrush {
 /// Borrowed Floem image brush.
 pub type ImageBrushRef<'a> = ImageBrush<ImageRef<'a>>;
 
-impl<D, G> From<ImageBrush<D>> for Brush<ImageBrush<D>, G> {
-    fn from(value: ImageBrush<D>) -> Self {
+impl From<ImageBrush> for Brush {
+    fn from(value: ImageBrush) -> Self {
         Self::Image(value)
     }
 }

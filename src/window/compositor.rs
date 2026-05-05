@@ -2,19 +2,19 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     compositor_surface::{CompositorSurfaceContent, CompositorSurfaceId, ExternalTexture},
-    effects::CompositorShader,
+    effects::{Brush as FloemBrush, CompositorShader, CompositorShaderPass, Image as FloemImage},
     gpu_resources::GpuResources,
     paint::{
         composition::{
             CompositionItem, CompositionKey, CompositionPlan, CompositorSurfaceLayer,
             LayerSourceId, SceneExternalImage, SceneLayer,
         },
-        renderer::SceneFragmentRenderCompletion,
         renderer::{ExternalImageResources, SceneFragmentRenderJob, SceneFragmentRendererPool},
+        renderer::{SceneFragmentRenderCompletion, SceneFragmentRenderKind},
     },
 };
 use imaging::{
-    Brush, Composite, ExternalImage, ExternalImageId, ImageBrush,
+    Brush as ImagingBrush, Composite, ExternalImage, ExternalImageId, ImageBrush,
     record::{Draw, Geometry, Scene},
 };
 use imaging_wgpu::ResolvedExternalImage;
@@ -773,8 +773,48 @@ impl WindowCompositor {
                 );
                 Some(texture)
             };
-            let render_texture = scene_texture.as_ref().unwrap_or(&lease.texture);
             let render_size = Size::new(f64::from(width), f64::from(height));
+            let effect_mask_scene = if layer.color_filters.is_empty() {
+                None
+            } else {
+                effect_clip_mask_scene(&layer.color_filters, render_size)
+            };
+            let effect_mask_texture = effect_mask_scene.as_ref().map(|_| {
+                let texture = create_effect_intermediate_texture(
+                    &gpu_resources.device,
+                    size,
+                    format,
+                    "floem compositor effect clip mask",
+                );
+                initialize_texture_for_external_writer(
+                    &gpu_resources.device,
+                    &gpu_resources.queue,
+                    &texture,
+                    "floem compositor effect clip mask init",
+                );
+                texture
+            });
+            let render_texture = scene_texture.as_ref().unwrap_or(&lease.texture).clone();
+            let mask_texture_for_submit = effect_mask_texture.clone();
+            let has_effect_mask = effect_mask_texture.is_some();
+            self.pending_scene_renders.insert(
+                layer.key.clone(),
+                PendingSceneRender {
+                    signature: signature.clone(),
+                    layer_state: SceneCompositorLayer::from_layer(layer, compositor_surfaces),
+                    lease,
+                    scene_texture,
+                    effect_mask_texture,
+                    content_ready: false,
+                    mask_ready: !has_effect_mask,
+                    effects: layer.color_filters.clone(),
+                    format,
+                    size,
+                    effective_scale,
+                    render_call_id,
+                    content_revision: layer.content_revision,
+                },
+            );
             if crate::frame_source::frame_pacing_diag_enabled() {
                 eprintln!(
                     "floem compositor scene render call={} key={:?} revision={} size={}x{} bounds={:?} transform={:?} commands={} external_images={} color_filters={}",
@@ -796,13 +836,14 @@ impl WindowCompositor {
                     base_transform,
                     clip: layer.clip,
                     render_size,
-                    texture: render_texture.clone(),
+                    texture: render_texture,
                     external_images,
                 },
                 SceneFragmentRenderCompletion {
                     window_id,
                     key: layer.key.clone(),
                     signature: signature.clone(),
+                    kind: SceneFragmentRenderKind::Content,
                 },
             );
             if !render_submitted {
@@ -822,23 +863,43 @@ impl WindowCompositor {
                         layer.key,
                     );
                 }
+                self.pending_scene_renders.remove(&layer.key);
                 continue;
             }
-            self.pending_scene_renders.insert(
-                layer.key.clone(),
-                PendingSceneRender {
-                    signature,
-                    layer_state: SceneCompositorLayer::from_layer(layer, compositor_surfaces),
-                    lease,
-                    scene_texture,
-                    effects: layer.color_filters.clone(),
-                    format,
-                    size,
-                    effective_scale,
-                    render_call_id,
-                    content_revision: layer.content_revision,
-                },
-            );
+            if let (Some(mask_scene), Some(mask_texture)) =
+                (effect_mask_scene, mask_texture_for_submit.as_ref())
+            {
+                let mask_submitted = renderer_pool.submit(
+                    SceneFragmentRenderJob {
+                        scene: mask_scene,
+                        base_transform,
+                        clip: None,
+                        render_size,
+                        texture: mask_texture.clone(),
+                        external_images: ExternalImageResources::default(),
+                    },
+                    SceneFragmentRenderCompletion {
+                        window_id,
+                        key: layer.key.clone(),
+                        signature: signature.clone(),
+                        kind: SceneFragmentRenderKind::ClipMask,
+                    },
+                );
+                if !mask_submitted {
+                    let failure = UnsupportedPublication::Scene {
+                        key: layer.key.clone(),
+                        revision: layer.content_revision,
+                    };
+                    if self.unsupported_publications.insert(failure) {
+                        eprintln!(
+                            "floem compositor: scene layer {:?} renderer cannot render effect clip mask",
+                            layer.key,
+                        );
+                    }
+                    self.pending_scene_renders.remove(&layer.key);
+                    continue;
+                }
+            }
             if crate::frame_source::frame_pacing_diag_enabled() {
                 eprintln!(
                     "floem compositor scene render scheduled key={:?} surface={:?} size={}x{}",
@@ -854,6 +915,7 @@ impl WindowCompositor {
         &mut self,
         key: CompositionKey,
         signature: SceneRenderSignature,
+        kind: SceneFragmentRenderKind,
         rendered: bool,
         gpu_resources: &GpuResources,
     ) -> bool {
@@ -867,22 +929,35 @@ impl WindowCompositor {
         if pending_signature != signature {
             return false;
         }
+        if !rendered {
+            if let Some(pending) = self.pending_scene_renders.remove(&key) {
+                let failure = UnsupportedPublication::Scene {
+                    key,
+                    revision: pending.content_revision,
+                };
+                if self.unsupported_publications.insert(failure) {
+                    eprintln!(
+                        "floem compositor: scene layer render worker failed for revision {}",
+                        pending.content_revision,
+                    );
+                }
+            }
+            return false;
+        };
+
+        let Some(pending) = self.pending_scene_renders.get_mut(&key) else {
+            return false;
+        };
+        match kind {
+            SceneFragmentRenderKind::Content => pending.content_ready = true,
+            SceneFragmentRenderKind::ClipMask => pending.mask_ready = true,
+        }
+        if !pending.content_ready || !pending.mask_ready {
+            return true;
+        }
         let Some(pending) = self.pending_scene_renders.remove(&key) else {
             return false;
         };
-        if !rendered {
-            let failure = UnsupportedPublication::Scene {
-                key,
-                revision: pending.content_revision,
-            };
-            if self.unsupported_publications.insert(failure) {
-                eprintln!(
-                    "floem compositor: scene layer render worker failed for revision {}",
-                    pending.content_revision,
-                );
-            }
-            return false;
-        }
         if let Some(scene_texture) = &pending.scene_texture
             && let Err(err) = self.effect_renderer.render_effect_chain(
                 &gpu_resources.device,
@@ -891,6 +966,7 @@ impl WindowCompositor {
                 &key,
                 scene_texture,
                 &pending.lease.texture,
+                pending.effect_mask_texture.as_ref(),
                 pending.format,
                 pending.size,
                 &pending.effects,
@@ -947,14 +1023,14 @@ impl WindowCompositor {
         plan: &CompositionPlan,
         frame_size: Size,
         effective_scale: f64,
-        background: Option<Brush>,
+        background: Option<FloemBrush>,
     ) -> Result<CompositorCaptureScene, String> {
         let mut scene = Scene::new();
         if let Some(background) = background {
             scene.draw(Draw::Fill {
                 transform: Affine::IDENTITY,
                 fill_rule: Fill::NonZero,
-                brush: background,
+                brush: imaging_brush_from_floem_background(background)?,
                 brush_transform: None,
                 shape: Geometry::Rect(frame_size.to_rect().expand()),
                 composite: Composite::default(),
@@ -1282,7 +1358,10 @@ struct PendingSceneRender {
     layer_state: SceneCompositorLayer,
     lease: subduction::wgpu::SurfaceFrameLease,
     scene_texture: Option<wgpu::Texture>,
-    effects: Vec<CompositorShader>,
+    effect_mask_texture: Option<wgpu::Texture>,
+    content_ready: bool,
+    mask_ready: bool,
+    effects: Vec<CompositorShaderPass>,
     format: wgpu::TextureFormat,
     size: wgpu::Extent3d,
     effective_scale: f64,
@@ -1374,6 +1453,27 @@ impl ExternalTextureContent {
     }
 }
 
+fn imaging_brush_from_floem_background(brush: FloemBrush) -> Result<ImagingBrush, String> {
+    match brush {
+        FloemBrush::Solid(color) => Ok(ImagingBrush::Solid(color)),
+        FloemBrush::Gradient(gradient) => Ok(ImagingBrush::Gradient(gradient)),
+        FloemBrush::Image(image_brush) => {
+            let peniko::ImageBrush { image, sampler } = image_brush.0;
+            match image {
+                FloemImage::Imaging(image) => {
+                    Ok(ImagingBrush::Image(ImageBrush(peniko::ImageBrush {
+                        image,
+                        sampler,
+                    })))
+                }
+                FloemImage::Source(_) => {
+                    Err("capture background shader-source brushes are not supported".to_string())
+                }
+            }
+        }
+    }
+}
+
 fn append_texture_layer(
     scene: &mut Scene,
     resources: &mut ExternalImageResources,
@@ -1403,7 +1503,7 @@ fn append_texture_layer(
     let target_width = logical_bounds.width() * effective_scale;
     let target_height = logical_bounds.height() * effective_scale;
     let image = ExternalImage::new(image_id, width, height, ImageAlphaType::AlphaPremultiplied);
-    let brush = Brush::Image(ImageBrush::from(image).with_alpha(opacity));
+    let brush = ImagingBrush::Image(ImageBrush::from(image).with_alpha(opacity));
     scene.draw(Draw::Fill {
         transform: Affine::new([
             target_width / f64::from(width),
@@ -1520,9 +1620,10 @@ impl ShaderRenderer {
         key: &CompositionKey,
         input: &wgpu::Texture,
         output: &wgpu::Texture,
+        clip_mask: Option<&wgpu::Texture>,
         format: wgpu::TextureFormat,
         size: wgpu::Extent3d,
-        effects: &[CompositorShader],
+        effects: &[CompositorShaderPass],
         frame_index: u64,
         effective_scale: f64,
     ) -> Result<(), String> {
@@ -1570,6 +1671,7 @@ impl ShaderRenderer {
                 render_call_id,
                 &input_texture,
                 output_texture,
+                None,
                 format,
                 size,
                 effect,
@@ -1585,6 +1687,7 @@ impl ShaderRenderer {
             render_call_id,
             &input_texture,
             output,
+            clip_mask,
             format,
             size,
             last,
@@ -1600,13 +1703,14 @@ impl ShaderRenderer {
         render_call_id: u64,
         input: &wgpu::Texture,
         output: &wgpu::Texture,
+        clip_mask: Option<&wgpu::Texture>,
         format: wgpu::TextureFormat,
         size: wgpu::Extent3d,
-        effect: &CompositorShader,
+        effect: &CompositorShaderPass,
         frame_index: u64,
         effective_scale: f64,
     ) -> Result<(), String> {
-        let pipeline = self.pipeline(device, format, effect)?;
+        let pipeline = self.pipeline(device, format, &effect.shader)?;
         let input_view = input.create_view(&wgpu::TextureViewDescriptor {
             label: Some("floem compositor color filter input view"),
             ..Default::default()
@@ -1615,7 +1719,13 @@ impl ShaderRenderer {
             label: Some("floem compositor color filter output view"),
             ..Default::default()
         });
-        let args = padded_uniform_bytes(&effect_args(effect));
+        let clip_mask_view = clip_mask
+            .unwrap_or(input)
+            .create_view(&wgpu::TextureViewDescriptor {
+                label: Some("floem compositor color filter clip mask view"),
+                ..Default::default()
+            });
+        let args = padded_uniform_bytes(&effect_args(&effect.shader));
         let args_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("floem compositor color filter args"),
             size: args.len() as u64,
@@ -1623,7 +1733,7 @@ impl ShaderRenderer {
             mapped_at_creation: false,
         });
         queue.write_buffer(&args_buffer, 0, &args);
-        let frame_bytes = color_filter_frame_bytes(effective_scale, size);
+        let frame_bytes = color_filter_frame_bytes(effective_scale, size, clip_mask.is_some());
         let frame_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("floem compositor color filter frame"),
             size: frame_bytes.len() as u64,
@@ -1650,6 +1760,10 @@ impl ShaderRenderer {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: frame_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&clip_mask_view),
                 },
             ],
         });
@@ -1765,6 +1879,16 @@ impl ShaderPipeline {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -1857,6 +1981,36 @@ fn create_effect_intermediate_texture(
     })
 }
 
+fn effect_clip_mask_scene(effects: &[CompositorShaderPass], render_size: Size) -> Option<Scene> {
+    let clips = effects
+        .iter()
+        .filter_map(|effect| effect.clip.clone())
+        .collect::<Vec<_>>();
+    if clips.is_empty() {
+        return None;
+    }
+
+    let mut scene = Scene::new();
+    for clip in &clips {
+        scene.push_clip(clip.clone());
+    }
+    let _ = scene.draw(Draw::Fill {
+        transform: Affine::IDENTITY,
+        fill_rule: Fill::NonZero,
+        brush: ImagingBrush::Solid(peniko::Color::WHITE),
+        brush_transform: None,
+        shape: Geometry::Rect(Rect::from_origin_size(
+            peniko::kurbo::Point::ZERO,
+            render_size,
+        )),
+        composite: Composite::default(),
+    });
+    for _ in &clips {
+        scene.pop_clip();
+    }
+    Some(scene)
+}
+
 fn initialize_texture_for_external_writer(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -1936,11 +2090,12 @@ fn color_filter_shader_hash(effect: &CompositorShader) -> u64 {
     hasher.finish()
 }
 
-fn compositor_effect_dependency_hash(effect: &CompositorShader, _frame_index: u64) -> u64 {
+fn compositor_effect_dependency_hash(effect: &CompositorShaderPass, _frame_index: u64) -> u64 {
     let mut hasher = DefaultHasher::new();
-    color_filter_shader_hash(effect).hash(&mut hasher);
-    effect_args(effect).hash(&mut hasher);
-    match effect {
+    color_filter_shader_hash(&effect.shader).hash(&mut hasher);
+    effect_args(&effect.shader).hash(&mut hasher);
+    format!("{:?}", effect.clip).hash(&mut hasher);
+    match &effect.shader {
         CompositorShader::Color(effect) => effect.args.revision().hash(&mut hasher),
         CompositorShader::Layer(effect) => effect.args.revision().hash(&mut hasher),
         CompositorShader::Source(effect) => effect.args.revision().hash(&mut hasher),
@@ -2033,13 +2188,13 @@ fn shader_source(
     };
     let fragment_return = match effect {
         CompositorShader::Color(_) => {
-            "let color = textureSample(input_texture, input_sampler, in.uv);\n    return color_filter(logical_position, in.uv, color, args, frame);"
+            "let color = textureSample(input_texture, input_sampler, in.uv);\n    let filtered = color_filter(logical_position, in.uv, color, args, frame);\n    let mask = mix(1.0, textureSample(clip_mask_texture, input_sampler, in.uv).a, frame.clip_mask_enabled);\n    return filtered * mask;"
         }
         CompositorShader::Layer(_) => {
-            "let color = textureSample(input_texture, input_sampler, in.uv);\n    return layer_filter(logical_position, in.uv, color, args, frame);"
+            "let color = textureSample(input_texture, input_sampler, in.uv);\n    let filtered = layer_filter(logical_position, in.uv, color, args, frame);\n    let mask = mix(1.0, textureSample(clip_mask_texture, input_sampler, in.uv).a, frame.clip_mask_enabled);\n    return filtered * mask;"
         }
         CompositorShader::Source(_) => {
-            "let color = textureSample(input_texture, input_sampler, in.uv);\n    return shader_source(logical_position, in.uv, args, frame) * color.a;"
+            "let color = textureSample(input_texture, input_sampler, in.uv);\n    let mask = mix(1.0, textureSample(clip_mask_texture, input_sampler, in.uv).a, frame.clip_mask_enabled);\n    return shader_source(logical_position, in.uv, args, frame) * color.a * mask;"
         }
     };
     Ok(format!(
@@ -2052,13 +2207,14 @@ struct ShaderFrame {{
     effective_scale: f32,
     target_width: f32,
     target_height: f32,
-    _pad0: f32,
+    clip_mask_enabled: f32,
 }};
 
 @group(0) @binding(0) var input_texture: texture_2d<f32>;
 @group(0) @binding(1) var input_sampler: sampler;
 @group(0) @binding(2) var<uniform> args: ShaderArgs;
 @group(0) @binding(3) var<uniform> frame: ShaderFrame;
+@group(0) @binding(4) var clip_mask_texture: texture_2d<f32>;
 
 struct VsOut {{
     @builtin(position) position: vec4<f32>,
@@ -2094,7 +2250,11 @@ fn padded_uniform_bytes(bytes: &[u8]) -> Vec<u8> {
     padded
 }
 
-fn color_filter_frame_bytes(effective_scale: f64, target_size: wgpu::Extent3d) -> [u8; 32] {
+fn color_filter_frame_bytes(
+    effective_scale: f64,
+    target_size: wgpu::Extent3d,
+    clip_mask_enabled: bool,
+) -> [u8; 32] {
     let effective_scale = effective_scale as f32;
     let target_width = target_size.width as f32 / effective_scale;
     let target_height = target_size.height as f32 / effective_scale;
@@ -2102,6 +2262,7 @@ fn color_filter_frame_bytes(effective_scale: f64, target_size: wgpu::Extent3d) -
     bytes[0..4].copy_from_slice(&effective_scale.to_ne_bytes());
     bytes[4..8].copy_from_slice(&target_width.to_ne_bytes());
     bytes[8..12].copy_from_slice(&target_height.to_ne_bytes());
+    bytes[12..16].copy_from_slice(&(u32::from(clip_mask_enabled) as f32).to_ne_bytes());
     bytes
 }
 
@@ -2169,7 +2330,7 @@ pub(crate) struct SceneCompositorLayer {
     pub source_element_id: Option<LayerSourceId>,
     pub debug_name: Option<String>,
     pub external_images: Vec<SceneExternalImageCompositorLayer>,
-    pub color_filters: Vec<CompositorShader>,
+    pub color_filters: Vec<CompositorShaderPass>,
     pub transform: peniko::kurbo::Affine,
     pub clip: Option<peniko::kurbo::RoundedRect>,
     pub bounds: peniko::kurbo::Rect,

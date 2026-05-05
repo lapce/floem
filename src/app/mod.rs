@@ -185,6 +185,7 @@ pub(crate) enum UserEvent {
         window_id: WindowId,
         key: CompositionKey,
         signature: SceneRenderSignature,
+        kind: crate::paint::renderer::SceneFragmentRenderKind,
         rendered: bool,
         worker_index: usize,
         render_start: crate::platform::Instant,

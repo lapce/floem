@@ -11,10 +11,7 @@ use floem::{
     action::{capture_metal, inspect, request_animation_frame},
     context::PaintCx,
     group_ref,
-    imaging::{
-        Brush as ImagingBrush, ClipRef, ExternalImage, Filter as ImagingFilter, GeometryRef,
-        ImageBrush as ImagingImageBrush, ImagingSceneSink, PaintSink, Painter,
-    },
+    imaging::{ClipRef, ExternalImage, GeometryRef, ImagingSceneSink, PaintSink, Painter},
     kurbo::{Affine, Point, Rect, Size, Vec2},
     peniko::Color,
     prelude::*,
@@ -87,8 +84,7 @@ fn cube_canvas(surface_image: CompositorSurfaceImage) -> impl IntoView {
     let canvas = canvas(move |cx, size| {
         let layout = CubeCanvasLayout::new(size);
         layout.paint_source_panel(cx, source_uniforms.clone());
-        layout.paint_filtered_panel(cx, canvas_cube_image);
-        layout.paint_shimmer(cx, shimmer_uniforms.clone());
+        layout.paint_filtered_panel(cx, canvas_cube_image, shimmer_uniforms.clone());
     })
     .style(|s| {
         s.width(780.0)
@@ -127,12 +123,7 @@ impl CubeCanvasLayout {
             cube.x1 + 18.0,
             cube.y0 + 192.0,
         );
-        let label_text = Rect::new(
-            label.x0 + 32.0,
-            label.y0 + 6.0,
-            label.x1 - 132.0,
-            label.y1 - 6.0,
-        );
+        let label_text = Rect::new(label.x0, label.y0 + 6.0, label.x1, label.y1 - 6.0);
 
         Self {
             canvas,
@@ -141,12 +132,6 @@ impl CubeCanvasLayout {
             label,
             label_text,
         }
-    }
-
-    fn paint_background(&self, cx: &mut PaintCx<'_>) {
-        cx.painter
-            .fill(self.canvas, Color::from_rgb8(19, 28, 30))
-            .draw();
     }
 
     fn paint_source_panel(&self, cx: &mut PaintCx<'_>, uniforms: ShaderUniform<[f32; 4]>) {
@@ -159,13 +144,21 @@ impl CubeCanvasLayout {
             .draw();
     }
 
-    fn paint_filtered_panel(&self, cx: &mut PaintCx<'_>, canvas_cube_image: ExternalImage) {
-        let filters = [checkerboard_filter().into(), ImagingFilter::blur(5.).into()];
+    fn paint_filtered_panel(
+        &self,
+        cx: &mut PaintCx<'_>,
+        cube_image: ExternalImage,
+        shimmer_uniforms: ShaderUniform<[f32; 4]>,
+    ) {
+        let filters = [
+            checkerboard_filter().into(),
+            shimmer_filter(shimmer_uniforms).into(),
+        ];
         let effective_scale = cx.effective_scale;
         cx.painter.with_group(
             group_ref().with_filters(&filters).with_clip(ClipRef::Fill {
                 transform: Affine::IDENTITY,
-                shape: GeometryRef::RoundedRect(self.filtered_panel.to_rounded_rect(30.0)),
+                shape: GeometryRef::RoundedRect(self.canvas.to_rounded_rect(32.0)),
                 fill_rule: floem::peniko::Fill::NonZero,
             }),
             move |p| {
@@ -180,22 +173,9 @@ impl CubeCanvasLayout {
                     Color::from_rgba8(247, 226, 164, 230),
                 )
                 .draw();
-                self.paint_texture_text(p, effective_scale, canvas_cube_image);
+                self.paint_texture_text(p, effective_scale, cube_image);
             },
         );
-    }
-
-    fn paint_shimmer(&self, cx: &mut PaintCx<'_>, uniforms: ShaderUniform<[f32; 4]>) {
-        let filters = [shimmer_filter(uniforms).into()];
-        cx.painter
-            .with_group(group_ref().with_filters(&filters), |painter| {
-                painter
-                    .fill(
-                        self.label.to_rounded_rect(20.0),
-                        Color::from_rgba8(255, 230, 178, 82),
-                    )
-                    .draw();
-            });
     }
 
     fn paint_texture_text<S>(
@@ -206,7 +186,12 @@ impl CubeCanvasLayout {
     ) where
         S: PaintSink<FloemFilter, Composite, FloemBrush> + ImagingSceneSink + ?Sized,
     {
-        let brush = ImagingBrush::Image(ImagingImageBrush::from(cube_image));
+        let image_size = Size::new(f64::from(cube_image.width), f64::from(cube_image.height));
+        let image_origin = Point::new(
+            self.cube.x0 + (self.cube.width() - image_size.width) * 0.5,
+            self.cube.y0 + (self.cube.height() - image_size.height) * 0.5,
+        );
+        let brush = FloemBrush::Image(ImageBrush::from(cube_image));
         let mut text = TextLayout::new_with_text(
             "TEXTURE BRUSH",
             AttrsList::new(Attrs::new().font_size(34.0).weight(FontWeight::BOLD)),
@@ -216,20 +201,22 @@ impl CubeCanvasLayout {
             self.label_text.width() as f32,
             self.label_text.height() as f32,
         );
-        let text_size = text.size();
+        let (min_y, max_y) = text.centering_bounds_y().unwrap_or((0.0, 0.0));
+        let text_height = f64::from(max_y - min_y);
         let origin = Point::new(
             self.label_text.x0,
-            self.label_text.y0 + ((self.label_text.height() - text_size.height) * 0.5).max(0.0),
+            self.label_text.y0 + ((self.label_text.height() - text_height) * 0.5)
+                - f64::from(min_y),
         );
         text.draw_with_painter_brush(
-            painter.as_imaging_dyn(),
+            Painter::new(painter.sink_mut()),
             origin,
             Vec2::ZERO,
             effective_scale,
-            &brush,
+            brush,
             Some(Affine::translate((
-                self.cube.x0 - origin.x,
-                self.cube.y0 - origin.y,
+                image_origin.x - origin.x,
+                image_origin.y - origin.y,
             ))),
         );
     }

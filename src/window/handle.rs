@@ -1103,6 +1103,7 @@ impl WindowHandle {
         &mut self,
         key: crate::paint::composition::CompositionKey,
         signature: crate::window::compositor::SceneRenderSignature,
+        kind: crate::paint::renderer::SceneFragmentRenderKind,
         rendered: bool,
         worker_index: usize,
         render_start: Instant,
@@ -1113,9 +1114,13 @@ impl WindowHandle {
             return false;
         };
         let start = Instant::now();
-        let completed =
-            self.compositor_runtime
-                .complete_scene_render(key, signature, rendered, gpu_resources);
+        let completed = self.compositor_runtime.complete_scene_render(
+            key,
+            signature,
+            kind,
+            rendered,
+            gpu_resources,
+        );
         if completed {
             self.pending_timing.push_absolute_span_on_thread(
                 "Render",

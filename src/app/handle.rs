@@ -519,6 +519,7 @@ impl ApplicationHandle {
                 window_id,
                 key,
                 signature,
+                kind,
                 rendered,
                 worker_index,
                 render_start,
@@ -529,6 +530,7 @@ impl ApplicationHandle {
                     if handle.complete_compositor_scene_render(
                         key,
                         signature,
+                        kind,
                         rendered,
                         worker_index,
                         render_start,

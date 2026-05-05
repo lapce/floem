@@ -151,10 +151,18 @@ pub(crate) struct SceneFragmentRenderJob {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SceneFragmentRenderKind {
+    Content,
+    ClipMask,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) struct SceneFragmentRenderCompletion {
     pub(crate) window_id: WindowId,
     pub(crate) key: CompositionKey,
     pub(crate) signature: SceneRenderSignature,
+    pub(crate) kind: SceneFragmentRenderKind,
 }
 
 pub(crate) struct SceneFragmentRendererPool {
@@ -909,6 +917,7 @@ fn send_scene_fragment_ready(
         window_id: completion.window_id,
         key: completion.key,
         signature: completion.signature,
+        kind: completion.kind,
         rendered,
         worker_index,
         render_start,

@@ -1,6 +1,6 @@
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate};
 use imaging::{
-    Composite, Filter,
+    Brush, Composite, Filter,
     record::{AppliedMask, Clip, Command, Context, Draw, Geometry, Group, Mask, Scene, replay},
 };
 use peniko::{
@@ -264,9 +264,9 @@ fn nested_scene_section(
     })
 }
 
-fn brush_summary_view(brush: &imaging::Brush) -> AnyView {
+fn brush_summary_view(brush: &Brush) -> AnyView {
     match brush {
-        imaging::Brush::Solid(color) => Stack::horizontal((
+        Brush::Solid(color) => Stack::horizontal((
             Label::new("solid").style(|s| {
                 s.font_size(10.0)
                     .font_bold()
@@ -276,7 +276,7 @@ fn brush_summary_view(brush: &imaging::Brush) -> AnyView {
         ))
         .style(|s| s.items_center().gap(8.0).min_width(0.0))
         .into_any(),
-        imaging::Brush::Gradient(gradient) => Stack::vertical((
+        Brush::Gradient(gradient) => Stack::vertical((
             Label::new("gradient").style(|s| {
                 s.font_size(10.0)
                     .font_bold()
@@ -286,7 +286,7 @@ fn brush_summary_view(brush: &imaging::Brush) -> AnyView {
         ))
         .style(|s| s.gap(4.0).min_width(0.0))
         .into_any(),
-        imaging::Brush::Image(image_brush) => {
+        Brush::Image(image_brush) => {
             let source_label = match &image_brush.image {
                 imaging::Image::Raster(image) => format!("raster {}×{}", image.width, image.height),
                 imaging::Image::Scene(scene) => {

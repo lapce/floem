@@ -27,7 +27,9 @@ use understory_box_tree::NodeFlags;
 use crate::{
     BoxTree, ElementId,
     compositor_surface::CompositorSurfaceId,
-    effects::{Composite, CompositorShader, Filter, GroupRef, Image, LayerFilter},
+    effects::{
+        Composite, CompositorShader, CompositorShaderPass, Filter, GroupRef, Image, LayerFilter,
+    },
     paint::composition::{
         CompositionItem, CompositionKey, CompositionPlan, CompositorSurfaceLayer, PaintStage,
         SceneExternalImage, SceneLayer,
@@ -199,7 +201,7 @@ pub(crate) struct ShaderCommand {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum ShaderCommandKind {
-    Push(CompositorShader),
+    Push(CompositorShaderPass),
     Pop,
 }
 
@@ -267,7 +269,8 @@ impl StageRecorder {
         let erased_group = ImagingGroupRef::new()
             .with_filters(&imaging_filters)
             .with_composite(composite);
-        let erased_group = if let Some(clip) = group.clip {
+        let effect_clip = group.clip.clone().map(ClipRef::to_owned);
+        let erased_group = if let Some(clip) = group.clip.clone() {
             erased_group.with_clip(clip)
         } else {
             erased_group
@@ -287,7 +290,7 @@ impl StageRecorder {
 
         if has_compositor_effect {
             for filter in group.filters {
-                let effect = match filter {
+                let shader = match filter {
                     Filter::Imaging(filter) => CompositorShader::Layer(
                         compositor_effect_for_imaging_filter(*filter).unwrap_or_else(|| {
                             panic!(
@@ -300,7 +303,10 @@ impl StageRecorder {
                 };
                 self.color_filters.push(ShaderCommand {
                     command_index: self.current_command_index(),
-                    kind: ShaderCommandKind::Push(effect),
+                    kind: ShaderCommandKind::Push(CompositorShaderPass {
+                        shader,
+                        clip: effect_clip.clone(),
+                    }),
                 });
                 close_ops.push(ShaderGroupClose::ColorFilter);
             }
@@ -335,6 +341,34 @@ impl StageRecorder {
 }
 
 impl StageRecorder {
+    fn imaging_solid(color: peniko::Color) -> ImagingBrush {
+        ImagingBrush::Solid(color)
+    }
+
+    fn source_composite(
+        mut composite: imaging::Composite,
+        sampler: peniko::ImageSampler,
+    ) -> imaging::Composite {
+        composite.alpha *= sampler.alpha;
+        composite
+    }
+
+    fn push_shader_source(&mut self, source: crate::effects::ShaderSource) {
+        PaintSink::push_group(&mut self.scene, ImagingGroupRef::new());
+        self.color_filters.push(ShaderCommand {
+            command_index: self.current_command_index(),
+            kind: ShaderCommandKind::Push(CompositorShaderPass {
+                shader: CompositorShader::Source(source),
+                clip: None,
+            }),
+        });
+    }
+
+    fn pop_shader_source(&mut self) {
+        self.pop_compositor_color_filter();
+        self.scene.pop_group();
+    }
+
     fn shader_source_fill(
         &mut self,
         transform: Affine,
@@ -344,22 +378,17 @@ impl StageRecorder {
         composite: imaging::Composite,
         source: crate::effects::ShaderSource,
     ) {
-        PaintSink::push_group(&mut self.scene, ImagingGroupRef::new());
-        self.color_filters.push(ShaderCommand {
-            command_index: self.current_command_index(),
-            kind: ShaderCommandKind::Push(CompositorShader::Source(source)),
-        });
+        self.push_shader_source(source);
         let shape = shape.to_owned();
         let _ = self.scene.draw(Draw::Fill {
             transform,
             fill_rule,
-            brush: peniko::Color::WHITE.into(),
+            brush: Self::imaging_solid(peniko::Color::WHITE),
             brush_transform,
             shape,
             composite,
         });
-        self.pop_compositor_color_filter();
-        self.scene.pop_group();
+        self.pop_shader_source();
     }
 }
 
@@ -441,21 +470,20 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
         } = draw;
         match brush {
             crate::effects::Brush::Solid(color) => {
-                PaintSink::fill(
-                    &mut self.scene,
+                let _ = self.scene.draw(
                     FillRef {
                         transform,
                         fill_rule,
-                        brush: color.into(),
+                        brush: Self::imaging_solid(color),
                         brush_transform,
                         shape,
                         composite,
-                    },
+                    }
+                    .to_owned(),
                 );
             }
             crate::effects::Brush::Gradient(gradient) => {
-                PaintSink::fill(
-                    &mut self.scene,
+                let _ = self.scene.draw(
                     FillRef {
                         transform,
                         fill_rule,
@@ -463,7 +491,8 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                         brush_transform,
                         shape,
                         composite,
-                    },
+                    }
+                    .to_owned(),
                 );
             }
             crate::effects::Brush::Image(image) => {
@@ -471,8 +500,7 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                 match image {
                     Image::Imaging(image) => {
                         let image = imaging::ImageBrush(peniko::ImageBrush { image, sampler });
-                        PaintSink::fill(
-                            &mut self.scene,
+                        let _ = self.scene.draw(
                             FillRef {
                                 transform,
                                 fill_rule,
@@ -480,7 +508,8 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                                 brush_transform,
                                 shape,
                                 composite,
-                            },
+                            }
+                            .to_owned(),
                         );
                     }
                     Image::Source(source) => {
@@ -489,7 +518,7 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                             fill_rule,
                             brush_transform,
                             shape,
-                            composite,
+                            Self::source_composite(composite, sampler),
                             source.source,
                         );
                     }
@@ -498,12 +527,181 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
         }
     }
 
-    fn stroke(&mut self, draw: StrokeRef<'_>) {
-        PaintSink::stroke(&mut self.scene, draw);
+    fn stroke(&mut self, draw: StrokeRef<'_, crate::effects::Brush>) {
+        let StrokeRef {
+            transform,
+            stroke,
+            brush,
+            brush_transform,
+            shape,
+            composite,
+        } = draw;
+        match brush {
+            crate::effects::Brush::Solid(color) => {
+                let _ = self.scene.draw(
+                    StrokeRef {
+                        transform,
+                        stroke,
+                        brush: Self::imaging_solid(color),
+                        brush_transform,
+                        shape,
+                        composite,
+                    }
+                    .to_owned(),
+                );
+            }
+            crate::effects::Brush::Gradient(gradient) => {
+                let _ = self.scene.draw(
+                    StrokeRef {
+                        transform,
+                        stroke,
+                        brush: ImagingBrush::Gradient(gradient),
+                        brush_transform,
+                        shape,
+                        composite,
+                    }
+                    .to_owned(),
+                );
+            }
+            crate::effects::Brush::Image(image) => {
+                let peniko::ImageBrush { image, sampler } = image.0;
+                match image {
+                    Image::Imaging(image) => {
+                        let _ = self.scene.draw(
+                            StrokeRef {
+                                transform,
+                                stroke,
+                                brush: ImagingBrush::Image(imaging::ImageBrush(
+                                    peniko::ImageBrush { image, sampler },
+                                )),
+                                brush_transform,
+                                shape,
+                                composite,
+                            }
+                            .to_owned(),
+                        );
+                    }
+                    Image::Source(source) => {
+                        self.push_shader_source(source.source);
+                        let _ = self.scene.draw(
+                            StrokeRef {
+                                transform,
+                                stroke,
+                                brush: Self::imaging_solid(peniko::Color::WHITE),
+                                brush_transform,
+                                shape,
+                                composite: Self::source_composite(composite, sampler),
+                            }
+                            .to_owned(),
+                        );
+                        self.pop_shader_source();
+                    }
+                }
+            }
+        }
     }
 
-    fn glyph_run(&mut self, draw: GlyphRunRef<'_>, glyphs: &mut dyn Iterator<Item = ImagingGlyph>) {
-        PaintSink::glyph_run(&mut self.scene, draw, glyphs);
+    fn glyph_run(
+        &mut self,
+        draw: GlyphRunRef<'_, crate::effects::Brush>,
+        glyphs: &mut dyn Iterator<Item = ImagingGlyph>,
+    ) {
+        let GlyphRunRef {
+            font,
+            transform,
+            glyph_transform,
+            font_size,
+            font_embolden,
+            hint,
+            normalized_coords,
+            style,
+            brush,
+            brush_transform,
+            composite,
+        } = draw;
+        match brush {
+            crate::effects::Brush::Solid(color) => {
+                let _ = self.scene.draw(imaging::record::Draw::GlyphRun(
+                    GlyphRunRef {
+                        font,
+                        transform,
+                        glyph_transform,
+                        font_size,
+                        font_embolden,
+                        hint,
+                        normalized_coords,
+                        style,
+                        brush: Self::imaging_solid(color),
+                        brush_transform,
+                        composite,
+                    }
+                    .to_owned(glyphs),
+                ));
+            }
+            crate::effects::Brush::Gradient(gradient) => {
+                let _ = self.scene.draw(imaging::record::Draw::GlyphRun(
+                    GlyphRunRef {
+                        font,
+                        transform,
+                        glyph_transform,
+                        font_size,
+                        font_embolden,
+                        hint,
+                        normalized_coords,
+                        style,
+                        brush: ImagingBrush::Gradient(gradient),
+                        brush_transform,
+                        composite,
+                    }
+                    .to_owned(glyphs),
+                ));
+            }
+            crate::effects::Brush::Image(image) => {
+                let peniko::ImageBrush { image, sampler } = image.0;
+                match image {
+                    Image::Imaging(image) => {
+                        let _ = self.scene.draw(imaging::record::Draw::GlyphRun(
+                            GlyphRunRef {
+                                font,
+                                transform,
+                                glyph_transform,
+                                font_size,
+                                font_embolden,
+                                hint,
+                                normalized_coords,
+                                style,
+                                brush: ImagingBrush::Image(imaging::ImageBrush(
+                                    peniko::ImageBrush { image, sampler },
+                                )),
+                                brush_transform,
+                                composite,
+                            }
+                            .to_owned(glyphs),
+                        ));
+                    }
+                    Image::Source(source) => {
+                        self.push_shader_source(source.source);
+                        let _ = self.scene.draw(imaging::record::Draw::GlyphRun(
+                            GlyphRunRef {
+                                font,
+                                transform,
+                                glyph_transform,
+                                font_size,
+                                font_embolden,
+                                hint,
+                                normalized_coords,
+                                style,
+                                brush: Self::imaging_solid(peniko::Color::WHITE),
+                                brush_transform,
+                                composite: Self::source_composite(composite, sampler),
+                            }
+                            .to_owned(glyphs),
+                        ));
+                        self.pop_shader_source();
+                    }
+                }
+            }
+        }
     }
 
     fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
@@ -895,7 +1093,7 @@ impl RetainedDisplayList {
                     command_index,
                     effective_scale,
                     snapshot,
-                    &property_state.with_effects(&scoped_effects),
+                    &property_state.with_effects(&scoped_effects, snapshot.world_transform),
                 );
                 range_start = command_index;
                 match &stage.color_filters[effect_index].kind {
@@ -951,7 +1149,7 @@ impl RetainedDisplayList {
             command_count,
             effective_scale,
             snapshot,
-            &property_state.with_effects(&scoped_effects),
+            &property_state.with_effects(&scoped_effects, snapshot.world_transform),
         );
     }
 
@@ -1181,7 +1379,7 @@ impl DisplayNode {
 #[derive(Clone, Debug, Default, PartialEq)]
 struct PropertyState {
     clips: Vec<PropertyClip>,
-    effects: Vec<CompositorShader>,
+    effects: Vec<CompositorShaderPass>,
 }
 
 impl PropertyState {
@@ -1191,15 +1389,32 @@ impl PropertyState {
         next
     }
 
-    fn with_effects(&self, effects: &[CompositorShader]) -> Self {
+    fn with_effects(&self, effects: &[CompositorShaderPass], transform: Affine) -> Self {
         let mut next = self.clone();
-        next.effects.extend_from_slice(effects);
+        next.effects
+            .extend(transform_shader_passes(effects, transform));
         next
     }
 
     fn can_direct_promote(&self) -> bool {
         self.clips.is_empty() && self.effects.is_empty()
     }
+}
+
+fn transform_shader_passes(
+    effects: &[CompositorShaderPass],
+    transform: Affine,
+) -> Vec<CompositorShaderPass> {
+    effects
+        .iter()
+        .cloned()
+        .map(|mut pass| {
+            if let Some(clip) = &mut pass.clip {
+                prepend_clip_transform(clip, transform);
+            }
+            pass
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1378,6 +1593,7 @@ impl<'a> SceneRunBuilder<'a> {
         }
         let local_content_bounds =
             clipped_content_bounds.map(|rect| rect - bounds.origin().to_vec2());
+        let local_effects = transform_shader_passes(&property_state.effects, local_transform);
         plan.items.push(CompositionItem::Scene(SceneLayer {
             key: CompositionKey::SceneRun {
                 run_index: *run_index,
@@ -1392,7 +1608,7 @@ impl<'a> SceneRunBuilder<'a> {
                 .filter(|name| !name.is_empty()),
             scene,
             external_images: mem::take(&mut self.external_images),
-            color_filters: property_state.effects,
+            color_filters: local_effects,
             content_revision: scene_state_revision,
             transform: Affine::translate(bounds.origin().to_vec2()),
             clip: None,
@@ -2126,7 +2342,7 @@ pub mod bench_support {
                 Draw::Stroke {
                     transform: Affine::translate((offset * 0.25, offset * 0.1)),
                     stroke: peniko::kurbo::Stroke::new(1.0),
-                    brush: color.into(),
+                    brush: ImagingBrush::Solid(color),
                     brush_transform: None,
                     shape: Geometry::Rect(rect),
                     composite: imaging::Composite::default(),
@@ -2135,7 +2351,7 @@ pub mod bench_support {
                 Draw::Fill {
                     transform: Affine::translate((offset * 0.25, offset * 0.1)),
                     fill_rule: peniko::Fill::NonZero,
-                    brush: color.into(),
+                    brush: ImagingBrush::Solid(color),
                     brush_transform: None,
                     shape: Geometry::Rect(rect),
                     composite: imaging::Composite::default(),
@@ -2356,7 +2572,7 @@ mod tests {
         Draw::Fill {
             transform,
             fill_rule: Fill::NonZero,
-            brush: color.into(),
+            brush: ImagingBrush::Solid(color),
             brush_transform: None,
             shape: Geometry::Rect(rect),
             composite: Composite::default(),

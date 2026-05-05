@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use floem_reactive::Effect;
-use imaging::{Brush, ImageBrush, MaskMode, Painter, SceneImage, SceneImageWeak, record::Scene};
+use imaging::{MaskMode, Painter, SceneImage, SceneImageWeak, record::Scene};
 use peniko::{
     GradientKind, LinearGradientPosition,
     kurbo::{Affine, Point, Rect, Size},
@@ -9,6 +9,7 @@ use peniko::{
 use svg_imaging::{ParseOptions, RenderOptions, SvgDocument};
 
 use crate::{
+    effects::{Brush, ImageBrush},
     prop, prop_extractor,
     style::{Style, TextColor},
     style_class,
@@ -350,7 +351,11 @@ impl View for Svg {
             let pixel_width = (rect.width() * cx.window_state.os_scale).round().max(1.0) as u32;
             let pixel_height = (rect.height() * cx.window_state.os_scale).round().max(1.0) as u32;
             let brush = self.svg_style.color_brush();
-            if self.svg_style.svg_cache() {
+            let can_cache = self.svg_style.svg_cache()
+                && brush
+                    .as_ref()
+                    .is_none_or(svg_brush_can_render_to_imaging_scene);
+            if can_cache {
                 let cache_key = svg_scene_image_cache_key(
                     &self.svg_string,
                     self.svg_css.as_deref(),
@@ -376,7 +381,7 @@ impl View for Svg {
                         rect.width() / f64::from(image.width()),
                         rect.height() / f64::from(image.height()),
                     );
-                let image_brush = ImageBrush::new(image);
+                let image_brush = ImageBrush::new(imaging::Image::Scene(image));
                 cx.painter
                     .fill(source_rect, &Brush::Image(image_brush))
                     .transform(transform)
@@ -533,13 +538,15 @@ fn build_svg_scene_image(
     let mut painter = Painter::new(&mut scene);
     if let Some(brush) = brush {
         let bounds = Rect::new(0.0, 0.0, f64::from(pixel_width), f64::from(pixel_height));
+        let brush = imaging_brush_from_svg_brush(brush)
+            .expect("cached SVG scene rendering requires a renderer-backed SVG brush");
         painter.with_masked_group(
             MaskMode::Alpha,
             |mask| {
                 let _ = document.render(mask, &RenderOptions { transform: scale });
             },
             |painter| {
-                painter.fill(bounds, brush).draw();
+                painter.fill(bounds, &brush).draw();
             },
         );
     } else {
@@ -547,4 +554,29 @@ fn build_svg_scene_image(
     }
 
     SceneImage::new(scene, pixel_width.max(1), pixel_height.max(1))
+}
+
+fn svg_brush_can_render_to_imaging_scene(brush: &Brush) -> bool {
+    match brush {
+        Brush::Solid(_) | Brush::Gradient(_) => true,
+        Brush::Image(image_brush) => {
+            matches!(&image_brush.image, crate::effects::Image::Imaging(_))
+        }
+    }
+}
+
+fn imaging_brush_from_svg_brush(brush: &Brush) -> Option<imaging::Brush> {
+    match brush {
+        Brush::Solid(color) => Some(imaging::Brush::Solid(*color)),
+        Brush::Gradient(gradient) => Some(imaging::Brush::Gradient(gradient.clone())),
+        Brush::Image(image_brush) => match &image_brush.image {
+            crate::effects::Image::Imaging(image) => Some(imaging::Brush::Image(
+                imaging::ImageBrush(peniko::ImageBrush {
+                    image: image.clone(),
+                    sampler: image_brush.sampler,
+                }),
+            )),
+            crate::effects::Image::Source(_) => None,
+        },
+    }
 }

@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::text::{AttrsList, GlyphRunRef, TextBrush};
-use imaging::{Brush, Composite, Painter, record::Glyph as ImagingGlyph};
+use imaging::{Brush, Composite, PaintSink, Painter, record::Glyph as ImagingGlyph};
 use parking_lot::Mutex;
 use parley::swash::{FontRef, StringId, Tag, scale::ScaleContext, tag_from_bytes, zeno};
 use parley::{
@@ -876,7 +876,7 @@ impl TextLayout {
                     effective_scale,
                     run.normalized_coords(),
                 );
-                let run = GlyphRunRef {
+                let run: GlyphRunRef<'_, Brush> = GlyphRunRef {
                     font: run.font(),
                     transform: Affine::IDENTITY,
                     glyph_transform,
@@ -909,15 +909,18 @@ impl TextLayout {
         }
     }
 
-    pub fn draw_with_painter_brush(
+    pub fn draw_with_painter_brush<S, F, C, B>(
         &self,
-        mut painter: Painter<'_>,
+        mut painter: Painter<'_, S, F, C, B>,
         origin: impl Into<Point>,
         font_embolden: peniko::kurbo::Vec2,
         effective_scale: f64,
-        brush: &Brush,
+        brush: B,
         brush_transform: Option<Affine>,
-    ) {
+    ) where
+        S: PaintSink<F, C, B> + ?Sized,
+        B: Clone,
+    {
         let origin = origin.into();
         for line in self.layout.lines() {
             for item in line.items() {
@@ -945,7 +948,7 @@ impl TextLayout {
                 });
 
                 painter
-                    .glyphs(run.font(), brush)
+                    .glyphs(run.font(), brush.clone())
                     .transform(Affine::translate(origin.to_vec2()))
                     .glyph_transform(glyph_transform)
                     .font_size(run.font_size())

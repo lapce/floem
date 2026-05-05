@@ -8,10 +8,11 @@ use std::{
 };
 
 use floem_reactive::{ReadSignal, RwSignal, SignalWith, UpdaterEffect};
-use imaging::{Brush, ExternalImage, Image as ImagingImage, ImageBrush};
+use imaging::{ExternalImage, Image as ImagingImage};
 use peniko::{Blob, ImageAlphaType, ImageData, kurbo::Rect};
 
 use crate::{
+    effects::{Brush, Image as FloemImage, ImageBrush},
     prop_extractor,
     style::{FontSizeCx, ObjectFit, ObjectPosition},
     view::{LayoutNodeCx, MeasureFn, View, ViewId},
@@ -525,7 +526,7 @@ impl View for Img {
         let content_rect = self.id.get_content_rect_local();
         let dest_rect = self.object_fit_dest_rect(content_rect);
         let image_brush = Brush::Image(ImageBrush(peniko::ImageBrush {
-            image: self.img.clone(),
+            image: FloemImage::Imaging(self.img.clone()),
             sampler: self.style.image_sampler(),
         }));
         let source_width = self.img.width() as f64;
