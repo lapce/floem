@@ -28,7 +28,7 @@ use winit::{
 use super::{AppConfig, AppEventCallback, AppUpdateEvent, UserEvent, drain_app_update_events};
 use crate::{
     AppEvent, Application,
-    action::{Timer, TimerToken},
+    action::{Timer, TimerAction, TimerKind, TimerToken},
     dropped_file,
     event::dropped_file::FileDragEvent,
     ext_event::EXT_EVENT_HANDLER,
@@ -44,6 +44,9 @@ use crate::{
         id::process_window_updates,
     },
 };
+
+const MULTI_WINDOW_COMMIT_SLOT: Duration = Duration::from_micros(900);
+const MULTI_WINDOW_COMMIT_COLLISION_WINDOW: Duration = Duration::from_millis(2);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum PointerCoalesceKind {
@@ -293,17 +296,11 @@ impl ApplicationHandle {
         schedule: FrameSchedule,
         event_loop: &dyn ActiveEventLoop,
     ) {
-        match schedule.coalesce_input_until {
-            Some(deadline) if deadline > Instant::now() => {
-                self.pointer_coalesce_until.insert(window_id, deadline);
-            }
-            _ => {
-                self.pointer_coalesce_until.remove(&window_id);
-            }
-        }
+        self.update_pointer_coalesce_deadline(window_id, schedule.coalesce_input_until);
 
         if let Some(commit) = schedule.compositor_commit_deadline {
             let token = commit.token;
+            let target_deadline = commit.deadline;
             let action = move |_| {
                 crate::Application::send_proxy_event(UserEvent::CompositorCommitDeadline {
                     window_id,
@@ -314,12 +311,28 @@ impl ApplicationHandle {
             self.request_timer(
                 Timer {
                     token,
-                    action: Box::new(action),
-                    deadline: commit.deadline,
+                    kind: TimerKind::CompositorCommitDeadline {
+                        window_id,
+                        target_deadline,
+                        can_fire_early: commit.can_fire_early,
+                    },
+                    action: TimerAction::Main(Box::new(action)),
+                    deadline: target_deadline,
                     sequence: token.into_raw(),
                 },
                 event_loop,
             );
+        }
+    }
+
+    fn update_pointer_coalesce_deadline(&mut self, window_id: WindowId, deadline: Option<Instant>) {
+        match deadline {
+            Some(deadline) if deadline > Instant::now() => {
+                self.pointer_coalesce_until.insert(window_id, deadline);
+            }
+            _ => {
+                self.pointer_coalesce_until.remove(&window_id);
+            }
         }
     }
 
@@ -356,7 +369,8 @@ impl ApplicationHandle {
         self.request_timer(
             Timer {
                 token,
-                action: Box::new(action),
+                kind: TimerKind::Normal,
+                action: TimerAction::Main(Box::new(action)),
                 deadline,
                 sequence: token.into_raw(),
             },
@@ -381,10 +395,10 @@ impl ApplicationHandle {
             return;
         };
         let tick = pending.tick;
-        let timer_lateness = Instant::now().saturating_duration_since(pending.deadline);
-
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
-            handle.record_deferred_frame_timer_lateness(timer_lateness);
+            handle.record_deferred_frame_timer_lateness(
+                Instant::now().saturating_duration_since(pending.deadline),
+            );
         }
 
         self.process_frame_tick_now(window_id, tick, event_loop);
@@ -511,13 +525,27 @@ impl ApplicationHandle {
                 }
                 self.request_update();
             }
-            UserEvent::CompositorSurfaceTargetFps {
+            UserEvent::CompositorSurfaceFrameRatePreference {
                 window_id,
                 surface_id,
-                target_fps,
+                frame_rate,
             } => {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
-                    handle.set_compositor_surface_target_fps(surface_id, target_fps);
+                    handle.set_compositor_surface_frame_rate_preference(surface_id, frame_rate);
+                    handle.refresh_frame_activity();
+                }
+                self.request_update();
+            }
+            UserEvent::CompositorSurfacePresentsWithTransaction {
+                window_id,
+                surface_id,
+                presents_with_transaction,
+            } => {
+                if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                    handle.set_compositor_surface_presents_with_transaction(
+                        surface_id,
+                        presents_with_transaction,
+                    );
                     handle.refresh_frame_activity();
                 }
                 self.request_update();
@@ -544,6 +572,7 @@ impl ApplicationHandle {
                 render_end,
                 gpu_end,
             } => {
+                let mut coalesce_deadline = None;
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
                     if handle.complete_compositor_scene_render(
                         key,
@@ -557,17 +586,22 @@ impl ApplicationHandle {
                     ) {
                         handle.refresh_frame_activity();
                     }
+                    coalesce_deadline = handle.pointer_coalesce_deadline();
                 }
+                self.update_pointer_coalesce_deadline(window_id, coalesce_deadline);
                 self.request_update();
             }
             UserEvent::LayerHostCommit {
                 window_id,
                 committed_at,
             } => {
+                let mut coalesce_deadline = None;
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
                     handle.handle_layer_host_commit(committed_at);
                     handle.refresh_frame_activity();
+                    coalesce_deadline = handle.pointer_coalesce_deadline();
                 }
+                self.update_pointer_coalesce_deadline(window_id, coalesce_deadline);
                 self.request_update();
             }
             UserEvent::CompositorCommitDeadline {
@@ -575,11 +609,14 @@ impl ApplicationHandle {
                 generation,
                 token,
             } => {
-                if let Some(handle) = self.window_handles.get_mut(&window_id)
-                    && handle.handle_compositor_commit_deadline(generation, token)
-                {
-                    handle.refresh_frame_activity();
+                let mut coalesce_deadline = None;
+                if let Some(handle) = self.window_handles.get_mut(&window_id) {
+                    if handle.handle_compositor_commit_deadline(generation, token) {
+                        handle.refresh_frame_activity();
+                    }
+                    coalesce_deadline = handle.pointer_coalesce_deadline();
                 }
+                self.update_pointer_coalesce_deadline(window_id, coalesce_deadline);
                 self.request_update();
             }
             UserEvent::FrameTick { window_id, tick } => {
@@ -1334,6 +1371,7 @@ impl ApplicationHandle {
 
     fn request_timer(&mut self, timer: Timer, event_loop: &dyn ActiveEventLoop) {
         self.timers.push(timer);
+        self.rebalance_compositor_commit_timers();
         self.timers
             .sort_by_key(|timer| (timer.deadline, timer.sequence));
         self.fire_timer(event_loop);
@@ -1341,9 +1379,73 @@ impl ApplicationHandle {
 
     fn remove_timer(&mut self, timer: TimerToken, event_loop: &dyn ActiveEventLoop) {
         self.timers.retain(|entry| entry.token != timer);
-        if self.timers.is_empty() {
-            event_loop.set_control_flow(ControlFlow::Wait);
+        self.rebalance_compositor_commit_timers();
+        self.timers
+            .sort_by_key(|timer| (timer.deadline, timer.sequence));
+        self.fire_timer(event_loop);
+    }
+
+    fn rebalance_compositor_commit_timers(&mut self) {
+        let now = Instant::now();
+        let mut indices = self
+            .timers
+            .iter()
+            .enumerate()
+            .filter_map(|(index, timer)| match timer.kind {
+                TimerKind::CompositorCommitDeadline { .. } => Some(index),
+                TimerKind::Normal => None,
+            })
+            .collect::<Vec<_>>();
+
+        indices.sort_by_key(|index| match self.timers[*index].kind {
+            TimerKind::CompositorCommitDeadline {
+                target_deadline, ..
+            } => (target_deadline, self.timers[*index].sequence),
+            TimerKind::Normal => unreachable!("filtered above"),
+        });
+
+        let mut reservations = Vec::with_capacity(indices.len());
+        for index in indices {
+            let TimerKind::CompositorCommitDeadline {
+                window_id,
+                target_deadline,
+                can_fire_early,
+            } = self.timers[index].kind
+            else {
+                continue;
+            };
+
+            let mut reserved_deadline = target_deadline;
+            if can_fire_early {
+                while reservations.iter().any(
+                    |&(other_window_id, other_target_deadline, other_reserved_deadline)| {
+                        other_window_id != window_id
+                            && Self::deadlines_close(target_deadline, other_target_deadline)
+                            && Self::deadlines_close(reserved_deadline, other_reserved_deadline)
+                    },
+                ) {
+                    reserved_deadline = reserved_deadline
+                        .checked_sub(MULTI_WINDOW_COMMIT_SLOT)
+                        .unwrap_or(now);
+                    if reserved_deadline <= now {
+                        reserved_deadline = now;
+                        break;
+                    }
+                }
+            }
+
+            self.timers[index].deadline = reserved_deadline;
+            reservations.push((window_id, target_deadline, reserved_deadline));
         }
+    }
+
+    fn deadlines_close(left: Instant, right: Instant) -> bool {
+        let delta = if left >= right {
+            left.saturating_duration_since(right)
+        } else {
+            right.saturating_duration_since(left)
+        };
+        delta <= MULTI_WINDOW_COMMIT_COLLISION_WINDOW
     }
 
     fn fire_timer(&mut self, event_loop: &dyn ActiveEventLoop) {
@@ -1372,7 +1474,18 @@ impl ApplicationHandle {
             {
                 let timer = self.timers.remove(0);
                 let token = timer.token;
-                (timer.action)(token);
+                match timer.action {
+                    TimerAction::Main(action) => action(token),
+                    TimerAction::Ui {
+                        window_id,
+                        root,
+                        action,
+                    } => {
+                        if let Some(handle) = self.window_handles.get(&window_id) {
+                            handle.ui.run_timer_action(root, token, action);
+                        }
+                    }
+                }
                 any_timer_fired = true;
             }
             if any_timer_fired {

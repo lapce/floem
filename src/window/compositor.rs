@@ -3,6 +3,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::{
     compositor_surface::{CompositorSurfaceContent, CompositorSurfaceId, ExternalTexture},
     effects::{Brush as FloemBrush, CompositorShader, CompositorShaderPass, Image as FloemImage},
+    frame::FrameRatePreference,
     gpu_resources::GpuResources,
     paint::{
         composition::{
@@ -78,7 +79,7 @@ pub(crate) struct PresentedLayer {
     pub layer_id: LayerId,
     pub source_element_id: Option<LayerSourceId>,
     pub debug_name: Option<String>,
-    pub target_fps: Option<f64>,
+    pub frame_rate: Option<FrameRatePreference>,
 }
 
 #[derive(Clone, Debug)]
@@ -602,21 +603,47 @@ impl WindowCompositor {
             .collect()
     }
 
+    pub(crate) fn pending_frame_rate_preferences(&self) -> Vec<FrameRatePreference> {
+        let Some(changes) = &self.pending_layer_changes else {
+            return Vec::new();
+        };
+        let mut changed_layers = FxHashSet::default();
+        changed_layers.extend(changes.transforms.iter().copied());
+        changed_layers.extend(changes.opacities.iter().copied());
+        changed_layers.extend(changes.clips.iter().copied());
+        changed_layers.extend(changes.content.iter().copied());
+        changed_layers.extend(changes.bounds.iter().copied());
+        changed_layers.extend(changes.hidden.iter().copied());
+        changed_layers.extend(changes.unhidden.iter().copied());
+        changed_layers.extend(changes.added.iter().copied());
+
+        self.layer_ids_by_key
+            .iter()
+            .filter_map(|(key, layer_id)| {
+                changed_layers
+                    .contains(&layer_id.index())
+                    .then(|| self.presented_layer_for_key(key, *layer_id))
+                    .flatten()
+                    .and_then(|layer| layer.frame_rate)
+            })
+            .collect()
+    }
+
     fn presented_layer_for_key(
         &self,
         key: &CompositionKey,
         layer_id: LayerId,
     ) -> Option<PresentedLayer> {
-        let (source_element_id, debug_name, target_fps) = match self.layers_by_key.get(key) {
+        let (source_element_id, debug_name, frame_rate) = match self.layers_by_key.get(key) {
             Some(CompositorLayerState::Scene(layer)) => (
                 layer.source_element_id,
                 layer.debug_name.clone(),
-                layer.target_fps,
+                layer.frame_rate,
             ),
             Some(CompositorLayerState::CompositorSurface(layer)) => (
                 None,
                 Some(format!("CompositorSurface {:?}", layer.surface_id)),
-                layer.target_fps,
+                Some(layer.frame_rate),
             ),
             None => (None, None, None),
         };
@@ -627,7 +654,7 @@ impl WindowCompositor {
             layer_id,
             source_element_id,
             debug_name,
-            target_fps,
+            frame_rate,
         })
     }
 
@@ -1811,8 +1838,13 @@ impl ShaderRenderer {
             mapped_at_creation: false,
         });
         queue.write_buffer(&args_buffer, 0, &args);
-        let frame_bytes =
-            color_filter_frame_bytes(effective_scale, size, clip_mask.is_some(), analytic_clip);
+        let frame_bytes = color_filter_frame_bytes(
+            effective_scale,
+            size,
+            effect.position_transform,
+            clip_mask.is_some(),
+            analytic_clip,
+        );
         let frame_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("floem compositor color filter frame"),
             size: frame_bytes.len() as u64,
@@ -1961,7 +1993,7 @@ impl ShaderPipeline {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
                         min_binding_size: wgpu::BufferSize::new(
-                            16 * (2 + MAX_ANALYTIC_EFFECT_CLIPS as u64 * 4),
+                            16 * (4 + MAX_ANALYTIC_EFFECT_CLIPS as u64 * 4),
                         ),
                     },
                     count: None,
@@ -2257,12 +2289,19 @@ fn compositor_effect_dependency_hash(effect: &CompositorShaderPass, _frame_index
     color_filter_shader_hash(&effect.shader).hash(&mut hasher);
     effect_args(&effect.shader).hash(&mut hasher);
     format!("{:?}", effect.clip).hash(&mut hasher);
+    hash_affine_for_effect(&mut hasher, effect.position_transform);
     match &effect.shader {
         CompositorShader::Color(effect) => effect.args.revision().hash(&mut hasher),
         CompositorShader::Layer(effect) => effect.args.revision().hash(&mut hasher),
         CompositorShader::Source(effect) => effect.args.revision().hash(&mut hasher),
     }
     hasher.finish()
+}
+
+fn hash_affine_for_effect(hasher: &mut DefaultHasher, transform: Affine) {
+    for value in transform.as_coeffs() {
+        value.to_bits().hash(hasher);
+    }
 }
 
 fn effect_args(effect: &CompositorShader) -> Vec<u8> {
@@ -2348,16 +2387,23 @@ fn shader_source(
             fragment_body
         ),
     };
+    let (input_texture_name, input_sampler_name) = match effect {
+        CompositorShader::Layer(_) => ("input_texture", "input_sampler"),
+        CompositorShader::Color(_) | CompositorShader::Source(_) => (
+            "floem_internal_input_texture",
+            "floem_internal_input_sampler",
+        ),
+    };
     let fragment_return = match effect {
-        CompositorShader::Color(_) => {
-            "let color = textureSample(input_texture, input_sampler, in.uv);\n    let filtered = color_filter(logical_position, in.uv, color, args, frame);\n    return filtered * effect_clip_coverage(logical_position, in.uv);"
-        }
-        CompositorShader::Layer(_) => {
-            "let color = textureSample(input_texture, input_sampler, in.uv);\n    let filtered = layer_filter(logical_position, in.uv, color, args, frame);\n    return filtered * effect_clip_coverage(logical_position, in.uv);"
-        }
-        CompositorShader::Source(_) => {
-            "let color = textureSample(input_texture, input_sampler, in.uv);\n    return shader_source(logical_position, in.uv, args, frame) * color.a * effect_clip_coverage(logical_position, in.uv);"
-        }
+        CompositorShader::Color(_) => format!(
+            "let color = textureSample({input_texture_name}, {input_sampler_name}, in.uv);\n    let filtered = color_filter(logical_position, in.uv, color, args, frame);\n    return filtered * effect_clip_coverage(target_position, in.uv);"
+        ),
+        CompositorShader::Layer(_) => format!(
+            "let color = textureSample({input_texture_name}, {input_sampler_name}, in.uv);\n    let filtered = layer_filter(logical_position, in.uv, color, args, frame);\n    return filtered * effect_clip_coverage(target_position, in.uv);"
+        ),
+        CompositorShader::Source(_) => format!(
+            "let color = textureSample({input_texture_name}, {input_sampler_name}, in.uv);\n    return shader_source(logical_position, in.uv, args, frame) * color.a * effect_clip_coverage(target_position, in.uv);"
+        ),
     };
     Ok(format!(
         r#"
@@ -2370,6 +2416,8 @@ struct ShaderFrame {{
     target_width: f32,
     target_height: f32,
     clip_mask_enabled: f32,
+    position_transform0: vec4<f32>,
+    position_transform1: vec4<f32>,
     clip_count: vec4<f32>,
     clip0_rect: vec4<f32>,
     clip0_radii: vec4<f32>,
@@ -2389,8 +2437,8 @@ struct ShaderFrame {{
     clip3_inv1: vec4<f32>,
 }};
 
-@group(0) @binding(0) var input_texture: texture_2d<f32>;
-@group(0) @binding(1) var input_sampler: sampler;
+@group(0) @binding(0) var {input_texture_name}: texture_2d<f32>;
+@group(0) @binding(1) var {input_sampler_name}: sampler;
 @group(0) @binding(2) var<uniform> args: ShaderArgs;
 @group(0) @binding(3) var<uniform> frame: ShaderFrame;
 @group(0) @binding(4) var clip_mask_texture: texture_2d<f32>;
@@ -2447,7 +2495,7 @@ fn analytic_clip_coverage_for(
 }}
 
 fn effect_clip_coverage(position: vec2<f32>, uv: vec2<f32>) -> f32 {{
-    let mask = mix(1.0, textureSample(clip_mask_texture, input_sampler, uv).a, frame.clip_mask_enabled);
+    let mask = mix(1.0, textureSample(clip_mask_texture, {input_sampler_name}, uv).a, frame.clip_mask_enabled);
     return mask
         * analytic_clip_coverage_for(position, 0.0, frame.clip0_rect, frame.clip0_radii, frame.clip0_inv0, frame.clip0_inv1)
         * analytic_clip_coverage_for(position, 1.0, frame.clip1_rect, frame.clip1_radii, frame.clip1_inv0, frame.clip1_inv1)
@@ -2459,7 +2507,11 @@ fn effect_clip_coverage(position: vec2<f32>, uv: vec2<f32>) -> f32 {{
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {{
-    let logical_position = in.position.xy / vec2<f32>(frame.effective_scale);
+    let target_position = in.position.xy / vec2<f32>(frame.effective_scale);
+    let logical_position = vec2<f32>(
+        frame.position_transform0.x * target_position.x + frame.position_transform0.z * target_position.y + frame.position_transform1.x,
+        frame.position_transform0.y * target_position.x + frame.position_transform0.w * target_position.y + frame.position_transform1.y,
+    );
     {}
 }}
 "#,
@@ -2477,13 +2529,14 @@ fn padded_uniform_bytes(bytes: &[u8]) -> Vec<u8> {
 fn color_filter_frame_bytes(
     effective_scale: f64,
     target_size: wgpu::Extent3d,
+    position_transform: Affine,
     clip_mask_enabled: bool,
     analytic_clip: AnalyticClipSet,
 ) -> Vec<u8> {
     let effective_scale = effective_scale as f32;
     let target_width = target_size.width as f32 / effective_scale;
     let target_height = target_size.height as f32 / effective_scale;
-    let mut bytes = Vec::with_capacity(16 * (2 + MAX_ANALYTIC_EFFECT_CLIPS * 4));
+    let mut bytes = Vec::with_capacity(16 * (4 + MAX_ANALYTIC_EFFECT_CLIPS * 4));
     push_vec4(
         &mut bytes,
         [
@@ -2493,6 +2546,9 @@ fn color_filter_frame_bytes(
             u32::from(clip_mask_enabled) as f32,
         ],
     );
+    let [a, b, c, d, e, f] = position_transform.as_coeffs();
+    push_vec4(&mut bytes, [a as f32, b as f32, c as f32, d as f32]);
+    push_vec4(&mut bytes, [e as f32, f as f32, 0.0, 0.0]);
     push_vec4(&mut bytes, [analytic_clip.len() as f32, 0.0, 0.0, 0.0]);
     for clip in analytic_clip.clips {
         if let Some(clip) = clip {
@@ -2607,7 +2663,7 @@ pub(crate) struct SceneCompositorLayer {
     pub content_revision: u64,
     pub command_count: usize,
     pub promoted: bool,
-    pub target_fps: Option<f64>,
+    pub frame_rate: Option<FrameRatePreference>,
 }
 
 impl SceneCompositorLayer {
@@ -2635,7 +2691,7 @@ impl SceneCompositorLayer {
             content_revision: layer.content_revision,
             command_count: layer.scene.commands().len(),
             promoted: layer.promoted,
-            target_fps: layer.target_fps,
+            frame_rate: layer.frame_rate,
         }
     }
 }
@@ -2690,7 +2746,7 @@ pub(crate) struct CompositorSurfaceCompositorLayer {
     pub content_version: u64,
     pub presents_without_transaction: bool,
     pub has_provider: bool,
-    pub target_fps: Option<f64>,
+    pub frame_rate: FrameRatePreference,
 }
 
 impl CompositorSurfaceCompositorLayer {
@@ -2720,9 +2776,10 @@ impl CompositorSurfaceCompositorLayer {
             has_provider: compositor_surfaces
                 .get(&layer.surface_id)
                 .is_some_and(|entry| entry.provider.is_some()),
-            target_fps: compositor_surfaces
+            frame_rate: compositor_surfaces
                 .get(&layer.surface_id)
-                .and_then(|entry| entry.target_fps),
+                .map(|entry| entry.frame_rate)
+                .unwrap_or_else(FrameRatePreference::full),
         }
     }
 
@@ -2737,6 +2794,7 @@ impl CompositorSurfaceCompositorLayer {
             && self.content_version == other.content_version
             && self.presents_without_transaction == other.presents_without_transaction
             && self.has_provider == other.has_provider
+            && self.frame_rate == other.frame_rate
             && external_content_key(&self.content) == external_content_key(&other.content)
     }
 }
@@ -2778,7 +2836,7 @@ pub(crate) struct CompositorDiff {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::effects::{ColorFilter, ShaderSource};
+    use crate::effects::{ColorFilter, LayerFilter, ShaderSource};
 
     fn layer_with_effect(effect: CompositorShader) -> SceneLayer {
         SceneLayer {
@@ -2790,6 +2848,7 @@ mod tests {
             color_filters: vec![CompositorShaderPass {
                 shader: effect,
                 clip: None,
+                position_transform: Affine::IDENTITY,
             }],
             content_revision: 1,
             transform: Affine::IDENTITY,
@@ -2798,7 +2857,7 @@ mod tests {
             content_bounds: None,
             opacity: 1.0,
             promoted: false,
-            target_fps: None,
+            frame_rate: None,
         }
     }
 
@@ -2808,6 +2867,51 @@ mod tests {
             height,
             depth_or_array_layers: 1,
         }
+    }
+
+    fn f32_at(bytes: &[u8], index: usize) -> f32 {
+        let start = index * std::mem::size_of::<f32>();
+        f32::from_ne_bytes(bytes[start..start + 4].try_into().unwrap())
+    }
+
+    #[test]
+    fn effect_frame_bytes_include_position_transform() {
+        let position_transform = Affine::new([2.0, 0.25, 0.5, 3.0, 37.5, 12.25]);
+        let bytes = color_filter_frame_bytes(
+            2.0,
+            extent(200, 160),
+            position_transform,
+            false,
+            AnalyticClipSet::default(),
+        );
+
+        assert_eq!(f32_at(&bytes, 0), 2.0);
+        assert_eq!(f32_at(&bytes, 1), 100.0);
+        assert_eq!(f32_at(&bytes, 2), 80.0);
+        assert_eq!(f32_at(&bytes, 4), 2.0);
+        assert_eq!(f32_at(&bytes, 5), 0.25);
+        assert_eq!(f32_at(&bytes, 6), 0.5);
+        assert_eq!(f32_at(&bytes, 7), 3.0);
+        assert_eq!(f32_at(&bytes, 8), 37.5);
+        assert_eq!(f32_at(&bytes, 9), 12.25);
+    }
+
+    #[test]
+    fn shader_position_applies_transform_before_user_effect() {
+        let shader = color_filter_shader_source(&CompositorShader::Layer(LayerFilter::wgsl(
+            "return color;",
+        )))
+        .unwrap();
+
+        assert!(
+            shader.contains(
+                "let target_position = in.position.xy / vec2<f32>(frame.effective_scale);"
+            )
+        );
+        assert!(shader.contains("frame.position_transform0.x * target_position.x"));
+        assert!(shader.contains("frame.position_transform1.y"));
+        assert!(shader.contains("layer_filter(logical_position, in.uv, color, args, frame)"));
+        assert!(shader.contains("effect_clip_coverage(target_position, in.uv)"));
     }
 
     #[test]

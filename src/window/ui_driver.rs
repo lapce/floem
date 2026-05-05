@@ -8,7 +8,7 @@ use crate::{
         CustomEvent, Event, GlobalEventCx, RouteKind, ScrollTo, UpdatePhaseEvent, WindowEvent,
         dropped_file::{FileDragEvent, FileDragMove},
     },
-    frame::FrameTime,
+    frame::{FrameRatePreference, FrameTime},
     gpu_resources::GpuResources,
     inspector::TimingKind,
     message::{
@@ -16,7 +16,7 @@ use crate::{
         UPDATE_MESSAGES, UpdateMessage,
     },
     paint::composition::CompositionPlan,
-    platform::menu_types::{Menu as MudaMenu, MenuId},
+    platform::menu::{MenuId, MenuSpec},
     style::{CursorStyle, StyleSelector, recalc::StyleReason},
     view::{IntoView, VIEW_STORAGE, View, ViewId, process_pending_scope_reparents},
     window::compositor_surface::{CompositorSurfaceEntry, WindowCompositorSurfaces},
@@ -41,18 +41,18 @@ use crate::{
     views::{Container, Decorators, Stack},
 };
 
-pub(crate) struct PlatformMenu(MudaMenu);
+pub(crate) struct PlatformMenu(MenuSpec);
 
 // The UI owner builds the menu and transfers ownership to the main-thread
 // platform owner exactly once through `PlatformRequest`.
 unsafe impl Send for PlatformMenu {}
 
 impl PlatformMenu {
-    pub(crate) fn new(menu: MudaMenu) -> Self {
+    pub(crate) fn new(menu: MenuSpec) -> Self {
         Self(menu)
     }
 
-    pub(crate) fn into_inner(self) -> MudaMenu {
+    pub(crate) fn into_inner(self) -> MenuSpec {
         self.0
     }
 }
@@ -773,14 +773,21 @@ impl WindowUiDriver {
                     UpdateMessage::WindowVisible(visible) => {
                         self.request_platform(PlatformRequest::WindowVisible(visible));
                     }
-                    UpdateMessage::RequestAnimationFrame {
-                        target_fps,
+                    UpdateMessage::SetAnimationFrameCallback {
+                        token,
+                        frame_rate,
+                        repeat,
                         callback,
                     } => {
                         self.state.begin_frame_callbacks.push(BeginFrameCallback {
-                            target_fps,
+                            token,
+                            frame_rate,
+                            repeat,
                             callback,
                         });
+                    }
+                    UpdateMessage::CancelAnimationFrameCallback { token } => {
+                        self.state.cancel_begin_frame_callback(token);
                     }
                     UpdateMessage::ViewTransitionAnimComplete(id) => {
                         let num_waiting =
@@ -891,6 +898,10 @@ impl WindowUiDriver {
         !self.state.begin_frame_callbacks.is_empty()
     }
 
+    pub(crate) fn begin_frame_callback_preferences(&self) -> Vec<FrameRatePreference> {
+        self.state.begin_frame_callback_preferences()
+    }
+
     pub(crate) fn promote_next_frame_work(&mut self, frame_time: FrameTime) {
         self.state.promote_next_frame_work_at(Some(frame_time));
     }
@@ -930,10 +941,15 @@ impl WindowUiDriver {
 
     pub(crate) fn run_begin_frame_callbacks(&mut self, frame_time: FrameTime) {
         set_current_view(self.root_id.root());
-        let callbacks = self.state.take_due_begin_frame_callbacks(frame_time);
-        for callback in callbacks {
-            callback(frame_time);
+        let mut callbacks = self.state.take_due_begin_frame_callbacks(frame_time);
+        for callback in &mut callbacks {
+            (callback.callback)(frame_time);
         }
+        self.state.begin_frame_callbacks.extend(
+            callbacks
+                .into_iter()
+                .filter(|callback| callback.repeat.is_repeating()),
+        );
     }
 
     pub(crate) fn scene_submission(

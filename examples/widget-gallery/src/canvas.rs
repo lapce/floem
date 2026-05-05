@@ -1,9 +1,10 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Duration, time::Instant};
 
 use floem::imaging::record::Scene;
-use floem::imaging::{ImageBrush, Painter, SceneImage};
+use floem::imaging::{Painter, SceneImage};
 use floem::kurbo::Affine;
 use floem::peniko::color::Oklch;
+use floem::{Image, ImageBrush};
 use floem::{
     ViewId,
     context::{EventCx, LayoutChanged, LayoutChangedListener, PaintCx},
@@ -164,7 +165,7 @@ fn draw_checkerboard(
 
 fn checkerboard_tile_brush(light_color: Color, dark_color: Color) -> ImageBrush {
     let image = cached_checkerboard_tile_image(light_color, dark_color);
-    ImageBrush::new(image)
+    ImageBrush::new(Image::Imaging(image.into()))
         .with_extend(Extend::Repeat)
         .with_quality(ImageQuality::Low)
 }

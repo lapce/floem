@@ -5,6 +5,7 @@ use rustc_hash::FxHashMap;
 
 use crate::ViewId;
 use crate::action::add_update_message;
+use crate::frame::FrameRatePreference;
 use crate::message::UpdateMessage;
 use crate::paint::display_list::TransformClass;
 use crate::view::VIEW_STORAGE;
@@ -183,7 +184,7 @@ pub struct ElementMeta {
     pub focus: FocusNavMeta,
     pub(crate) retained_transform_boundary: Option<TransformClass>,
     pub(crate) wants_layer: bool,
-    pub(crate) layer_target_fps: Option<f64>,
+    pub(crate) layer_frame_rate: Option<FrameRatePreference>,
 }
 
 impl ElementMeta {
@@ -202,7 +203,7 @@ impl ElementMeta {
             },
             retained_transform_boundary: None,
             wants_layer: false,
-            layer_target_fps: None,
+            layer_frame_rate: None,
         }
     }
 }
@@ -300,37 +301,43 @@ impl BoxTree {
         true
     }
 
-    pub(crate) fn layer_target_fps(&self, id: understory_box_tree::NodeId) -> Option<f64> {
-        self.element_meta(id).and_then(|meta| meta.layer_target_fps)
+    pub(crate) fn layer_frame_rate(
+        &self,
+        id: understory_box_tree::NodeId,
+    ) -> Option<FrameRatePreference> {
+        self.element_meta(id).and_then(|meta| meta.layer_frame_rate)
     }
 
-    pub(crate) fn containing_layer_target_fps(&self, id: ElementId) -> Option<(ElementId, f64)> {
+    pub(crate) fn containing_layer_frame_rate(
+        &self,
+        id: ElementId,
+    ) -> Option<(ElementId, FrameRatePreference)> {
         let mut current = Some(id.0);
         while let Some(node_id) = current {
             if let Some(meta) = self.element_meta(node_id)
                 && meta.wants_layer
-                && let Some(target_fps) = meta.layer_target_fps
+                && let Some(frame_rate) = meta.layer_frame_rate
             {
-                return Some((meta.element_id, target_fps));
+                return Some((meta.element_id, frame_rate));
             }
             current = self.parent_of(node_id);
         }
         None
     }
 
-    pub(crate) fn set_layer_target_fps(
+    pub(crate) fn set_layer_frame_rate(
         &mut self,
         id: understory_box_tree::NodeId,
-        layer_target_fps: Option<f64>,
+        layer_frame_rate: FrameRatePreference,
     ) -> bool {
         let Some(mut meta) = self.element_meta(id) else {
             return false;
         };
-        let layer_target_fps = layer_target_fps.filter(|fps| fps.is_finite() && *fps > 0.0);
-        if meta.layer_target_fps == layer_target_fps {
+        let layer_frame_rate = (!layer_frame_rate.is_full()).then_some(layer_frame_rate);
+        if meta.layer_frame_rate == layer_frame_rate {
             return false;
         }
-        meta.layer_target_fps = layer_target_fps;
+        meta.layer_frame_rate = layer_frame_rate;
         self.metadata.insert(id, meta);
         true
     }

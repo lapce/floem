@@ -4,6 +4,7 @@
 //! using muda on native platforms and wasm_stubs on wasm32.
 
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(unused_imports)]
 pub use muda::{
     CheckMenuItem, Icon, IconMenuItem, IsMenuItem, Menu, MenuId, MenuItem, NativeIcon,
     PredefinedMenuItem, Submenu, accelerator::Accelerator,

@@ -179,10 +179,15 @@ pub(crate) enum UserEvent {
         window_id: WindowId,
         surface_id: CompositorSurfaceId,
     },
-    CompositorSurfaceTargetFps {
+    CompositorSurfaceFrameRatePreference {
         window_id: WindowId,
         surface_id: CompositorSurfaceId,
-        target_fps: Option<f64>,
+        frame_rate: crate::frame::FrameRatePreference,
+    },
+    CompositorSurfacePresentsWithTransaction {
+        window_id: WindowId,
+        surface_id: CompositorSurfaceId,
+        presents_with_transaction: bool,
     },
     CompositorSurfaceProvider {
         window_id: WindowId,

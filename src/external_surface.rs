@@ -21,6 +21,7 @@ use crate::{
     Application,
     app::UserEvent,
     compositor_surface::{CompositorSurfaceContent, CompositorSurfaceId, ExternalTexture},
+    frame::FrameRatePreference,
 };
 
 /// Stable identity for a direct external compositor slot.
@@ -119,12 +120,21 @@ impl ExternalSurface {
         self.handle().clear();
     }
 
-    /// Sets the preferred maximum update rate for this direct compositor layer.
+    /// Sets the frame-rate preference for this direct compositor layer.
+    pub fn set_frame_rate_preference(&self, frame_rate: FrameRatePreference) {
+        self.handle().set_frame_rate_preference(frame_rate);
+    }
+
+    /// Sets whether submitted content publishes with the window compositor transaction.
     ///
-    /// Floem rounds the value down to a display-friendly cadence. `None`
-    /// clears the preference.
-    pub fn set_target_fps(&self, target_fps: Option<f64>) {
-        self.handle().set_target_fps(target_fps);
+    /// The default is `true`, which keeps external content synchronized with
+    /// the window's normal layer-tree commit. Passing `false` allows future
+    /// submitted content to publish independently until changed again. Use
+    /// independent publication only when the external layer does not need to
+    /// stay visually synchronized with Floem scene layers.
+    pub fn presents_with_transaction(&self, presents_with_transaction: bool) {
+        self.handle()
+            .presents_with_transaction(presents_with_transaction);
     }
 }
 
@@ -175,12 +185,24 @@ impl ExternalSurfaceHandle {
         });
     }
 
-    /// Sets the preferred maximum update rate for this direct compositor layer.
-    pub fn set_target_fps(&self, target_fps: Option<f64>) {
-        Application::send_proxy_event(UserEvent::CompositorSurfaceTargetFps {
+    pub fn set_frame_rate_preference(&self, frame_rate: FrameRatePreference) {
+        Application::send_proxy_event(UserEvent::CompositorSurfaceFrameRatePreference {
             window_id: self.window_id,
             surface_id: self.id.compositor_surface_id(),
-            target_fps,
+            frame_rate,
+        });
+    }
+
+    /// Sets whether submitted content publishes with the window compositor transaction.
+    ///
+    /// This is the sendable-handle equivalent of
+    /// [`ExternalSurface::presents_with_transaction`]. The setting persists for
+    /// future submissions until changed again.
+    pub fn presents_with_transaction(&self, presents_with_transaction: bool) {
+        Application::send_proxy_event(UserEvent::CompositorSurfacePresentsWithTransaction {
+            window_id: self.window_id,
+            surface_id: self.id.compositor_surface_id(),
+            presents_with_transaction,
         });
     }
 }

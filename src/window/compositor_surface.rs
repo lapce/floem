@@ -7,7 +7,7 @@ use crate::{
         CompositorSurfaceContent, CompositorSurfaceId, CompositorSurfaceOutcome,
         CompositorSurfaceProviderHandle,
     },
-    frame::{FrameTime, target_frame_due},
+    frame::{FrameRatePreference, FrameTime, frame_rate_due},
     gpu_resources::GpuResources,
     paint::composition::{CompositionItem, CompositionPlan},
 };
@@ -60,14 +60,24 @@ impl WindowCompositorSurfaces {
         entry.version = entry.version.wrapping_add(1);
     }
 
-    pub(crate) fn set_target_fps(
+    pub(crate) fn set_frame_rate_preference(
         &mut self,
         surface_id: CompositorSurfaceId,
-        target_fps: Option<f64>,
+        frame_rate: FrameRatePreference,
     ) {
         let entry = self.entries.entry(surface_id).or_default();
-        entry.target_fps = sanitize_target_fps(target_fps);
+        entry.frame_rate = frame_rate;
         entry.last_delivered_frame_index = None;
+    }
+
+    pub(crate) fn set_presents_with_transaction(
+        &mut self,
+        surface_id: CompositorSurfaceId,
+        presents_with_transaction: bool,
+    ) {
+        let entry = self.entries.entry(surface_id).or_default();
+        entry.presents_without_transaction = !presents_with_transaction;
+        entry.content_dirty = true;
     }
 
     pub(crate) fn reset_pacing_state(&mut self) {
@@ -82,12 +92,29 @@ impl WindowCompositorSurfaces {
         self.needs_frame_pull = true;
     }
 
+    pub(crate) fn pending_frame_rate_preferences(&self) -> Vec<FrameRatePreference> {
+        self.entries
+            .values()
+            .map(|entry| entry.frame_rate)
+            .collect()
+    }
+
+    pub(crate) fn pending_frame_rate_preference_debug(
+        &self,
+    ) -> Vec<(CompositorSurfaceId, FrameRatePreference)> {
+        self.entries
+            .iter()
+            .map(|(surface_id, entry)| (*surface_id, entry.frame_rate))
+            .collect()
+    }
+
     pub(crate) fn update_providers(
         &mut self,
         plan: &CompositionPlan,
         compositor: Option<&mut WindowCompositor>,
         effective_scale: f64,
         gpu_resources: Option<&GpuResources>,
+        is_resize_frame: bool,
         frame_time_for_surface: &mut impl FnMut(CompositorSurfaceId) -> FrameTime,
     ) -> WindowCompositorSurfaceFrameUpdate {
         let mut compositor = compositor;
@@ -110,8 +137,6 @@ impl WindowCompositorSurfaces {
                 entry.content = provider
                     .current_content()
                     .unwrap_or(CompositorSurfaceContent::Empty);
-                entry.presents_without_transaction =
-                    provider.current_presents_without_transaction();
                 entry.content_dirty = true;
                 entry.version = entry.version.wrapping_add(1);
             }
@@ -120,7 +145,7 @@ impl WindowCompositorSurfaces {
                 frame_update.record_producer_latency(planned_surface.surface_id, latency);
             }
             let frame_time = frame_time_for_surface(planned_surface.surface_id);
-            if !entry.should_deliver_frame_opportunity(frame_time) {
+            if !entry.should_deliver_frame_opportunity(planned_surface.surface_id, frame_time) {
                 frame_update.request_next_frame = true;
                 continue;
             }
@@ -187,6 +212,7 @@ impl WindowCompositorSurfaces {
                 frame_index: frame_time.frame_index,
                 frame_time,
                 interval: frame_time.interval,
+                is_window_resize: is_resize_frame,
                 visible: true,
                 rect: planned_surface.rect,
                 size_px,
@@ -201,8 +227,6 @@ impl WindowCompositorSurfaces {
                 entry.content = provider
                     .current_content()
                     .unwrap_or(CompositorSurfaceContent::Empty);
-                entry.presents_without_transaction =
-                    provider.current_presents_without_transaction();
                 entry.content_dirty = true;
                 entry.version = entry.version.wrapping_add(1);
             }
@@ -217,8 +241,6 @@ impl WindowCompositorSurfaces {
                 entry.content = provider
                     .current_content()
                     .unwrap_or(CompositorSurfaceContent::Empty);
-                entry.presents_without_transaction =
-                    provider.current_presents_without_transaction();
                 entry.content_dirty = true;
                 entry.version = entry.version.wrapping_add(1);
             }
@@ -258,6 +280,7 @@ impl WindowCompositorSurfaces {
         compositor: &mut WindowCompositor,
         effective_scale: f64,
         gpu_resources: Option<&GpuResources>,
+        is_resize_frame: bool,
     ) -> WindowCompositorSurfaceFrameUpdate {
         self.take_frame_pull();
         let _composition_diff = compositor.apply_plan(plan, &self.entries, gpu_resources);
@@ -266,6 +289,7 @@ impl WindowCompositorSurfaces {
             Some(compositor),
             effective_scale,
             gpu_resources,
+            is_resize_frame,
             &mut frame_time_for_surface,
         );
         if update.content_changed {
@@ -453,7 +477,7 @@ mod tests {
             content_bounds: None,
             opacity: 1.0,
             promoted: false,
-            target_fps: None,
+            frame_rate: None,
         }));
         plan.items
             .push(CompositionItem::CompositorSurface(CompositorSurfaceLayer {
@@ -663,7 +687,7 @@ pub(crate) struct CompositorSurfaceEntry {
     pub content_dirty: bool,
     pub version: u64,
     pub previous_outcome: Option<CompositorSurfaceOutcome>,
-    pub target_fps: Option<f64>,
+    pub frame_rate: FrameRatePreference,
     last_delivered_frame_index: Option<u64>,
     producer_work_estimate: Duration,
 }
@@ -677,7 +701,7 @@ impl Default for CompositorSurfaceEntry {
             content_dirty: false,
             version: 0,
             previous_outcome: None,
-            target_fps: None,
+            frame_rate: FrameRatePreference::full(),
             last_delivered_frame_index: None,
             producer_work_estimate: Duration::ZERO,
         }
@@ -690,24 +714,31 @@ impl CompositorSurfaceEntry {
             smooth_duration_estimate(self.producer_work_estimate, observed);
     }
 
-    fn should_deliver_frame_opportunity(&mut self, frame_time: FrameTime) -> bool {
-        let Some(target_fps) = self.target_fps else {
-            self.last_delivered_frame_index = Some(frame_time.frame_index);
-            return true;
-        };
-        let should_deliver = target_frame_due(frame_time, Some(target_fps))
+    fn should_deliver_frame_opportunity(
+        &mut self,
+        surface_id: CompositorSurfaceId,
+        frame_time: FrameTime,
+    ) -> bool {
+        let should_deliver = frame_rate_due(frame_time, self.frame_rate)
             || self
                 .last_delivered_frame_index
                 .is_some_and(|last| frame_time.frame_index <= last);
+        if crate::frame_source::frame_pacing_diag_enabled() && !self.frame_rate.is_full() {
+            eprintln!(
+                "floem compositor surface pacing surface={:?} frame={} source_interval={:.3}ms display_interval={:.3}ms preference={:?} deliver={}",
+                surface_id,
+                frame_time.frame_index,
+                crate::frame_source::duration_ms(frame_time.source_interval),
+                crate::frame_source::duration_ms(frame_time.frame_interval),
+                self.frame_rate,
+                should_deliver,
+            );
+        }
         if should_deliver {
             self.last_delivered_frame_index = Some(frame_time.frame_index);
         }
         should_deliver
     }
-}
-
-fn sanitize_target_fps(target_fps: Option<f64>) -> Option<f64> {
-    target_fps.filter(|fps| fps.is_finite() && *fps > 0.0)
 }
 
 fn smooth_duration_estimate(previous: Duration, observed: Duration) -> Duration {

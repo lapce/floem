@@ -22,6 +22,10 @@ use crate::{
     views::Overlay,
 };
 
+fn duration_ms(duration: Duration) -> f64 {
+    duration.as_secs_f64() * 1000.0
+}
+
 const SAMPLE_COUNT: usize = 90;
 const GRAPH_COUNT: usize = 44;
 const HUD_WIDTH: f64 = 268.0;
@@ -63,7 +67,9 @@ struct LayerReport {
     samples: VecDeque<Duration>,
     present_count: u64,
     missed_deadlines: u64,
+    missed_presents: u64,
     target_interval: Option<Duration>,
+    source_interval: Option<Duration>,
 }
 
 impl LayerReport {
@@ -75,7 +81,9 @@ impl LayerReport {
             samples: VecDeque::with_capacity(SAMPLE_COUNT),
             present_count: 0,
             missed_deadlines: 0,
+            missed_presents: 0,
             target_interval: None,
+            source_interval: None,
         }
     }
 }
@@ -93,6 +101,7 @@ struct LayerMetrics {
     missed_deadlines: u64,
     missed_presents: u64,
     target_ms: Option<f64>,
+    source_ms: Option<f64>,
 }
 
 impl Default for LayerMetrics {
@@ -109,6 +118,7 @@ impl Default for LayerMetrics {
             missed_deadlines: 0,
             missed_presents: 0,
             target_ms: None,
+            source_ms: None,
         }
     }
 }
@@ -220,13 +230,23 @@ impl Hud {
             .iter()
             .map(|layer| layer.layer_id)
             .collect::<BTreeSet<_>>();
-        let presented_layers = info.layers.iter().collect::<Vec<_>>();
-
         let presented_at = info.presented_at;
         {
             let mut reports = self.inner.reports.borrow_mut();
             reports.retain(|layer_id, _| active_layer_ids.contains(layer_id));
-            for layer in presented_layers {
+            for layer in &info.active_layers {
+                let report = reports
+                    .entry(layer.layer_id)
+                    .or_insert_with(|| LayerReport::new(layer.layer_id));
+                if let Some(debug_name) = &layer.debug_name {
+                    if !debug_name.is_empty() {
+                        report.name = debug_name.clone();
+                    }
+                }
+                report.target_interval = layer.target_frame_interval;
+                report.source_interval = layer.source_frame_interval;
+            }
+            for layer in &info.layers {
                 let report = reports
                     .entry(layer.layer_id)
                     .or_insert_with(|| LayerReport::new(layer.layer_id));
@@ -237,12 +257,36 @@ impl Hud {
                 }
                 report.present_count += 1;
                 report.target_interval = layer.target_frame_interval;
+                report.source_interval = layer.source_frame_interval;
                 if layer.missed_deadline {
                     report.missed_deadlines += 1;
                 }
                 if let Some(previous) = report.last_presented_at.replace(presented_at) {
                     let dt = presented_at.saturating_duration_since(previous);
                     if !dt.is_zero() {
+                        let target_ms = report.target_interval.map(duration_ms);
+                        let threshold_ms = cadence_miss_threshold_ms(
+                            report.target_interval,
+                            report.source_interval,
+                        );
+                        let dt_ms = duration_ms(dt);
+                        if threshold_ms.is_some_and(|threshold_ms| dt_ms > threshold_ms) {
+                            report.missed_presents += 1;
+                            if crate::frame_source::frame_pacing_diag_enabled() {
+                                eprintln!(
+                                    "floem hud missed-present layer={} name={:?} dt={:.3}ms target={:?} threshold={:.3}ms frame_rate={:?} presented_at={:?} missed_total={} sample_count={}",
+                                    layer.layer_id,
+                                    report.name,
+                                    dt_ms,
+                                    target_ms,
+                                    threshold_ms.unwrap_or(0.0),
+                                    layer.frame_rate,
+                                    presented_at,
+                                    report.missed_presents,
+                                    report.samples.len().saturating_add(1).min(SAMPLE_COUNT),
+                                );
+                            }
+                        }
                         if report.samples.len() == SAMPLE_COUNT {
                             report.samples.pop_front();
                         }
@@ -294,12 +338,14 @@ impl Hud {
                 .position(Position::Absolute)
                 .inset_top(12.0)
                 .inset_right(12.0)
+                .padding(2)
                 .width(HUD_WIDTH)
                 .max_height(HUD_MAX_HEIGHT)
-                .z_index(1000)
                 .pointer_events_none()
                 .wants_layer(true)
-                .layer_target_fps(HUD_TARGET_FPS);
+                .layer_frame_rate(
+                    crate::frame::FrameRatePreference::at_most(HUD_TARGET_FPS).unwrap(),
+                );
             if !visible.get() { style.hide() } else { style }
         });
         register_hud_source(&self.inner.layer_source_ids, stack.id().get_element_id());
@@ -332,32 +378,50 @@ fn metrics_from_reports(reports: &BTreeMap<u32, LayerReport>) -> HudMetrics {
     HudMetrics { layers }
 }
 
+fn cadence_miss_threshold_ms(target: Option<Duration>, source: Option<Duration>) -> Option<f64> {
+    let target = target?;
+    let target_ms = duration_ms(target);
+    let expected_max_gap_ms = match source {
+        Some(source) if !source.is_zero() && source < target => {
+            let multiple = target.as_nanos().div_ceil(source.as_nanos()).max(1);
+            duration_ms(source.saturating_mul(multiple.min(u32::MAX as u128) as u32))
+        }
+        _ => target_ms,
+    };
+    Some(expected_max_gap_ms.max(target_ms) * 1.1)
+}
+
 fn metrics_from_report(report: &LayerReport) -> LayerMetrics {
     let target_ms = report
         .target_interval
         .map(|interval| interval.as_secs_f64() * 1000.0);
-    let mut metrics = LayerMetrics {
-        layer_id: report.layer_id,
-        name: report.name.clone(),
-        frame_count: report.present_count,
-        missed_deadlines: report.missed_deadlines,
-        target_ms,
-        ..LayerMetrics::default()
-    };
-
+    let source_ms = report
+        .source_interval
+        .map(|interval| interval.as_secs_f64() * 1000.0);
     let mut min_ms = f64::INFINITY;
     let mut max_ms: f64 = 0.0;
     let mut total_ms = 0.0;
-    let missed_present_threshold_ms = target_ms.map(|ms| ms * 1.5).unwrap_or(25.0);
+    let threshold_ms = cadence_miss_threshold_ms(report.target_interval, report.source_interval);
+    let mut missed_presents = 0;
     for sample in &report.samples {
         let ms = sample.as_secs_f64() * 1000.0;
         min_ms = min_ms.min(ms);
         max_ms = max_ms.max(ms);
         total_ms += ms;
-        if ms > missed_present_threshold_ms {
-            metrics.missed_presents += 1;
+        if threshold_ms.is_some_and(|threshold_ms| ms > threshold_ms) {
+            missed_presents += 1;
         }
     }
+    let mut metrics = LayerMetrics {
+        layer_id: report.layer_id,
+        name: report.name.clone(),
+        frame_count: report.present_count,
+        missed_deadlines: report.missed_deadlines,
+        missed_presents,
+        target_ms,
+        source_ms,
+        ..LayerMetrics::default()
+    };
     if !report.samples.is_empty() {
         metrics.avg_ms = total_ms / report.samples.len() as f64;
         metrics.fps = 1000.0 / metrics.avg_ms.max(0.001);
@@ -529,6 +593,10 @@ fn draw_layer_report(
         .target_ms
         .map(|ms| format!("{ms:.1}ms"))
         .unwrap_or_else(|| "--".to_owned());
+    let source = metrics
+        .source_ms
+        .map(|ms| format!(" src {ms:.1}"))
+        .unwrap_or_default();
     draw_text_with_width(
         text_cache,
         cx,
@@ -544,7 +612,7 @@ fn draw_layer_report(
         cx,
         Point::new(rect.x0 + 7.0, rect.y0 + 32.0),
         &format!(
-            "target {target} miss {} dl {} #{}",
+            "target {target}{source} miss {} dl {} #{}",
             metrics.missed_presents, metrics.missed_deadlines, metrics.frame_count
         ),
         8.0,
@@ -574,9 +642,14 @@ fn draw_graph(cx: &mut PaintCx<'_>, rect: Rect, metrics: &LayerMetrics) {
             .draw();
     }
 
-    let target_ms = metrics.target_ms.unwrap_or(16.666);
-    let yellow_threshold = target_ms * 1.1;
-    let red_threshold = target_ms * 1.5;
+    let miss_threshold = cadence_miss_threshold_ms(
+        metrics
+            .target_ms
+            .map(|ms| Duration::from_secs_f64(ms / 1000.0)),
+        metrics
+            .source_ms
+            .map(|ms| Duration::from_secs_f64(ms / 1000.0)),
+    );
     let bar_width = rect.width() / GRAPH_COUNT as f64;
     for (index, ms) in metrics.frame_ms.iter().enumerate() {
         if *ms <= 0.0 {
@@ -587,12 +660,10 @@ fn draw_graph(cx: &mut PaintCx<'_>, rect: Rect, metrics: &LayerMetrics) {
         let height = (rect.height() * normalized).max(1.0);
         let x0 = rect.x0 + index as f64 * bar_width + 0.5;
         let x1 = (x0 + bar_width - 1.0).min(rect.x1);
-        let color = if ms <= yellow_threshold {
-            Color::from_rgba8(92, 255, 151, 218)
-        } else if ms <= red_threshold {
-            Color::from_rgba8(242, 220, 105, 230)
-        } else {
+        let color = if miss_threshold.is_some_and(|threshold| ms > threshold) {
             Color::from_rgba8(255, 103, 92, 235)
+        } else {
+            Color::from_rgba8(92, 255, 151, 218)
         };
         cx.painter
             .fill(Rect::new(x0, rect.y1 - height, x1, rect.y1), color)

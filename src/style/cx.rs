@@ -548,7 +548,7 @@ impl<'a> StyleCx<'a> {
                 let focus_nav_changed;
                 let visibility_changed;
                 let wants_layer_changed;
-                let layer_target_fps_changed;
+                let layer_frame_rate_changed;
                 {
                     let box_tree = view_id.box_tree();
                     let box_tree = &mut box_tree.borrow_mut();
@@ -595,9 +595,9 @@ impl<'a> StyleCx<'a> {
 
                     let new_wants_layer = vs.combined_style.builtin().wants_layer();
                     wants_layer_changed = box_tree.set_wants_layer(element_id.0, new_wants_layer);
-                    let new_layer_target_fps = vs.combined_style.builtin().layer_target_fps();
-                    layer_target_fps_changed =
-                        box_tree.set_layer_target_fps(element_id.0, new_layer_target_fps);
+                    let new_layer_frame_rate = vs.combined_style.builtin().layer_frame_rate();
+                    layer_frame_rate_changed =
+                        box_tree.set_layer_frame_rate(element_id.0, new_layer_frame_rate);
                 }
                 if focus_nav_changed {
                     self.window_state.invalidate_focus_nav_cache();
@@ -609,7 +609,7 @@ impl<'a> StyleCx<'a> {
                 // ─────────────────────────────────────────────────────────────────────
                 if visibility_changed
                     || (!is_hidden_final
-                        && (need_paint || wants_layer_changed || layer_target_fps_changed))
+                        && (need_paint || wants_layer_changed || layer_frame_rate_changed))
                 {
                     self.window_state.request_paint(element_id);
                 }

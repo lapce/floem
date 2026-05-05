@@ -27,7 +27,6 @@ use floem::{
     action::{set_theme, set_window_menu, toggle_global_theme, toggle_window_theme},
     kurbo::Size,
     menu::*,
-    muda::{AboutMetadataBuilder, PredefinedMenuItem},
     new_window,
     prelude::{palette::css, *},
     style::{Background, CursorStyle, CustomStylable, Transition},

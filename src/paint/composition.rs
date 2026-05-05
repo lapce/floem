@@ -2,7 +2,10 @@ use std::hash::{Hash, Hasher};
 
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size};
 
-use crate::{ElementId, compositor_surface::CompositorSurfaceId, effects::CompositorShaderPass};
+use crate::{
+    ElementId, compositor_surface::CompositorSurfaceId, effects::CompositorShaderPass,
+    frame::FrameRatePreference,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LayerSourceId(u64);
@@ -71,7 +74,7 @@ pub(crate) struct SceneLayer {
     pub content_bounds: Option<Rect>,
     pub opacity: f32,
     pub promoted: bool,
-    pub target_fps: Option<f64>,
+    pub frame_rate: Option<FrameRatePreference>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -120,6 +123,14 @@ pub(crate) fn clip_scene_layers_to_viewport(plan: &mut CompositionPlan, viewport
             layer.bounds = Rect::ZERO;
             layer.content_bounds = None;
             continue;
+        }
+
+        let bounds_delta = visible_local.origin() - layer.bounds.origin();
+        if bounds_delta != peniko::kurbo::Vec2::ZERO {
+            let bounds_transform = Affine::translate(bounds_delta);
+            for filter in &mut layer.color_filters {
+                filter.position_transform = filter.position_transform * bounds_transform;
+            }
         }
 
         layer.bounds = visible_local;

@@ -19,7 +19,7 @@ use imaging::{
     Composite as ImagingComposite, Filter as ImagingFilter, GroupRef as ImagingGroupRef,
     record::Clip,
 };
-use peniko::kurbo::Size;
+use peniko::kurbo::{Affine, Size};
 use subduction::wgpu::SurfaceColorSpace;
 
 use crate::{
@@ -60,6 +60,7 @@ pub enum CompositorShader {
 pub(crate) struct CompositorShaderPass {
     pub shader: CompositorShader,
     pub clip: Option<Clip>,
+    pub position_transform: Affine,
 }
 
 impl From<ImagingFilter> for Filter {
@@ -133,6 +134,16 @@ pub enum ImageRef<'a> {
     Imaging(imaging::ImageRef<'a>),
     /// Borrowed compositor-generated image content.
     Source(&'a ShaderSourceImage),
+}
+
+impl ImageRef<'_> {
+    #[must_use]
+    pub fn to_owned(&self) -> Image {
+        match self {
+            Self::Imaging(image) => Image::Imaging((*image).to_owned()),
+            Self::Source(source) => Image::Source((*source).clone()),
+        }
+    }
 }
 
 /// Floem-owned image brush.
@@ -258,9 +269,24 @@ impl From<ShaderSourceImage> for ImageBrush {
 /// Borrowed Floem image brush.
 pub type ImageBrushRef<'a> = ImageBrush<ImageRef<'a>>;
 
+impl From<ImageBrushRef<'_>> for ImageBrush {
+    fn from(value: ImageBrushRef<'_>) -> Self {
+        Self(peniko::ImageBrush {
+            image: value.image.to_owned(),
+            sampler: value.sampler,
+        })
+    }
+}
+
 impl From<ImageBrush> for Brush {
     fn from(value: ImageBrush) -> Self {
         Self::Image(value)
+    }
+}
+
+impl From<&ImageBrush> for Brush {
+    fn from(value: &ImageBrush) -> Self {
+        Self::Image(value.as_ref().into())
     }
 }
 
@@ -387,11 +413,14 @@ impl ColorFilter {
     ///     effective_scale: f32,
     ///     target_width: f32,
     ///     target_height: f32,
-    ///     _pad0: f32,
+    ///     clip_mask_enabled: f32,
+    ///     position_transform0: vec4<f32>,
+    ///     position_transform1: vec4<f32>,
     /// };
     ///
-    /// @group(0) @binding(0) var input_texture: texture_2d<f32>;
-    /// @group(0) @binding(1) var input_sampler: sampler;
+    /// // Floem samples the source texture before calling `color_filter`.
+    /// // The texture and sampler bindings are internal; use `LayerFilter`
+    /// // when shader code needs to sample the input layer.
     /// @group(0) @binding(2) var<uniform> args: ShaderArgs;
     /// @group(0) @binding(3) var<uniform> frame: ShaderFrame;
     ///
@@ -422,8 +451,12 @@ impl ColorFilter {
     ///
     /// @fragment
     /// fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    ///     let logical_position = in.position.xy / vec2<f32>(frame.effective_scale);
-    ///     let color = textureSample(input_texture, input_sampler, in.uv);
+    ///     let target_position = in.position.xy / vec2<f32>(frame.effective_scale);
+    ///     let logical_position = vec2<f32>(
+    ///         frame.position_transform0.x * target_position.x + frame.position_transform0.z * target_position.y + frame.position_transform1.x,
+    ///         frame.position_transform0.y * target_position.x + frame.position_transform0.w * target_position.y + frame.position_transform1.y,
+    ///     );
+    ///     let color = /* sampled source color */;
     ///     return color_filter(logical_position, in.uv, color, args, frame);
     /// }
     /// ```
@@ -524,7 +557,9 @@ impl LayerFilter {
     ///     effective_scale: f32,
     ///     target_width: f32,
     ///     target_height: f32,
-    ///     _pad0: f32,
+    ///     clip_mask_enabled: f32,
+    ///     position_transform0: vec4<f32>,
+    ///     position_transform1: vec4<f32>,
     /// };
     ///
     /// @group(0) @binding(0) var input_texture: texture_2d<f32>;
@@ -559,7 +594,11 @@ impl LayerFilter {
     ///
     /// @fragment
     /// fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    ///     let logical_position = in.position.xy / vec2<f32>(frame.effective_scale);
+    ///     let target_position = in.position.xy / vec2<f32>(frame.effective_scale);
+    ///     let logical_position = vec2<f32>(
+    ///         frame.position_transform0.x * target_position.x + frame.position_transform0.z * target_position.y + frame.position_transform1.x,
+    ///         frame.position_transform0.y * target_position.x + frame.position_transform0.w * target_position.y + frame.position_transform1.y,
+    ///     );
     ///     let color = textureSample(input_texture, input_sampler, in.uv);
     ///     return layer_filter(logical_position, in.uv, color, args, frame);
     /// }
@@ -667,11 +706,14 @@ impl ShaderSource {
     ///     effective_scale: f32,
     ///     target_width: f32,
     ///     target_height: f32,
-    ///     _pad0: f32,
+    ///     clip_mask_enabled: f32,
+    ///     position_transform0: vec4<f32>,
+    ///     position_transform1: vec4<f32>,
     /// };
     ///
-    /// @group(0) @binding(0) var input_texture: texture_2d<f32>;
-    /// @group(0) @binding(1) var input_sampler: sampler;
+    /// // Floem uses an internal texture only to apply the generated source
+    /// // to the requested image shape. Shader sources do not receive an
+    /// // input texture; use `LayerFilter` when shader code needs sampling.
     /// @group(0) @binding(2) var<uniform> args: ShaderArgs;
     /// @group(0) @binding(3) var<uniform> frame: ShaderFrame;
     ///
@@ -701,7 +743,11 @@ impl ShaderSource {
     ///
     /// @fragment
     /// fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    ///     let logical_position = in.position.xy / vec2<f32>(frame.effective_scale);
+    ///     let target_position = in.position.xy / vec2<f32>(frame.effective_scale);
+    ///     let logical_position = vec2<f32>(
+    ///         frame.position_transform0.x * target_position.x + frame.position_transform0.z * target_position.y + frame.position_transform1.x,
+    ///         frame.position_transform0.y * target_position.x + frame.position_transform0.w * target_position.y + frame.position_transform1.y,
+    ///     );
     ///     return shader_source(logical_position, in.uv, args, frame);
     /// }
     /// ```
@@ -1188,8 +1234,7 @@ impl<T: AnimatableShaderUniforms + Send + 'static> ShaderUniform<T> {
             return;
         }
         let handle = self.clone();
-        crate::action::request_animation_frame(None, move |frame_time| {
-            handle.inner.frame_requested.store(false, Ordering::Relaxed);
+        crate::action::request_animation_frame(move |frame_time| {
             let now = frame_time
                 .interval
                 .predicted_present
@@ -1197,8 +1242,8 @@ impl<T: AnimatableShaderUniforms + Send + 'static> ShaderUniform<T> {
             if handle.step_at(now) {
                 handle.request_repaint();
             }
-            if handle.is_animating() {
-                handle.request_animation_frame();
+            if !handle.is_animating() {
+                handle.inner.frame_requested.store(false, Ordering::Relaxed);
             }
         });
     }
@@ -1221,5 +1266,7 @@ pub struct ShaderFrameUniform {
     pub effective_scale: f32,
     pub target_width: f32,
     pub target_height: f32,
-    pub _pad0: f32,
+    pub clip_mask_enabled: f32,
+    pub position_transform0: [f32; 4],
+    pub position_transform1: [f32; 4],
 }

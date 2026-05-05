@@ -1,6 +1,8 @@
 use crate::platform::{Duration, Instant};
 use understory_frame_pacing::{
-    DisplayTiming as PacingDisplayTiming, Duration as PacingDuration, TargetFrameCadence,
+    DisplayTiming as PacingDisplayTiming, Duration as PacingDuration,
+    FrameRatePlan as PacingFrameRatePlan, FrameRatePreference as PacingFrameRatePreference,
+    choose_frame_rate_source_interval,
 };
 
 /// Runtime display timing capabilities for the frame target.
@@ -12,6 +14,7 @@ pub enum DisplayTiming {
     Variable {
         min_frame_interval: Duration,
         max_frame_interval: Duration,
+        update_granularity: Option<Duration>,
     },
 }
 
@@ -36,6 +39,120 @@ pub enum PresentPacing {
     AtTime(Instant),
     /// On variable-rate displays, keep frames visible for at least this long.
     AfterMinimumDuration(Duration),
+}
+
+/// Frame-rate hint and acceptable fallback range.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FrameRatePreference(PacingFrameRatePreference);
+
+impl FrameRatePreference {
+    /// No throttling by this policy.
+    #[must_use]
+    pub const fn full() -> Self {
+        Self(PacingFrameRatePreference::full())
+    }
+
+    /// Runs no faster than `fps`, choosing a clean lower cadence on fixed-rate
+    /// displays when `fps` is not directly supported.
+    #[must_use]
+    pub fn at_most(fps: f64) -> Option<Self> {
+        PacingFrameRatePreference::at_most(fps).map(Self)
+    }
+
+    /// Starts a preference builder with a preferred FPS.
+    #[must_use]
+    pub fn preferred(fps: f64) -> Option<FrameRatePreferenceBuilder> {
+        PacingFrameRatePreference::preferred(fps).map(FrameRatePreferenceBuilder)
+    }
+
+    /// Starts a preference builder with an acceptable FPS range.
+    #[must_use]
+    pub fn range(min_fps: f64, max_fps: f64) -> Option<FrameRatePreferenceBuilder> {
+        PacingFrameRatePreference::range(min_fps, max_fps).map(FrameRatePreferenceBuilder)
+    }
+
+    pub(crate) const fn pacing(self) -> PacingFrameRatePreference {
+        self.0
+    }
+
+    pub(crate) const fn is_full(self) -> bool {
+        matches!(self.0, PacingFrameRatePreference::Full)
+    }
+
+    pub(crate) fn effective_interval(self, frame_time: Option<FrameTime>) -> Option<Duration> {
+        self.plan(frame_time)
+            .map(FrameRatePlan::delivery_interval)
+            .or_else(|| match frame_time {
+                Some(frame_time) => Some(frame_time.frame_interval),
+                None => self.0.preferred_interval().map(std_duration_from_pacing),
+            })
+    }
+
+    pub(crate) fn plan(self, frame_time: Option<FrameTime>) -> Option<FrameRatePlan> {
+        let frame_time = frame_time?;
+        self.0
+            .plan(pacing_display_timing(frame_time.interval.display_timing))
+            .map(FrameRatePlan)
+    }
+}
+
+/// Source and delivery cadence selected for a frame-rate preference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct FrameRatePlan(PacingFrameRatePlan);
+
+impl FrameRatePlan {
+    #[must_use]
+    pub(crate) fn delivery_interval(self) -> Duration {
+        std_duration_from_pacing(self.0.delivery_interval())
+    }
+}
+
+impl Default for FrameRatePreference {
+    fn default() -> Self {
+        Self::full()
+    }
+}
+
+impl From<f64> for FrameRatePreference {
+    fn from(fps: f64) -> Self {
+        Self::at_most(fps).unwrap_or_else(Self::full)
+    }
+}
+
+/// Builder for [`FrameRatePreference`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FrameRatePreferenceBuilder(understory_frame_pacing::FrameRatePreferenceBuilder);
+
+impl FrameRatePreferenceBuilder {
+    /// Sets the preferred FPS.
+    #[must_use]
+    pub fn preferred(self, fps: f64) -> Option<Self> {
+        self.0.preferred(fps).map(Self)
+    }
+
+    /// Sets the minimum acceptable FPS.
+    #[must_use]
+    pub fn minimum(self, fps: f64) -> Option<Self> {
+        self.0.minimum(fps).map(Self)
+    }
+
+    /// Sets the maximum acceptable FPS.
+    #[must_use]
+    pub fn maximum(self, fps: f64) -> Option<Self> {
+        self.0.maximum(fps).map(Self)
+    }
+
+    /// Sets an acceptable FPS range.
+    #[must_use]
+    pub fn range(self, min_fps: f64, max_fps: f64) -> Option<Self> {
+        self.0.range(min_fps, max_fps).map(Self)
+    }
+
+    /// Builds the preference.
+    #[must_use]
+    pub const fn build(self) -> FrameRatePreference {
+        FrameRatePreference(self.0.build())
+    }
 }
 
 bitflags::bitflags! {
@@ -91,41 +208,74 @@ pub struct PresentationInterval {
 pub struct FrameTime {
     pub now: Instant,
     pub interval: PresentationInterval,
+    pub source_interval: Duration,
     pub frame_interval: Duration,
     pub frame_index: u64,
 }
 
-#[must_use]
-pub(crate) fn target_frame_cadence(target_fps: Option<f64>) -> Option<TargetFrameCadence> {
-    target_fps.and_then(TargetFrameCadence::from_fps)
+/// Repeat policy for an animation-frame callback.
+///
+/// Floem removes due callbacks before dispatch, so callbacks may schedule or
+/// cancel other callbacks while they run. A repeating callback is reinserted
+/// after dispatch unless it has been cancelled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FrameCallbackRepeat {
+    /// Run once at the next eligible begin-frame opportunity.
+    None,
+    /// Run at each eligible begin-frame opportunity.
+    EveryFrame,
+}
+
+impl FrameCallbackRepeat {
+    /// Creates a one-shot policy.
+    #[must_use]
+    pub const fn none() -> Self {
+        Self::None
+    }
+
+    /// Creates a repeating policy.
+    #[must_use]
+    pub const fn every_frame() -> Self {
+        Self::EveryFrame
+    }
+
+    /// Returns whether this policy repeats after dispatch.
+    #[must_use]
+    pub const fn is_repeating(self) -> bool {
+        matches!(self, Self::EveryFrame)
+    }
 }
 
 #[must_use]
-pub(crate) fn target_frame_due(frame_time: FrameTime, target_fps: Option<f64>) -> bool {
-    let Some(cadence) = target_frame_cadence(target_fps) else {
-        return true;
-    };
-    cadence.should_deliver(
+pub(crate) fn frame_rate_due(frame_time: FrameTime, preference: FrameRatePreference) -> bool {
+    preference.pacing().should_deliver(
         frame_time.frame_index,
         pacing_display_timing(frame_time.interval.display_timing),
-        pacing_duration_from_std(frame_time.frame_interval),
+        pacing_duration_from_std(frame_time.source_interval),
     )
 }
 
 #[must_use]
-pub(crate) fn target_frame_interval(
-    target_fps: Option<f64>,
+pub(crate) fn frame_rate_interval(
+    preference: FrameRatePreference,
     frame_time: Option<FrameTime>,
 ) -> Option<Duration> {
-    let Some(cadence) = target_frame_cadence(target_fps) else {
-        return frame_time.map(|frame_time| frame_time.frame_interval);
-    };
-    let Some(frame_time) = frame_time else {
-        return Some(std_duration_from_pacing(cadence.target_interval()));
-    };
-    Some(std_duration_from_pacing(cadence.effective_interval(
-        pacing_display_timing(frame_time.interval.display_timing),
-    )))
+    preference.effective_interval(frame_time)
+}
+
+#[must_use]
+pub(crate) fn frame_rate_source_interval(
+    preferences: &[FrameRatePreference],
+    display_timing: DisplayTiming,
+) -> Duration {
+    let preferences = preferences
+        .iter()
+        .map(|preference| preference.pacing())
+        .collect::<Vec<_>>();
+    std_duration_from_pacing(choose_frame_rate_source_interval(
+        &preferences,
+        pacing_display_timing(display_timing),
+    ))
 }
 
 fn pacing_display_timing(display_timing: DisplayTiming) -> PacingDisplayTiming {
@@ -136,10 +286,11 @@ fn pacing_display_timing(display_timing: DisplayTiming) -> PacingDisplayTiming {
         DisplayTiming::Variable {
             min_frame_interval,
             max_frame_interval,
+            update_granularity,
         } => PacingDisplayTiming::variable(
             pacing_duration_from_std(min_frame_interval),
             pacing_duration_from_std(max_frame_interval),
-            None,
+            update_granularity.map(pacing_duration_from_std),
         ),
     }
 }
@@ -158,4 +309,67 @@ pub struct FrameOutcome {
     pub draw_attempted: bool,
     pub draw_completed: bool,
     pub missed_deadline: Option<bool>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn variable_47_to_75hz() -> DisplayTiming {
+        DisplayTiming::Variable {
+            min_frame_interval: Duration::from_nanos(13_333_333),
+            max_frame_interval: Duration::from_nanos(21_276_596),
+            update_granularity: None,
+        }
+    }
+
+    fn frame_time(frame_index: u64, source_interval: Duration) -> FrameTime {
+        let now = Instant::now();
+        FrameTime {
+            now,
+            interval: PresentationInterval {
+                deadline_min: now,
+                deadline_max: now,
+                predicted_present: Some(now),
+                display_timing: variable_47_to_75hz(),
+                present_pacing: PresentPacing::AtTime(now),
+                background_rendering: false,
+            },
+            source_interval,
+            frame_interval: Duration::from_nanos(13_333_333),
+            frame_index,
+        }
+    }
+
+    #[test]
+    fn throttling_uses_selected_source_interval_not_reported_display_interval() {
+        let preference = FrameRatePreference::at_most(60.0).unwrap();
+        let source_interval = Duration::from_nanos(16_666_667);
+
+        assert!((0..75).all(|frame_index| frame_rate_due(
+            frame_time(frame_index, source_interval),
+            preference
+        )));
+    }
+
+    #[test]
+    fn throttling_divides_full_rate_source_when_full_consumer_keeps_source_fast() {
+        let source_interval = Duration::from_nanos(13_333_333);
+        let at_most_60 = FrameRatePreference::at_most(60.0).unwrap();
+        let at_most_30 = FrameRatePreference::at_most(30.0).unwrap();
+
+        let delivered_60 = (0..75)
+            .filter(|frame_index| {
+                frame_rate_due(frame_time(*frame_index, source_interval), at_most_60)
+            })
+            .count();
+        let delivered_30 = (0..75)
+            .filter(|frame_index| {
+                frame_rate_due(frame_time(*frame_index, source_interval), at_most_30)
+            })
+            .count();
+
+        assert_eq!(delivered_60, 60);
+        assert_eq!(delivered_30, 30);
+    }
 }

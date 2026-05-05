@@ -152,6 +152,7 @@ impl StylePropValue for f64 {
         Some(*self * (1.0 - value) + *other * value)
     }
 }
+impl StylePropValue for crate::frame::FrameRatePreference {}
 impl StylePropValue for Vec2 {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         Some(Vec2::new(

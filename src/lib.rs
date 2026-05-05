@@ -262,7 +262,8 @@ pub use external_surface::{
 };
 pub use floem_reactive as reactive;
 pub use frame::{
-    DisplayTiming, FrameDemand, FrameOutcome, FrameTime, FrameTimingFeedback, PresentPacing,
+    DisplayTiming, FrameCallbackRepeat, FrameDemand, FrameOutcome, FrameRatePreference,
+    FrameRatePreferenceBuilder, FrameTime, FrameTimingFeedback, PresentPacing,
     PresentationInterval,
 };
 pub use gpu_resources::GpuResources;
@@ -304,7 +305,8 @@ pub mod prelude {
     pub use crate::event::listener::EventListenerTrait;
     pub use crate::external_surface::ExternalSurface;
     pub use crate::frame::{
-        DisplayTiming, FrameDemand, FrameOutcome, FrameTime, FrameTimingFeedback, PresentPacing,
+        DisplayTiming, FrameCallbackRepeat, FrameDemand, FrameOutcome, FrameRatePreference,
+        FrameRatePreferenceBuilder, FrameTime, FrameTimingFeedback, PresentPacing,
         PresentationInterval,
     };
     pub use crate::unit::{DurationUnitExt, UnitExt};

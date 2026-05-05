@@ -178,7 +178,7 @@ impl PanZoomView {
 
     fn schedule_update(&mut self) {
         let id = self.id();
-        request_animation_frame(None, move |_| {
+        request_animation_frame(move |_| {
             id.update_state(Box::new(()));
         });
     }

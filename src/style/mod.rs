@@ -128,6 +128,7 @@
 //! You can create custom extractors and embed them in your custom views so that you can get out any built in prop, or any of your custom props from the final combined style that is applied to your `View`.
 
 use crate::effects::Brush;
+use crate::frame::FrameRatePreference;
 use crate::text::FontWeight as FontWeightProp;
 use peniko::Color;
 use peniko::color::palette;
@@ -1895,11 +1896,33 @@ define_builtin_props!(
     /// available.
     WantsLayer wants_layer {}: bool {} = false,
 
-    /// Preferred maximum update rate for a compositor layer created for this view.
+    /// Frame-rate preference for a compositor layer created for this view.
     ///
-    /// Floem may round this down to a display-friendly cadence and may ignore it
-    /// when the view is not isolated into its own compositor layer.
-    LayerTargetFps layer_target_fps {}: Option<f64> [f64] {} = None,
+    /// This only applies when the view is isolated into its own compositor layer,
+    /// usually through `wants_layer`. It is a pacing
+    /// preference for layer invalidation and diagnostics, not a guarantee that
+    /// the layer will visibly present at exactly this rate.
+    ///
+    /// [`FrameRatePreference::full`] means full eligible frame-source cadence.
+    /// [`FrameRatePreference::at_most`] caps the layer to a display-friendly
+    /// cadence no faster than that value.
+    ///
+    /// Fixed-rate displays round capped values down to stable divisors of the
+    /// hardware refresh. For example, `Some(60.0)` on fixed 75 Hz becomes
+    /// 37.5 fps; `Some(60.0)` on fixed 120 Hz becomes 60 fps. Floem does not use
+    /// uneven fixed-display patterns such as 4-out-of-5 frames.
+    ///
+    /// Variable-refresh displays may use an in-range request directly. For
+    /// example, `Some(60.0)` on a 48-75 Hz VRR display can remain 60 fps.
+    /// Requests outside the reported VRR range fall back to the nearest
+    /// supported display-friendly cadence.
+    ///
+    /// Actual presentation can still be lower if the layer depends on another
+    /// surface, is part of a transaction group, or if compositor/GPU work misses
+    /// the relevant deadline. A dependent layer generally updates when its own
+    /// content or a sampled surface changes; it does not independently force
+    /// the producer to run at this rate.
+    LayerFrameRate layer_frame_rate {}: FrameRatePreference {} = FrameRatePreference::full(),
 
     /// Sets the cursor style when hovering over the view.
     ///

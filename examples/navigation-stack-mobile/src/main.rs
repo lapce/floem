@@ -837,7 +837,7 @@ fn quick_action_sheet(button_id: ViewId) -> impl IntoView {
 
     if visible {
         let sheet_id = sheet.id();
-        request_animation_frame(None, move |_| {
+        request_animation_frame(move |_| {
             sheet_id.request_focus();
         });
     }

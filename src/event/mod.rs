@@ -718,10 +718,24 @@ pub struct PaintPresentLayer {
     pub source_element_id: Option<crate::paint::composition::LayerSourceId>,
     /// Debug name for `source_element_id`, if known.
     pub debug_name: Option<String>,
-    /// Preferred maximum update rate for this layer, if one was requested by style.
-    pub target_fps: Option<f64>,
-    /// Target interval used when the layer was submitted.
+    /// Frame-rate preference requested for this layer, if any.
+    ///
+    /// This is the requested policy before display/backend constraints are
+    /// applied. It should be read together with [`Self::target_frame_interval`],
+    /// which is the effective interval Floem used for this presentation.
+    pub frame_rate: Option<crate::frame::FrameRatePreference>,
+    /// Effective target interval used when the layer was submitted.
+    ///
+    /// Examples: a 60 fps request on fixed 75 Hz reports about 26.7 ms
+    /// (37.5 fps); the same request on fixed 120 Hz reports about 16.7 ms; on a
+    /// 48-75 Hz VRR display it may also report about 16.7 ms.
     pub target_frame_interval: Option<Duration>,
+    /// Effective frame-source interval used for this presentation.
+    ///
+    /// On fixed displays this is the display interval. On no-granularity VRR,
+    /// Floem may keep the source at full rate and manually skip opportunities
+    /// to satisfy [`Self::target_frame_interval`].
+    pub source_frame_interval: Option<Duration>,
     /// Whether the layer missed the submit deadline for that target interval.
     pub missed_deadline: bool,
 }

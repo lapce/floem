@@ -1,14 +1,11 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Instant,
-};
+use std::time::Instant;
 
 use bytemuck::{Pod, Zeroable};
 use floem::{
     Application, Brush as FloemBrush, Composite, CompositorSurfaceImage, CompositorSurfaceProducer,
-    CompositorSurfaceProducerConfig, Filter as FloemFilter, GpuResources, ImageBrush, LayerFilter,
-    ShaderSource, ShaderUniform,
-    action::{capture_metal, inspect, request_animation_frame},
+    CompositorSurfaceProducerConfig, Filter as FloemFilter, FrameRatePreference, GpuResources,
+    ImageBrush, LayerFilter, ShaderSource, ShaderUniform,
+    action::{capture_metal, inspect, set_animation_frame_callback},
     context::PaintCx,
     group_ref,
     imaging::{ClipRef, ExternalImage, GeometryRef, ImagingSceneSink, PaintSink, Painter},
@@ -25,14 +22,17 @@ const CUBE_SIZE: u32 = 640;
 const CUBE_TARGET_FPS: f64 = 60.0;
 
 fn app_view(window_id: WindowId) -> impl IntoView {
+    let cube_frame_rate = FrameRatePreference::at_most(CUBE_TARGET_FPS).unwrap();
     let (surface_image, cube_producer) = CompositorSurfaceProducer::new_image(
         window_id,
         Size::new(f64::from(CUBE_SIZE), f64::from(CUBE_SIZE)),
-        CompositorSurfaceProducerConfig::default(),
+        CompositorSurfaceProducerConfig {
+            frame_rate: cube_frame_rate,
+            ..CompositorSurfaceProducerConfig::default()
+        },
     );
-    cube_producer.set_target_fps(Some(CUBE_TARGET_FPS));
 
-    (
+    Stack::vertical((
         "Compositor Surface as Image Brush".style(|s| {
             s.font_size(30.0)
                 .font_weight(FontWeight::BOLD)
@@ -48,11 +48,10 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                     .color(Color::from_rgb8(155, 169, 177))
             }),
         cube_canvas(surface_image),
-    )
+    ))
         .style(|s| {
             s.width_full()
                 .height_full()
-                .flex_col()
                 .items_center()
                 .justify_center()
                 .padding(36.0)
@@ -287,16 +286,22 @@ return vec4<f32>(sampled.rgb + highlight, sampled.a);
 }
 
 fn drive_shimmer_uniforms(uniforms: ShaderUniform<[f32; 4]>, origin: Option<Instant>) {
-    request_animation_frame(Some(CUBE_TARGET_FPS), move |frame_time| {
-        let present = frame_time
-            .interval
-            .predicted_present
-            .unwrap_or(frame_time.now);
-        let origin = origin.unwrap_or(present);
-        let seconds = present.saturating_duration_since(origin).as_secs_f32();
-        uniforms.set([seconds, (seconds * 1.7).sin(), (seconds * 1.3).cos(), 0.0]);
-        drive_shimmer_uniforms(uniforms, Some(origin));
-    });
+    let mut animation_origin = origin;
+    set_animation_frame_callback(
+        FrameRatePreference::at_most(CUBE_TARGET_FPS).unwrap(),
+        move |frame_time| {
+            let present = frame_time
+                .interval
+                .predicted_present
+                .unwrap_or(frame_time.now);
+            let origin = animation_origin.unwrap_or(present);
+            let seconds = present.saturating_duration_since(origin).as_secs_f32();
+            uniforms.set([seconds, (seconds * 1.7).sin(), (seconds * 1.3).cos(), 0.0]);
+            if animation_origin.is_none() {
+                animation_origin = Some(present);
+            }
+        },
+    );
 }
 
 fn centered_rect(container: Size, size: Size) -> Rect {
@@ -311,16 +316,14 @@ fn start_cube_target(
     producer: CompositorSurfaceProducer,
     gpu_resources: GpuResources,
 ) -> Result<(), String> {
-    let renderer = Arc::new(Mutex::new(CubeRenderer::new(
+    let mut renderer = CubeRenderer::new(
         gpu_resources.clone(),
         CUBE_SIZE,
         CUBE_SIZE,
         wgpu::TextureFormat::Bgra8Unorm,
-    )?));
-    let renderer_for_callback = renderer.clone();
+    )?;
     let animation_origin = Instant::now();
     producer.set_frame_callback(move |cx| {
-        let completion_tx = cx.completion_sender();
         let lease = match cx.acquire_target() {
             Ok(lease) => lease,
             Err(subduction::wgpu::SurfaceFrameError::NoTargetAvailable) => {
@@ -329,6 +332,7 @@ fn start_cube_target(
             }
             Err(err) => return Err(err),
         };
+        let completion_tx = cx.completion_sender();
         let frame_time = cx.frame_time();
         let animation_time = frame_time
             .interval
@@ -337,7 +341,7 @@ fn start_cube_target(
         let seconds = animation_time
             .saturating_duration_since(animation_origin)
             .as_secs_f32();
-        match renderer_for_callback.lock().unwrap().render(seconds, lease) {
+        match renderer.render(seconds, lease) {
             Ok(completion) => {
                 let _ = completion_tx.send(completion);
             }
@@ -347,7 +351,6 @@ fn start_cube_target(
                 return Ok(());
             }
         }
-        cx.present_without_transaction();
         Ok(())
     });
     Ok(())

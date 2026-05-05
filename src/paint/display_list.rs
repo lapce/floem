@@ -30,6 +30,7 @@ use crate::{
     effects::{
         Composite, CompositorShader, CompositorShaderPass, Filter, GroupRef, Image, LayerFilter,
     },
+    frame::FrameRatePreference,
     paint::composition::{
         CompositionItem, CompositionKey, CompositionPlan, CompositorSurfaceLayer, PaintStage,
         SceneExternalImage, SceneLayer,
@@ -309,6 +310,7 @@ impl StageRecorder {
                     kind: ShaderCommandKind::Push(CompositorShaderPass {
                         shader,
                         clip: effect_clip.clone(),
+                        position_transform: Affine::IDENTITY,
                     }),
                 });
                 close_ops.push(ShaderGroupClose::ColorFilter);
@@ -363,6 +365,7 @@ impl StageRecorder {
             kind: ShaderCommandKind::Push(CompositorShaderPass {
                 shader: CompositorShader::Source(source),
                 clip: None,
+                position_transform: Affine::IDENTITY,
             }),
         });
     }
@@ -722,7 +725,7 @@ pub(crate) struct ElementSnapshot {
     pub clip: Option<RoundedRect>,
     pub world_transform: Affine,
     pub wants_layer: bool,
-    pub layer_target_fps: Option<f64>,
+    pub layer_frame_rate: Option<FrameRatePreference>,
 }
 
 impl ElementSnapshot {
@@ -732,7 +735,7 @@ impl ElementSnapshot {
             clip: box_tree.clipped_local_clip(element_id.0),
             world_transform: box_tree.world_transform(element_id.0).unwrap_or_default(),
             wants_layer: box_tree.wants_layer(element_id.0),
-            layer_target_fps: box_tree.layer_target_fps(element_id.0),
+            layer_frame_rate: box_tree.layer_frame_rate(element_id.0),
         }
     }
 
@@ -1016,7 +1019,7 @@ impl RetainedDisplayList {
         if snapshot.wants_layer {
             chunks.push(LoweredChunk::LayerStart(LayerRunSource {
                 element_id,
-                target_fps: snapshot.layer_target_fps,
+                frame_rate: snapshot.layer_frame_rate,
             }));
         }
 
@@ -1420,6 +1423,7 @@ fn transform_shader_passes(
             if let Some(clip) = &mut pass.clip {
                 prepend_clip_transform(clip, transform);
             }
+            pass.position_transform = pass.position_transform * transform.inverse();
             pass
         })
         .collect()
@@ -1443,7 +1447,7 @@ enum LoweredChunk<'a> {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct LayerRunSource {
     element_id: ElementId,
-    target_fps: Option<f64>,
+    frame_rate: Option<FrameRatePreference>,
 }
 
 #[derive(Clone)]
@@ -1452,7 +1456,7 @@ struct LoweredSceneChunk<'a> {
     start: usize,
     end: usize,
     external_images: Vec<SceneExternalImage>,
-    layer_target_fps: Option<f64>,
+    layer_frame_rate: Option<FrameRatePreference>,
     property_state: PropertyState,
     element_id: ElementId,
     stage_kind: PaintStage,
@@ -1520,7 +1524,7 @@ struct PendingSceneRange<'a> {
     scene: &'a Scene,
     start: usize,
     end: usize,
-    layer_target_fps: Option<f64>,
+    layer_frame_rate: Option<FrameRatePreference>,
     element_id: ElementId,
     stage_kind: PaintStage,
     transform: Affine,
@@ -1547,7 +1551,7 @@ impl<'a> SceneRunBuilder<'a> {
             scene: chunk.scene,
             start: chunk.start,
             end: chunk.end,
-            layer_target_fps: chunk.layer_target_fps,
+            layer_frame_rate: chunk.layer_frame_rate,
             element_id: chunk.element_id,
             stage_kind: chunk.stage_kind,
             transform: chunk.transform,
@@ -1646,10 +1650,10 @@ impl<'a> SceneRunBuilder<'a> {
                     .map(|range| range.element_id.owning_id().debug_name())
             })
             .filter(|name| !name.is_empty());
-        let target_fps = self
+        let frame_rate = self
             .layer_source
-            .and_then(|source| source.target_fps)
-            .or_else(|| self.ranges.first().and_then(|range| range.layer_target_fps));
+            .and_then(|source| source.frame_rate)
+            .or_else(|| self.ranges.first().and_then(|range| range.layer_frame_rate));
         plan.items.push(CompositionItem::Scene(SceneLayer {
             key: CompositionKey::SceneRun {
                 run_index: *run_index,
@@ -1666,7 +1670,7 @@ impl<'a> SceneRunBuilder<'a> {
             content_bounds: local_content_bounds,
             opacity: 1.0,
             promoted: false,
-            target_fps,
+            frame_rate,
         }));
         self.content_revision = 0;
         self.bounds = None;
@@ -1700,7 +1704,7 @@ fn push_scene_range<'a>(
         start,
         end,
         external_images,
-        layer_target_fps: snapshot.layer_target_fps,
+        layer_frame_rate: snapshot.layer_frame_rate,
         property_state: property_state.clone(),
         element_id,
         stage_kind,
@@ -2377,7 +2381,7 @@ pub mod bench_support {
             clip: None,
             world_transform,
             wants_layer: false,
-            layer_target_fps: None,
+            layer_frame_rate: None,
         }
     }
 
@@ -2738,6 +2742,7 @@ mod tests {
                 kind: ShaderCommandKind::Push(CompositorShaderPass {
                     shader: CompositorShader::Color(effect.clone()),
                     clip: None,
+                    position_transform: Affine::IDENTITY,
                 }),
             }
         );
@@ -2807,7 +2812,7 @@ mod tests {
             clip,
             world_transform,
             wants_layer: false,
-            layer_target_fps: None,
+            layer_frame_rate: None,
         }
     }
 

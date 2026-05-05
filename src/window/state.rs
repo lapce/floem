@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
-    frame::FrameTime,
+    frame::{FrameCallbackRepeat, FrameRatePreference, FrameTime},
     platform::menu_types::MenuId,
     style::{StyleSelectors, recalc::StyleReason},
     view::ViewStorage,
@@ -22,7 +22,7 @@ use crate::{
     BoxTree, ElementId,
     action::add_update_message,
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
-    frame::target_frame_due,
+    frame::frame_rate_due,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
     paint::display_list::RetainedDisplayList,
@@ -45,13 +45,15 @@ pub(crate) struct FocusNavCache {
 }
 
 pub(crate) struct BeginFrameCallback {
-    pub(crate) target_fps: Option<f64>,
-    pub(crate) callback: Box<dyn FnOnce(FrameTime)>,
+    pub(crate) token: u64,
+    pub(crate) frame_rate: crate::frame::FrameRatePreference,
+    pub(crate) repeat: FrameCallbackRepeat,
+    pub(crate) callback: Box<dyn FnMut(FrameTime)>,
 }
 
 impl BeginFrameCallback {
     fn due_for_frame(&self, frame_time: FrameTime) -> bool {
-        target_frame_due(frame_time, self.target_fps)
+        crate::frame::frame_rate_due(frame_time, self.frame_rate)
     }
 }
 
@@ -339,19 +341,43 @@ impl WindowState {
     pub(crate) fn take_due_begin_frame_callbacks(
         &mut self,
         frame_time: FrameTime,
-    ) -> Vec<Box<dyn FnOnce(FrameTime)>> {
+    ) -> Vec<BeginFrameCallback> {
         let callbacks = std::mem::take(&mut self.begin_frame_callbacks);
         let mut due = Vec::new();
         let mut pending = Vec::new();
         for callback in callbacks {
-            if callback.due_for_frame(frame_time) {
-                due.push(callback.callback);
+            let is_due = callback.due_for_frame(frame_time);
+            if crate::frame_source::frame_pacing_diag_enabled() && !callback.frame_rate.is_full() {
+                eprintln!(
+                    "floem begin callback pacing token={} frame={} source_interval={:.3}ms display_interval={:.3}ms preference={:?} due={}",
+                    callback.token,
+                    frame_time.frame_index,
+                    crate::frame_source::duration_ms(frame_time.source_interval),
+                    crate::frame_source::duration_ms(frame_time.frame_interval),
+                    callback.frame_rate,
+                    is_due,
+                );
+            }
+            if is_due {
+                due.push(callback);
             } else {
                 pending.push(callback);
             }
         }
         self.begin_frame_callbacks = pending;
         due
+    }
+
+    pub(crate) fn cancel_begin_frame_callback(&mut self, token: u64) {
+        self.begin_frame_callbacks
+            .retain(|callback| callback.token != token);
+    }
+
+    pub(crate) fn begin_frame_callback_preferences(&self) -> Vec<FrameRatePreference> {
+        self.begin_frame_callbacks
+            .iter()
+            .map(|callback| callback.frame_rate)
+            .collect()
     }
 
     pub(crate) fn promote_next_frame_work(&mut self) {
@@ -403,11 +429,11 @@ impl WindowState {
         let Some(frame_time) = frame_time else {
             return false;
         };
-        let Some((layer_id, target_fps)) = self.timeline_style_layer_target(element_id, reason)
+        let Some((layer_id, frame_rate)) = self.timeline_style_layer_target(element_id, reason)
         else {
             return false;
         };
-        let should_promote = target_frame_due(frame_time, Some(target_fps))
+        let should_promote = frame_rate_due(frame_time, frame_rate)
             || self
                 .layer_target_last_style_frame
                 .get(&layer_id)
@@ -423,7 +449,7 @@ impl WindowState {
         &self,
         element_id: ElementId,
         reason: &StyleReason,
-    ) -> Option<(ElementId, f64)> {
+    ) -> Option<(ElementId, FrameRatePreference)> {
         let box_tree = self.box_tree.borrow();
         if reason.has_target() {
             let mut target = None;
@@ -431,7 +457,7 @@ impl WindowState {
                 if !target_reason.is_timeline_only() {
                     return None;
                 }
-                let current = box_tree.containing_layer_target_fps(*target_id)?;
+                let current = box_tree.containing_layer_frame_rate(*target_id)?;
                 if target.is_some_and(|target| target != current) {
                     return None;
                 }
@@ -439,7 +465,7 @@ impl WindowState {
             }
             target
         } else {
-            box_tree.containing_layer_target_fps(element_id)
+            box_tree.containing_layer_frame_rate(element_id)
         }
     }
 
@@ -1222,7 +1248,9 @@ impl WindowState {
         }
         if should_request_next_drag_frame {
             self.begin_frame_callbacks.push(BeginFrameCallback {
-                target_fps: None,
+                token: 0,
+                frame_rate: crate::frame::FrameRatePreference::full(),
+                repeat: FrameCallbackRepeat::none(),
                 callback: Box::new(move |_| {
                     add_update_message(UpdateMessage::RequestBoxTreeCommit);
                 }),

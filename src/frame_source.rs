@@ -15,6 +15,15 @@ pub(crate) fn frame_pacing_diag_enabled() -> bool {
     std::env::var_os("FLOEM_FRAME_PACING_DIAG").is_some()
 }
 
+pub(crate) fn duration_ms(duration: Duration) -> f64 {
+    duration.as_secs_f64() * 1000.0
+}
+
+pub(crate) fn duration_hz(duration: Duration) -> f64 {
+    let seconds = duration.as_secs_f64();
+    if seconds > 0.0 { 1.0 / seconds } else { 0.0 }
+}
+
 pub(crate) fn window_frame_interval(window: &dyn WinitWindow) -> Duration {
     window
         .current_monitor()
@@ -29,6 +38,11 @@ pub(crate) struct FrameSource {
     window_id: WindowId,
     inner: SubductionFrameSource,
     target: Option<FrameSourceTarget>,
+    preferred_source_interval: Option<Duration>,
+    observed_source_interval: Option<Duration>,
+    last_logged_observed_source_interval: Option<Duration>,
+    preferred_source_millihertz: Option<u32>,
+    active: bool,
 }
 
 pub(crate) fn new_window_frame_source(window_id: WindowId, output_id: u32) -> FrameSource {
@@ -45,6 +59,11 @@ pub(crate) fn new_window_frame_source(window_id: WindowId, output_id: u32) -> Fr
         window_id,
         inner,
         target: None,
+        preferred_source_interval: None,
+        observed_source_interval: None,
+        last_logged_observed_source_interval: None,
+        preferred_source_millihertz: None,
+        active: false,
     }
 }
 
@@ -61,9 +80,11 @@ impl FrameSource {
             FrameSourceDisplayTiming::Variable {
                 min_interval_ns,
                 max_interval_ns,
+                update_granularity_ns,
             } => DisplayTiming::Variable {
                 min_frame_interval: Duration::from_nanos(min_interval_ns),
                 max_frame_interval: Duration::from_nanos(max_interval_ns),
+                update_granularity: update_granularity_ns.map(Duration::from_nanos),
             },
         }
     }
@@ -89,9 +110,49 @@ impl FrameSource {
             );
         }
         let changed = self.target.as_ref() != Some(&target);
+        if !changed {
+            return false;
+        }
         self.target = Some(target.clone());
         self.inner.refresh_target(target);
-        changed
+        if self.active && self.preferred_source_millihertz.is_some() {
+            self.inner
+                .set_preferred_frame_rate_millihertz(self.preferred_source_millihertz);
+        }
+        true
+    }
+
+    pub(crate) fn set_preferred_source_interval(&mut self, interval: Duration) {
+        let nanos = interval.as_nanos();
+        let millihertz = (nanos > 0)
+            .then(|| ((1_000_000_000_000u128 + (nanos / 2)) / nanos).min(u32::MAX as u128) as u32);
+        if self.preferred_source_interval == Some(interval)
+            && self.preferred_source_millihertz == millihertz
+        {
+            return;
+        }
+        self.preferred_source_interval = Some(interval);
+        self.preferred_source_millihertz = millihertz;
+        if frame_pacing_diag_enabled() {
+            eprintln!(
+                "floem frame source preferred window={:?} interval={:.3}ms hz={:.3} millihertz={:?} observed={:?}",
+                self.window_id,
+                duration_ms(interval),
+                duration_hz(interval),
+                self.preferred_source_millihertz,
+                self.observed_source_interval
+                    .map(|interval| (duration_ms(interval), duration_hz(interval))),
+            );
+        }
+        if self.active {
+            self.inner
+                .set_preferred_frame_rate_millihertz(self.preferred_source_millihertz);
+        } else if frame_pacing_diag_enabled() {
+            eprintln!(
+                "floem frame source preferred deferred window={:?} millihertz={:?}",
+                self.window_id, self.preferred_source_millihertz,
+            );
+        }
     }
 
     pub(crate) fn current_frame_time(
@@ -101,6 +162,10 @@ impl FrameSource {
         background_rendering: bool,
     ) -> FrameTime {
         let frame_interval = self.frame_interval(window);
+        let source_interval = self
+            .preferred_source_interval
+            .or(self.observed_source_interval)
+            .unwrap_or(frame_interval);
         let display_timing = self.display_timing(frame_interval);
         if let Some(tick) = self.inner.latest_tick()
             && let Some(predicted_present) = tick.predicted_present
@@ -116,6 +181,7 @@ impl FrameSource {
                     present_pacing: PresentPacing::AtTime(predicted_present),
                     background_rendering,
                 },
+                source_interval,
                 frame_interval,
                 frame_index: tick.frame_index,
             };
@@ -132,12 +198,45 @@ impl FrameSource {
                 present_pacing: PresentPacing::AtTime(predicted_present),
                 background_rendering,
             },
+            source_interval,
             frame_interval,
             frame_index: self.inner.frame_counter(),
         }
     }
 
     pub(crate) fn receive_frame_tick(&mut self, tick: subduction_core::timing::FrameTick) {
+        self.observed_source_interval = self
+            .inner
+            .latest_tick()
+            .and_then(|previous| {
+                previous.predicted_present.zip(tick.predicted_present).map(
+                    |(previous_present, predicted_present)| {
+                        let previous = self.inner.host_to_instant(previous_present);
+                        let predicted = self.inner.host_to_instant(predicted_present);
+                        if predicted >= previous {
+                            predicted.saturating_duration_since(previous)
+                        } else {
+                            previous.saturating_duration_since(predicted)
+                        }
+                    },
+                )
+            })
+            .filter(|interval| !interval.is_zero());
+        if frame_pacing_diag_enabled()
+            && self.observed_source_interval.is_some()
+            && self.last_logged_observed_source_interval != self.observed_source_interval
+        {
+            let interval = self.observed_source_interval.unwrap();
+            eprintln!(
+                "floem frame source observed window={:?} interval={:.3}ms hz={:.3} preferred={:?}",
+                self.window_id,
+                duration_ms(interval),
+                duration_hz(interval),
+                self.preferred_source_interval
+                    .map(|interval| (duration_ms(interval), duration_hz(interval))),
+            );
+            self.last_logged_observed_source_interval = self.observed_source_interval;
+        }
         self.inner.receive_frame_tick(tick);
     }
 
@@ -146,6 +245,18 @@ impl FrameSource {
     }
 
     pub(crate) fn set_active(&mut self, active: bool) {
+        let changed = self.active != active;
+        self.active = active;
+        if changed && active {
+            if frame_pacing_diag_enabled() {
+                eprintln!(
+                    "floem frame source preferred apply-on-active window={:?} millihertz={:?}",
+                    self.window_id, self.preferred_source_millihertz,
+                );
+            }
+            self.inner
+                .set_preferred_frame_rate_millihertz(self.preferred_source_millihertz);
+        }
         self.inner.set_active(active);
     }
 }

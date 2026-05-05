@@ -39,7 +39,7 @@ use winit::window::WindowId;
 use crate::{
     Application,
     app::UserEvent,
-    frame::{FrameOutcome, PresentationInterval},
+    frame::{FrameOutcome, FrameRatePreference, PresentationInterval},
     gpu_resources::GpuResources,
 };
 
@@ -110,9 +110,9 @@ impl CompositorSurfaceImage {
             window_id,
             config,
         };
-        if surface.config.target_fps.is_some() {
-            surface.handle().set_target_fps(surface.config.target_fps);
-        }
+        surface
+            .handle()
+            .set_frame_rate_preference(surface.config.frame_rate);
         surface
     }
 
@@ -187,12 +187,25 @@ impl CompositorSurfaceImage {
         self.handle().set_provider(provider);
     }
 
-    /// Sets the preferred maximum update rate for this surface identity.
+    /// Sets the frame-rate preference for this surface identity.
     ///
-    /// This affects producer frame opportunities and direct compositor-layer
-    /// diagnostics for every placement of this image.
-    pub fn set_target_fps(&self, target_fps: Option<f64>) {
-        self.handle().set_target_fps(target_fps);
+    /// Use this when a plain maximum FPS is not precise enough. For example,
+    /// `FrameRatePreference::preferred(60.0)?.minimum(50.0)?.build()` allows a
+    /// 48-75 Hz VRR display to run at 60 fps, while still rejecting 37.5 fps as
+    /// too low on fixed 75 Hz and choosing 75 fps instead.
+    pub fn set_frame_rate_preference(&self, frame_rate: FrameRatePreference) {
+        self.handle().set_frame_rate_preference(frame_rate);
+    }
+
+    /// Sets whether submitted content publishes with the window compositor transaction.
+    ///
+    /// The default is `true`. Transaction presentation keeps this surface in
+    /// sync with other Floem layers. Passing `false` allows independent
+    /// compositor publication for future content until the setting is changed
+    /// again.
+    pub fn presents_with_transaction(&self, presents_with_transaction: bool) {
+        self.handle()
+            .presents_with_transaction(presents_with_transaction);
     }
 }
 
@@ -208,12 +221,21 @@ pub struct CompositorSurfaceProducerConfig {
     /// Alpha interpretation for completed frames when they are published or
     /// sampled.
     pub alpha_mode: CompositorSurfaceAlphaMode,
-    /// Preferred maximum producer update rate.
+    /// Frame-rate preference for producer callbacks.
     ///
-    /// Floem rounds this down to a clean multiple of the active display frame
-    /// interval. `None` means the producer may receive every eligible frame
-    /// opportunity.
-    pub target_fps: Option<f64>,
+    /// This is a pacing preference for producer frame opportunities.
+    ///
+    /// Fixed-rate displays round capped values down to stable divisors of the
+    /// refresh rate. For example, 60 fps on fixed 75 Hz becomes 37.5 fps; 60 fps
+    /// on fixed 120 Hz becomes 60 fps. Variable-refresh displays may use an
+    /// in-range request directly, so 60 fps on a 48-75 Hz VRR display can remain
+    /// 60 fps. Out-of-range requests fall back to the nearest supported
+    /// display-friendly cadence.
+    ///
+    /// The actual visible rate can still be lower when frame work is skipped,
+    /// coalesced, waiting on a transaction-presented dependent layer, or waiting
+    /// on compositor/GPU completion.
+    pub frame_rate: FrameRatePreference,
 }
 
 impl Default for CompositorSurfaceProducerConfig {
@@ -221,7 +243,7 @@ impl Default for CompositorSurfaceProducerConfig {
         Self {
             surface: subduction::wgpu::ExternalSurfaceConfig::default(),
             alpha_mode: CompositorSurfaceAlphaMode::Premultiplied,
-            target_fps: None,
+            frame_rate: FrameRatePreference::full(),
         }
     }
 }
@@ -246,8 +268,10 @@ impl Default for CompositorSurfaceProducerConfig {
 /// [`CompositorSurfaceFrameCx::acquire_target`], renders on the caller's worker
 /// or queue, sends the resulting
 /// [`subduction::wgpu::SurfaceFrameCompletion`] through
-/// [`CompositorSurfaceFrameCx::completion_sender`], then chooses whether the
-/// completed frame presents with the window transaction or independently.
+/// [`CompositorSurfaceFrameCx::completion_sender`], and returns. Transaction
+/// behavior is configured on the producer with
+/// [`CompositorSurfaceProducer::presents_with_transaction`] and applies until
+/// changed again.
 ///
 /// Use this when Floem owns placement and fallback behavior, but another
 /// renderer owns the contents. Use [`crate::external_surface::ExternalSurface`]
@@ -303,7 +327,7 @@ impl CompositorSurfaceProducer {
                 kind: CompositorSurfaceKind::WgpuTexture,
                 alpha_mode: config.alpha_mode,
                 preferred_size: Some(size),
-                target_fps: config.target_fps,
+                frame_rate: config.frame_rate,
             },
         );
         let producer = Self::new(surface.handle(), config);
@@ -348,13 +372,28 @@ impl CompositorSurfaceProducer {
         self.handle.request_frame();
     }
 
-    /// Sets the preferred maximum frame callback rate for this producer.
+    /// Sets the frame-rate preference for producer callbacks and diagnostics.
+    pub fn set_frame_rate_preference(&self, frame_rate: FrameRatePreference) {
+        self.handle.set_frame_rate_preference(frame_rate);
+    }
+
+    /// Sets whether completed frames publish with the window compositor transaction.
     ///
-    /// Floem stores this on the associated compositor surface and rounds it
-    /// down to a display-friendly cadence before delivering producer frame
-    /// opportunities.
-    pub fn set_target_fps(&self, target_fps: Option<f64>) {
-        self.handle.set_target_fps(target_fps);
+    /// The default is `true`. When enabled, newly completed frames publish
+    /// atomically with the rest of the window layer tree. This is the correct
+    /// mode when other Floem layers sample the produced image, when resize
+    /// synchronization matters, or when independent publication would let layers
+    /// visibly update out of phase.
+    ///
+    /// Passing `false` allows completed frames to publish outside the window
+    /// transaction. Use that only for independent compositor content whose
+    /// updates are allowed to race ahead of normal scene commits.
+    ///
+    /// The setting is persistent surface state. It applies to future
+    /// completions until changed again.
+    pub fn presents_with_transaction(&self, presents_with_transaction: bool) {
+        self.handle
+            .presents_with_transaction(presents_with_transaction);
     }
 
     fn provider(&self) -> CompositorSurfaceProducerProvider {
@@ -366,8 +405,6 @@ impl CompositorSurfaceProducer {
             completion_tx: self.completion_tx.clone(),
             in_flight: self.in_flight.clone(),
             current_content: None,
-            current_presents_without_transaction: false,
-            pending_presentations: FxHashMap::default(),
             pending_request_started_at: FxHashMap::default(),
             last_requested_frame_index: None,
         }
@@ -382,18 +419,19 @@ impl CompositorSurfaceProducer {
 /// [`subduction::wgpu::SurfaceFrameCompletion`] through
 /// [`Self::completion_sender`] when rendering finishes.
 ///
-/// Presentation policy is explicit per opportunity. Use
-/// [`Self::present_with_transaction`] when the completed frame must publish
-/// atomically with the window compositor transaction. Use
-/// [`Self::present_without_transaction`] only for content that may update
-/// outside that transaction without causing visible layer desynchronization.
+/// Presentation policy is persistent surface state. Producers present with the
+/// window compositor transaction by default. Call
+/// [`CompositorSurfaceProducer::presents_with_transaction`] to change that
+/// policy until it is changed again.
 pub struct CompositorSurfaceFrameCx {
     frame_time: crate::frame::FrameTime,
+    is_window_resize: bool,
     opportunity: subduction::wgpu::SurfaceFrameOpportunity,
     config: CompositorSurfaceProducerConfig,
     completion_tx: mpsc::Sender<subduction::wgpu::SurfaceFrameCompletion>,
     in_flight: Arc<Mutex<u32>>,
     target: Option<subduction::wgpu::SurfaceFrameLease>,
+    acquired_target: bool,
     decision: SurfaceFrameCallbackDecision,
 }
 
@@ -401,6 +439,16 @@ impl CompositorSurfaceFrameCx {
     #[must_use]
     pub fn frame_time(&self) -> crate::frame::FrameTime {
         self.frame_time
+    }
+
+    /// Returns true when this frame opportunity was produced in response to a
+    /// window resize.
+    ///
+    /// Producers can use this to prioritize resize-correct content over normal
+    /// animation cadence, or to choose lower-latency work during live resize.
+    #[must_use]
+    pub fn is_window_resize(&self) -> bool {
+        self.is_window_resize
     }
 
     #[must_use]
@@ -442,6 +490,7 @@ impl CompositorSurfaceFrameCx {
             *in_flight += 1;
         }
         if let Some(target) = self.target.take() {
+            self.acquired_target = true;
             return Ok(target);
         }
         unreachable!("target existence was checked before in-flight reservation")
@@ -451,30 +500,11 @@ impl CompositorSurfaceFrameCx {
     pub fn skip(&mut self, reason: subduction::wgpu::SurfaceSkipReason) {
         self.decision = SurfaceFrameCallbackDecision::Skip(reason);
     }
-
-    /// The async completion for this opportunity should publish atomically with
-    /// the window's compositor transaction.
-    pub fn present_with_transaction(&mut self) {
-        self.decision = SurfaceFrameCallbackDecision::Present {
-            presentation: subduction::wgpu::SurfaceFramePresentation::WithTransaction,
-        };
-    }
-
-    /// The async completion for this opportunity may publish independently,
-    /// outside the window's compositor transaction.
-    pub fn present_without_transaction(&mut self) {
-        self.decision = SurfaceFrameCallbackDecision::Present {
-            presentation: subduction::wgpu::SurfaceFramePresentation::WithoutTransaction,
-        };
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SurfaceFrameCallbackDecision {
     None,
-    Present {
-        presentation: subduction::wgpu::SurfaceFramePresentation,
-    },
     Skip(subduction::wgpu::SurfaceSkipReason),
 }
 
@@ -513,7 +543,11 @@ pub struct CompositorSurfaceConfig {
     pub kind: CompositorSurfaceKind,
     pub alpha_mode: CompositorSurfaceAlphaMode,
     pub preferred_size: Option<Size>,
-    pub target_fps: Option<f64>,
+    /// Frame-rate preference for this compositor surface.
+    ///
+    /// This is interpreted the same way as
+    /// [`CompositorSurfaceProducer::set_frame_rate_preference`].
+    pub frame_rate: FrameRatePreference,
 }
 
 impl CompositorSurfaceConfig {
@@ -523,7 +557,7 @@ impl CompositorSurfaceConfig {
             kind: CompositorSurfaceKind::WgpuTexture,
             alpha_mode: CompositorSurfaceAlphaMode::Premultiplied,
             preferred_size: None,
-            target_fps: None,
+            frame_rate: FrameRatePreference::full(),
         }
     }
 
@@ -533,7 +567,7 @@ impl CompositorSurfaceConfig {
             kind: CompositorSurfaceKind::NativeTexture,
             alpha_mode: CompositorSurfaceAlphaMode::Opaque,
             preferred_size: None,
-            target_fps: None,
+            frame_rate: FrameRatePreference::full(),
         }
     }
 }
@@ -600,10 +634,6 @@ pub trait CompositorSurfaceProvider {
 
     fn current_content(&self) -> Option<CompositorSurfaceContent>;
 
-    fn current_presents_without_transaction(&self) -> bool {
-        false
-    }
-
     fn release_current_content(&mut self, outcome: CompositorSurfaceOutcome);
 }
 
@@ -615,8 +645,6 @@ struct CompositorSurfaceProducerProvider {
     completion_tx: mpsc::Sender<subduction::wgpu::SurfaceFrameCompletion>,
     in_flight: Arc<Mutex<u32>>,
     current_content: Option<CompositorSurfaceContent>,
-    current_presents_without_transaction: bool,
-    pending_presentations: FxHashMap<u64, bool>,
     pending_request_started_at: FxHashMap<u64, Instant>,
     last_requested_frame_index: Option<u64>,
 }
@@ -707,11 +735,13 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
         };
         let cx = CompositorSurfaceFrameCx {
             frame_time: args.frame_time,
+            is_window_resize: args.is_window_resize,
             opportunity,
             config: self.config.clone(),
             completion_tx: self.completion_tx.clone(),
             in_flight: self.in_flight.clone(),
             target: args.target,
+            acquired_target: false,
             decision: SurfaceFrameCallbackDecision::None,
         };
 
@@ -723,28 +753,27 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
             .as_mut()
             .map(|callback| callback(&mut cx));
         let decision = match callback_result {
-            Some(Ok(())) => Some(Ok(cx.decision)),
+            Some(Ok(())) => Some(Ok((cx.decision, cx.acquired_target))),
             Some(Err(err)) => Some(Err(err)),
             None => None,
         };
         let request_next_frame = match decision {
-            Some(Ok(SurfaceFrameCallbackDecision::Present { presentation })) => {
+            Some(Ok((SurfaceFrameCallbackDecision::None, true))) => {
                 self.last_requested_frame_index = Some(args.frame_index);
                 self.pending_request_started_at
                     .insert(args.frame_index, callback_started_at);
-                self.pending_presentations.insert(
-                    args.frame_index,
-                    presentation == subduction::wgpu::SurfaceFramePresentation::WithoutTransaction,
-                );
                 if diag {
                     eprintln!(
-                        "floem compositor surface provider decision surface={:?} frame={} decision=present presentation={:?}",
-                        args.surface_id, args.frame_index, presentation,
+                        "floem compositor surface provider decision surface={:?} frame={} decision=present",
+                        args.surface_id, args.frame_index,
                     );
                 }
                 true
             }
-            Some(Ok(SurfaceFrameCallbackDecision::Skip(reason))) => {
+            Some(Ok((SurfaceFrameCallbackDecision::Skip(reason), acquired_target))) => {
+                if acquired_target {
+                    self.release_acquired_target();
+                }
                 if diag {
                     eprintln!(
                         "floem compositor surface provider decision surface={:?} frame={} decision=skip reason={reason:?}",
@@ -753,7 +782,7 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
                 }
                 false
             }
-            Some(Ok(SurfaceFrameCallbackDecision::None)) => {
+            Some(Ok((SurfaceFrameCallbackDecision::None, false))) => {
                 if diag {
                     eprintln!(
                         "floem compositor surface provider decision surface={:?} frame={} decision=none",
@@ -763,6 +792,9 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
                 false
             }
             Some(Err(err)) => {
+                if cx.acquired_target {
+                    self.release_acquired_target();
+                }
                 if diag {
                     eprintln!(
                         "floem compositor surface provider decision surface={:?} frame={} decision=error error={err:?}",
@@ -794,14 +826,15 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
         self.current_content.clone()
     }
 
-    fn current_presents_without_transaction(&self) -> bool {
-        self.current_presents_without_transaction
-    }
-
     fn release_current_content(&mut self, _outcome: CompositorSurfaceOutcome) {}
 }
 
 impl CompositorSurfaceProducerProvider {
+    fn release_acquired_target(&self) {
+        let mut in_flight = self.in_flight.lock().unwrap();
+        *in_flight = in_flight.saturating_sub(1);
+    }
+
     fn drain_completions(&mut self) -> CompositorSurfaceFrameUpdate {
         let diag = crate::frame_source::frame_pacing_diag_enabled()
             || std::env::var_os("FLOEM_CUBE_DIAG").is_some();
@@ -813,23 +846,18 @@ impl CompositorSurfaceProducerProvider {
             drop(in_flight);
             match completion {
                 subduction::wgpu::SurfaceFrameCompletion::Submitted(frame) => {
-                    let presents_without_transaction = self
-                        .pending_presentations
-                        .remove(&frame.opportunity.frame_index)
-                        .unwrap_or(false);
                     let observed_latency = self
                         .pending_request_started_at
                         .remove(&frame.opportunity.frame_index)
                         .map(|started_at| Instant::now().saturating_duration_since(started_at));
                     if diag {
                         eprintln!(
-                            "floem compositor surface provider completion surface={:?} frame={} submitted size={}x{} resource_key={:?} presents_without_transaction={} observed_latency={:?}",
+                            "floem compositor surface provider completion surface={:?} frame={} submitted size={}x{} resource_key={:?} observed_latency={:?}",
                             self.handle.id(),
                             frame.opportunity.frame_index,
                             frame.size.width,
                             frame.size.height,
                             frame.resource_key,
-                            presents_without_transaction,
                             observed_latency,
                         );
                     }
@@ -837,7 +865,6 @@ impl CompositorSurfaceProducerProvider {
                     self.current_content = Some(CompositorSurfaceContent::Texture(
                         ExternalTexture::new(size, frame),
                     ));
-                    self.current_presents_without_transaction = presents_without_transaction;
                     content_changed = true;
                     if let Some(observed_latency) = observed_latency {
                         max_observed_latency = Some(
@@ -916,6 +943,7 @@ pub struct CompositorSurfaceFrameArgs {
     pub frame_index: u64,
     pub frame_time: crate::frame::FrameTime,
     pub interval: PresentationInterval,
+    pub is_window_resize: bool,
     pub visible: bool,
     pub rect: Rect,
     pub size_px: Size,
@@ -979,11 +1007,24 @@ impl CompositorSurfaceHandle {
         });
     }
 
-    pub fn set_target_fps(&self, target_fps: Option<f64>) {
-        Application::send_proxy_event(UserEvent::CompositorSurfaceTargetFps {
+    pub fn set_frame_rate_preference(&self, frame_rate: FrameRatePreference) {
+        Application::send_proxy_event(UserEvent::CompositorSurfaceFrameRatePreference {
             window_id: self.window_id,
             surface_id: self.id,
-            target_fps,
+            frame_rate,
+        });
+    }
+
+    /// Sets whether submitted content publishes with the window compositor transaction.
+    ///
+    /// `true` is the default and keeps surface updates atomic with the window
+    /// layer tree. `false` allows future surface updates to publish
+    /// independently until changed again.
+    pub fn presents_with_transaction(&self, presents_with_transaction: bool) {
+        Application::send_proxy_event(UserEvent::CompositorSurfacePresentsWithTransaction {
+            window_id: self.window_id,
+            surface_id: self.id,
+            presents_with_transaction,
         });
     }
 

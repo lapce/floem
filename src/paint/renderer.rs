@@ -49,8 +49,8 @@
 //!
 use std::{
     sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc, Condvar, Mutex,
+        atomic::{AtomicUsize, Ordering},
         mpsc,
     },
     thread,
@@ -169,6 +169,8 @@ pub(crate) struct SceneFragmentRendererPool {
     name: &'static str,
     compositor_texture_format: Option<wgpu::TextureFormat>,
     workers: Vec<SceneFragmentRenderWorker>,
+    #[cfg(not(target_arch = "wasm32"))]
+    _gpu_callback_pump: Option<GpuCallbackPumpThread>,
 }
 
 #[derive(Clone)]
@@ -502,6 +504,31 @@ struct SceneFragmentRenderWorker {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone)]
+struct GpuCallbackPump {
+    inner: Arc<GpuCallbackPumpInner>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct GpuCallbackPumpThread {
+    pump: GpuCallbackPump,
+    join_handle: Option<thread::JoinHandle<()>>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct GpuCallbackPumpInner {
+    device: wgpu::Device,
+    state: Mutex<GpuCallbackPumpState>,
+    cvar: Condvar,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct GpuCallbackPumpState {
+    pending: usize,
+    stop: bool,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 enum SceneFragmentRenderCommand {
     Render {
         job: SceneFragmentRenderJob,
@@ -512,6 +539,83 @@ enum SceneFragmentRenderCommand {
         response: mpsc::Sender<bool>,
     },
     Shutdown,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl GpuCallbackPumpThread {
+    fn spawn(device: wgpu::Device) -> Result<Self, String> {
+        let pump = GpuCallbackPump {
+            inner: Arc::new(GpuCallbackPumpInner {
+                device,
+                state: Mutex::new(GpuCallbackPumpState {
+                    pending: 0,
+                    stop: false,
+                }),
+                cvar: Condvar::new(),
+            }),
+        };
+        let thread_pump = pump.clone();
+        let join_handle = thread::Builder::new()
+            .name("floem-gpu-callback-pump".to_owned())
+            .spawn(move || thread_pump.run())
+            .map_err(|err| format!("failed to spawn gpu callback pump: {err}"))?;
+        Ok(Self {
+            pump,
+            join_handle: Some(join_handle),
+        })
+    }
+
+    fn pump(&self) -> GpuCallbackPump {
+        self.pump.clone()
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for GpuCallbackPumpThread {
+    fn drop(&mut self) {
+        {
+            let mut state = self.pump.inner.state.lock().unwrap();
+            state.stop = true;
+            self.pump.inner.cvar.notify_one();
+        }
+        if let Some(join_handle) = self.join_handle.take() {
+            let _ = join_handle.join();
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl GpuCallbackPump {
+    fn begin_work(&self) {
+        let mut state = self.inner.state.lock().unwrap();
+        state.pending = state.pending.saturating_add(1);
+    }
+
+    fn wake(&self) {
+        self.inner.cvar.notify_one();
+    }
+
+    fn complete_work(&self) {
+        let mut state = self.inner.state.lock().unwrap();
+        state.pending = state.pending.saturating_sub(1);
+        if state.pending == 0 {
+            self.inner.cvar.notify_one();
+        }
+    }
+
+    fn run(self) {
+        loop {
+            let mut state = self.inner.state.lock().unwrap();
+            while state.pending == 0 && !state.stop {
+                state = self.inner.cvar.wait(state).unwrap();
+            }
+            if state.stop {
+                break;
+            }
+            drop(state);
+            let _ = self.inner.device.poll(wgpu::PollType::wait_indefinitely());
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -613,11 +717,23 @@ impl SceneFragmentRendererPool {
                     .clamp(1, 4)
             })
             .max(1);
+        #[cfg(not(target_arch = "wasm32"))]
+        let gpu_callback_pump = cx
+            .gpu_resources
+            .as_ref()
+            .map(|gpu_resources| GpuCallbackPumpThread::spawn(gpu_resources.device.clone()))
+            .transpose()?;
+        #[cfg(not(target_arch = "wasm32"))]
+        let worker_gpu_callback_pump = gpu_callback_pump.as_ref().map(GpuCallbackPumpThread::pump);
         let mut workers = Vec::with_capacity(worker_count);
         let mut init = None;
         for index in 0..worker_count {
-            let (worker, worker_init) =
-                SceneFragmentRenderWorker::spawn(index, Arc::clone(&chooser), cx.clone())?;
+            let (worker, worker_init) = SceneFragmentRenderWorker::spawn(
+                index,
+                Arc::clone(&chooser),
+                cx.clone(),
+                worker_gpu_callback_pump.clone(),
+            )?;
             init.get_or_insert(worker_init);
             workers.push(worker);
         }
@@ -630,6 +746,8 @@ impl SceneFragmentRendererPool {
             name: init.name(),
             compositor_texture_format,
             workers,
+            #[cfg(not(target_arch = "wasm32"))]
+            _gpu_callback_pump: gpu_callback_pump,
         })
     }
 
@@ -685,6 +803,7 @@ impl SceneFragmentRenderWorker {
         index: usize,
         chooser: RendererChooser,
         cx: NewRendererCx,
+        gpu_callback_pump: Option<GpuCallbackPump>,
     ) -> Result<(Self, RendererInit), String> {
         let (command_tx, command_rx) = mpsc::channel();
         let (init_tx, init_rx) = mpsc::channel();
@@ -716,20 +835,26 @@ impl SceneFragmentRenderWorker {
                                 job.external_images,
                             );
                             let render_end = Instant::now();
-                            let gpu_end = if rendered {
-                                wait_for_gpu_work_done(&backend).unwrap_or(render_end)
-                            } else {
-                                render_end
-                            };
-                            send_scene_fragment_ready(
-                                completion,
-                                rendered,
-                                index,
-                                render_start,
-                                render_end,
-                                gpu_end,
-                            );
                             worker_in_flight.fetch_sub(1, Ordering::Relaxed);
+                            if rendered {
+                                send_scene_fragment_ready_after_gpu_work_done(
+                                    &backend,
+                                    gpu_callback_pump.clone(),
+                                    completion,
+                                    index,
+                                    render_start,
+                                    render_end,
+                                );
+                            } else {
+                                send_scene_fragment_ready(
+                                    completion,
+                                    false,
+                                    index,
+                                    render_start,
+                                    render_end,
+                                    render_end,
+                                );
+                            }
                         }
                         SceneFragmentRenderCommand::RenderForCapture { job, response } => {
                             let mut source = SceneFragmentSource {
@@ -927,19 +1052,53 @@ fn send_scene_fragment_ready(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn wait_for_gpu_work_done(backend: &RendererSpec) -> Option<Instant> {
-    let (device, queue) = backend.gpu_fence_resources()?;
-    let done = Arc::new(AtomicBool::new(false));
-    let callback_done = Arc::clone(&done);
-    queue.on_submitted_work_done(move || {
-        callback_done.store(true, Ordering::Release);
-    });
-    while !done.load(Ordering::Acquire) {
-        if device.poll(wgpu::PollType::wait_indefinitely()).is_err() {
-            return None;
-        }
+fn send_scene_fragment_ready_after_gpu_work_done(
+    backend: &RendererSpec,
+    gpu_callback_pump: Option<GpuCallbackPump>,
+    completion: SceneFragmentRenderCompletion,
+    worker_index: usize,
+    render_start: Instant,
+    render_end: Instant,
+) {
+    let Some((device, queue)) = backend.gpu_fence_resources() else {
+        send_scene_fragment_ready(
+            completion,
+            true,
+            worker_index,
+            render_start,
+            render_end,
+            render_end,
+        );
+        return;
+    };
+    if let Some(pump) = gpu_callback_pump {
+        pump.begin_work();
+        let callback_pump = pump.clone();
+        queue.on_submitted_work_done(move || {
+            send_scene_fragment_ready(
+                completion,
+                true,
+                worker_index,
+                render_start,
+                render_end,
+                Instant::now(),
+            );
+            callback_pump.complete_work();
+        });
+        pump.wake();
+        return;
     }
-    Some(Instant::now())
+    queue.on_submitted_work_done(move || {
+        send_scene_fragment_ready(
+            completion,
+            true,
+            worker_index,
+            render_start,
+            render_end,
+            Instant::now(),
+        );
+    });
+    let _ = device.poll(wgpu::PollType::Poll);
 }
 
 #[cfg(not(target_arch = "wasm32"))]

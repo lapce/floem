@@ -1114,11 +1114,11 @@ impl RouteCx<'_, '_> {
                 .drag_tracker
                 .check_threshold(&pu, &mut box_tree.borrow_mut());
             if let Some(drag_dispatch) = res {
-                self.gcx.window_state.needs_box_tree_commit = true;
+                self.gcx.window_state.request_box_tree_commit();
                 self.dispatch_drag_event(drag_dispatch);
             }
             if let Some(_active) = &self.gcx.window_state.drag_tracker.active_drag {
-                self.gcx.window_state.needs_box_tree_from_layout = true;
+                self.gcx.window_state.request_box_tree_commit();
                 let hover_path = self
                     .hit_path
                     .as_ref()

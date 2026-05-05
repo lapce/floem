@@ -11,10 +11,9 @@ use ui_events::keyboard::{Key, NamedKey};
 
 use crate::context::VisualChangedListener;
 use crate::event::listener;
-use crate::platform::menu::MudaMenu;
+use crate::platform::menu::{MenuEntry, MenuSpec};
 use crate::style::CursorStyle;
 
-use crate::platform::menu_types;
 use crate::unit::UnitExt;
 use crate::view::{IntoView, View};
 use crate::views::{Container, Decorators, Label, Stack, svg};
@@ -30,78 +29,78 @@ enum MenuDisplay {
     },
 }
 
-fn format_menu(menu: &MudaMenu) -> Vec<MenuDisplay> {
+fn format_menu(menu: &MenuSpec) -> Vec<MenuDisplay> {
     menu.items()
         .iter()
         .enumerate()
         .map(|(s, item)| match item {
-            menu_types::MenuItemKind::MenuItem(menu_item) => MenuDisplay::Item {
+            MenuEntry::Item(menu_item) => MenuDisplay::Item {
                 id: Some(menu_item.id().as_ref().to_string()),
                 enabled: menu_item.is_enabled(),
-                title: menu_item.text().to_string(),
+                title: format_item_text(menu_item.text(), menu_item.is_checked()),
                 children: None,
             },
-            menu_types::MenuItemKind::Submenu(submenu) => MenuDisplay::Item {
+            MenuEntry::Submenu(submenu) => MenuDisplay::Item {
                 id: None,
                 enabled: submenu.is_enabled(),
                 title: submenu.text().to_string(),
                 children: Some(format_submenu(submenu)),
             },
-            menu_types::MenuItemKind::Predefined(_) => MenuDisplay::Separator(s),
-            menu_types::MenuItemKind::Check(check_item) => MenuDisplay::Item {
-                id: Some(check_item.id().as_ref().to_string()),
-                enabled: check_item.is_enabled(),
-                title: check_item.text().to_string(),
-                children: None,
-            },
-            menu_types::MenuItemKind::Icon(icon_item) => MenuDisplay::Item {
-                id: Some(icon_item.id().as_ref().to_string()),
-                enabled: icon_item.is_enabled(),
-                title: icon_item.text().to_string(),
-                children: None,
-            },
+            MenuEntry::Predefined(predefined) => predefined_display(s, predefined),
         })
         .collect()
 }
 
-fn format_submenu(submenu: &menu_types::Submenu) -> Vec<MenuDisplay> {
+fn format_submenu(submenu: &crate::platform::menu::SubmenuSpec) -> Vec<MenuDisplay> {
     submenu
         .items()
         .iter()
         .enumerate()
         .map(|(s, item)| match item {
-            menu_types::MenuItemKind::MenuItem(menu_item) => MenuDisplay::Item {
+            MenuEntry::Item(menu_item) => MenuDisplay::Item {
                 id: Some(menu_item.id().as_ref().to_string()),
                 enabled: menu_item.is_enabled(),
-                title: menu_item.text().to_string(),
+                title: format_item_text(menu_item.text(), menu_item.is_checked()),
                 children: None,
             },
-            menu_types::MenuItemKind::Submenu(nested_submenu) => MenuDisplay::Item {
+            MenuEntry::Submenu(nested_submenu) => MenuDisplay::Item {
                 id: None,
                 enabled: nested_submenu.is_enabled(),
                 title: nested_submenu.text().to_string(),
                 children: Some(format_submenu(nested_submenu)),
             },
-            menu_types::MenuItemKind::Predefined(_) => MenuDisplay::Separator(s),
-            menu_types::MenuItemKind::Check(check_item) => MenuDisplay::Item {
-                id: Some(check_item.id().as_ref().to_string()),
-                enabled: check_item.is_enabled(),
-                title: check_item.text().to_string(),
-                children: None,
-            },
-            menu_types::MenuItemKind::Icon(icon_item) => MenuDisplay::Item {
-                id: Some(icon_item.id().as_ref().to_string()),
-                enabled: icon_item.is_enabled(),
-                title: icon_item.text().to_string(),
-                children: None,
-            },
+            MenuEntry::Predefined(predefined) => predefined_display(s, predefined),
         })
         .collect()
 }
 
+fn format_item_text(text: &str, checked: Option<bool>) -> String {
+    match checked {
+        Some(true) => format!("✓ {text}"),
+        Some(false) => format!("  {text}"),
+        None => text.to_string(),
+    }
+}
+
+fn predefined_display(
+    index: usize,
+    item: &crate::platform::menu::PredefinedMenuItem,
+) -> MenuDisplay {
+    if item.is_separator() {
+        MenuDisplay::Separator(index)
+    } else {
+        MenuDisplay::Item {
+            id: None,
+            enabled: true,
+            title: "System Item".to_string(),
+            children: None,
+        }
+    }
+}
+
 pub(crate) fn context_menu_view(
     cx: Scope,
-    context_menu: RwSignal<Option<(menu_types::Menu, Point, bool)>>,
+    context_menu: RwSignal<Option<(MenuSpec, Point, bool)>>,
     window_size: RwSignal<Size>,
 ) -> impl IntoView {
     use crate::{
@@ -112,14 +111,14 @@ pub(crate) fn context_menu_view(
     let context_menu_items = cx.create_memo(move |_| {
         context_menu.with(|menu| {
             menu.as_ref()
-                .map(|(menu, _, _): &(MudaMenu, Point, bool)| format_menu(menu))
+                .map(|(menu, _, _): &(MenuSpec, Point, bool)| format_menu(menu))
         })
     });
     let context_menu_size = cx.create_rw_signal(Size::ZERO);
 
     fn view_fn(
         menu: MenuDisplay,
-        context_menu: RwSignal<Option<(MudaMenu, Point, bool)>>,
+        context_menu: RwSignal<Option<(MenuSpec, Point, bool)>>,
         on_child_submenu_for_parent: RwSignal<bool>,
     ) -> impl IntoView {
         match menu {

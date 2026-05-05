@@ -10,14 +10,14 @@ use std::sync::atomic::AtomicU64;
 
 use floem_reactive::{SignalWith, UpdaterEffect};
 use peniko::kurbo::{Point, Size, Vec2};
-use winit::window::{ResizeDirection, Theme};
+use winit::window::{ResizeDirection, Theme, WindowId};
 
 use crate::IntoView;
 use crate::platform::{Duration, Instant};
 
 use crate::{
     app::{AppUpdateEvent, add_app_update_event},
-    frame::FrameTime,
+    frame::{FrameCallbackRepeat, FrameRatePreference, FrameTime},
     message::{UPDATE_MESSAGES, UpdateMessage},
     platform::menu::Menu,
     view::View,
@@ -136,9 +136,29 @@ pub fn current_theme() -> Option<Theme> {
 
 pub(crate) struct Timer {
     pub(crate) token: TimerToken,
-    pub(crate) action: Box<dyn FnOnce(TimerToken)>,
+    pub(crate) kind: TimerKind,
+    pub(crate) action: TimerAction,
     pub(crate) deadline: Instant,
     pub(crate) sequence: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TimerKind {
+    Normal,
+    CompositorCommitDeadline {
+        window_id: WindowId,
+        target_deadline: Instant,
+        can_fire_early: bool,
+    },
+}
+
+pub(crate) enum TimerAction {
+    Main(Box<dyn FnOnce(TimerToken)>),
+    Ui {
+        window_id: WindowId,
+        root: ViewId,
+        action: Box<dyn FnOnce(TimerToken)>,
+    },
 }
 
 /// A token associated with a timer.
@@ -171,23 +191,56 @@ impl TimerToken {
     }
 }
 
+/// A token for a registered animation-frame callback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
+pub struct AnimationFrameCallbackToken {
+    id: u64,
+    root: ViewId,
+}
+
+impl AnimationFrameCallbackToken {
+    fn next(root: ViewId) -> Self {
+        static CALLBACK_COUNTER: AtomicU64 = AtomicU64::new(1);
+        Self {
+            id: CALLBACK_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            root,
+        }
+    }
+
+    /// Cancel this animation-frame callback.
+    pub fn cancel(self) {
+        let _ = UPDATE_MESSAGES.try_with(|msgs| {
+            msgs.borrow_mut()
+                .entry(self.root)
+                .or_default()
+                .push(UpdateMessage::CancelAnimationFrameCallback { token: self.id });
+        });
+        if let Some(window_id) = self.root.window_id() {
+            crate::window::tracking::force_window_repaint(&window_id);
+        }
+    }
+}
+
 /// Execute a callback after a specified duration.
 ///
 /// This must be called on Floem's main UI thread.
 pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static) -> TimerToken {
     let view = get_current_view();
-    let action = move |token| {
-        let current_view = get_current_view();
-        set_current_view(view.root());
-        action(token);
-        set_current_view(current_view);
-    };
+    let root = view.root();
+    let window_id = view
+        .window_id()
+        .expect("timers must be scheduled from a view attached to a window");
 
     let token = TimerToken::next();
     add_app_update_event(AppUpdateEvent::RequestTimer {
         timer: Timer {
             token,
-            action: Box::new(action),
+            kind: TimerKind::Normal,
+            action: TimerAction::Ui {
+                window_id,
+                root,
+                action: Box::new(action),
+            },
             deadline: Instant::now() + duration,
             sequence: token.into_raw(),
         },
@@ -195,29 +248,71 @@ pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static)
     token
 }
 
-/// Execute a callback at a begin-frame opportunity for the current window.
+/// Register an animation-frame callback for the current window.
 ///
-/// Pass `None` to run at the next full-rate frame opportunity. Pass
-/// `Some(fps)` to run at the next display-aligned opportunity no faster than
-/// that target. Target rates are rounded down to a whole multiple of the
-/// current display interval.
-pub fn request_animation_frame(target_fps: Option<f64>, action: impl FnOnce(FrameTime) + 'static) {
+/// `frame_rate` is a presentation-cadence preference, not a wall-clock timer
+/// and not a guarantee that every callback will produce a presented frame.
+/// Floem aligns callbacks to the window's frame source and may delay, coalesce,
+/// or skip opportunities when the window, compositor, or dependent layers
+/// cannot present at the requested cadence.
+pub fn schedule_animation_frame_callback(
+    frame_rate: FrameRatePreference,
+    repeat: FrameCallbackRepeat,
+    mut action: impl FnMut(FrameTime) + 'static,
+) -> AnimationFrameCallbackToken {
     let view = get_current_view();
+    let root = view.root();
+    let token = AnimationFrameCallbackToken::next(root);
 
-    let action = move |frame_time| {
-        let current_view = get_current_view();
-        set_current_view(view.root());
+    let callback = move |frame_time| {
+        set_current_view(root);
         action(frame_time);
-        set_current_view(current_view);
     };
 
-    add_update_message(UpdateMessage::RequestAnimationFrame {
-        target_fps,
-        callback: Box::new(action),
+    add_update_message(UpdateMessage::SetAnimationFrameCallback {
+        token: token.id,
+        frame_rate,
+        repeat,
+        callback: Box::new(callback),
     });
     if let Some(window_id) = view.window_id() {
         crate::window::tracking::force_window_repaint(&window_id);
     }
+    token
+}
+
+/// Register a repeating animation-frame callback for the current window.
+///
+/// The callback runs at each eligible begin-frame opportunity until the
+/// returned [`AnimationFrameCallbackToken`] is cancelled.
+pub fn set_animation_frame_callback(
+    frame_rate: FrameRatePreference,
+    action: impl FnMut(FrameTime) + 'static,
+) -> AnimationFrameCallbackToken {
+    schedule_animation_frame_callback(frame_rate, FrameCallbackRepeat::every_frame(), action)
+}
+
+/// Execute a callback once at the next eligible begin-frame opportunity.
+///
+/// The returned token may be used to cancel the callback before it runs.
+pub fn request_animation_frame(
+    action: impl FnOnce(FrameTime) + 'static,
+) -> AnimationFrameCallbackToken {
+    request_animation_frame_with_preference(FrameRatePreference::full(), action)
+}
+
+/// Execute a callback once at the next eligible begin-frame opportunity.
+pub fn request_animation_frame_with_preference(
+    frame_rate: FrameRatePreference,
+    action: impl FnOnce(FrameTime) + 'static,
+) -> AnimationFrameCallbackToken {
+    let mut action = Some(action);
+
+    schedule_animation_frame_callback(frame_rate, FrameCallbackRepeat::none(), move |frame_time| {
+        if let Some(action) = action.take() {
+            action(frame_time);
+        }
+    })
 }
 
 /// Debounce an action.

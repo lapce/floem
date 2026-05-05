@@ -6,9 +6,10 @@ use rustc_hash::FxHashMap;
 use winit::window::{Theme, WindowId};
 
 use crate::{
+    action::TimerToken,
     compositor_surface::CompositorSurfaceId,
     event::{Event, PaintPresentInfo, UpdatePhaseEvent, WindowEvent},
-    frame::FrameTime,
+    frame::{FrameRatePreference, FrameTime},
     gpu_resources::GpuResources,
     inspector::{
         CAPTURE, Capture,
@@ -20,7 +21,7 @@ use crate::{
 };
 
 use super::{
-    handle::FrameTimingAccumulator,
+    handle::{FrameTimingAccumulator, set_current_view},
     state::WindowState,
     ui_driver::{
         PlatformRequest, UiFrameStatus, UiPlatformEvent, UiSceneSubmission, WindowUiDriver,
@@ -96,10 +97,7 @@ impl WindowUiRuntime {
         }
     }
 
-    pub(crate) fn call_inspector_capture<R: 'static>(
-        &self,
-        f: impl FnOnce(&mut WindowUiDriver) -> R + 'static,
-    ) -> R {
+    fn call_unchecked<R: 'static>(&self, f: impl FnOnce(&mut WindowUiDriver) -> R + 'static) -> R {
         match self {
             Self::Direct(driver) => f(&mut driver.borrow_mut()),
             Self::Threaded { tx } => {
@@ -115,6 +113,13 @@ impl WindowUiRuntime {
         }
     }
 
+    pub(crate) fn call_inspector_capture<R: 'static>(
+        &self,
+        f: impl FnOnce(&mut WindowUiDriver) -> R + 'static,
+    ) -> R {
+        self.call_unchecked(f)
+    }
+
     pub(crate) fn set_inspector_capture(&self, capture: Capture) {
         self.call_inspector_capture(move |_| {
             CAPTURE.with(|signal| signal.set(Some(Rc::new(capture))));
@@ -124,6 +129,18 @@ impl WindowUiRuntime {
     pub(crate) fn set_inspector_profile(&self, profile: Profile) {
         self.call_inspector_capture(move |_| {
             PROFILE.with(|signal| signal.set(Some(Rc::new(profile))));
+        });
+    }
+
+    pub(crate) fn run_timer_action(
+        &self,
+        root: ViewId,
+        token: TimerToken,
+        action: Box<dyn FnOnce(TimerToken)>,
+    ) {
+        self.call_unchecked(move |_| {
+            set_current_view(root);
+            action(token);
         });
     }
 
@@ -244,6 +261,10 @@ impl WindowUiRuntime {
 
     pub(crate) fn has_begin_frame_callbacks(&self) -> bool {
         self.call(|ui| ui.has_begin_frame_callbacks())
+    }
+
+    pub(crate) fn begin_frame_callback_preferences(&self) -> Vec<FrameRatePreference> {
+        self.call(|ui| ui.begin_frame_callback_preferences())
     }
 
     pub(crate) fn has_current_frame_prepare_work(&self) -> bool {

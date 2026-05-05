@@ -8,6 +8,7 @@ use winit::window::{ResizeDirection, Theme};
 use crate::{
     ElementId,
     event::{Event, RouteKind, listener},
+    frame::{FrameCallbackRepeat, FrameRatePreference},
     platform::menu::Menu,
     style::recalc::StyleReason,
     view::{AnyView, View, ViewId},
@@ -117,9 +118,14 @@ pub enum UpdateMessage {
         size: Size,
     },
     WindowVisible(bool),
-    RequestAnimationFrame {
-        target_fps: Option<f64>,
-        callback: Box<dyn FnOnce(crate::frame::FrameTime)>,
+    SetAnimationFrameCallback {
+        token: u64,
+        frame_rate: FrameRatePreference,
+        repeat: FrameCallbackRepeat,
+        callback: Box<dyn FnMut(crate::frame::FrameTime)>,
+    },
+    CancelAnimationFrameCallback {
+        token: u64,
     },
     ViewTransitionAnimComplete(ViewId),
     SetTheme(Option<Theme>),
