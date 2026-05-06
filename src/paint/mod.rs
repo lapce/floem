@@ -259,10 +259,10 @@ impl GlobalPaintCx<'_> {
 
     fn update_composition_plan(&mut self) {
         let effective_scale = self.window_state.effective_scale();
-        let mut plan = self
-            .window_state
-            .display_list
-            .lower_composition_plan(effective_scale);
+        let mut plan = self.window_state.display_list.lower_composition_plan(
+            effective_scale,
+            &self.window_state.surface_image_registry.borrow(),
+        );
         clip_scene_layers_to_viewport(&mut plan, self.window_state.root_size);
         self.window_state.composition_plan = plan;
     }
@@ -491,7 +491,8 @@ impl GlobalPaintCx<'_> {
             } else {
                 &mut element.paint
             };
-            let mut recorder = StageRecorder::from_stage(stage);
+            let mut recorder =
+                StageRecorder::from_stage(stage, self.window_state.surface_image_registry.clone());
             recorder.clear();
             recorder
         };

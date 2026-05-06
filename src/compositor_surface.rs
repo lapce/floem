@@ -31,7 +31,7 @@ use std::{
 };
 
 use peniko::{
-    ImageData,
+    ImageAlphaType, ImageData,
     kurbo::{Rect, Size},
 };
 use winit::window::WindowId;
@@ -59,31 +59,94 @@ impl CompositorSurfaceId {
         self.0
     }
 
-    #[must_use]
-    pub fn image_id(self) -> imaging::ExternalImageId {
-        imaging::ExternalImageId(self.0 | COMPOSITOR_SURFACE_IMAGE_ID_MASK)
-    }
-
-    #[must_use]
-    pub fn from_image_id(image_id: imaging::ExternalImageId) -> Option<Self> {
-        (image_id.0 & COMPOSITOR_SURFACE_IMAGE_ID_MASK != 0)
-            .then_some(Self(image_id.0 & !COMPOSITOR_SURFACE_IMAGE_ID_MASK))
-    }
-
     #[cfg(test)]
     pub(crate) fn test_new(value: u64) -> Self {
         Self(value)
     }
 }
 
-const COMPOSITOR_SURFACE_IMAGE_ID_MASK: u64 = 1 << 63;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct SurfaceImageKey {
+    surface_id: CompositorSurfaceId,
+    width: u32,
+    height: u32,
+}
+
+/// Window-local registry for compositor surface image brush payloads.
+///
+/// Floem records surface images as Floem-owned image values first. During
+/// display-list lowering the window state registers each `(surface, size)` pair
+/// here and receives an `imaging::ExternalImage` id for renderer-facing scene
+/// commands. Composition planning resolves those ids through this side table
+/// instead of relying on bit patterns inside `ExternalImageId`.
+#[derive(Debug)]
+pub(crate) struct SurfaceImageRegistry {
+    next_id: u64,
+    by_key: FxHashMap<SurfaceImageKey, imaging::ExternalImageId>,
+    by_id: FxHashMap<imaging::ExternalImageId, SurfaceImageKey>,
+}
+
+impl Default for SurfaceImageRegistry {
+    fn default() -> Self {
+        Self {
+            next_id: 1,
+            by_key: FxHashMap::default(),
+            by_id: FxHashMap::default(),
+        }
+    }
+}
+
+impl SurfaceImageRegistry {
+    pub(crate) fn register(
+        &mut self,
+        image: &crate::effects::SurfaceImage,
+    ) -> imaging::ExternalImage {
+        let key = SurfaceImageKey {
+            surface_id: image.surface_id,
+            width: image.size.width.ceil().max(1.0) as u32,
+            height: image.size.height.ceil().max(1.0) as u32,
+        };
+        let id = if let Some(id) = self.by_key.get(&key).copied() {
+            id
+        } else {
+            let id = imaging::ExternalImageId(self.next_id);
+            self.next_id = self.next_id.saturating_add(1);
+            self.by_key.insert(key, id);
+            self.by_id.insert(id, key);
+            id
+        };
+        imaging::ExternalImage::new(
+            id,
+            key.width,
+            key.height,
+            ImageAlphaType::AlphaPremultiplied,
+        )
+    }
+
+    pub(crate) fn resolve(
+        &self,
+        image_id: imaging::ExternalImageId,
+    ) -> Option<CompositorSurfaceId> {
+        if let Some(key) = self.by_id.get(&image_id) {
+            return Some(key.surface_id);
+        }
+        #[cfg(test)]
+        {
+            Some(CompositorSurfaceId(image_id.0))
+        }
+        #[cfg(not(test))]
+        {
+            None
+        }
+    }
+}
 
 /// Paint-facing identity for compositor-produced image content.
 ///
 /// `CompositorSurfaceImage` is the consumer side of the API. It gives the view
 /// tree a stable image identity, but it does not render frames itself. Use
-/// [`CompositorSurfaceImage::image`] to create the `imaging::ExternalImage`
-/// handle that an `ImageBrush` paints.
+/// [`CompositorSurfaceImage::image`] to create the Floem image payload that an
+/// `ImageBrush` paints.
 ///
 /// The same image can be placed more than once and at more than one source
 /// size. Floem dedupes equivalent placements before asking the producer for
@@ -121,10 +184,10 @@ impl CompositorSurfaceImage {
         self.id
     }
 
-    /// Creates an Imaging external image handle for this surface at `size`.
+    /// Creates a Floem image handle for this surface at `size`.
     ///
-    /// The returned image can be used with `imaging::ImageBrush`. `size` is
-    /// the logical source size for this brush placement. It does not create a
+    /// The returned image can be used with `floem::ImageBrush`. `size` is the
+    /// logical source size for this brush placement. It does not create a
     /// new surface identity: multiple calls to `image` return handles for the
     /// same submitted compositor content with different advertised source
     /// sizes.
@@ -140,13 +203,8 @@ impl CompositorSurfaceImage {
     /// surface directly as a compositor layer. If active group state requires
     /// flattening, the renderer samples the same submitted surface content.
     #[must_use]
-    pub fn image(&self, size: Size) -> imaging::ExternalImage {
-        imaging::ExternalImage::new(
-            self.id.image_id(),
-            size.width.ceil().max(1.0) as u32,
-            size.height.ceil().max(1.0) as u32,
-            peniko::ImageAlphaType::AlphaPremultiplied,
-        )
+    pub fn image(&self, size: Size) -> crate::effects::Image {
+        crate::effects::SurfaceImage::new(self.id, size).into()
     }
 
     #[must_use]

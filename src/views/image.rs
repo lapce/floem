@@ -8,11 +8,11 @@ use std::{
 };
 
 use floem_reactive::{ReadSignal, RwSignal, SignalWith, UpdaterEffect};
-use imaging::{ExternalImage, Image as ImagingImage};
+use imaging::Image as ImagingImage;
 use peniko::{Blob, ImageAlphaType, ImageData, kurbo::Rect};
 
 use crate::{
-    effects::{Brush, Image as FloemImage, ImageBrush},
+    effects::{Brush, Image as FloemImage, ImageBrush, ShaderSourceImage},
     prop_extractor,
     style::{FontSizeCx, ObjectFit, ObjectPosition},
     view::{LayoutNodeCx, MeasureFn, View, ViewId},
@@ -110,62 +110,69 @@ prop_extractor! {
 /// Holds the data needed for [Image] view to display images.
 pub struct Image {
     id: ViewId,
-    img: ImagingImage,
+    img: FloemImage,
     layout_data: Rc<RefCell<ImageLayoutData>>,
     style: Extractor,
 }
 
 #[doc(hidden)]
 pub enum ImgReader {
-    Static(ImagingImage),
-    Reactive(Rc<dyn Fn() -> ImagingImage>),
+    Static(FloemImage),
+    Reactive(Rc<dyn Fn() -> FloemImage>),
 }
 
 /// A static input that can be converted into image content for [`Img`].
 pub trait ImgDataSource {
     /// Convert this value into owned image data.
-    fn into_image_data(self) -> ImagingImage;
+    fn into_image_data(self) -> FloemImage;
 }
 
 impl ImgDataSource for ImageData {
-    fn into_image_data(self) -> ImagingImage {
-        ImagingImage::Raster(self)
-    }
-}
-
-impl ImgDataSource for ExternalImage {
-    fn into_image_data(self) -> ImagingImage {
-        ImagingImage::External(self)
+    fn into_image_data(self) -> FloemImage {
+        self.into()
     }
 }
 
 impl ImgDataSource for ImagingImage {
-    fn into_image_data(self) -> ImagingImage {
+    fn into_image_data(self) -> FloemImage {
+        self.try_into()
+            .expect("imaging::ExternalImage cannot be stored in a Floem Img")
+    }
+}
+
+impl ImgDataSource for FloemImage {
+    fn into_image_data(self) -> FloemImage {
         self
     }
 }
 
+impl ImgDataSource for ShaderSourceImage {
+    fn into_image_data(self) -> FloemImage {
+        self.into()
+    }
+}
+
 impl ImgDataSource for Vec<u8> {
-    fn into_image_data(self) -> ImagingImage {
-        ImagingImage::Raster(Image::image_data_from_bytes(&self))
+    fn into_image_data(self) -> FloemImage {
+        Image::image_data_from_bytes(&self).into()
     }
 }
 
 impl ImgDataSource for &'static [u8] {
-    fn into_image_data(self) -> ImagingImage {
-        ImagingImage::Raster(Image::image_data_from_bytes(self))
+    fn into_image_data(self) -> FloemImage {
+        Image::image_data_from_bytes(self).into()
     }
 }
 
 impl<const N: usize> ImgDataSource for &'static [u8; N] {
-    fn into_image_data(self) -> ImagingImage {
-        ImagingImage::Raster(Image::image_data_from_bytes(self.as_slice()))
+    fn into_image_data(self) -> FloemImage {
+        Image::image_data_from_bytes(self.as_slice()).into()
     }
 }
 
 impl ImgDataSource for PathBuf {
-    fn into_image_data(self) -> ImagingImage {
-        ImagingImage::Raster(Image::image_data_from_path(&self))
+    fn into_image_data(self) -> FloemImage {
+        Image::image_data_from_path(&self).into()
     }
 }
 
@@ -175,7 +182,6 @@ impl ImgDataSource for PathBuf {
 /// - direct image bytes (`Vec<u8>`)
 /// - direct file paths (`PathBuf`)
 /// - direct [`ImageData`]
-/// - direct [`ExternalImage`]
 /// - closures returning any of the above
 /// - [`ReadSignal`] and [`RwSignal`] values containing any of the above
 pub trait ImgSource: 'static {
@@ -207,15 +213,21 @@ impl ImgSource for ImageData {
     }
 }
 
-impl ImgSource for ExternalImage {
+impl ImgSource for ImagingImage {
     fn into_img_reader(self) -> ImgReader {
         ImgReader::Static(self.into_image_data())
     }
 }
 
-impl ImgSource for ImagingImage {
+impl ImgSource for FloemImage {
     fn into_img_reader(self) -> ImgReader {
         ImgReader::Static(self)
+    }
+}
+
+impl ImgSource for ShaderSourceImage {
+    fn into_img_reader(self) -> ImgReader {
+        ImgReader::Static(self.into())
     }
 }
 
@@ -331,7 +343,7 @@ pub fn img_from_path(image: impl Fn() -> PathBuf + 'static) -> Image {
 impl Image {
     /// Decode static image bytes, a static image path, or reuse existing image
     /// content.
-    pub fn image_data(source: impl ImgDataSource) -> ImagingImage {
+    pub fn image_data(source: impl ImgDataSource) -> FloemImage {
         source.into_image_data()
     }
 
@@ -376,8 +388,8 @@ impl Image {
         };
 
         let layout_data = Rc::new(RefCell::new(ImageLayoutData::new(
-            img.width(),
-            img.height(),
+            image_width(&img),
+            image_height(&img),
         )));
 
         let mut img = Self {
@@ -391,9 +403,9 @@ impl Image {
         img
     }
 
-    fn set_image(&mut self, image: ImagingImage) {
-        self.layout_data.borrow_mut().natural_width = image.width();
-        self.layout_data.borrow_mut().natural_height = image.height();
+    fn set_image(&mut self, image: FloemImage) {
+        self.layout_data.borrow_mut().natural_width = image_width(&image);
+        self.layout_data.borrow_mut().natural_height = image_height(&image);
         self.img = image;
         self.id.request_mark_view_layout_dirty();
         self.id.request_layout();
@@ -435,8 +447,8 @@ impl Image {
         object_fit: ObjectFit,
         object_position: ObjectPosition,
     ) -> Rect {
-        let natural_w = self.img.width() as f64;
-        let natural_h = self.img.height() as f64;
+        let natural_w = image_width(&self.img) as f64;
+        let natural_h = image_height(&self.img) as f64;
         if natural_w == 0.0 || natural_h == 0.0 {
             return content_rect;
         }
@@ -501,15 +513,18 @@ impl View for Image {
     }
 
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
-        match state.downcast::<ImagingImage>() {
+        match state.downcast::<FloemImage>() {
             Ok(img) => {
                 self.set_image(*img);
             }
-            Err(state) => {
-                if let Ok(img) = state.downcast::<ImageData>() {
-                    self.set_image(ImagingImage::Raster(*img));
+            Err(state) => match state.downcast::<ImagingImage>() {
+                Ok(img) => self.set_image((*img).into_image_data()),
+                Err(state) => {
+                    if let Ok(img) = state.downcast::<ImageData>() {
+                        self.set_image((*img).into());
+                    }
                 }
-            }
+            },
         }
     }
 
@@ -526,11 +541,11 @@ impl View for Image {
         let content_rect = self.id.get_content_rect_local();
         let dest_rect = self.object_fit_dest_rect(content_rect);
         let image_brush = Brush::Image(ImageBrush(peniko::ImageBrush {
-            image: FloemImage::Imaging(self.img.clone()),
+            image: self.img.clone(),
             sampler: self.style.image_sampler(),
         }));
-        let source_width = self.img.width() as f64;
-        let source_height = self.img.height() as f64;
+        let source_width = image_width(&self.img) as f64;
+        let source_height = image_height(&self.img) as f64;
 
         if source_width <= 0.0 || source_height <= 0.0 {
             return;
@@ -554,6 +569,32 @@ impl View for Image {
                 .fill(source_rect, &image_brush)
                 .transform(image_transform)
                 .draw();
+        }
+    }
+}
+
+fn image_width(image: &FloemImage) -> u32 {
+    match image {
+        FloemImage::Raster(image) => image.width,
+        FloemImage::Scene(image) => image.width(),
+        FloemImage::Surface(surface) => {
+            surface.size.width.max(0.0).round().min(u32::MAX as f64) as u32
+        }
+        FloemImage::Source(source) => {
+            source.size.width.max(0.0).round().min(u32::MAX as f64) as u32
+        }
+    }
+}
+
+fn image_height(image: &FloemImage) -> u32 {
+    match image {
+        FloemImage::Raster(image) => image.height,
+        FloemImage::Scene(image) => image.height(),
+        FloemImage::Surface(surface) => {
+            surface.size.height.max(0.0).round().min(u32::MAX as f64) as u32
+        }
+        FloemImage::Source(source) => {
+            source.size.height.max(0.0).round().min(u32::MAX as f64) as u32
         }
     }
 }

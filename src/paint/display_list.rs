@@ -19,14 +19,16 @@ use peniko::{
 };
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use std::{
+    cell::RefCell,
     hash::{Hash, Hasher},
     mem,
+    rc::Rc,
 };
 use understory_box_tree::NodeFlags;
 
 use crate::{
     BoxTree, ElementId,
-    compositor_surface::CompositorSurfaceId,
+    compositor_surface::SurfaceImageRegistry,
     effects::{
         Composite, CompositorShader, CompositorShaderPass, Filter, GroupRef, Image, LayerFilter,
     },
@@ -219,16 +221,29 @@ pub struct StageRecorder {
     scene: Scene,
     color_filters: Vec<ShaderCommand>,
     effect_group_stack: Vec<Vec<ShaderGroupClose>>,
+    surface_images: Rc<RefCell<SurfaceImageRegistry>>,
 }
 
 impl StageRecorder {
-    pub(crate) fn from_stage(stage: &mut ElementStage) -> Self {
+    pub(crate) fn from_stage(
+        stage: &mut ElementStage,
+        surface_images: Rc<RefCell<SurfaceImageRegistry>>,
+    ) -> Self {
         let scene = mem::take(&mut stage.scene);
         Self {
             scene,
             color_filters: mem::take(&mut stage.color_filters),
             effect_group_stack: Vec::new(),
+            surface_images,
         }
+    }
+
+    #[cfg(test)]
+    fn from_stage_for_test(stage: &mut ElementStage) -> Self {
+        Self::from_stage(
+            stage,
+            Rc::new(RefCell::new(SurfaceImageRegistry::default())),
+        )
     }
 
     pub(crate) fn finish(self, stage: &mut ElementStage) {
@@ -243,6 +258,10 @@ impl StageRecorder {
         self.scene.clear();
         self.color_filters.clear();
         self.effect_group_stack.clear();
+    }
+
+    fn register_surface_image(&self, surface: &crate::effects::SurfaceImage) -> imaging::Image {
+        imaging::Image::External(self.surface_images.borrow_mut().register(surface))
     }
 
     pub fn push_effect_group(&mut self, group: GroupRef<'_>) {
@@ -504,8 +523,41 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
             crate::effects::Brush::Image(image) => {
                 let peniko::ImageBrush { image, sampler } = image.0;
                 match image {
-                    Image::Imaging(image) => {
+                    Image::Raster(image) => {
+                        let image = imaging::Image::Raster(image);
                         let image = imaging::ImageBrush(peniko::ImageBrush { image, sampler });
+                        let _ = self.scene.draw(
+                            FillRef {
+                                transform,
+                                fill_rule,
+                                brush: ImagingBrush::Image(image),
+                                brush_transform,
+                                shape,
+                                composite,
+                            }
+                            .to_owned(),
+                        );
+                    }
+                    Image::Scene(image) => {
+                        let image = imaging::Image::Scene(image);
+                        let image = imaging::ImageBrush(peniko::ImageBrush { image, sampler });
+                        let _ = self.scene.draw(
+                            FillRef {
+                                transform,
+                                fill_rule,
+                                brush: ImagingBrush::Image(image),
+                                brush_transform,
+                                shape,
+                                composite,
+                            }
+                            .to_owned(),
+                        );
+                    }
+                    Image::Surface(surface) => {
+                        let image = imaging::ImageBrush(peniko::ImageBrush {
+                            image: self.register_surface_image(&surface),
+                            sampler,
+                        });
                         let _ = self.scene.draw(
                             FillRef {
                                 transform,
@@ -572,7 +624,40 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
             crate::effects::Brush::Image(image) => {
                 let peniko::ImageBrush { image, sampler } = image.0;
                 match image {
-                    Image::Imaging(image) => {
+                    Image::Raster(image) => {
+                        let image = imaging::Image::Raster(image);
+                        let _ = self.scene.draw(
+                            StrokeRef {
+                                transform,
+                                stroke,
+                                brush: ImagingBrush::Image(imaging::ImageBrush(
+                                    peniko::ImageBrush { image, sampler },
+                                )),
+                                brush_transform,
+                                shape,
+                                composite,
+                            }
+                            .to_owned(),
+                        );
+                    }
+                    Image::Scene(image) => {
+                        let image = imaging::Image::Scene(image);
+                        let _ = self.scene.draw(
+                            StrokeRef {
+                                transform,
+                                stroke,
+                                brush: ImagingBrush::Image(imaging::ImageBrush(
+                                    peniko::ImageBrush { image, sampler },
+                                )),
+                                brush_transform,
+                                shape,
+                                composite,
+                            }
+                            .to_owned(),
+                        );
+                    }
+                    Image::Surface(surface) => {
+                        let image = self.register_surface_image(&surface);
                         let _ = self.scene.draw(
                             StrokeRef {
                                 transform,
@@ -665,7 +750,50 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
             crate::effects::Brush::Image(image) => {
                 let peniko::ImageBrush { image, sampler } = image.0;
                 match image {
-                    Image::Imaging(image) => {
+                    Image::Raster(image) => {
+                        let image = imaging::Image::Raster(image);
+                        let _ = self.scene.draw(imaging::record::Draw::GlyphRun(
+                            GlyphRunRef {
+                                font,
+                                transform,
+                                glyph_transform,
+                                font_size,
+                                font_embolden,
+                                hint,
+                                normalized_coords,
+                                style,
+                                brush: ImagingBrush::Image(imaging::ImageBrush(
+                                    peniko::ImageBrush { image, sampler },
+                                )),
+                                brush_transform,
+                                composite,
+                            }
+                            .to_owned(glyphs),
+                        ));
+                    }
+                    Image::Scene(image) => {
+                        let image = imaging::Image::Scene(image);
+                        let _ = self.scene.draw(imaging::record::Draw::GlyphRun(
+                            GlyphRunRef {
+                                font,
+                                transform,
+                                glyph_transform,
+                                font_size,
+                                font_embolden,
+                                hint,
+                                normalized_coords,
+                                style,
+                                brush: ImagingBrush::Image(imaging::ImageBrush(
+                                    peniko::ImageBrush { image, sampler },
+                                )),
+                                brush_transform,
+                                composite,
+                            }
+                            .to_owned(glyphs),
+                        ));
+                    }
+                    Image::Surface(surface) => {
+                        let image = self.register_surface_image(&surface);
                         let _ = self.scene.draw(imaging::record::Draw::GlyphRun(
                             GlyphRunRef {
                                 font,
@@ -958,7 +1086,11 @@ impl RetainedDisplayList {
             .is_some_and(DisplayNode::caches_composed_scene)
     }
 
-    pub(crate) fn lower_composition_plan(&self, effective_scale: f64) -> CompositionPlan {
+    pub(crate) fn lower_composition_plan(
+        &self,
+        effective_scale: f64,
+        surface_images: &SurfaceImageRegistry,
+    ) -> CompositionPlan {
         let mut chunk_index = 0;
         let mut external_occurrence = 0;
         let mut chunks = Vec::new();
@@ -972,12 +1104,19 @@ impl RetainedDisplayList {
                 &mut chunk_index,
                 &mut external_occurrence,
                 effective_scale,
+                surface_images,
                 &property_state,
             );
         }
         let mut plan = chunks_into_composition_plan(chunks);
         mark_promoted_scene_layers(&mut plan);
         plan
+    }
+
+    #[cfg(test)]
+    fn lower_composition_plan_for_test(&self, effective_scale: f64) -> CompositionPlan {
+        let surface_images = test_surface_image_registry();
+        self.lower_composition_plan(effective_scale, &surface_images.borrow())
     }
 
     fn lower_slot_into_chunks<'a>(
@@ -988,6 +1127,7 @@ impl RetainedDisplayList {
         chunk_index: &mut u32,
         external_occurrence: &mut u32,
         effective_scale: f64,
+        surface_images: &SurfaceImageRegistry,
         property_state: &PropertyState,
     ) {
         let Some(node) = self.node(slot) else {
@@ -1032,6 +1172,7 @@ impl RetainedDisplayList {
             chunk_index,
             external_occurrence,
             effective_scale,
+            surface_images,
             property_state,
         );
 
@@ -1043,6 +1184,7 @@ impl RetainedDisplayList {
                 chunk_index,
                 external_occurrence,
                 effective_scale,
+                surface_images,
                 property_state,
             );
         }
@@ -1056,6 +1198,7 @@ impl RetainedDisplayList {
             chunk_index,
             external_occurrence,
             effective_scale,
+            surface_images,
             property_state,
         );
 
@@ -1076,6 +1219,7 @@ impl RetainedDisplayList {
         chunk_index: &mut u32,
         external_occurrence: &mut u32,
         effective_scale: f64,
+        surface_images: &SurfaceImageRegistry,
         property_state: &PropertyState,
     ) {
         if stage.scene.is_empty() {
@@ -1103,6 +1247,7 @@ impl RetainedDisplayList {
                     range_start,
                     command_index,
                     effective_scale,
+                    surface_images,
                     snapshot,
                     &property_state.with_effects(&scoped_effects, snapshot.world_transform),
                 );
@@ -1129,6 +1274,7 @@ impl RetainedDisplayList {
                     command,
                     *external_occurrence,
                     effective_scale,
+                    surface_images,
                     snapshot.world_transform,
                 )
             {
@@ -1141,6 +1287,7 @@ impl RetainedDisplayList {
                     range_start,
                     command_index,
                     effective_scale,
+                    surface_images,
                     snapshot,
                     property_state,
                 );
@@ -1159,6 +1306,7 @@ impl RetainedDisplayList {
             range_start,
             command_count,
             effective_scale,
+            surface_images,
             snapshot,
             &property_state.with_effects(&scoped_effects, snapshot.world_transform),
         );
@@ -1691,6 +1839,7 @@ fn push_scene_range<'a>(
     start: usize,
     end: usize,
     effective_scale: f64,
+    surface_images: &SurfaceImageRegistry,
     snapshot: ElementSnapshot,
     property_state: &PropertyState,
 ) {
@@ -1698,7 +1847,7 @@ fn push_scene_range<'a>(
         return;
     }
     let external_images =
-        external_images_in_command_range(&stage.scene, start, end, effective_scale);
+        external_images_in_command_range(&stage.scene, start, end, effective_scale, surface_images);
     chunks.push(LoweredChunk::Scene(LoweredSceneChunk {
         scene: &stage.scene,
         start,
@@ -1779,15 +1928,23 @@ fn hash_u64(hash: &mut u64, value: u64) {
     *hash ^= mixed;
 }
 
+#[cfg(test)]
+fn test_surface_image_registry() -> Rc<RefCell<SurfaceImageRegistry>> {
+    Rc::new(RefCell::new(SurfaceImageRegistry::default()))
+}
+
 fn external_images_in_command_range(
     scene: &Scene,
     start: usize,
     end: usize,
     effective_scale: f64,
+    surface_images: &SurfaceImageRegistry,
 ) -> Vec<SceneExternalImage> {
     scene.commands()[start..end]
         .iter()
-        .flat_map(|command| external_images_in_command(scene, command, effective_scale))
+        .flat_map(|command| {
+            external_images_in_command(scene, command, effective_scale, surface_images)
+        })
         .collect()
 }
 
@@ -1796,6 +1953,7 @@ fn promotable_external_image_fill(
     command: &Command,
     occurrence: u32,
     effective_scale: f64,
+    surface_images: &SurfaceImageRegistry,
     transform: Affine,
 ) -> Option<CompositorSurfaceLayer> {
     let Command::Draw(draw_id) = command else {
@@ -1832,7 +1990,7 @@ fn promotable_external_image_fill(
     let imaging::Image::External(external) = image.image else {
         return None;
     };
-    let surface_id = CompositorSurfaceId::from_image_id(external.id)?;
+    let surface_id = surface_images.resolve(external.id)?;
     let promoted_rect = transform_rect_bbox(*draw_transform, *rect);
     let scale = effective_scale.max(f64::EPSILON);
     let source_size = Size::new(
@@ -1858,6 +2016,7 @@ fn external_images_in_command(
     scene: &Scene,
     command: &Command,
     effective_scale: f64,
+    surface_images: &SurfaceImageRegistry,
 ) -> Vec<SceneExternalImage> {
     let Command::Draw(draw_id) = command else {
         return Vec::new();
@@ -1867,12 +2026,14 @@ fn external_images_in_command(
             let Some(bounds) = draw_op_bounds(scene, *draw_id) else {
                 return Vec::new();
             };
-            external_images_in_brush(brush, bounds, effective_scale)
+            external_images_in_brush(brush, bounds, effective_scale, surface_images)
                 .into_iter()
                 .collect()
         }
         Draw::GlyphRun(run) => glyph_run_bounds(run)
-            .and_then(|bounds| external_images_in_brush(&run.brush, bounds, effective_scale))
+            .and_then(|bounds| {
+                external_images_in_brush(&run.brush, bounds, effective_scale, surface_images)
+            })
             .into_iter()
             .collect(),
         Draw::BlurredRoundedRect(_) | Draw::ScenePicture { .. } => Vec::new(),
@@ -1883,6 +2044,7 @@ fn external_images_in_brush(
     brush: &ImagingBrush,
     rect: Rect,
     effective_scale: f64,
+    surface_images: &SurfaceImageRegistry,
 ) -> Option<SceneExternalImage> {
     let ImagingBrush::Image(image) = brush else {
         return None;
@@ -1890,7 +2052,7 @@ fn external_images_in_brush(
     let imaging::Image::External(external) = image.image else {
         return None;
     };
-    let surface_id = CompositorSurfaceId::from_image_id(external.id)?;
+    let surface_id = surface_images.resolve(external.id)?;
     let scale = effective_scale.max(f64::EPSILON);
     Some(SceneExternalImage {
         image_id: external.id,
@@ -2644,7 +2806,7 @@ mod tests {
         let width = (rect.width() * effective_scale).ceil().max(1.0) as u32;
         let height = (rect.height() * effective_scale).ceil().max(1.0) as u32;
         let image = imaging::ExternalImage::new(
-            surface_id.image_id(),
+            imaging::ExternalImageId(surface_id.get()),
             width,
             height,
             peniko::ImageAlphaType::AlphaPremultiplied,
@@ -2687,7 +2849,7 @@ mod tests {
     #[test]
     fn stage_recorder_preserves_order_for_mixed_imaging_and_color_filter_filters() {
         let mut stage = ElementStage::default();
-        let mut recorder = StageRecorder::from_stage(&mut stage);
+        let mut recorder = StageRecorder::from_stage_for_test(&mut stage);
         let effect = crate::effects::ColorFilter::wgsl("return color;");
         let filters = [
             Filter::Imaging(ImagingFilter::Blur {
@@ -2763,7 +2925,7 @@ mod tests {
     #[test]
     fn shader_source_fill_records_placeholder_draw_inside_shader_source() {
         let mut stage = ElementStage::default();
-        let mut recorder = StageRecorder::from_stage(&mut stage);
+        let mut recorder = StageRecorder::from_stage_for_test(&mut stage);
         let effect = crate::effects::ShaderSource::wgsl("return vec4<f32>(uv, 0.0, 1.0);");
 
         recorder.shader_source_fill(
@@ -2949,7 +3111,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(2.0);
+        let plan = list.lower_composition_plan_for_test(2.0);
         assert_eq!(plan.items.len(), 1);
         let CompositionItem::CompositorSurface(layer) = &plan.items[0] else {
             panic!("expected promoted external image fill");
@@ -2991,7 +3153,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         let placements = plan
             .items
             .iter()
@@ -3043,7 +3205,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         assert_eq!(plan.items.len(), 1);
         let CompositionItem::Scene(layer) = &plan.items[0] else {
             panic!("expected coalesced scene layer");
@@ -3077,7 +3239,7 @@ mod tests {
             );
             finalize_subtree_sizes(&mut list, root_slot);
 
-            let plan = list.lower_composition_plan(1.0);
+            let plan = list.lower_composition_plan_for_test(1.0);
             let CompositionItem::Scene(layer) = &plan.items[0] else {
                 panic!("expected scene run");
             };
@@ -3114,7 +3276,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let first = list.lower_composition_plan(1.0);
+        let first = list.lower_composition_plan_for_test(1.0);
         let first_revision = match &first.items[0] {
             CompositionItem::Scene(layer) => {
                 assert_eq!(layer.bounds, Rect::new(0.0, 0.0, 50.0, 50.0));
@@ -3130,7 +3292,7 @@ mod tests {
             .display
             .snapshot = Some(updated);
 
-        let second = list.lower_composition_plan(1.0);
+        let second = list.lower_composition_plan_for_test(1.0);
         let second_revision = match &second.items[0] {
             CompositionItem::Scene(layer) => {
                 assert_eq!(layer.bounds, Rect::new(0.0, 0.0, 60.0, 50.0));
@@ -3165,7 +3327,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         let CompositionItem::Scene(layer) = &plan.items[0] else {
             panic!("expected scene layer");
         };
@@ -3196,7 +3358,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         assert_eq!(plan.items.len(), 1);
         let CompositionItem::Scene(layer) = &plan.items[0] else {
             panic!("expected one scene run");
@@ -3224,7 +3386,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         assert_eq!(plan.items.len(), 1);
         let CompositionItem::Scene(layer) = &plan.items[0] else {
             panic!("expected one scene run");
@@ -3257,7 +3419,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         assert_eq!(plan.items.len(), 1);
         let CompositionItem::Scene(layer) = &plan.items[0] else {
             panic!("expected one scene run");
@@ -3297,7 +3459,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         assert_eq!(plan.items.len(), 1);
         let CompositionItem::Scene(layer) = &plan.items[0] else {
             panic!("expected one scene run");
@@ -3343,7 +3505,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         assert_eq!(plan.items.len(), 1);
         let CompositionItem::Scene(layer) = &plan.items[0] else {
             panic!("expected one scene run");
@@ -3399,7 +3561,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         assert_eq!(plan.items.len(), 1);
         let CompositionItem::Scene(layer) = &plan.items[0] else {
             panic!("expected one scene run");
@@ -3439,7 +3601,7 @@ mod tests {
             .ordered
             .push(root_slot);
 
-        let _ = list.lower_composition_plan(1.0);
+        let _ = list.lower_composition_plan_for_test(1.0);
     }
 
     #[test]
@@ -3472,7 +3634,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         assert_eq!(plan.items.len(), 1);
         let CompositionItem::Scene(layer) = &plan.items[0] else {
             panic!("expected flattened scene run");
@@ -3536,7 +3698,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         assert_eq!(plan.items.len(), 3);
         let CompositionItem::Scene(before) = &plan.items[0] else {
             panic!("expected scene before compositor surface");
@@ -3579,7 +3741,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         assert_eq!(plan.items.len(), 1);
         let CompositionItem::CompositorSurface(layer) = &plan.items[0] else {
             panic!("expected direct compositor surface");
@@ -3616,7 +3778,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         assert_eq!(plan.items.len(), 1);
         let CompositionItem::Scene(layer) = &plan.items[0] else {
             panic!("expected flattened scene layer");
@@ -3680,7 +3842,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         assert_eq!(plan.items.len(), 5);
         assert!(matches!(plan.items[0], CompositionItem::Scene(_)));
         assert!(matches!(
@@ -3727,7 +3889,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         assert_eq!(plan.items.len(), 1);
 
         let CompositionItem::Scene(layer) = &plan.items[0] else {
@@ -3785,7 +3947,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         let scene_promotions = plan
             .items
             .iter()
@@ -3823,7 +3985,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         let scene_promotions = plan
             .items
             .iter()
@@ -3862,7 +4024,7 @@ mod tests {
         );
         finalize_subtree_sizes(&mut list, root_slot);
 
-        let plan = list.lower_composition_plan(1.0);
+        let plan = list.lower_composition_plan_for_test(1.0);
         assert_eq!(plan.items.len(), 1);
         let CompositionItem::Scene(layer) = &plan.items[0] else {
             panic!("expected flattened scene");

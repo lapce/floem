@@ -1717,11 +1717,20 @@ fn imaging_brush_from_floem_background(brush: FloemBrush) -> Result<ImagingBrush
         FloemBrush::Image(image_brush) => {
             let peniko::ImageBrush { image, sampler } = image_brush.0;
             match image {
-                FloemImage::Imaging(image) => {
+                FloemImage::Raster(image) => {
                     Ok(ImagingBrush::Image(ImageBrush(peniko::ImageBrush {
-                        image,
+                        image: imaging::Image::Raster(image),
                         sampler,
                     })))
+                }
+                FloemImage::Scene(image) => {
+                    Ok(ImagingBrush::Image(ImageBrush(peniko::ImageBrush {
+                        image: imaging::Image::Scene(image),
+                        sampler,
+                    })))
+                }
+                FloemImage::Surface(_) => {
+                    Err("capture background surface image brushes are not supported".to_string())
                 }
                 FloemImage::Source(_) => {
                     Err("capture background shader-source brushes are not supported".to_string())

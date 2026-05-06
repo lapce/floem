@@ -266,7 +266,7 @@ pub use effects::{
     AnimatableShaderUniforms, Brush, ColorFilter, ColorFilterShader, Composite, CompositorShader,
     Filter, GroupRef, Image, ImageBrush, ImageBrushRef, ImageRef, LayerFilter, LayerFilterShader,
     ShaderArgs, ShaderComposite, ShaderFrameUniform, ShaderSource, ShaderSourceImage,
-    ShaderSourceShader, ShaderTransition, ShaderUniform, ShaderUniforms, group_ref,
+    ShaderSourceShader, ShaderTransition, ShaderUniform, ShaderUniforms, SurfaceImage, group_ref,
 };
 pub use external_surface::{
     ExternalSurface, ExternalSurfaceError, ExternalSurfaceHandle, ExternalSurfaceId,

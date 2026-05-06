@@ -19,13 +19,17 @@ use imaging::{
     Composite as ImagingComposite, Filter as ImagingFilter, GroupRef as ImagingGroupRef,
     record::Clip,
 };
-use peniko::kurbo::{Affine, Size};
+use peniko::{
+    ImageData,
+    kurbo::{Affine, Size},
+};
 use subduction::wgpu::SurfaceColorSpace;
 
 use crate::{
     Application,
     animate::easing::{Bezier, Easing, Linear, Spring},
     app::UserEvent,
+    compositor_surface::CompositorSurfaceId,
     platform::{Duration, Instant},
 };
 
@@ -84,8 +88,13 @@ impl From<LayerFilter> for Filter {
 /// Image payload accepted by Floem image brushes.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Image {
-    /// Renderer-backed Imaging image content.
-    Imaging(imaging::Image),
+    /// Raster image content.
+    Raster(ImageData),
+    /// Retained scene image content.
+    Scene(imaging::SceneImage),
+    /// Compositor/external surface content lowered to an Imaging external image
+    /// during display-list processing.
+    Surface(SurfaceImage),
     /// Compositor-generated image content.
     Source(ShaderSourceImage),
 }
@@ -95,21 +104,41 @@ impl Image {
     #[must_use]
     pub fn as_ref(&self) -> ImageRef<'_> {
         match self {
-            Self::Imaging(image) => ImageRef::Imaging(image.as_ref()),
+            Self::Raster(image) => ImageRef::Raster(image),
+            Self::Scene(image) => ImageRef::Scene(image),
+            Self::Surface(image) => ImageRef::Surface(image),
             Self::Source(source) => ImageRef::Source(source),
         }
     }
 }
 
-impl From<imaging::Image> for Image {
-    fn from(image: imaging::Image) -> Self {
-        Self::Imaging(image)
+impl TryFrom<imaging::Image> for Image {
+    type Error = imaging::ExternalImage;
+
+    fn try_from(image: imaging::Image) -> Result<Self, Self::Error> {
+        match image {
+            imaging::Image::Raster(image) => Ok(Self::Raster(image)),
+            imaging::Image::Scene(image) => Ok(Self::Scene(image)),
+            imaging::Image::External(image) => Err(image),
+        }
     }
 }
 
-impl From<imaging::ExternalImage> for Image {
-    fn from(image: imaging::ExternalImage) -> Self {
-        Self::Imaging(image.into())
+impl From<ImageData> for Image {
+    fn from(image: ImageData) -> Self {
+        Self::Raster(image)
+    }
+}
+
+impl From<imaging::SceneImage> for Image {
+    fn from(image: imaging::SceneImage) -> Self {
+        Self::Scene(image)
+    }
+}
+
+impl From<SurfaceImage> for Image {
+    fn from(image: SurfaceImage) -> Self {
+        Self::Surface(image)
     }
 }
 
@@ -130,8 +159,12 @@ pub type Brush = imaging::Brush<ImageBrush, peniko::Gradient>;
 /// Borrowed Floem image payload.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ImageRef<'a> {
-    /// Borrowed renderer-backed Imaging image content.
-    Imaging(imaging::ImageRef<'a>),
+    /// Borrowed raster image content.
+    Raster(&'a ImageData),
+    /// Borrowed retained scene image content.
+    Scene(&'a imaging::SceneImage),
+    /// Borrowed compositor/external surface image content.
+    Surface(&'a SurfaceImage),
     /// Borrowed compositor-generated image content.
     Source(&'a ShaderSourceImage),
 }
@@ -140,7 +173,9 @@ impl ImageRef<'_> {
     #[must_use]
     pub fn to_owned(&self) -> Image {
         match self {
-            Self::Imaging(image) => Image::Imaging((*image).to_owned()),
+            Self::Raster(image) => Image::Raster((*image).clone()),
+            Self::Scene(image) => Image::Scene((*image).clone()),
+            Self::Surface(image) => Image::Surface((*image).clone()),
             Self::Source(source) => Image::Source((*source).clone()),
         }
     }
@@ -236,10 +271,23 @@ impl ImageBrush {
     }
 }
 
+impl From<Image> for ImageBrush {
+    fn from(image: Image) -> Self {
+        Self::new(image)
+    }
+}
+
 impl From<imaging::ImageBrush> for ImageBrush {
     fn from(image: imaging::ImageBrush) -> Self {
+        let image_payload = match image.image.clone() {
+            imaging::Image::Raster(image) => Image::Raster(image),
+            imaging::Image::Scene(image) => Image::Scene(image),
+            imaging::Image::External(_) => {
+                panic!("imaging::ExternalImage cannot be stored in a Floem image brush")
+            }
+        };
         Self(peniko::ImageBrush {
-            image: Image::Imaging(image.image.clone()),
+            image: image_payload,
             sampler: image.sampler,
         })
     }
@@ -247,16 +295,17 @@ impl From<imaging::ImageBrush> for ImageBrush {
 
 impl From<imaging::ImageBrushRef<'_>> for ImageBrush {
     fn from(image: imaging::ImageBrushRef<'_>) -> Self {
+        let image_payload = match image.image {
+            imaging::ImageRef::Raster(image) => Image::Raster(image.clone()),
+            imaging::ImageRef::Scene(image) => Image::Scene(image.clone()),
+            imaging::ImageRef::External(_) => {
+                panic!("imaging::ExternalImage cannot be stored in a Floem image brush")
+            }
+        };
         Self(peniko::ImageBrush {
-            image: Image::Imaging(image.image.to_owned()),
+            image: image_payload,
             sampler: image.sampler,
         })
-    }
-}
-
-impl From<imaging::ExternalImage> for ImageBrush {
-    fn from(image: imaging::ExternalImage) -> Self {
-        Self::new(image)
     }
 }
 
@@ -300,6 +349,27 @@ impl From<&ImageBrush> for Brush {
 pub struct ShaderSourceImage {
     pub source: ShaderSource,
     pub size: Size,
+}
+
+/// Floem image identity for compositor/external surface content.
+///
+/// Surface images stay as Floem image payloads in paint commands. They are
+/// converted to [`imaging::ExternalImage`] only when Floem lowers the display
+/// list for renderer/compositor consumption.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SurfaceImage {
+    /// Stable surface identity used to resolve submitted compositor content.
+    pub surface_id: CompositorSurfaceId,
+    /// Natural logical image size for brush sampling.
+    pub size: Size,
+}
+
+impl SurfaceImage {
+    /// Create a new surface image identity with an explicit natural size.
+    #[must_use]
+    pub fn new(surface_id: CompositorSurfaceId, size: Size) -> Self {
+        Self { surface_id, size }
+    }
 }
 
 /// A Floem group composite operation.

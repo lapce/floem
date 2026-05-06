@@ -142,8 +142,8 @@ pub use drag_window_area::*;
 mod drag_resize_window_area;
 pub use drag_resize_window_area::*;
 
-mod img;
-pub use img::*;
+mod image;
+pub use image::*;
 
 mod button;
 pub use button::*;

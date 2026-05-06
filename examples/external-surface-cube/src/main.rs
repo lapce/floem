@@ -4,11 +4,11 @@ use bytemuck::{Pod, Zeroable};
 use floem::{
     Application, Brush as FloemBrush, Composite, CompositorSurfaceImage, CompositorSurfaceProducer,
     CompositorSurfaceProducerConfig, Filter as FloemFilter, FrameRatePreference, GpuResources,
-    ImageBrush, LayerFilter, ShaderSource, ShaderUniform,
+    Image as FloemImage, ImageBrush, LayerFilter, ShaderSource, ShaderUniform,
     action::{capture_metal, inspect, set_animation_frame_callback},
     context::PaintCx,
     group_ref,
-    imaging::{ClipRef, ExternalImage, GeometryRef, ImagingSceneSink, PaintSink, Painter},
+    imaging::{ClipRef, GeometryRef, ImagingSceneSink, PaintSink, Painter},
     kurbo::{Affine, Point, Rect, Size, Vec2},
     peniko::Color,
     prelude::*,
@@ -82,11 +82,11 @@ fn cube_canvas(surface_image: CompositorSurfaceImage) -> impl IntoView {
     let source_uniforms = ShaderUniform::new([0.0_f32; 4]);
     drive_shimmer_uniforms(shimmer_uniforms.clone(), None);
     drive_shimmer_uniforms(source_uniforms.clone(), None);
-    let canvas_cube_image = cube_image;
+    let canvas_cube_image = cube_image.clone();
     let canvas = canvas(move |cx, size| {
         let layout = CubeCanvasLayout::new(size);
         layout.paint_source_panel(cx, source_uniforms.clone());
-        layout.paint_filtered_panel(cx, canvas_cube_image, shimmer_uniforms.clone());
+        layout.paint_filtered_panel(cx, &canvas_cube_image, shimmer_uniforms.clone());
     })
     .style(|s| {
         s.width(780.0)
@@ -149,7 +149,7 @@ impl CubeCanvasLayout {
     fn paint_filtered_panel(
         &self,
         cx: &mut PaintCx<'_>,
-        cube_image: ExternalImage,
+        cube_image: &FloemImage,
         shimmer_uniforms: ShaderUniform<[f32; 4]>,
     ) {
         let filters = [
@@ -184,16 +184,16 @@ impl CubeCanvasLayout {
         &self,
         painter: &mut Painter<'_, S, FloemFilter, Composite, FloemBrush>,
         effective_scale: f64,
-        cube_image: ExternalImage,
+        cube_image: &FloemImage,
     ) where
         S: PaintSink<FloemFilter, Composite, FloemBrush> + ImagingSceneSink + ?Sized,
     {
-        let image_size = Size::new(f64::from(cube_image.width), f64::from(cube_image.height));
+        let image_size = image_size(&cube_image);
         let image_origin = Point::new(
             self.cube.x0 + (self.cube.width() - image_size.width) * 0.5,
             self.cube.y0 + (self.cube.height() - image_size.height) * 0.5,
         );
-        let brush = FloemBrush::Image(ImageBrush::from(cube_image));
+        let brush = FloemBrush::Image(ImageBrush::from(cube_image.clone()));
         let mut text = TextLayout::new_with_text(
             "TEXTURE BRUSH",
             AttrsList::new(Attrs::new().font_size(34.0).weight(FontWeight::BOLD)),
@@ -221,6 +221,15 @@ impl CubeCanvasLayout {
                 image_origin.y - origin.y,
             ))),
         );
+    }
+}
+
+fn image_size(image: &FloemImage) -> Size {
+    match image {
+        FloemImage::Raster(image) => Size::new(f64::from(image.width), f64::from(image.height)),
+        FloemImage::Scene(image) => Size::new(f64::from(image.width()), f64::from(image.height())),
+        FloemImage::Surface(surface) => surface.size,
+        FloemImage::Source(source) => source.size,
     }
 }
 

@@ -381,7 +381,7 @@ impl View for Svg {
                         rect.width() / f64::from(image.width()),
                         rect.height() / f64::from(image.height()),
                     );
-                let image_brush = ImageBrush::new(imaging::Image::Scene(image));
+                let image_brush = ImageBrush::new(image);
                 cx.painter
                     .fill(source_rect, &Brush::Image(image_brush))
                     .transform(transform)
@@ -560,7 +560,10 @@ fn svg_brush_can_render_to_imaging_scene(brush: &Brush) -> bool {
     match brush {
         Brush::Solid(_) | Brush::Gradient(_) => true,
         Brush::Image(image_brush) => {
-            matches!(&image_brush.image, crate::effects::Image::Imaging(_))
+            matches!(
+                &image_brush.image,
+                crate::effects::Image::Raster(_) | crate::effects::Image::Scene(_)
+            )
         }
     }
 }
@@ -570,12 +573,19 @@ fn imaging_brush_from_svg_brush(brush: &Brush) -> Option<imaging::Brush> {
         Brush::Solid(color) => Some(imaging::Brush::Solid(*color)),
         Brush::Gradient(gradient) => Some(imaging::Brush::Gradient(gradient.clone())),
         Brush::Image(image_brush) => match &image_brush.image {
-            crate::effects::Image::Imaging(image) => Some(imaging::Brush::Image(
+            crate::effects::Image::Raster(image) => Some(imaging::Brush::Image(
                 imaging::ImageBrush(peniko::ImageBrush {
-                    image: image.clone(),
+                    image: imaging::Image::Raster(image.clone()),
                     sampler: image_brush.sampler,
                 }),
             )),
+            crate::effects::Image::Scene(image) => Some(imaging::Brush::Image(
+                imaging::ImageBrush(peniko::ImageBrush {
+                    image: imaging::Image::Scene(image.clone()),
+                    sampler: image_brush.sampler,
+                }),
+            )),
+            crate::effects::Image::Surface(_) => None,
             crate::effects::Image::Source(_) => None,
         },
     }

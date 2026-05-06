@@ -165,7 +165,7 @@ fn draw_checkerboard(
 
 fn checkerboard_tile_brush(light_color: Color, dark_color: Color) -> ImageBrush {
     let image = cached_checkerboard_tile_image(light_color, dark_color);
-    ImageBrush::new(Image::Imaging(image.into()))
+    ImageBrush::new(Image::Scene(image))
         .with_extend(Extend::Repeat)
         .with_quality(ImageQuality::Low)
 }

@@ -21,6 +21,7 @@ use std::rc::Rc;
 use crate::{
     BoxTree, ElementId,
     action::add_update_message,
+    compositor_surface::SurfaceImageRegistry,
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
     frame::frame_rate_due,
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
@@ -132,6 +133,7 @@ pub struct WindowState {
     pub(crate) layout_tree: Rc<RefCell<taffy::TaffyTree<LayoutNodeCx>>>,
     pub(crate) box_tree: Rc<RefCell<BoxTree>>,
     pub(crate) display_list: RetainedDisplayList,
+    pub(crate) surface_image_registry: Rc<RefCell<SurfaceImageRegistry>>,
     pub(crate) composition_plan: CompositionPlan,
     pub(crate) last_paint_stats: PaintStats,
 
@@ -261,6 +263,7 @@ impl WindowState {
             layout_tree,
             box_tree,
             display_list: RetainedDisplayList::default(),
+            surface_image_registry: Rc::new(RefCell::new(SurfaceImageRegistry::default())),
             composition_plan: CompositionPlan::new(),
             last_paint_stats: PaintStats::default(),
             pointer_capture_target: PointerCaptureMap::new(),

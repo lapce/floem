@@ -30,11 +30,6 @@ pub struct ExternalSurfaceId(CompositorSurfaceId);
 
 impl ExternalSurfaceId {
     #[must_use]
-    pub fn image_id(self) -> imaging::ExternalImageId {
-        self.0.image_id()
-    }
-
-    #[must_use]
     pub fn compositor_surface_id(self) -> CompositorSurfaceId {
         self.0
     }
@@ -73,18 +68,17 @@ impl ExternalSurface {
         self.id
     }
 
-    /// Creates an Imaging external image identifier for this surface.
+    /// Creates a Floem image identifier for this surface.
     ///
     /// This is useful for sharing identity with the display list, but direct
     /// external surfaces still require direct-compositable content on submit.
     #[must_use]
-    pub fn image(&self, width: u32, height: u32) -> imaging::ExternalImage {
-        imaging::ExternalImage::new(
-            self.id.image_id(),
-            width,
-            height,
-            peniko::ImageAlphaType::AlphaPremultiplied,
+    pub fn image(&self, width: u32, height: u32) -> crate::effects::Image {
+        crate::effects::SurfaceImage::new(
+            self.id.compositor_surface_id(),
+            peniko::kurbo::Size::new(f64::from(width), f64::from(height)),
         )
+        .into()
     }
 
     #[must_use]

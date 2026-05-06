@@ -213,10 +213,10 @@ fn capture_view(
     let window_capture_error = capture.window_capture_error.clone();
     let capture_ = capture.clone();
     let size = capture_.window_size;
-    let Imagege_width = size.width;
+    let image_width = size.width;
     let image_height = size.height;
     let image = if let Some(window) = window {
-        Img::new(window.clone()).into_any()
+        Image::new(window.clone()).into_any()
     } else {
         ().style(move |s| s.min_width(size.width).min_height(size.height))
             .into_any()
