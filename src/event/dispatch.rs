@@ -128,7 +128,7 @@ fn build_ancestor_chain(target: ElementId, box_tree: &BoxTree) -> SmallVec<[Elem
         // Prevent trivial cycles via path scan instead of HashSet allocation.
         // Path length is expected to be small (UI tree depth is usually small).
         if path.contains(&current) {
-            eprintln!("Warning: Detected cycle in box tree parent chain");
+            crate::floem_debug_log!("Warning: Detected cycle in box tree parent chain");
             break;
         }
 

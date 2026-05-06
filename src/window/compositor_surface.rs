@@ -724,7 +724,7 @@ impl CompositorSurfaceEntry {
                 .last_delivered_frame_index
                 .is_some_and(|last| frame_time.frame_index <= last);
         if crate::frame_source::frame_pacing_diag_enabled() && !self.frame_rate.is_full() {
-            eprintln!(
+            crate::floem_debug_log!(
                 "floem compositor surface pacing surface={:?} frame={} source_interval={:.3}ms display_interval={:.3}ms preference={:?} deliver={}",
                 surface_id,
                 frame_time.frame_index,

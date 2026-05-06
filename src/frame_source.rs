@@ -15,6 +15,14 @@ pub(crate) fn frame_pacing_diag_enabled() -> bool {
     std::env::var_os("FLOEM_FRAME_PACING_DIAG").is_some()
 }
 
+pub(crate) fn diagnostic_logs_enabled() -> bool {
+    std::env::var_os("FLOEM_DIAG").is_some()
+        || frame_pacing_diag_enabled()
+        || std::env::var_os("FLOEM_SUBDUCTION_TIMING_DIAG").is_some()
+        || std::env::var_os("FLOEM_CUBE_DIAG").is_some()
+        || std::env::var_os("FLOEM_RESIZE_DIAG").is_some()
+}
+
 pub(crate) fn duration_ms(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1000.0
 }
@@ -41,6 +49,7 @@ pub(crate) struct FrameSource {
     preferred_source_interval: Option<Duration>,
     observed_source_interval: Option<Duration>,
     last_logged_observed_source_interval: Option<Duration>,
+    latest_tick_received_at: Option<Instant>,
     preferred_source_millihertz: Option<u32>,
     active: bool,
 }
@@ -48,7 +57,7 @@ pub(crate) struct FrameSource {
 pub(crate) fn new_window_frame_source(window_id: WindowId, output_id: u32) -> FrameSource {
     let inner = SubductionFrameSource::new(OutputId(output_id), move |tick| {
         if frame_pacing_diag_enabled() {
-            eprintln!(
+            crate::floem_debug_log!(
                 "floem frame pacing display link callback window={:?} tick={} predicted={:?} refresh={:?}",
                 window_id, tick.frame_index, tick.predicted_present, tick.refresh_interval,
             );
@@ -62,6 +71,7 @@ pub(crate) fn new_window_frame_source(window_id: WindowId, output_id: u32) -> Fr
         preferred_source_interval: None,
         observed_source_interval: None,
         last_logged_observed_source_interval: None,
+        latest_tick_received_at: None,
         preferred_source_millihertz: None,
         active: false,
     }
@@ -104,7 +114,7 @@ impl FrameSource {
             raw_window_handle,
         };
         if frame_pacing_diag_enabled() {
-            eprintln!(
+            crate::floem_debug_log!(
                 "floem frame source target window={:?} monitor={:?} refresh_millihz={:?}",
                 self.window_id, target.monitor_name, target.refresh_millihertz,
             );
@@ -134,7 +144,7 @@ impl FrameSource {
         self.preferred_source_interval = Some(interval);
         self.preferred_source_millihertz = millihertz;
         if frame_pacing_diag_enabled() {
-            eprintln!(
+            crate::floem_debug_log!(
                 "floem frame source preferred window={:?} interval={:.3}ms hz={:.3} millihertz={:?} observed={:?}",
                 self.window_id,
                 duration_ms(interval),
@@ -148,7 +158,7 @@ impl FrameSource {
             self.inner
                 .set_preferred_frame_rate_millihertz(self.preferred_source_millihertz);
         } else if frame_pacing_diag_enabled() {
-            eprintln!(
+            crate::floem_debug_log!(
                 "floem frame source preferred deferred window={:?} millihertz={:?}",
                 self.window_id, self.preferred_source_millihertz,
             );
@@ -168,9 +178,9 @@ impl FrameSource {
             .unwrap_or(frame_interval);
         let display_timing = self.display_timing(frame_interval);
         if let Some(tick) = self.inner.latest_tick()
-            && let Some(predicted_present) = tick.predicted_present
+            && tick.predicted_present.is_some()
         {
-            let predicted_present = self.inner.host_to_instant(predicted_present);
+            let predicted_present = self.tick_predicted_present_instant(tick, now);
             return FrameTime {
                 now: predicted_present,
                 interval: PresentationInterval {
@@ -205,6 +215,7 @@ impl FrameSource {
     }
 
     pub(crate) fn receive_frame_tick(&mut self, tick: subduction_core::timing::FrameTick) {
+        self.latest_tick_received_at = Some(Instant::now());
         self.observed_source_interval = self
             .inner
             .latest_tick()
@@ -227,7 +238,7 @@ impl FrameSource {
             && self.last_logged_observed_source_interval != self.observed_source_interval
         {
             let interval = self.observed_source_interval.unwrap();
-            eprintln!(
+            crate::floem_debug_log!(
                 "floem frame source observed window={:?} interval={:.3}ms hz={:.3} preferred={:?}",
                 self.window_id,
                 duration_ms(interval),
@@ -240,6 +251,42 @@ impl FrameSource {
         self.inner.receive_frame_tick(tick);
     }
 
+    fn tick_predicted_present_instant(
+        &self,
+        tick: subduction_core::timing::FrameTick,
+        now: Instant,
+    ) -> Instant {
+        let Some(predicted_present) = tick.predicted_present else {
+            return now;
+        };
+        let absolute = self.inner.host_to_instant(predicted_present);
+        if absolute > now {
+            return absolute;
+        }
+
+        let relative = if predicted_present >= tick.now {
+            let tick_now = self.inner.host_to_instant(tick.now);
+            let tick_predicted = self.inner.host_to_instant(predicted_present);
+            let delta = tick_predicted.saturating_duration_since(tick_now);
+            self.latest_tick_received_at
+                .unwrap_or(now)
+                .checked_add(delta)
+                .unwrap_or(now)
+        } else {
+            now
+        };
+        if frame_pacing_diag_enabled() {
+            crate::floem_debug_log!(
+                "floem frame source stale predicted window={:?} tick={} absolute_late_by={:.3}ms relative_from_tick={:.3}ms",
+                self.window_id,
+                tick.frame_index,
+                now.saturating_duration_since(absolute).as_secs_f64() * 1000.0,
+                relative.saturating_duration_since(now).as_secs_f64() * 1000.0,
+            );
+        }
+        relative.max(now)
+    }
+
     pub(crate) fn latest_tick(&self) -> Option<subduction_core::timing::FrameTick> {
         self.inner.latest_tick()
     }
@@ -249,7 +296,7 @@ impl FrameSource {
         self.active = active;
         if changed && active {
             if frame_pacing_diag_enabled() {
-                eprintln!(
+                crate::floem_debug_log!(
                     "floem frame source preferred apply-on-active window={:?} millihertz={:?}",
                     self.window_id, self.preferred_source_millihertz,
                 );

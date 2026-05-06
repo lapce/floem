@@ -2960,7 +2960,6 @@ mod tests {
         let text =
             Rope::from("asdf\nposition: Some(EditorPosition::Offset(self.offset))\nasdf\nasdf");
         let (text_prov, mut lines) = make_lines(&text, 1., true);
-        println!("Breaks: {:?}", render_breaks(&text, &mut lines, FONT_SIZE));
 
         let rvline = lines.rvline_of_offset(&text_prov, 3, CursorAffinity::Backward);
         assert_eq!(rvline, RVLine::new(0, 0));
@@ -3303,7 +3302,6 @@ mod tests {
         // vs starting at zero and iterating to that index.
         for i in 0..x.len() {
             let nums = get_nums(i);
-            println!("i: {i}, #nums: {}, #&x[i..]: {}", nums.len(), x[i..].len());
             assert_eq!(nums, &x[i..], "failed at #{i}");
         }
 

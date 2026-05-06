@@ -205,6 +205,12 @@ pub(crate) enum UserEvent {
         render_end: crate::platform::Instant,
         gpu_end: crate::platform::Instant,
     },
+    SceneEffectReady {
+        window_id: WindowId,
+        key: CompositionKey,
+        signature: SceneRenderSignature,
+        gpu_end: crate::platform::Instant,
+    },
     LayerHostCommit {
         window_id: WindowId,
         committed_at: crate::platform::Instant,

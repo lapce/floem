@@ -65,6 +65,7 @@ struct LayerReport {
     name: String,
     last_presented_at: Option<Instant>,
     samples: VecDeque<Duration>,
+    smoothed_ms: Option<f64>,
     present_count: u64,
     missed_deadlines: u64,
     missed_presents: u64,
@@ -79,12 +80,18 @@ impl LayerReport {
             name: format!("Layer {layer_id}"),
             last_presented_at: None,
             samples: VecDeque::with_capacity(SAMPLE_COUNT),
+            smoothed_ms: None,
             present_count: 0,
             missed_deadlines: 0,
             missed_presents: 0,
             target_interval: None,
             source_interval: None,
         }
+    }
+
+    fn update_intervals(&mut self, target: Option<Duration>, source: Option<Duration>) {
+        self.target_interval = target;
+        self.source_interval = source;
     }
 }
 
@@ -233,7 +240,9 @@ impl Hud {
         let presented_at = info.presented_at;
         {
             let mut reports = self.inner.reports.borrow_mut();
-            reports.retain(|layer_id, _| active_layer_ids.contains(layer_id));
+            if !active_layer_ids.is_empty() {
+                reports.retain(|layer_id, _| active_layer_ids.contains(layer_id));
+            }
             for layer in &info.active_layers {
                 let report = reports
                     .entry(layer.layer_id)
@@ -243,8 +252,7 @@ impl Hud {
                         report.name = debug_name.clone();
                     }
                 }
-                report.target_interval = layer.target_frame_interval;
-                report.source_interval = layer.source_frame_interval;
+                report.update_intervals(layer.target_frame_interval, layer.source_frame_interval);
             }
             for layer in &info.layers {
                 let report = reports
@@ -256,8 +264,7 @@ impl Hud {
                     }
                 }
                 report.present_count += 1;
-                report.target_interval = layer.target_frame_interval;
-                report.source_interval = layer.source_frame_interval;
+                report.update_intervals(layer.target_frame_interval, layer.source_frame_interval);
                 if layer.missed_deadline {
                     report.missed_deadlines += 1;
                 }
@@ -273,7 +280,7 @@ impl Hud {
                         if threshold_ms.is_some_and(|threshold_ms| dt_ms > threshold_ms) {
                             report.missed_presents += 1;
                             if crate::frame_source::frame_pacing_diag_enabled() {
-                                eprintln!(
+                                crate::floem_debug_log!(
                                     "floem hud missed-present layer={} name={:?} dt={:.3}ms target={:?} threshold={:.3}ms frame_rate={:?} presented_at={:?} missed_total={} sample_count={}",
                                     layer.layer_id,
                                     report.name,
@@ -291,6 +298,11 @@ impl Hud {
                             report.samples.pop_front();
                         }
                         report.samples.push_back(dt);
+                        let dt_ms = duration_ms(dt);
+                        report.smoothed_ms = Some(match report.smoothed_ms {
+                            Some(previous) => previous * 0.9 + dt_ms * 0.1,
+                            None => dt_ms,
+                        });
                     }
                 }
             }
@@ -381,14 +393,20 @@ fn metrics_from_reports(reports: &BTreeMap<u32, LayerReport>) -> HudMetrics {
 fn cadence_miss_threshold_ms(target: Option<Duration>, source: Option<Duration>) -> Option<f64> {
     let target = target?;
     let target_ms = duration_ms(target);
-    let expected_max_gap_ms = match source {
-        Some(source) if !source.is_zero() && source < target => {
+    let Some(source) = source.filter(|source| !source.is_zero()) else {
+        return Some(target_ms * 1.5);
+    };
+
+    let expected_gap_ms = if source < target {
             let multiple = target.as_nanos().div_ceil(source.as_nanos()).max(1);
             duration_ms(source.saturating_mul(multiple.min(u32::MAX as u128) as u32))
-        }
-        _ => target_ms,
+    } else {
+        target_ms
     };
-    Some(expected_max_gap_ms.max(target_ms) * 1.1)
+
+    // A present cadence miss is the next display opportunity after the expected
+    // one, not normal callback/present feedback jitter around the target.
+    Some(expected_gap_ms.max(target_ms) + duration_ms(source) * 0.5)
 }
 
 fn metrics_from_report(report: &LayerReport) -> LayerMetrics {
@@ -424,7 +442,11 @@ fn metrics_from_report(report: &LayerReport) -> LayerMetrics {
     };
     if !report.samples.is_empty() {
         metrics.avg_ms = total_ms / report.samples.len() as f64;
-        metrics.fps = 1000.0 / metrics.avg_ms.max(0.001);
+        metrics.fps = 1000.0
+            / report
+                .smoothed_ms
+                .unwrap_or(metrics.avg_ms)
+                .max(0.001);
         metrics.min_ms = min_ms;
         metrics.max_ms = max_ms;
     }

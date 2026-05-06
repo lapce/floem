@@ -48,6 +48,7 @@
 //! - Only one view can be focused at a time.
 //!
 use std::{
+    collections::VecDeque,
     sync::{
         Arc, Condvar, Mutex,
         atomic::{AtomicUsize, Ordering},
@@ -61,7 +62,8 @@ use crate::paint::composition::CompositionKey;
 use crate::window::compositor::SceneRenderSignature;
 use imaging::{ImageRenderer, PaintSink, RenderSource, RgbaImage, record::Scene};
 use imaging_wgpu::{
-    ExternalImageResolver, ResolvedExternalImage, TextureRenderer, TextureViewTarget,
+    ExternalImageResolver, ResolvedExternalImage, TextureRenderSubmission, TextureRenderer,
+    TextureViewTarget,
 };
 use peniko::ImageData;
 use peniko::kurbo::Size;
@@ -524,8 +526,15 @@ struct GpuCallbackPumpInner {
 
 #[cfg(not(target_arch = "wasm32"))]
 struct GpuCallbackPumpState {
-    pending: usize,
+    pending: VecDeque<Option<wgpu::SubmissionIndex>>,
     stop: bool,
+}
+
+const GPU_CALLBACK_POLL_TIMEOUT: Duration = Duration::from_micros(100);
+
+#[cfg(not(target_arch = "wasm32"))]
+struct SceneFragmentRenderResult {
+    submission_index: Option<wgpu::SubmissionIndex>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -548,7 +557,7 @@ impl GpuCallbackPumpThread {
             inner: Arc::new(GpuCallbackPumpInner {
                 device,
                 state: Mutex::new(GpuCallbackPumpState {
-                    pending: 0,
+                    pending: VecDeque::new(),
                     stop: false,
                 }),
                 cvar: Condvar::new(),
@@ -586,34 +595,31 @@ impl Drop for GpuCallbackPumpThread {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl GpuCallbackPump {
-    fn begin_work(&self) {
+    fn wait_for(&self, submission_index: Option<wgpu::SubmissionIndex>) {
         let mut state = self.inner.state.lock().unwrap();
-        state.pending = state.pending.saturating_add(1);
-    }
-
-    fn wake(&self) {
+        state.pending.push_back(submission_index);
         self.inner.cvar.notify_one();
-    }
-
-    fn complete_work(&self) {
-        let mut state = self.inner.state.lock().unwrap();
-        state.pending = state.pending.saturating_sub(1);
-        if state.pending == 0 {
-            self.inner.cvar.notify_one();
-        }
     }
 
     fn run(self) {
         loop {
             let mut state = self.inner.state.lock().unwrap();
-            while state.pending == 0 && !state.stop {
+            while state.pending.is_empty() && !state.stop {
                 state = self.inner.cvar.wait(state).unwrap();
             }
             if state.stop {
                 break;
             }
+            let submission_index = state.pending.pop_front().flatten();
             drop(state);
-            let _ = self.inner.device.poll(wgpu::PollType::wait_indefinitely());
+            let result = self.inner.device.poll(wgpu::PollType::Wait {
+                submission_index: submission_index.clone(),
+                timeout: Some(GPU_CALLBACK_POLL_TIMEOUT),
+            });
+            if matches!(result, Err(wgpu::PollError::Timeout)) {
+                let mut state = self.inner.state.lock().unwrap();
+                state.pending.push_back(submission_index);
+            }
         }
     }
 }
@@ -714,7 +720,7 @@ impl SceneFragmentRendererPool {
                 std::thread::available_parallelism()
                     .map(usize::from)
                     .unwrap_or(1)
-                    .clamp(1, 4)
+                    .clamp(1, 8)
             })
             .max(1);
         #[cfg(not(target_arch = "wasm32"))]
@@ -827,7 +833,7 @@ impl SceneFragmentRenderWorker {
                                 clip: job.clip,
                                 render_size: job.render_size,
                             };
-                            let rendered = render_into_existing_texture_with_external_images(
+                            let render_result = render_into_existing_texture_with_external_images(
                                 &mut backend,
                                 &mut source,
                                 job.render_size,
@@ -836,10 +842,11 @@ impl SceneFragmentRenderWorker {
                             );
                             let render_end = Instant::now();
                             worker_in_flight.fetch_sub(1, Ordering::Relaxed);
-                            if rendered {
+                            if let Some(render_result) = render_result {
                                 send_scene_fragment_ready_after_gpu_work_done(
                                     &backend,
                                     gpu_callback_pump.clone(),
+                                    render_result.submission_index,
                                     completion,
                                     index,
                                     render_start,
@@ -869,7 +876,8 @@ impl SceneFragmentRenderWorker {
                                 job.render_size,
                                 &job.texture,
                                 job.external_images,
-                            );
+                            )
+                            .is_some();
                             let _ = response.send(rendered);
                             worker_in_flight.fetch_sub(1, Ordering::Relaxed);
                         }
@@ -1038,6 +1046,23 @@ fn send_scene_fragment_ready(
     render_end: Instant,
     gpu_end: Instant,
 ) {
+    if crate::frame_source::frame_pacing_diag_enabled() {
+        let now = Instant::now();
+        eprintln!(
+            "floem scene fragment ready key={:?} kind={:?} rendered={} worker={} cpu={:.3}ms render_end_to_gpu={:.3}ms gpu_to_callback={:.3}ms total_ready={:.3}ms",
+            completion.key,
+            completion.kind,
+            rendered,
+            worker_index,
+            render_end
+                .saturating_duration_since(render_start)
+                .as_secs_f64()
+                * 1000.0,
+            gpu_end.saturating_duration_since(render_end).as_secs_f64() * 1000.0,
+            now.saturating_duration_since(gpu_end).as_secs_f64() * 1000.0,
+            now.saturating_duration_since(render_start).as_secs_f64() * 1000.0,
+        );
+    }
     Application::send_proxy_event(UserEvent::SceneFragmentReady {
         window_id: completion.window_id,
         key: completion.key,
@@ -1055,6 +1080,7 @@ fn send_scene_fragment_ready(
 fn send_scene_fragment_ready_after_gpu_work_done(
     backend: &RendererSpec,
     gpu_callback_pump: Option<GpuCallbackPump>,
+    submission_index: Option<wgpu::SubmissionIndex>,
     completion: SceneFragmentRenderCompletion,
     worker_index: usize,
     render_start: Instant,
@@ -1071,32 +1097,33 @@ fn send_scene_fragment_ready_after_gpu_work_done(
         );
         return;
     };
-    if let Some(pump) = gpu_callback_pump {
-        pump.begin_work();
-        let callback_pump = pump.clone();
-        queue.on_submitted_work_done(move || {
-            send_scene_fragment_ready(
-                completion,
-                true,
-                worker_index,
-                render_start,
-                render_end,
-                Instant::now(),
-            );
-            callback_pump.complete_work();
-        });
-        pump.wake();
-        return;
-    }
-    queue.on_submitted_work_done(move || {
+    let callback: Box<dyn FnOnce(Instant) + Send> = Box::new(move |gpu_end| {
         send_scene_fragment_ready(
             completion,
             true,
             worker_index,
             render_start,
             render_end,
-            Instant::now(),
+            gpu_end,
         );
+    });
+    #[cfg(target_os = "macos")]
+    let callback =
+        match crate::gpu_completion::notify_after_metal_queue_completion(&queue, callback) {
+            Ok(()) => return,
+            Err(callback) => callback,
+        };
+    #[cfg(not(target_os = "macos"))]
+    let callback = callback;
+    if let Some(pump) = gpu_callback_pump {
+        queue.on_submitted_work_done(move || {
+            callback(Instant::now());
+        });
+        pump.wait_for(submission_index);
+        return;
+    }
+    queue.on_submitted_work_done(move || {
+        callback(Instant::now());
     });
     let _ = device.poll(wgpu::PollType::Poll);
 }
@@ -1108,12 +1135,12 @@ fn render_into_existing_texture_with_external_images(
     size: Size,
     texture: &wgpu::Texture,
     external_images: ExternalImageResources,
-) -> bool {
+) -> Option<SceneFragmentRenderResult> {
     let width = size.width.max(1.0) as u32;
     let height = size.height.max(1.0) as u32;
     let mut resolver = ExternalImageResourceResolver::new(external_images);
     match &mut backend.0 {
-        RendererSpecInner::Cpu(_) => false,
+        RendererSpecInner::Cpu(_) => None,
         RendererSpecInner::Gpu { backend, .. } => match &mut backend.backend {
             GpuRendererBackend::Texture(renderer) => renderer
                 .render_source_into_texture_with_external_images(
@@ -1121,7 +1148,8 @@ fn render_into_existing_texture_with_external_images(
                     texture.clone(),
                     &mut resolver,
                 )
-                .is_ok(),
+                .ok()
+                .map(scene_fragment_render_result),
             GpuRendererBackend::TextureView(renderer) => {
                 let view = texture.create_view(&wgpu::TextureViewDescriptor {
                     label: Some("floem render existing texture external-image target view"),
@@ -1133,9 +1161,17 @@ fn render_into_existing_texture_with_external_images(
                         TextureViewTarget::new(&view, width, height),
                         &mut resolver,
                     )
-                    .is_ok()
+                    .ok()
+                    .map(scene_fragment_render_result)
             }
         },
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn scene_fragment_render_result(submission: TextureRenderSubmission) -> SceneFragmentRenderResult {
+    SceneFragmentRenderResult {
+        submission_index: submission.submission_index,
     }
 }
 

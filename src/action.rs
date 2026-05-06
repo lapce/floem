@@ -136,20 +136,9 @@ pub fn current_theme() -> Option<Theme> {
 
 pub(crate) struct Timer {
     pub(crate) token: TimerToken,
-    pub(crate) kind: TimerKind,
     pub(crate) action: TimerAction,
     pub(crate) deadline: Instant,
     pub(crate) sequence: u64,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TimerKind {
-    Normal,
-    CompositorCommitDeadline {
-        window_id: WindowId,
-        target_deadline: Instant,
-        can_fire_early: bool,
-    },
 }
 
 pub(crate) enum TimerAction {
@@ -235,7 +224,6 @@ pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static)
     add_app_update_event(AppUpdateEvent::RequestTimer {
         timer: Timer {
             token,
-            kind: TimerKind::Normal,
             action: TimerAction::Ui {
                 window_id,
                 root,

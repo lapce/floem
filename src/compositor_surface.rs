@@ -674,7 +674,7 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
 
         if !args.visible {
             if diag {
-                eprintln!(
+                crate::floem_debug_log!(
                     "floem compositor surface provider skip surface={:?} frame={} reason=not_visible",
                     args.surface_id, args.frame_index,
                 );
@@ -688,7 +688,7 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
 
         if args.gpu_resources.is_none() {
             if diag {
-                eprintln!(
+                crate::floem_debug_log!(
                     "floem compositor surface provider skip surface={:?} frame={} reason=no_gpu_resources",
                     args.surface_id, args.frame_index,
                 );
@@ -702,7 +702,7 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
 
         if self.last_requested_frame_index == Some(args.frame_index) {
             if diag {
-                eprintln!(
+                crate::floem_debug_log!(
                     "floem compositor surface provider skip surface={:?} frame={} reason=already_requested content_changed={}",
                     args.surface_id, args.frame_index, frame_update.content_changed,
                 );
@@ -712,7 +712,7 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
         }
 
         if diag {
-            eprintln!(
+            crate::floem_debug_log!(
                 "floem compositor surface provider opportunity surface={:?} frame={} rect={:?} size_px={:.1}x{:.1} has_target={}",
                 args.surface_id,
                 args.frame_index,
@@ -763,7 +763,7 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
                 self.pending_request_started_at
                     .insert(args.frame_index, callback_started_at);
                 if diag {
-                    eprintln!(
+                    crate::floem_debug_log!(
                         "floem compositor surface provider decision surface={:?} frame={} decision=present",
                         args.surface_id, args.frame_index,
                     );
@@ -775,7 +775,7 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
                     self.release_acquired_target();
                 }
                 if diag {
-                    eprintln!(
+                    crate::floem_debug_log!(
                         "floem compositor surface provider decision surface={:?} frame={} decision=skip reason={reason:?}",
                         args.surface_id, args.frame_index,
                     );
@@ -784,7 +784,7 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
             }
             Some(Ok((SurfaceFrameCallbackDecision::None, false))) => {
                 if diag {
-                    eprintln!(
+                    crate::floem_debug_log!(
                         "floem compositor surface provider decision surface={:?} frame={} decision=none",
                         args.surface_id, args.frame_index,
                     );
@@ -796,7 +796,7 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
                     self.release_acquired_target();
                 }
                 if diag {
-                    eprintln!(
+                    crate::floem_debug_log!(
                         "floem compositor surface provider decision surface={:?} frame={} decision=error error={err:?}",
                         args.surface_id, args.frame_index,
                     );
@@ -805,7 +805,7 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
             }
             None => {
                 if diag {
-                    eprintln!(
+                    crate::floem_debug_log!(
                         "floem compositor surface provider decision surface={:?} frame={} decision=no_callback",
                         args.surface_id, args.frame_index,
                     );
@@ -851,7 +851,7 @@ impl CompositorSurfaceProducerProvider {
                         .remove(&frame.opportunity.frame_index)
                         .map(|started_at| Instant::now().saturating_duration_since(started_at));
                     if diag {
-                        eprintln!(
+                        crate::floem_debug_log!(
                             "floem compositor surface provider completion surface={:?} frame={} submitted size={}x{} resource_key={:?} observed_latency={:?}",
                             self.handle.id(),
                             frame.opportunity.frame_index,
@@ -878,7 +878,7 @@ impl CompositorSurfaceProducerProvider {
                     self.pending_request_started_at
                         .remove(&frame.opportunity.frame_index);
                     if diag {
-                        eprintln!(
+                        crate::floem_debug_log!(
                             "floem compositor surface provider completion surface={:?} frame={} skipped reason={:?}",
                             self.handle.id(),
                             frame.opportunity.frame_index,

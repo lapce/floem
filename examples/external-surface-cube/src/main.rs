@@ -19,7 +19,7 @@ use floem::{
 use wgpu::util::DeviceExt;
 
 const CUBE_SIZE: u32 = 640;
-const CUBE_TARGET_FPS: f64 = 60.0;
+const CUBE_TARGET_FPS: f64 = 120.0;
 
 fn app_view(window_id: WindowId) -> impl IntoView {
     let cube_frame_rate = FrameRatePreference::at_most(CUBE_TARGET_FPS).unwrap();
@@ -31,6 +31,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             ..CompositorSurfaceProducerConfig::default()
         },
     );
+    cube_producer.presents_with_transaction(false);
 
     Stack::vertical((
         "Compositor Surface as Image Brush".style(|s| {

@@ -1,6 +1,7 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
+    app::{Application, UserEvent},
     compositor_surface::{CompositorSurfaceContent, CompositorSurfaceId, ExternalTexture},
     effects::{Brush as FloemBrush, CompositorShader, CompositorShaderPass, Image as FloemImage},
     frame::FrameRatePreference,
@@ -112,7 +113,7 @@ impl WindowCompositor {
             self.scene_content_by_key.remove(key);
             self.scene_render_signatures.remove(key);
             if self.pending_scene_renders.remove(key).is_some() {
-                eprintln!(
+                crate::floem_debug_log!(
                     "floem compositor pending scene cancel reason=external_surface_invalidate key={:?} surface={:?}",
                     key, surface_id,
                 );
@@ -141,7 +142,7 @@ impl WindowCompositor {
         match subduction::LayerHost::from_window(window) {
             Ok(mut layer_host) => {
                 if crate::frame_source::frame_pacing_diag_enabled() {
-                    eprintln!(
+                    crate::floem_debug_log!(
                         "floem compositor layer host backend={}",
                         layer_host.backend_name()
                     );
@@ -156,7 +157,7 @@ impl WindowCompositor {
             }
             Err(err) => {
                 self.layer_host_failed = true;
-                eprintln!("floem compositor layer host unavailable: {err}");
+                crate::floem_debug_log!("floem compositor layer host unavailable: {err}");
             }
         }
     }
@@ -198,7 +199,7 @@ impl WindowCompositor {
             self.scene_content_by_key.remove(key);
             self.scene_render_signatures.remove(key);
             if self.pending_scene_renders.remove(key).is_some() {
-                eprintln!(
+                crate::floem_debug_log!(
                     "floem compositor pending scene cancel reason=layer_removed key={:?}",
                     key,
                 );
@@ -216,7 +217,7 @@ impl WindowCompositor {
         self.order = new_order;
         let changes = self.sync_layer_store();
         if crate::frame_source::frame_pacing_diag_enabled() {
-            eprintln!(
+            crate::floem_debug_log!(
                 "floem compositor layer tree layers={} roots={} plan_items={} scene_layers={} external_layers={} flattened_external_images={}",
                 self.layer_store.len(),
                 usize::from(self.root_layer.is_some()),
@@ -434,7 +435,7 @@ impl WindowCompositor {
                     matches!(item, CompositionItem::Scene(layer) if !layer.color_filters.is_empty())
                 })
                 .count();
-            eprintln!(
+            crate::floem_debug_log!(
                 "floem compositor render_scene_layers begin call={} plan_items={} scene_layers={} effect_scene_layers={}",
                 render_call_id,
                 plan.items.len(),
@@ -452,7 +453,7 @@ impl WindowCompositor {
             effective_scale,
         );
         if crate::frame_source::frame_pacing_diag_enabled() {
-            eprintln!(
+            crate::floem_debug_log!(
                 "floem compositor render_scene_layers end call={} scheduled_frames={}",
                 render_call_id, scheduled_scene_frames,
             );
@@ -468,6 +469,28 @@ impl WindowCompositor {
         !self.pending_scene_renders.is_empty()
     }
 
+    pub(crate) fn pending_scene_render_summary(&self) -> String {
+        let mut summary = String::new();
+        for (key, pending) in &self.pending_scene_renders {
+            if !summary.is_empty() {
+                summary.push_str(", ");
+            }
+            let effect_ready = pending.scene_texture.is_none() || pending.effect_submitted;
+            summary.push_str(&format!(
+                "{:?}:rev{} call{} content={} mask={} effect_submitted={} effect_ready={} effects={}",
+                key,
+                pending.content_revision,
+                pending.render_call_id,
+                pending.content_ready,
+                pending.mask_ready,
+                pending.effect_submitted,
+                effect_ready,
+                pending.effects.len(),
+            ));
+        }
+        summary
+    }
+
     pub(crate) fn has_pending_commit_work(&self) -> bool {
         self.pending_layer_changes
             .as_ref()
@@ -481,7 +504,7 @@ impl WindowCompositor {
         if pending_scene_renders > 0 {
             self.pending_scene_renders.clear();
             if crate::frame_source::frame_pacing_diag_enabled() {
-                eprintln!(
+                crate::floem_debug_log!(
                     "floem compositor pending scene cancel reason={} count={}",
                     reason, pending_scene_renders,
                 );
@@ -693,7 +716,7 @@ impl WindowCompositor {
                     revision: layer.content_revision,
                 };
                 if self.unsupported_publications.insert(failure) {
-                    eprintln!(
+                    crate::floem_debug_log!(
                         "floem compositor: scene layer {:?} target {}x{} exceeds max texture dimension {}",
                         layer.key, width, height, max_texture_dimension,
                     );
@@ -711,7 +734,7 @@ impl WindowCompositor {
                     revision: layer.content_revision,
                 };
                 if self.unsupported_publications.insert(failure) {
-                    eprintln!(
+                    crate::floem_debug_log!(
                         "floem compositor: scene layer {:?} renderer has no Subduction wgpu target format",
                         layer.key,
                     );
@@ -748,7 +771,7 @@ impl WindowCompositor {
                 self.external_image_resources_for_scene(layer, compositor_surfaces)
             else {
                 if crate::frame_source::frame_pacing_diag_enabled() {
-                    eprintln!(
+                    crate::floem_debug_log!(
                         "floem compositor scene render skip key={:?} reason=external_image_unavailable",
                         layer.key,
                     );
@@ -777,7 +800,7 @@ impl WindowCompositor {
                     revision: layer.content_revision,
                 };
                 if self.unsupported_publications.insert(failure) {
-                    eprintln!(
+                    crate::floem_debug_log!(
                         "floem compositor: scene layer {:?} could not acquire a Subduction wgpu target",
                         layer.key,
                     );
@@ -846,6 +869,7 @@ impl WindowCompositor {
                     analytic_clip,
                     content_ready: false,
                     mask_ready: !has_effect_mask,
+                    effect_submitted: false,
                     effects: render_effects,
                     format,
                     size,
@@ -855,7 +879,7 @@ impl WindowCompositor {
                 },
             );
             if crate::frame_source::frame_pacing_diag_enabled() {
-                eprintln!(
+                crate::floem_debug_log!(
                     "floem compositor scene render call={} key={:?} revision={} size={}x{} bounds={:?} transform={:?} commands={} external_images={} color_filters={}",
                     render_call_id,
                     layer.key,
@@ -891,13 +915,13 @@ impl WindowCompositor {
                     revision: layer.content_revision,
                 };
                 if self.unsupported_publications.insert(failure) {
-                    eprintln!(
+                    crate::floem_debug_log!(
                         "floem compositor: scene layer {:?} renderer cannot render into a Subduction wgpu target",
                         layer.key,
                     );
                 }
                 if crate::frame_source::frame_pacing_diag_enabled() {
-                    eprintln!(
+                    crate::floem_debug_log!(
                         "floem compositor scene render skip key={:?} reason=renderer_failed",
                         layer.key,
                     );
@@ -930,7 +954,7 @@ impl WindowCompositor {
                         revision: layer.content_revision,
                     };
                     if self.unsupported_publications.insert(failure) {
-                        eprintln!(
+                        crate::floem_debug_log!(
                             "floem compositor: scene layer {:?} renderer cannot render effect clip mask",
                             layer.key,
                         );
@@ -940,7 +964,7 @@ impl WindowCompositor {
                 }
             }
             if crate::frame_source::frame_pacing_diag_enabled() {
-                eprintln!(
+                crate::floem_debug_log!(
                     "floem compositor scene render scheduled key={:?} surface={:?} size={}x{}",
                     layer.key, surface_id, width, height,
                 );
@@ -952,6 +976,7 @@ impl WindowCompositor {
 
     pub(crate) fn complete_scene_render(
         &mut self,
+        window_id: WindowId,
         key: CompositionKey,
         signature: SceneRenderSignature,
         kind: SceneFragmentRenderKind,
@@ -975,7 +1000,7 @@ impl WindowCompositor {
                     revision: pending.content_revision,
                 };
                 if self.unsupported_publications.insert(failure) {
-                    eprintln!(
+                    crate::floem_debug_log!(
                         "floem compositor: scene layer render worker failed for revision {}",
                         pending.content_revision,
                     );
@@ -994,11 +1019,20 @@ impl WindowCompositor {
         if !pending.content_ready || !pending.mask_ready {
             return true;
         }
-        let Some(pending) = self.pending_scene_renders.remove(&key) else {
+
+        if self
+            .pending_scene_renders
+            .get(&key)
+            .is_some_and(|pending| pending.effect_submitted)
+        {
+            return true;
+        }
+
+        let Some(pending) = self.pending_scene_renders.get_mut(&key) else {
             return false;
         };
-        if let Some(scene_texture) = &pending.scene_texture
-            && let Err(err) = self.effect_renderer.render_effect_chain(
+        let effect_submission = if let Some(scene_texture) = &pending.scene_texture {
+            match self.effect_renderer.render_effect_chain(
                 &gpu_resources.device,
                 &gpu_resources.queue,
                 pending.render_call_id,
@@ -1012,22 +1046,28 @@ impl WindowCompositor {
                 &pending.effects,
                 pending.render_call_id,
                 pending.effective_scale,
-            )
-        {
-            let failure = UnsupportedPublication::SceneEffect {
-                key,
-                revision: pending.content_revision,
-            };
-            if self.unsupported_publications.insert(failure) {
-                eprintln!(
-                    "floem compositor: scene layer failed compositor color filter pass: {err}",
-                );
+            ) {
+                Ok(submission) => submission,
+                Err(err) => {
+                    let failure = UnsupportedPublication::SceneEffect {
+                        key: key.clone(),
+                        revision: pending.content_revision,
+                    };
+                    if self.unsupported_publications.insert(failure) {
+                        crate::floem_debug_log!(
+                            "floem compositor: scene layer failed compositor color filter pass: {err}",
+                        );
+                    }
+                    self.pending_scene_renders.remove(&key);
+                    return false;
+                }
             }
-            return false;
-        }
+        } else {
+            None
+        };
         #[cfg(debug_assertions)]
         if crate::frame_source::frame_pacing_diag_enabled() && !pending.effects.is_empty() {
-            eprintln!(
+            crate::floem_debug_log!(
                 "floem compositor scene effect rendered call={} key={:?} revision={} shaders={}",
                 pending.render_call_id,
                 key,
@@ -1035,6 +1075,60 @@ impl WindowCompositor {
                 pending.effects.len(),
             );
         }
+        if pending.scene_texture.is_some() {
+            pending.effect_submitted = true;
+            notify_after_gpu_queue_work(
+                &gpu_resources.device,
+                &gpu_resources.queue,
+                effect_submission,
+                {
+                    let key = key.clone();
+                    let signature = signature.clone();
+                    move |gpu_end| {
+                        Application::send_proxy_event(UserEvent::SceneEffectReady {
+                            window_id,
+                            key,
+                            signature,
+                            gpu_end,
+                        });
+                    }
+                },
+            );
+            return true;
+        }
+
+        self.publish_completed_scene_render(key, signature)
+    }
+
+    pub(crate) fn complete_scene_effect(
+        &mut self,
+        key: CompositionKey,
+        signature: SceneRenderSignature,
+        gpu_end: crate::platform::Instant,
+    ) -> bool {
+        let Some(pending) = self.pending_scene_renders.get(&key) else {
+            return false;
+        };
+        if pending.signature != signature || !pending.effect_submitted {
+            return false;
+        }
+        if crate::frame_source::frame_pacing_diag_enabled() {
+            crate::floem_debug_log!(
+                "floem compositor scene effect ready key={:?} revision={} gpu_end={:?}",
+                key, pending.content_revision, gpu_end,
+            );
+        }
+        self.publish_completed_scene_render(key, signature)
+    }
+
+    fn publish_completed_scene_render(
+        &mut self,
+        key: CompositionKey,
+        signature: SceneRenderSignature,
+    ) -> bool {
+        let Some(pending) = self.pending_scene_renders.remove(&key) else {
+            return false;
+        };
         let subduction::wgpu::SurfaceFrameCompletion::Submitted(frame) = pending.lease.submit()
         else {
             return false;
@@ -1156,7 +1250,7 @@ impl WindowCompositor {
                     surface_id: external.surface_id,
                 };
                 if self.unsupported_publications.insert(failure) {
-                    eprintln!(
+                    crate::floem_debug_log!(
                         "floem compositor: scene layer {:?} cannot flatten compositor surface {:?} without a submitted texture",
                         layer.key, external.surface_id,
                     );
@@ -1173,7 +1267,7 @@ impl WindowCompositor {
                     surface_id: external.surface_id,
                 };
                 if self.unsupported_publications.insert(failure) {
-                    eprintln!(
+                    crate::floem_debug_log!(
                         "floem compositor: scene layer {:?} cannot flatten non-Subduction compositor surface {:?}; refusing silent copy/fallback",
                         layer.key, external.surface_id,
                     );
@@ -1262,7 +1356,7 @@ impl WindowCompositor {
                                 version: layer.content_version,
                             };
                             if self.unsupported_publications.insert(failure) {
-                                eprintln!(
+                                crate::floem_debug_log!(
                                     "floem compositor: compositor surface {:?} submitted a non-Subduction texture {:?} for surface {:?}; refusing silent copy/fallback",
                                     layer.surface_id, texture.size, surface_id,
                                 );
@@ -1275,7 +1369,7 @@ impl WindowCompositor {
                             version: layer.content_version,
                         };
                         if self.unsupported_publications.insert(failure) {
-                            eprintln!(
+                            crate::floem_debug_log!(
                                 "floem compositor: compositor surface {:?} submitted CPU image {}x{} for surface {:?}; refusing silent copy/fallback",
                                 layer.surface_id, image.width, image.height, surface_id,
                             );
@@ -1334,7 +1428,7 @@ impl WindowCompositor {
         };
         for (layer_id, native_layer) in attachments {
             if let Err(err) = layer_host.attach_native_layer(*layer_id, native_layer) {
-                eprintln!(
+                crate::floem_debug_log!(
                     "floem compositor: failed to attach native layer {:?}: {err}",
                     layer_id,
                 );
@@ -1393,6 +1487,40 @@ fn frame_changes_empty(changes: &FrameChanges) -> bool {
         && !changes.topology_changed
 }
 
+fn notify_after_gpu_queue_work(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    submission_index: Option<wgpu::SubmissionIndex>,
+    callback: impl FnOnce(crate::platform::Instant) + Send + 'static,
+) {
+    let callback: Box<dyn FnOnce(crate::platform::Instant) + Send> = Box::new(callback);
+    #[cfg(target_os = "macos")]
+    {
+        let Err(callback) =
+            crate::gpu_completion::notify_after_metal_queue_completion(queue, callback)
+        else {
+            return;
+        };
+        queue.on_submitted_work_done(move || {
+            callback(crate::platform::Instant::now());
+        });
+        let _ = device.poll(wgpu::PollType::Wait {
+            submission_index,
+            timeout: None,
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        queue.on_submitted_work_done(move || {
+            callback(crate::platform::Instant::now());
+        });
+        let _ = device.poll(wgpu::PollType::Wait {
+            submission_index,
+            timeout: None,
+        });
+    }
+}
+
 struct PendingSceneRender {
     signature: SceneRenderSignature,
     layer_state: SceneCompositorLayer,
@@ -1402,6 +1530,7 @@ struct PendingSceneRender {
     analytic_clip: AnalyticClipSet,
     content_ready: bool,
     mask_ready: bool,
+    effect_submitted: bool,
     effects: Vec<CompositorShaderPass>,
     format: wgpu::TextureFormat,
     size: wgpu::Extent3d,
@@ -1728,12 +1857,12 @@ impl ShaderRenderer {
         effects: &[CompositorShaderPass],
         frame_index: u64,
         effective_scale: f64,
-    ) -> Result<(), String> {
+    ) -> Result<Option<wgpu::SubmissionIndex>, String> {
         let Some((last, leading)) = effects.split_last() else {
-            return Ok(());
+            return Ok(None);
         };
         if crate::frame_source::frame_pacing_diag_enabled() {
-            eprintln!(
+            crate::floem_debug_log!(
                 "floem compositor color filter chain call={} key={:?} revision={} shaders={} size={}x{}",
                 render_call_id,
                 key,
@@ -1767,7 +1896,7 @@ impl ShaderRenderer {
 
         for (index, effect) in leading.iter().enumerate() {
             let output_texture = &ping_pong[index % ping_pong.len()];
-            self.render_single_effect(
+            let _ = self.render_single_effect(
                 device,
                 queue,
                 render_call_id,
@@ -1784,7 +1913,7 @@ impl ShaderRenderer {
             input_texture = output_texture.clone();
         }
 
-        self.render_single_effect(
+        let submission_index = self.render_single_effect(
             device,
             queue,
             render_call_id,
@@ -1797,7 +1926,8 @@ impl ShaderRenderer {
             last,
             frame_index,
             effective_scale,
-        )
+        )?;
+        Ok(Some(submission_index))
     }
 
     fn render_single_effect(
@@ -1814,7 +1944,7 @@ impl ShaderRenderer {
         effect: &CompositorShaderPass,
         frame_index: u64,
         effective_scale: f64,
-    ) -> Result<(), String> {
+    ) -> Result<wgpu::SubmissionIndex, String> {
         let pipeline = self.pipeline(device, format, &effect.shader)?;
         let input_view = input.create_view(&wgpu::TextureViewDescriptor {
             label: Some("floem compositor color filter input view"),
@@ -1915,8 +2045,7 @@ impl ShaderRenderer {
             }
             pass.draw(0..3, 0..1);
         }
-        queue.submit([encoder.finish()]);
-        Ok(())
+        Ok(queue.submit([encoder.finish()]))
     }
 
     fn pipeline(

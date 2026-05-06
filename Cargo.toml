@@ -148,6 +148,8 @@ clipboard-win = "5.4"
 subduction_backend_windows = { path = "../subduction/subduction_backend_windows", package = "subduction_backend_windows" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+block = "0.1"
+metal = "0.33"
 objc2 = { version = "0.6", default-features = false }
 objc2-foundation = { version = "0.3", default-features = false }
 objc2-app-kit = { version = "0.3", features = [

@@ -190,6 +190,16 @@
 //!
 //! For additional information about animation, [see here](crate::animate::Animation).
 
+macro_rules! floem_debug_log {
+    ($($arg:tt)*) => {
+        if $crate::frame_source::diagnostic_logs_enabled() {
+            eprintln!($($arg)*);
+        }
+    };
+}
+
+pub(crate) use floem_debug_log;
+
 pub mod action;
 pub mod animate;
 mod app;
@@ -202,6 +212,7 @@ pub mod ext_event;
 pub mod external_surface;
 pub mod frame;
 pub(crate) mod frame_source;
+pub(crate) mod gpu_completion;
 pub(crate) mod hud;
 mod inspector;
 pub mod layout;

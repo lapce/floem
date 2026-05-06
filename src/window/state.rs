@@ -348,7 +348,7 @@ impl WindowState {
         for callback in callbacks {
             let is_due = callback.due_for_frame(frame_time);
             if crate::frame_source::frame_pacing_diag_enabled() && !callback.frame_rate.is_full() {
-                eprintln!(
+                crate::floem_debug_log!(
                     "floem begin callback pacing token={} frame={} source_interval={:.3}ms display_interval={:.3}ms preference={:?} due={}",
                     callback.token,
                     frame_time.frame_index,
