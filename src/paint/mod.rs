@@ -484,6 +484,12 @@ impl GlobalPaintCx<'_> {
         let snapshot = ElementSnapshot::from_box_tree(&box_tree, element_id);
         drop(box_tree);
 
+        let view_id = element_id.owning_id();
+        let view = view_id.view();
+        let view_state = view_id.state();
+        let font_size_cx = view_state.borrow().layout_props.font_size_cx();
+        let font_embolden = view_state.borrow().view_style_props.font_embolden();
+        let effective_scale = self.window_state.effective_scale();
         let mut recorder = {
             let element = self.window_state.display_list.element_mut(element_id);
             let stage = if is_post {
@@ -491,22 +497,19 @@ impl GlobalPaintCx<'_> {
             } else {
                 &mut element.paint
             };
-            let mut recorder =
-                StageRecorder::from_stage(stage, self.window_state.surface_image_registry.clone());
+            let mut recorder = StageRecorder::from_stage(
+                stage,
+                self.window_state.surface_image_registry.clone(),
+                font_size_cx,
+                effective_scale,
+            );
             recorder.clear();
             recorder
         };
 
         let layout_rect = layout_rect_local;
-        let view_id = element_id.owning_id();
-        let view = view_id.view();
-        let view_state = view_id.state();
         let is_vger = false;
         let world_transform = self.element_base_transform(element_id);
-        let font_size_cx = view_state.borrow().layout_props.font_size_cx();
-        let font_embolden = view_state.borrow().view_style_props.font_embolden();
-        let effective_scale = self.window_state.effective_scale();
-
         {
             // Create per-target PaintCx
             let mut cx = PaintCx {

@@ -416,8 +416,7 @@ impl View for Svg {
 
 impl SvgStyle {
     fn color_brush(&self) -> Option<Brush> {
-        self.svg_color()
-            .or_else(|| self.text_color().map(Brush::Solid))
+        self.svg_color().or_else(|| self.text_color())
     }
 }
 
@@ -455,7 +454,10 @@ pub fn brush_to_css_string(brush: &Brush) -> String {
                             format!("#{r:02x}{g:02x}{b:02x}")
                         };
 
-                        css.push_str(&format!("{} {}%", color_str, (stop.offset * 100.0).round()));
+                        let crate::unit::Length::Pct(offset) = stop.offset else {
+                            return "currentColor".to_string();
+                        };
+                        css.push_str(&format!("{} {}%", color_str, offset.round()));
 
                         if i < gradient.stops.len() - 1 {
                             css.push_str(", ");
@@ -538,7 +540,7 @@ fn build_svg_scene_image(
     let mut painter = Painter::new(&mut scene);
     if let Some(brush) = brush {
         let bounds = Rect::new(0.0, 0.0, f64::from(pixel_width), f64::from(pixel_height));
-        let brush = imaging_brush_from_svg_brush(brush)
+        let brush = imaging_brush_from_svg_brush(brush, bounds)
             .expect("cached SVG scene rendering requires a renderer-backed SVG brush");
         painter.with_masked_group(
             MaskMode::Alpha,
@@ -568,10 +570,12 @@ fn svg_brush_can_render_to_imaging_scene(brush: &Brush) -> bool {
     }
 }
 
-fn imaging_brush_from_svg_brush(brush: &Brush) -> Option<imaging::Brush> {
+fn imaging_brush_from_svg_brush(brush: &Brush, bounds: Rect) -> Option<imaging::Brush> {
     match brush {
         Brush::Solid(color) => Some(imaging::Brush::Solid(*color)),
-        Brush::Gradient(gradient) => Some(imaging::Brush::Gradient(gradient.clone())),
+        Brush::Gradient(gradient) => Some(imaging::Brush::Gradient(
+            gradient.to_peniko(bounds, &crate::unit::FontSizeCx::new(14.0, 16.0)),
+        )),
         Brush::Image(image_brush) => match &image_brush.image {
             crate::effects::Image::Raster(image) => Some(imaging::Brush::Image(
                 imaging::ImageBrush(peniko::ImageBrush {

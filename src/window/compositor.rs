@@ -66,6 +66,8 @@ pub(crate) struct WindowCompositor {
     metal_capture_active: bool,
     #[cfg(target_os = "macos")]
     metal_capture_frame_had_scene_render: bool,
+    #[cfg(target_os = "macos")]
+    metal_capture_render_call_id: Option<u64>,
 }
 
 /// Main-thread compositor runtime.
@@ -138,6 +140,7 @@ impl WindowCompositor {
     pub(crate) fn mark_metal_capture_active(&mut self) {
         self.metal_capture_active = true;
         self.metal_capture_frame_had_scene_render = false;
+        self.metal_capture_render_call_id = None;
     }
 
     pub(crate) fn ensure_platform_presenter(
@@ -472,12 +475,35 @@ impl WindowCompositor {
         #[cfg(target_os = "macos")]
         if self.metal_capture_active && scheduled_scene_frames > 0 {
             self.metal_capture_frame_had_scene_render = true;
+            self.metal_capture_render_call_id
+                .get_or_insert(render_call_id);
         }
         scheduled_scene_frames
     }
 
     pub(crate) fn has_pending_scene_renders(&self) -> bool {
         !self.pending_scene_renders.is_empty()
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(crate) fn metal_capture_frame_ready_to_commit(&self) -> bool {
+        let captured_render_call_ready =
+            self.metal_capture_render_call_id
+                .is_some_and(|render_call_id| {
+                    !self
+                        .pending_scene_renders
+                        .values()
+                        .any(|pending| pending.render_call_id == render_call_id)
+                });
+        self.metal_capture_active
+            && self.metal_capture_frame_had_scene_render
+            && captured_render_call_ready
+            && !self.pending_scene_publications.is_empty()
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(crate) fn metal_capture_waiting_for_rendered_frame(&self) -> bool {
+        self.metal_capture_active && self.metal_capture_frame_had_scene_render
     }
 
     pub(crate) fn pending_scene_render_summary(&self) -> String {
@@ -1062,7 +1088,7 @@ impl WindowCompositor {
                 pending.format,
                 pending.size,
                 &pending.effects,
-                pending.render_call_id,
+                pending.content_revision,
                 pending.effective_scale,
             ) {
                 Ok(submission) => submission,
@@ -1181,12 +1207,13 @@ impl WindowCompositor {
     ) -> Result<CompositorCaptureScene, String> {
         let mut scene = Scene::new();
         if let Some(background) = background {
+            let background_bounds = frame_size.to_rect().expand();
             scene.draw(Draw::Fill {
                 transform: Affine::IDENTITY,
                 fill_rule: Fill::NonZero,
-                brush: imaging_brush_from_floem_background(background)?,
+                brush: imaging_brush_from_floem_background(background, background_bounds)?,
                 brush_transform: None,
-                shape: Geometry::Rect(frame_size.to_rect().expand()),
+                shape: Geometry::Rect(background_bounds),
                 composite: Composite::default(),
             });
         }
@@ -1333,12 +1360,21 @@ impl WindowCompositor {
 
     #[cfg(target_os = "macos")]
     fn stop_metal_capture_after_rendered_frame(&mut self) {
+        let captured_render_call_ready =
+            self.metal_capture_render_call_id
+                .is_some_and(|render_call_id| {
+                    !self
+                        .pending_scene_renders
+                        .values()
+                        .any(|pending| pending.render_call_id == render_call_id)
+                });
         if self.metal_capture_active
             && self.metal_capture_frame_had_scene_render
-            && self.pending_scene_renders.is_empty()
+            && captured_render_call_ready
         {
             self.metal_capture_active = false;
             self.metal_capture_frame_had_scene_render = false;
+            self.metal_capture_render_call_id = None;
             subduction_backend_apple::stop_active_metal_capture();
         }
     }
@@ -1710,10 +1746,15 @@ impl ExternalTextureContent {
     }
 }
 
-fn imaging_brush_from_floem_background(brush: FloemBrush) -> Result<ImagingBrush, String> {
+fn imaging_brush_from_floem_background(
+    brush: FloemBrush,
+    bounds: Rect,
+) -> Result<ImagingBrush, String> {
     match brush {
         FloemBrush::Solid(color) => Ok(ImagingBrush::Solid(color)),
-        FloemBrush::Gradient(gradient) => Ok(ImagingBrush::Gradient(gradient)),
+        FloemBrush::Gradient(gradient) => Ok(ImagingBrush::Gradient(
+            gradient.to_peniko(bounds, &crate::unit::FontSizeCx::new(14.0, 16.0)),
+        )),
         FloemBrush::Image(image_brush) => {
             let peniko::ImageBrush { image, sampler } = image_brush.0;
             match image {
@@ -1936,6 +1977,9 @@ impl ShaderRenderer {
                 device,
                 queue,
                 render_call_id,
+                key,
+                index,
+                effects.len(),
                 &input_texture,
                 output_texture,
                 None,
@@ -1953,6 +1997,9 @@ impl ShaderRenderer {
             device,
             queue,
             render_call_id,
+            key,
+            leading.len(),
+            effects.len(),
             &input_texture,
             output,
             clip_mask,
@@ -1971,6 +2018,9 @@ impl ShaderRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         render_call_id: u64,
+        key: &CompositionKey,
+        pass_index: usize,
+        pass_count: usize,
         input: &wgpu::Texture,
         output: &wgpu::Texture,
         clip_mask: Option<&wgpu::Texture>,
@@ -2044,11 +2094,12 @@ impl ShaderRenderer {
                 },
             ],
         });
+        let pass_number = pass_index + 1;
         let encoder_label = format!(
-            "floem compositor color filter encoder call={render_call_id} revision={frame_index}"
+            "floem compositor color filter encoder call={render_call_id} key={key:?} revision={frame_index} pass={pass_number}/{pass_count}"
         );
         let pass_label = format!(
-            "floem compositor color filter pass call={render_call_id} revision={frame_index}"
+            "floem compositor color filter pass call={render_call_id} key={key:?} revision={frame_index} pass={pass_number}/{pass_count}"
         );
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some(&encoder_label),

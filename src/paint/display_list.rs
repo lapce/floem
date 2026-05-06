@@ -33,10 +33,12 @@ use crate::{
         Composite, CompositorShader, CompositorShaderPass, Filter, GroupRef, Image, LayerFilter,
     },
     frame::FrameRatePreference,
+    gradient::Gradient,
     paint::composition::{
         CompositionItem, CompositionKey, CompositionPlan, CompositorSurfaceLayer, PaintStage,
         SceneExternalImage, SceneLayer,
     },
+    unit::FontSizeCx,
     view::stacking::{StackingContextItem, collect_stacking_context_items_into},
 };
 
@@ -222,12 +224,15 @@ pub struct StageRecorder {
     color_filters: Vec<ShaderCommand>,
     effect_group_stack: Vec<Vec<ShaderGroupClose>>,
     surface_images: Rc<RefCell<SurfaceImageRegistry>>,
+    font_size_cx: FontSizeCx,
 }
 
 impl StageRecorder {
     pub(crate) fn from_stage(
         stage: &mut ElementStage,
         surface_images: Rc<RefCell<SurfaceImageRegistry>>,
+        font_size_cx: FontSizeCx,
+        _effective_scale: f64,
     ) -> Self {
         let scene = mem::take(&mut stage.scene);
         Self {
@@ -235,6 +240,7 @@ impl StageRecorder {
             color_filters: mem::take(&mut stage.color_filters),
             effect_group_stack: Vec::new(),
             surface_images,
+            font_size_cx,
         }
     }
 
@@ -243,6 +249,8 @@ impl StageRecorder {
         Self::from_stage(
             stage,
             Rc::new(RefCell::new(SurfaceImageRegistry::default())),
+            FontSizeCx::new(14.0, 16.0),
+            1.0,
         )
     }
 
@@ -260,8 +268,26 @@ impl StageRecorder {
         self.effect_group_stack.clear();
     }
 
-    fn register_surface_image(&self, surface: &crate::effects::SurfaceImage) -> imaging::Image {
-        imaging::Image::External(self.surface_images.borrow_mut().register(surface))
+    fn register_surface_image(
+        &self,
+        surface: &crate::effects::SurfaceImage,
+        bounds: Rect,
+    ) -> imaging::Image {
+        let source_size = surface.size.resolve(bounds, &self.font_size_cx);
+        imaging::Image::External(self.surface_images.borrow_mut().register(surface, source_size))
+    }
+
+    fn register_transformed_surface_image(
+        &self,
+        surface: &crate::effects::SurfaceImage,
+        transform: Affine,
+        bounds: Rect,
+    ) -> imaging::Image {
+        self.register_surface_image(surface, transform_rect_bbox(transform, bounds))
+    }
+
+    fn lower_gradient(&self, gradient: &Gradient, shape: GeometryRef<'_>) -> peniko::Gradient {
+        gradient.to_peniko(geometry_ref_bounds(shape), &self.font_size_cx)
     }
 
     pub fn push_effect_group(&mut self, group: GroupRef<'_>) {
@@ -508,6 +534,7 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                 );
             }
             crate::effects::Brush::Gradient(gradient) => {
+                let gradient = self.lower_gradient(&gradient, shape.clone());
                 let _ = self.scene.draw(
                     FillRef {
                         transform,
@@ -554,8 +581,10 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                         );
                     }
                     Image::Surface(surface) => {
+                        let bounds = geometry_ref_bounds(shape.clone());
                         let image = imaging::ImageBrush(peniko::ImageBrush {
-                            image: self.register_surface_image(&surface),
+                            image: self
+                                .register_transformed_surface_image(&surface, transform, bounds),
                             sampler,
                         });
                         let _ = self.scene.draw(
@@ -609,6 +638,7 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                 );
             }
             crate::effects::Brush::Gradient(gradient) => {
+                let gradient = self.lower_gradient(&gradient, shape.clone());
                 let _ = self.scene.draw(
                     StrokeRef {
                         transform,
@@ -657,7 +687,9 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                         );
                     }
                     Image::Surface(surface) => {
-                        let image = self.register_surface_image(&surface);
+                        let bounds = geometry_ref_bounds(shape.clone());
+                        let image =
+                            self.register_transformed_surface_image(&surface, transform, bounds);
                         let _ = self.scene.draw(
                             StrokeRef {
                                 transform,
@@ -730,6 +762,7 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                 ));
             }
             crate::effects::Brush::Gradient(gradient) => {
+                let gradient = gradient.to_peniko(Rect::ZERO, &self.font_size_cx);
                 let _ = self.scene.draw(imaging::record::Draw::GlyphRun(
                     GlyphRunRef {
                         font,
@@ -793,7 +826,15 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                         ));
                     }
                     Image::Surface(surface) => {
-                        let image = self.register_surface_image(&surface);
+                        let glyphs = glyphs.collect::<Vec<_>>();
+                        let bounds = if surface.size.needs_bounds() {
+                            let bounds =
+                                glyph_run_glyph_bounds(font_size, &glyphs).unwrap_or(Rect::ZERO);
+                            bounds
+                        } else {
+                            Rect::ZERO
+                        };
+                        let image = self.register_surface_image(&surface, bounds);
                         let _ = self.scene.draw(imaging::record::Draw::GlyphRun(
                             GlyphRunRef {
                                 font,
@@ -1273,7 +1314,6 @@ impl RetainedDisplayList {
                     &stage.scene,
                     command,
                     *external_occurrence,
-                    effective_scale,
                     surface_images,
                     snapshot.world_transform,
                 )
@@ -1928,6 +1968,28 @@ fn hash_u64(hash: &mut u64, value: u64) {
     *hash ^= mixed;
 }
 
+fn geometry_ref_bounds(shape: GeometryRef<'_>) -> Rect {
+    match shape {
+        GeometryRef::Rect(rect) => rect,
+        GeometryRef::RoundedRect(rounded) => rounded.rect(),
+        GeometryRef::Path(path) => path.bounding_box(),
+        GeometryRef::OwnedPath(path) => path.bounding_box(),
+    }
+}
+
+fn is_surface_image_sampling_transform(brush_transform: Option<Affine>) -> bool {
+    brush_transform.is_none() || brush_transform == Some(Affine::IDENTITY)
+}
+
+fn is_translation_transform(transform: Affine) -> bool {
+    let [a, b, c, d, _, _] = transform.as_coeffs();
+    const EPSILON: f64 = 1e-9;
+    (a - 1.0).abs() <= EPSILON
+        && b.abs() <= EPSILON
+        && c.abs() <= EPSILON
+        && (d - 1.0).abs() <= EPSILON
+}
+
 #[cfg(test)]
 fn test_surface_image_registry() -> Rc<RefCell<SurfaceImageRegistry>> {
     Rc::new(RefCell::new(SurfaceImageRegistry::default()))
@@ -1952,7 +2014,6 @@ fn promotable_external_image_fill(
     scene: &Scene,
     command: &Command,
     occurrence: u32,
-    effective_scale: f64,
     surface_images: &SurfaceImageRegistry,
     transform: Affine,
 ) -> Option<CompositorSurfaceLayer> {
@@ -1970,10 +2031,7 @@ fn promotable_external_image_fill(
     else {
         return None;
     };
-    if *fill_rule != Fill::NonZero
-        || brush_transform.is_some()
-        || composite.blend != BlendMode::default()
-    {
+    if *fill_rule != Fill::NonZero || composite.blend != BlendMode::default() {
         return None;
     }
     let Geometry::Rect(rect) = shape else {
@@ -1990,22 +2048,23 @@ fn promotable_external_image_fill(
     let imaging::Image::External(external) = image.image else {
         return None;
     };
-    let surface_id = surface_images.resolve(external.id)?;
+    let registered = surface_images.resolve_registered(external.id)?;
+    if !is_surface_image_sampling_transform(*brush_transform) {
+        return None;
+    }
+    if !is_translation_transform(*draw_transform) {
+        return None;
+    }
     let promoted_rect = transform_rect_bbox(*draw_transform, *rect);
-    let scale = effective_scale.max(f64::EPSILON);
-    let source_size = Size::new(
-        f64::from(external.width) / scale,
-        f64::from(external.height) / scale,
-    );
     let opacity = (composite.alpha * image.sampler.alpha).clamp(0.0, 1.0);
     Some(CompositorSurfaceLayer {
         key: CompositionKey::CompositorSurface {
-            surface_id,
+            surface_id: registered.slot_id,
             occurrence,
         },
-        surface_id,
+        surface_id: registered.slot_id,
         rect: promoted_rect,
-        source_size,
+        source_size: registered.source_size,
         transform,
         clip: None,
         opacity,
@@ -2015,7 +2074,7 @@ fn promotable_external_image_fill(
 fn external_images_in_command(
     scene: &Scene,
     command: &Command,
-    effective_scale: f64,
+    _effective_scale: f64,
     surface_images: &SurfaceImageRegistry,
 ) -> Vec<SceneExternalImage> {
     let Command::Draw(draw_id) = command else {
@@ -2026,14 +2085,12 @@ fn external_images_in_command(
             let Some(bounds) = draw_op_bounds(scene, *draw_id) else {
                 return Vec::new();
             };
-            external_images_in_brush(brush, bounds, effective_scale, surface_images)
+            external_images_in_brush(brush, bounds, surface_images)
                 .into_iter()
                 .collect()
         }
         Draw::GlyphRun(run) => glyph_run_bounds(run)
-            .and_then(|bounds| {
-                external_images_in_brush(&run.brush, bounds, effective_scale, surface_images)
-            })
+            .and_then(|bounds| external_images_in_brush(&run.brush, bounds, surface_images))
             .into_iter()
             .collect(),
         Draw::BlurredRoundedRect(_) | Draw::ScenePicture { .. } => Vec::new(),
@@ -2043,7 +2100,6 @@ fn external_images_in_command(
 fn external_images_in_brush(
     brush: &ImagingBrush,
     rect: Rect,
-    effective_scale: f64,
     surface_images: &SurfaceImageRegistry,
 ) -> Option<SceneExternalImage> {
     let ImagingBrush::Image(image) = brush else {
@@ -2052,16 +2108,12 @@ fn external_images_in_brush(
     let imaging::Image::External(external) = image.image else {
         return None;
     };
-    let surface_id = surface_images.resolve(external.id)?;
-    let scale = effective_scale.max(f64::EPSILON);
+    let registered = surface_images.resolve_registered(external.id)?;
     Some(SceneExternalImage {
         image_id: external.id,
-        surface_id,
+        surface_id: registered.slot_id,
         rect,
-        source_size: Size::new(
-            f64::from(external.width) / scale,
-            f64::from(external.height) / scale,
-        ),
+        source_size: registered.source_size,
     })
 }
 
@@ -2179,7 +2231,12 @@ fn draw_op_bounds(scene: &Scene, draw_id: DrawId) -> Option<Rect> {
 }
 
 fn glyph_run_bounds(run: &imaging::record::GlyphRun) -> Option<Rect> {
-    if run.glyphs.is_empty() {
+    glyph_run_glyph_bounds(run.font_size, &run.glyphs)
+        .map(|bounds| transform_rect_bbox(run.transform, bounds))
+}
+
+fn glyph_run_glyph_bounds(font_size: f32, glyphs: &[ImagingGlyph]) -> Option<Rect> {
+    if glyphs.is_empty() {
         return None;
     }
 
@@ -2187,11 +2244,11 @@ fn glyph_run_bounds(run: &imaging::record::GlyphRun) -> Option<Rect> {
     let mut min_y = f64::INFINITY;
     let mut max_x = f64::NEG_INFINITY;
     let mut max_y = f64::NEG_INFINITY;
-    let advance_pad = f64::from(run.font_size) * 0.75;
-    let ascent = f64::from(run.font_size);
-    let descent = f64::from(run.font_size) * 0.25;
+    let advance_pad = f64::from(font_size) * 0.75;
+    let ascent = f64::from(font_size);
+    let descent = f64::from(font_size) * 0.25;
 
-    for glyph in &run.glyphs {
+    for glyph in glyphs {
         let x = f64::from(glyph.x);
         let y = f64::from(glyph.y);
         min_x = min_x.min(x);
@@ -2200,10 +2257,7 @@ fn glyph_run_bounds(run: &imaging::record::GlyphRun) -> Option<Rect> {
         max_y = max_y.max(y + descent);
     }
 
-    Some(transform_rect_bbox(
-        run.transform,
-        Rect::new(min_x, min_y, max_x, max_y),
-    ))
+    Some(Rect::new(min_x, min_y, max_x, max_y))
 }
 
 fn geometry_bounds(geometry: &Geometry) -> Rect {
@@ -2821,6 +2875,23 @@ mod tests {
         }
     }
 
+    fn external_image_fill_draw_with_transform(
+        surface_id: crate::compositor_surface::CompositorSurfaceId,
+        rect: Rect,
+        effective_scale: f64,
+        transform: Affine,
+    ) -> Draw {
+        let mut draw = external_image_fill_draw(surface_id, rect, effective_scale);
+        if let Draw::Fill {
+            transform: draw_transform,
+            ..
+        } = &mut draw
+        {
+            *draw_transform = transform;
+        }
+        draw
+    }
+
     fn scene_with_draw(draw: Draw) -> Scene {
         let mut scene = Scene::new();
         let _ = scene.draw(draw);
@@ -3127,6 +3198,61 @@ mod tests {
                 occurrence: 0,
             }
         );
+    }
+
+    #[test]
+    fn lower_composition_plan_promotes_translated_external_image_fill() {
+        let surface_id = crate::compositor_surface::CompositorSurfaceId::test_new(71);
+        let mut list = RetainedDisplayList::default();
+        let rect = Rect::new(0.0, 0.0, 40.0, 30.0);
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::IDENTITY, None),
+            scene_with_draw(external_image_fill_draw_with_transform(
+                surface_id,
+                rect,
+                1.0,
+                Affine::translate((12.0, 18.0)),
+            )),
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let plan = list.lower_composition_plan_for_test(1.0);
+        assert_eq!(plan.items.len(), 1);
+        let CompositionItem::CompositorSurface(layer) = &plan.items[0] else {
+            panic!("expected translated external image fill to promote");
+        };
+        assert_eq!(layer.surface_id, surface_id);
+        assert_eq!(layer.rect, Rect::new(12.0, 18.0, 52.0, 48.0));
+    }
+
+    #[test]
+    fn lower_composition_plan_does_not_promote_scaled_external_image_fill() {
+        let surface_id = crate::compositor_surface::CompositorSurfaceId::test_new(72);
+        let mut list = RetainedDisplayList::default();
+        let rect = Rect::new(0.0, 0.0, 40.0, 30.0);
+        let (root_slot, _root_id) = attach_node(
+            &mut list,
+            None,
+            snapshot(Affine::IDENTITY, None),
+            scene_with_draw(external_image_fill_draw_with_transform(
+                surface_id,
+                rect,
+                1.0,
+                Affine::scale_non_uniform(0.5, 2.0),
+            )),
+            Scene::new(),
+        );
+        finalize_subtree_sizes(&mut list, root_slot);
+
+        let plan = list.lower_composition_plan_for_test(1.0);
+        assert_eq!(plan.items.len(), 1);
+        let CompositionItem::Scene(layer) = &plan.items[0] else {
+            panic!("expected scaled external image fill to remain in scene");
+        };
+        assert_eq!(layer.external_images.len(), 1);
     }
 
     #[test]

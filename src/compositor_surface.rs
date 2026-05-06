@@ -1,7 +1,7 @@
 //! Compositor-owned image surfaces.
 //!
 //! This module models compositor content that still behaves like an image in
-//! the Floem display list. A [`CompositorSurfaceImage`] is the paint-facing
+//! the Floem display list. A [`SurfaceView`] is the paint-facing
 //! identity used by views and `imaging::ImageBrush`. A
 //! [`CompositorSurfaceProducer`] is the producer-facing handle that renders
 //! frames for that image into Subduction-owned wgpu targets.
@@ -15,9 +15,8 @@
 //!
 //! Use this API when produced content should be placed by the view tree and
 //! must remain correct under normal Floem paint operations. Use
-//! [`crate::external_surface::ExternalSurface`] when the producer owns direct
-//! compositor content and submission should fail instead of falling back to
-//! renderer sampling.
+//! [`crate::external_surface::ExternalSurface`] when content is submitted
+//! directly by external code instead of through Floem-owned frame opportunities.
 
 use rustc_hash::FxHashMap;
 use std::{
@@ -43,15 +42,20 @@ use crate::{
     gpu_resources::GpuResources,
 };
 
-static NEXT_COMPOSITOR_SURFACE_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_SURFACE_SLOT_ID: AtomicU64 = AtomicU64::new(1);
 
-/// Stable window-local identity for a compositor-owned surface slot.
+/// Stable window-local identity for submitted surface content.
+///
+/// A surface slot is the shared content identity behind both compositor-surface
+/// producers and direct external surfaces. It is not itself a platform layer
+/// or a producer; it is the slot Floem uses to connect submitted frames to
+/// [`SurfaceView`] images during display-list lowering and composition.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct CompositorSurfaceId(u64);
+pub struct SurfaceSlotId(u64);
 
-impl CompositorSurfaceId {
+impl SurfaceSlotId {
     pub(crate) fn next() -> Self {
-        Self(NEXT_COMPOSITOR_SURFACE_ID.fetch_add(1, Ordering::Relaxed))
+        Self(NEXT_SURFACE_SLOT_ID.fetch_add(1, Ordering::Relaxed))
     }
 
     #[must_use]
@@ -65,25 +69,40 @@ impl CompositorSurfaceId {
     }
 }
 
+/// Backwards-compatible name for older compositor-surface APIs.
+///
+/// New code should use [`SurfaceSlotId`], because the same slot identity is
+/// used by compositor-surface producers and external surfaces.
+pub type CompositorSurfaceId = SurfaceSlotId;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct SurfaceImageKey {
-    surface_id: CompositorSurfaceId,
+    image_id: crate::effects::SurfaceImageId,
     width: u32,
     height: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct RegisteredSurfaceImage {
+    pub slot_id: SurfaceSlotId,
+    pub source_size: Size,
 }
 
 /// Window-local registry for compositor surface image brush payloads.
 ///
 /// Floem records surface images as Floem-owned image values first. During
-/// display-list lowering the window state registers each `(surface, size)` pair
-/// here and receives an `imaging::ExternalImage` id for renderer-facing scene
-/// commands. Composition planning resolves those ids through this side table
-/// instead of relying on bit patterns inside `ExternalImageId`.
+/// display-list lowering the window state registers each `(image, resolved
+/// size)` pair here and receives an `imaging::ExternalImage` id for
+/// renderer-facing scene commands. Separate image handles can reference the
+/// same producer surface without sharing source-size state. Composition
+/// planning resolves those ids through this side table instead of relying on
+/// bit patterns inside `ExternalImageId`.
 #[derive(Debug)]
 pub(crate) struct SurfaceImageRegistry {
     next_id: u64,
     by_key: FxHashMap<SurfaceImageKey, imaging::ExternalImageId>,
     by_id: FxHashMap<imaging::ExternalImageId, SurfaceImageKey>,
+    by_registered_id: FxHashMap<imaging::ExternalImageId, RegisteredSurfaceImage>,
 }
 
 impl Default for SurfaceImageRegistry {
@@ -92,6 +111,7 @@ impl Default for SurfaceImageRegistry {
             next_id: 1,
             by_key: FxHashMap::default(),
             by_id: FxHashMap::default(),
+            by_registered_id: FxHashMap::default(),
         }
     }
 }
@@ -100,11 +120,12 @@ impl SurfaceImageRegistry {
     pub(crate) fn register(
         &mut self,
         image: &crate::effects::SurfaceImage,
+        source_size: Size,
     ) -> imaging::ExternalImage {
         let key = SurfaceImageKey {
-            surface_id: image.surface_id,
-            width: image.size.width.ceil().max(1.0) as u32,
-            height: image.size.height.ceil().max(1.0) as u32,
+            image_id: image.image_id,
+            width: source_size.width.ceil().max(1.0) as u32,
+            height: source_size.height.ceil().max(1.0) as u32,
         };
         let id = if let Some(id) = self.by_key.get(&key).copied() {
             id
@@ -115,6 +136,13 @@ impl SurfaceImageRegistry {
             self.by_id.insert(id, key);
             id
         };
+        self.by_registered_id.insert(
+            id,
+            RegisteredSurfaceImage {
+                slot_id: image.slot_id,
+                source_size,
+            },
+        );
         imaging::ExternalImage::new(
             id,
             key.width,
@@ -123,16 +151,19 @@ impl SurfaceImageRegistry {
         )
     }
 
-    pub(crate) fn resolve(
+    pub(crate) fn resolve_registered(
         &self,
         image_id: imaging::ExternalImageId,
-    ) -> Option<CompositorSurfaceId> {
-        if let Some(key) = self.by_id.get(&image_id) {
-            return Some(key.surface_id);
+    ) -> Option<RegisteredSurfaceImage> {
+        if let Some(registered) = self.by_registered_id.get(&image_id) {
+            return Some(*registered);
         }
         #[cfg(test)]
         {
-            Some(CompositorSurfaceId(image_id.0))
+            Some(RegisteredSurfaceImage {
+                slot_id: SurfaceSlotId(image_id.0),
+                source_size: Size::new(0.0, 0.0),
+            })
         }
         #[cfg(not(test))]
         {
@@ -143,68 +174,63 @@ impl SurfaceImageRegistry {
 
 /// Paint-facing identity for compositor-produced image content.
 ///
-/// `CompositorSurfaceImage` is the consumer side of the API. It gives the view
+/// `SurfaceView` is the consumer side of the API. It gives the view
 /// tree a stable image identity, but it does not render frames itself. Use
-/// [`CompositorSurfaceImage::image`] to create the Floem image payload that an
+/// [`SurfaceView::image`] to create the Floem image payload that an
 /// `ImageBrush` paints.
 ///
-/// The same image can be placed more than once and at more than one source
-/// size. Floem dedupes equivalent placements before asking the producer for
-/// work. At composition time each placement may either be promoted to a
-/// compositor layer or sampled by the renderer, depending on the surrounding
-/// display-list state.
+/// The same surface can be viewed through more than one image handle and at
+/// more than one source size. Each [`SurfaceView::image`] call
+/// creates a distinct image handle; clones of that handle preserve identity.
+/// At composition time each placement may either be promoted to a compositor
+/// layer or sampled by the renderer, depending on the surrounding display-list
+/// state.
 ///
-/// This differs from [`crate::external_surface::ExternalSurface`]. External
-/// surfaces are direct-composition only and reject unsupported submissions.
-/// `CompositorSurfaceImage` is allowed to flatten when that is required for
-/// correct clips, masks, filters, effects, or grouped rendering.
-#[derive(Clone, Debug)]
-pub struct CompositorSurfaceImage {
-    id: CompositorSurfaceId,
+/// A view can come from either a [`CompositorSurfaceProducer`] or an
+/// [`crate::external_surface::ExternalSurface`]. The producer/external handle
+/// owns frame production and presentation policy; `SurfaceView` only describes
+/// how that submitted content is used as an image in paint.
+#[derive(Clone, Copy, Debug)]
+pub struct SurfaceView {
+    slot_id: SurfaceSlotId,
     window_id: WindowId,
-    config: CompositorSurfaceConfig,
 }
 
-impl CompositorSurfaceImage {
+impl SurfaceView {
     #[must_use]
-    pub fn new(window_id: WindowId, config: CompositorSurfaceConfig) -> Self {
-        let surface = Self {
-            id: CompositorSurfaceId::next(),
-            window_id,
-            config,
-        };
-        surface
-            .handle()
-            .set_frame_rate_preference(surface.config.frame_rate);
-        surface
+    pub(crate) fn new(window_id: WindowId, slot_id: SurfaceSlotId) -> Self {
+        Self { slot_id, window_id }
     }
 
     #[must_use]
-    pub fn id(&self) -> CompositorSurfaceId {
-        self.id
+    pub fn slot_id(&self) -> SurfaceSlotId {
+        self.slot_id
+    }
+
+    #[must_use]
+    pub fn id(&self) -> SurfaceSlotId {
+        self.slot_id
     }
 
     /// Creates a Floem image handle for this surface at `size`.
     ///
     /// The returned image can be used with `floem::ImageBrush`. `size` is the
-    /// logical source size for this brush placement. It does not create a
-    /// new surface identity: multiple calls to `image` return handles for the
-    /// same submitted compositor content with different advertised source
-    /// sizes.
+    /// logical source size for this brush placement. It may be absolute or
+    /// length-based; length-based sizes are resolved against the painted
+    /// geometry bounds during display-list lowering. It does not create a new
+    /// surface identity: multiple calls to `image` return handles for the same
+    /// submitted compositor content with different advertised source sizes.
     ///
-    /// For producer-backed surfaces created with
-    /// [`CompositorSurfaceProducer::new_image`], that factory's `size` is only
-    /// the initial/preferred producer target size. Each `image(size)` placement
-    /// can request a target sized for that placement. Repeated placements with
-    /// the same surface id and source size are deduped before the producer is
-    /// asked for work.
+    /// Each `image(size)` call creates a distinct image handle for the same
+    /// submitted surface content. Cloning that handle preserves its identity;
+    /// reusing it at the same resolved source size is deduped during lowering.
     ///
     /// If the brush is used in a simple promotable fill, Floem may publish the
     /// surface directly as a compositor layer. If active group state requires
     /// flattening, the renderer samples the same submitted surface content.
     #[must_use]
-    pub fn image(&self, size: Size) -> crate::effects::Image {
-        crate::effects::SurfaceImage::new(self.id, size).into()
+    pub fn image(&self, size: impl Into<crate::effects::ImageSize>) -> crate::effects::Image {
+        crate::effects::SurfaceImage::new(self.slot_id, size).into()
     }
 
     #[must_use]
@@ -213,57 +239,11 @@ impl CompositorSurfaceImage {
     }
 
     #[must_use]
-    pub fn config(&self) -> &CompositorSurfaceConfig {
-        &self.config
-    }
-
-    #[must_use]
     pub fn handle(&self) -> CompositorSurfaceHandle {
         CompositorSurfaceHandle {
-            id: self.id,
+            id: self.slot_id,
             window_id: self.window_id,
         }
-    }
-
-    pub fn submit_texture(&self, texture: ExternalTexture) {
-        self.handle().submit_texture(texture);
-    }
-
-    pub fn submit_image(&self, image: ImageData) {
-        self.handle().submit_image(image);
-    }
-
-    pub fn clear(&self) {
-        self.handle().clear();
-    }
-
-    pub fn request_frame(&self) {
-        self.handle().request_frame();
-    }
-
-    pub fn set_provider(&self, provider: CompositorSurfaceProviderHandle) {
-        self.handle().set_provider(provider);
-    }
-
-    /// Sets the frame-rate preference for this surface identity.
-    ///
-    /// Use this when a plain maximum FPS is not precise enough. For example,
-    /// `FrameRatePreference::preferred(60.0)?.minimum(50.0)?.build()` allows a
-    /// 48-75 Hz VRR display to run at 60 fps, while still rejecting 37.5 fps as
-    /// too low on fixed 75 Hz and choosing 75 fps instead.
-    pub fn set_frame_rate_preference(&self, frame_rate: FrameRatePreference) {
-        self.handle().set_frame_rate_preference(frame_rate);
-    }
-
-    /// Sets whether submitted content publishes with the window compositor transaction.
-    ///
-    /// The default is `true`. Transaction presentation keeps this surface in
-    /// sync with other Floem layers. Passing `false` allows independent
-    /// compositor publication for future content until the setting is changed
-    /// again.
-    pub fn presents_with_transaction(&self, presents_with_transaction: bool) {
-        self.handle()
-            .presents_with_transaction(presents_with_transaction);
     }
 }
 
@@ -306,12 +286,12 @@ impl Default for CompositorSurfaceProducerConfig {
     }
 }
 
-/// Producer-side frame source for a [`CompositorSurfaceImage`].
+/// Producer-side frame source for a [`SurfaceView`].
 ///
-/// A producer supplies rendered frames for one [`CompositorSurfaceImage`]
+/// A producer supplies rendered frames for one [`SurfaceView`]
 /// identity that Floem owns and places in the scene. Create one with
-/// [`CompositorSurfaceProducer::new_image`]: the returned
-/// [`CompositorSurfaceImage`] is painted by the view tree, while the producer
+/// [`CompositorSurfaceProducer::new`]: the returned
+/// [`SurfaceView`] is painted by the view tree, while the producer
 /// receives frame opportunities and leases wgpu targets for the renderer.
 /// Multiple `ImageBrush` placements can reference that same image identity;
 /// they do not create separate producers.
@@ -337,8 +317,10 @@ impl Default for CompositorSurfaceProducerConfig {
 /// submissions should be rejected synchronously.
 #[derive(Clone)]
 pub struct CompositorSurfaceProducer {
+    view: SurfaceView,
     handle: CompositorSurfaceHandle,
     config: CompositorSurfaceProducerConfig,
+    target_size: Arc<Mutex<Size>>,
     callback: Arc<Mutex<Option<CompositorSurfaceProducerCallback>>>,
     completions: Arc<Mutex<mpsc::Receiver<subduction::wgpu::SurfaceFrameCompletion>>>,
     completion_tx: mpsc::Sender<subduction::wgpu::SurfaceFrameCompletion>,
@@ -360,44 +342,42 @@ type CompositorSurfaceProducerCallback = Box<
 >;
 
 impl CompositorSurfaceProducer {
-    /// Creates an image slot and the producer that renders frames for it.
+    /// Creates a producer that renders into a fixed physical-pixel wgpu target.
     ///
-    /// The returned [`CompositorSurfaceImage`] is the object the view tree
-    /// paints through [`CompositorSurfaceImage::image`]. The returned
-    /// [`CompositorSurfaceProducer`] owns the frame callback and target leasing
-    /// state. The two handles refer to the same compositor surface id.
+    /// `size` is the producer's target texture size in physical pixels, not a
+    /// logical paint size. Floem leases wgpu targets at this exact pixel size;
+    /// moving the window between displays with different scale factors does not
+    /// change the producer's allocation size.
     ///
-    /// `size` is the initial preferred target size for producer allocation. It
-    /// is not the only size the image can be painted at. Each
-    /// [`CompositorSurfaceImage::image`] call supplies the logical source size
-    /// for that brush placement. Floem dedupes placements by `(surface id,
-    /// source size)` and asks the producer for the target size needed by the
-    /// current composition plan.
+    /// Paint code gets the lightweight [`SurfaceView`] with [`Self::view`] and
+    /// then creates one or more [`SurfaceView::image`] handles with explicit
+    /// logical source sizes.
+    ///
+    /// This separation is intentional: producer size is physical
+    /// allocation/rendering state, while image size is logical
+    /// brush/source-coordinate state.
     #[must_use]
-    pub fn new_image(
-        window_id: WindowId,
-        size: Size,
-        config: CompositorSurfaceProducerConfig,
-    ) -> (CompositorSurfaceImage, Self) {
-        let surface = CompositorSurfaceImage::new(
-            window_id,
-            CompositorSurfaceConfig {
-                kind: CompositorSurfaceKind::WgpuTexture,
-                alpha_mode: config.alpha_mode,
-                preferred_size: Some(size),
-                frame_rate: config.frame_rate,
-            },
-        );
-        let producer = Self::new(surface.handle(), config);
-        surface.set_provider(Arc::new(Mutex::new(producer.provider())));
-        (surface, producer)
+    pub fn new(window_id: WindowId, size: Size, config: CompositorSurfaceProducerConfig) -> Self {
+        let view = SurfaceView::new(window_id, SurfaceSlotId::next());
+        view.handle().set_frame_rate_preference(config.frame_rate);
+        let producer = Self::from_view(view, size, config);
+        producer
+            .handle
+            .set_provider(Arc::new(Mutex::new(producer.provider())));
+        producer
     }
 
-    fn new(handle: CompositorSurfaceHandle, config: CompositorSurfaceProducerConfig) -> Self {
+    fn from_view(
+        view: SurfaceView,
+        target_size: Size,
+        config: CompositorSurfaceProducerConfig,
+    ) -> Self {
         let (completion_tx, completion_rx) = mpsc::channel();
         Self {
-            handle,
+            view,
+            handle: view.handle(),
             config,
+            target_size: Arc::new(Mutex::new(target_size)),
             callback: Arc::new(Mutex::new(None)),
             completions: Arc::new(Mutex::new(completion_rx)),
             completion_tx,
@@ -406,8 +386,34 @@ impl CompositorSurfaceProducer {
     }
 
     #[must_use]
-    pub fn surface_id(&self) -> CompositorSurfaceId {
+    pub fn view(&self) -> SurfaceView {
+        self.view
+    }
+
+    /// Returns the producer's current physical-pixel target size.
+    #[must_use]
+    pub fn target_size(&self) -> Size {
+        *self.target_size.lock().unwrap()
+    }
+
+    /// Sets the physical-pixel target size used for future frame opportunities.
+    ///
+    /// This changes the wgpu target size Floem leases for the producer. It does
+    /// not change existing [`SurfaceView::image`] handles or their logical
+    /// image-brush source sizes.
+    pub fn set_target_size(&self, size: Size) {
+        *self.target_size.lock().unwrap() = size;
+        self.handle.request_frame();
+    }
+
+    #[must_use]
+    pub fn slot_id(&self) -> SurfaceSlotId {
         self.handle.id()
+    }
+
+    #[must_use]
+    pub fn surface_id(&self) -> SurfaceSlotId {
+        self.slot_id()
     }
 
     /// Installs the frame callback for this producer and requests a frame.
@@ -462,6 +468,7 @@ impl CompositorSurfaceProducer {
             completions: self.completions.clone(),
             completion_tx: self.completion_tx.clone(),
             in_flight: self.in_flight.clone(),
+            target_size: self.target_size.clone(),
             current_content: None,
             pending_request_started_at: FxHashMap::default(),
             last_requested_frame_index: None,
@@ -596,11 +603,10 @@ pub enum CompositorSurfaceAlphaMode {
 }
 
 /// Configuration for a compositor-owned surface slot.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CompositorSurfaceConfig {
     pub kind: CompositorSurfaceKind,
     pub alpha_mode: CompositorSurfaceAlphaMode,
-    pub preferred_size: Option<Size>,
     /// Frame-rate preference for this compositor surface.
     ///
     /// This is interpreted the same way as
@@ -614,7 +620,6 @@ impl CompositorSurfaceConfig {
         Self {
             kind: CompositorSurfaceKind::WgpuTexture,
             alpha_mode: CompositorSurfaceAlphaMode::Premultiplied,
-            preferred_size: None,
             frame_rate: FrameRatePreference::full(),
         }
     }
@@ -624,7 +629,6 @@ impl CompositorSurfaceConfig {
         Self {
             kind: CompositorSurfaceKind::NativeTexture,
             alpha_mode: CompositorSurfaceAlphaMode::Opaque,
-            preferred_size: None,
             frame_rate: FrameRatePreference::full(),
         }
     }
@@ -655,6 +659,12 @@ impl ExternalTexture {
             payload: Arc::new(payload),
         }
     }
+
+    #[must_use]
+    pub fn from_submitted_frame(frame: subduction::wgpu::SubmittedSurfaceFrame) -> Self {
+        let size = Size::new(f64::from(frame.size.width), f64::from(frame.size.height));
+        Self::new(size, frame)
+    }
 }
 
 /// Current content for a compositor-owned surface slot.
@@ -681,6 +691,17 @@ pub trait CompositorSurfaceProvider {
         true
     }
 
+    /// Returns the physical-pixel wgpu target size to lease for a requested
+    /// logical source size.
+    ///
+    /// The default scales the requested logical source size by the window's
+    /// effective scale. Producer-backed compositor surfaces override this with
+    /// the fixed physical texture size passed to
+    /// [`CompositorSurfaceProducer::new`].
+    fn target_size(&self, requested_source_size: Size, effective_scale: f64) -> Size {
+        requested_source_size * effective_scale
+    }
+
     fn poll_current_content(&mut self) -> CompositorSurfaceFrameUpdate {
         CompositorSurfaceFrameUpdate::idle()
     }
@@ -702,12 +723,17 @@ struct CompositorSurfaceProducerProvider {
     completions: Arc<Mutex<mpsc::Receiver<subduction::wgpu::SurfaceFrameCompletion>>>,
     completion_tx: mpsc::Sender<subduction::wgpu::SurfaceFrameCompletion>,
     in_flight: Arc<Mutex<u32>>,
+    target_size: Arc<Mutex<Size>>,
     current_content: Option<CompositorSurfaceContent>,
     pending_request_started_at: FxHashMap<u64, Instant>,
     last_requested_frame_index: Option<u64>,
 }
 
 impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
+    fn target_size(&self, _requested_source_size: Size, _effective_scale: f64) -> Size {
+        *self.target_size.lock().unwrap()
+    }
+
     fn can_accept_frame_target(&self) -> bool {
         if self.callback.lock().unwrap().is_none() {
             return false;
@@ -928,9 +954,8 @@ impl CompositorSurfaceProducerProvider {
                             observed_latency,
                         );
                     }
-                    let size = Size::new(f64::from(frame.size.width), f64::from(frame.size.height));
                     self.current_content = Some(CompositorSurfaceContent::Texture(
-                        ExternalTexture::new(size, frame),
+                        ExternalTexture::from_submitted_frame(frame),
                     ));
                     content_changed = true;
                     if let Some(observed_latency) = observed_latency {
@@ -1101,5 +1126,42 @@ impl CompositorSurfaceHandle {
             surface_id: self.id,
             content,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::effects::SurfaceImage;
+
+    #[test]
+    fn surface_image_registry_tracks_image_identity_separately_from_surface() {
+        let surface_id = CompositorSurfaceId::test_new(7);
+        let first = SurfaceImage::new(surface_id, Size::new(100.0, 50.0));
+        let first_clone = first.clone();
+        let second = SurfaceImage::new(surface_id, Size::new(100.0, 50.0));
+        let mut registry = SurfaceImageRegistry::default();
+
+        let first_external = registry.register(&first, Size::new(100.0, 50.0));
+        let first_clone_external = registry.register(&first_clone, Size::new(100.0, 50.0));
+        let second_external = registry.register(&second, Size::new(100.0, 50.0));
+
+        assert_eq!(first_external.id, first_clone_external.id);
+        assert_ne!(first_external.id, second_external.id);
+        assert_eq!((first_external.width, first_external.height), (200, 100));
+        assert_eq!(
+            registry
+                .resolve_registered(first_external.id)
+                .unwrap()
+                .slot_id,
+            surface_id
+        );
+        assert_eq!(
+            registry
+                .resolve_registered(second_external.id)
+                .unwrap()
+                .slot_id,
+            surface_id
+        );
     }
 }

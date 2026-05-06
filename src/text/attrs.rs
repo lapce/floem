@@ -1,10 +1,21 @@
 use std::ops::Range;
 
+use crate::effects::Brush;
 use crate::text::TextBrush;
 use crate::text::{FontStyle, FontWeight, FontWidth};
 use fontique::GenericFamily;
 use parley::style::{FontFamily, FontStack, StyleProperty, WordBreakStrength};
 use peniko::Color;
+
+fn text_brush_index(brushes: &mut Vec<Brush>, brush: &Brush) -> TextBrush {
+    if let Some(index) = brushes.iter().position(|existing| existing == brush) {
+        TextBrush(index)
+    } else {
+        let index = brushes.len();
+        brushes.push(brush.clone());
+        TextBrush(index)
+    }
+}
 
 /// An owned font family identifier.
 ///
@@ -153,7 +164,7 @@ impl From<i32> for LineHeightValue {
     }
 }
 
-/// Text styling attributes used to configure font properties, color, and layout.
+/// Text styling attributes used to configure font properties, brush, and layout.
 ///
 /// `Attrs` uses a builder pattern where each setter consumes and returns `self`,
 /// making it easy to chain calls. Unset fields (`None`) inherit from the layout
@@ -165,7 +176,7 @@ impl From<i32> for LineHeightValue {
 /// |-------------|-----------------------------------|
 /// | font_size   | `16.0`                            |
 /// | line_height | `LineHeightValue::Normal(1.0)`    |
-/// | color       | `None` (inherits from context)    |
+/// | brush       | `None` (inherits from context)    |
 /// | family      | `None` (system default)           |
 /// | weight      | `None` (normal)                   |
 /// | style       | `None` (normal)                   |
@@ -192,8 +203,8 @@ pub struct Attrs<'a> {
     pub font_size: f32,
     /// Line height mode — either a multiplier of `font_size` or an absolute point value.
     line_height: LineHeightValue,
-    /// Text color, or `None` to inherit from the rendering context.
-    color: Option<Color>,
+    /// Text brush, or `None` to inherit from the rendering context.
+    brush: Option<Brush>,
     /// Ordered list of font families to try, or `None` to use the system default.
     family: Option<&'a [FamilyOwned]>,
     /// Font weight (e.g. normal, bold), or `None` for the default weight.
@@ -220,7 +231,7 @@ impl<'a> Attrs<'a> {
         Self {
             font_size: 16.0,
             line_height: LineHeightValue::Normal(1.0),
-            color: None,
+            brush: None,
             family: None,
             weight: None,
             style: None,
@@ -232,7 +243,16 @@ impl<'a> Attrs<'a> {
 
     /// Sets the text color.
     pub fn color(mut self, color: Color) -> Self {
-        self.color = Some(color);
+        self.brush = Some(Brush::Solid(color));
+        self
+    }
+
+    /// Sets the text brush.
+    ///
+    /// Use this for gradient, image, surface, and shader-source text fills.
+    /// [`Self::color`] is shorthand for a solid-color brush.
+    pub fn brush(mut self, brush: impl Into<Brush>) -> Self {
+        self.brush = Some(brush.into());
         self
     }
 
@@ -295,7 +315,15 @@ impl<'a> Attrs<'a> {
 
     /// Returns the text color, or `None` if unset.
     pub fn get_color(&self) -> Option<Color> {
-        self.color
+        match self.brush {
+            Some(Brush::Solid(color)) => Some(color),
+            _ => None,
+        }
+    }
+
+    /// Returns the text brush, or `None` if unset.
+    pub fn get_brush(&self) -> Option<&Brush> {
+        self.brush.as_ref()
     }
 
     /// Returns the line height setting.
@@ -346,18 +374,22 @@ impl<'a> Attrs<'a> {
 
     /// Pushes all set properties as defaults onto a Parley [`RangedBuilder`].
     ///
-    /// Font size and line height are always pushed. Optional properties (color,
+    /// Font size and line height are always pushed. Optional properties (brush,
     /// family, weight, style, width) are only pushed when set.
     ///
     /// [`RangedBuilder`]: parley::RangedBuilder
-    pub fn apply_defaults(&self, builder: &mut parley::RangedBuilder<'_, TextBrush>) {
+    pub fn apply_defaults(
+        &self,
+        builder: &mut parley::RangedBuilder<'_, TextBrush>,
+        brushes: &mut Vec<Brush>,
+    ) {
         builder.push_default(StyleProperty::FontSize(self.font_size));
         let lh = self.effective_line_height();
         builder.push_default(StyleProperty::LineHeight(
             parley::style::LineHeight::Absolute(lh),
         ));
-        if let Some(color) = self.color {
-            builder.push_default(StyleProperty::Brush(TextBrush(color)));
+        if let Some(brush) = &self.brush {
+            builder.push_default(StyleProperty::Brush(text_brush_index(brushes, brush)));
         }
         if let Some(family) = self.family {
             let stack = FamilyOwned::to_font_stack(family);
@@ -388,6 +420,7 @@ impl<'a> Attrs<'a> {
         builder: &mut parley::RangedBuilder<'_, TextBrush>,
         range: Range<usize>,
         defaults: &Attrs<'_>,
+        brushes: &mut Vec<Brush>,
     ) {
         if self.font_size != defaults.font_size {
             builder.push(StyleProperty::FontSize(self.font_size), range.clone());
@@ -399,8 +432,11 @@ impl<'a> Attrs<'a> {
                 range.clone(),
             );
         }
-        if let Some(color) = self.color {
-            builder.push(StyleProperty::Brush(TextBrush(color)), range.clone());
+        if let Some(brush) = &self.brush {
+            builder.push(
+                StyleProperty::Brush(text_brush_index(brushes, brush)),
+                range.clone(),
+            );
         }
         if let Some(family) = self.family {
             let stack = FamilyOwned::to_font_stack(family);
@@ -444,8 +480,8 @@ pub struct AttrsOwned {
     pub font_size: f32,
     /// Line height mode — either a multiplier of `font_size` or an absolute pixel value.
     line_height: LineHeightValue,
-    /// Text color, or `None` to inherit from the rendering context.
-    color: Option<Color>,
+    /// Text brush, or `None` to inherit from the rendering context.
+    brush: Option<Brush>,
     /// Owned list of font families to try, or `None` to use the system default.
     family: Option<Vec<FamilyOwned>>,
     /// Font weight (e.g. normal, bold), or `None` for the default weight.
@@ -466,7 +502,7 @@ impl AttrsOwned {
         Self {
             font_size: attrs.font_size,
             line_height: attrs.line_height,
-            color: attrs.color,
+            brush: attrs.brush,
             family: attrs.family.map(|f| f.to_vec()),
             weight: attrs.weight,
             style: attrs.style,
@@ -481,7 +517,7 @@ impl AttrsOwned {
         Attrs {
             font_size: self.font_size,
             line_height: self.line_height,
-            color: self.color,
+            brush: self.brush.clone(),
             family: self.family.as_deref(),
             weight: self.weight,
             style: self.style,
@@ -608,13 +644,17 @@ impl AttrsList {
     /// to avoid redundant work.
     ///
     /// [`RangedBuilder`]: parley::RangedBuilder
-    pub fn apply_to_builder(&self, builder: &mut parley::RangedBuilder<'_, TextBrush>) {
+    pub fn apply_to_builder(
+        &self,
+        builder: &mut parley::RangedBuilder<'_, TextBrush>,
+        brushes: &mut Vec<Brush>,
+    ) {
         let defaults = self.defaults.as_attrs();
-        defaults.apply_defaults(builder);
+        defaults.apply_defaults(builder, brushes);
         for (range, attrs) in &self.spans {
             attrs
                 .as_attrs()
-                .apply_range(builder, range.clone(), &defaults);
+                .apply_range(builder, range.clone(), &defaults, brushes);
         }
     }
 

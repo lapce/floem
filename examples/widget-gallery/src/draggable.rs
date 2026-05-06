@@ -168,7 +168,11 @@ pub fn draggable_view() -> impl IntoView {
                             b.and_then(|b| {
                                 if let Brush::Solid(c) = b {
                                     let l = c.convert::<Oklab>().components[0];
-                                    Some(if l < 0.5 { css::WHITE } else { css::BLACK })
+                                    Some(Brush::Solid(if l < 0.5 {
+                                        css::WHITE
+                                    } else {
+                                        css::BLACK
+                                    }))
                                 } else {
                                     None
                                 }

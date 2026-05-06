@@ -25,26 +25,8 @@ pub use parley::layout::Glyph;
 pub use parley::layout::{Affinity, Cursor, Selection};
 pub use parley::style::{OverflowWrap, TextWrapMode, WordBreakStrength};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct TextBrush(pub peniko::Color);
-
-impl Default for TextBrush {
-    fn default() -> Self {
-        TextBrush(peniko::Color::from_rgba8(0, 0, 0, 255))
-    }
-}
-
-impl From<peniko::Color> for TextBrush {
-    fn from(c: peniko::Color) -> Self {
-        TextBrush(c)
-    }
-}
-
-impl From<TextBrush> for peniko::Color {
-    fn from(b: TextBrush) -> Self {
-        b.0
-    }
-}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TextBrush(pub usize);
 
 pub trait GlyphDrawer {
     fn draw_glyphs<'a>(

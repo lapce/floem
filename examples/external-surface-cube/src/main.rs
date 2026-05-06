@@ -2,9 +2,9 @@ use std::time::Instant;
 
 use bytemuck::{Pod, Zeroable};
 use floem::{
-    Application, Brush as FloemBrush, Composite, CompositorSurfaceImage, CompositorSurfaceProducer,
+    Application, Brush as FloemBrush, Composite, CompositorSurfaceProducer,
     CompositorSurfaceProducerConfig, Filter as FloemFilter, FrameRatePreference, GpuResources,
-    Image as FloemImage, ImageBrush, LayerFilter, ShaderSource, ShaderUniform,
+    ImageBrush, LayerFilter, ShaderSource, ShaderUniform, SurfaceView,
     action::{capture_metal, inspect, set_animation_frame_callback},
     context::PaintCx,
     group_ref,
@@ -23,7 +23,7 @@ const CUBE_TARGET_FPS: f64 = 120.0;
 
 fn app_view(window_id: WindowId) -> impl IntoView {
     let cube_frame_rate = FrameRatePreference::at_most(CUBE_TARGET_FPS).unwrap();
-    let (surface_image, cube_producer) = CompositorSurfaceProducer::new_image(
+    let cube_producer = CompositorSurfaceProducer::new(
         window_id,
         Size::new(f64::from(CUBE_SIZE), f64::from(CUBE_SIZE)),
         CompositorSurfaceProducerConfig {
@@ -31,7 +31,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             ..CompositorSurfaceProducerConfig::default()
         },
     );
-    cube_producer.presents_with_transaction(false);
+    let surface_view = cube_producer.view();
 
     Stack::vertical((
         "Compositor Surface as Image Brush".style(|s| {
@@ -40,15 +40,19 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 .color(Color::from_rgb8(246, 241, 226))
         }),
         "The cube is rendered by a compositor-surface producer into a Floem/Subduction-owned wgpu texture. Floem can publish that compositor-owned frame as a native layer, or sample the same frame through imaging as an external image brush. This example uses the cube texture as an image brush for the large glyph fill, then flattens the surrounding clip, blur, and checkerboard layer filter into one ordered render pass when direct layer promotion is not legal. Press F10 for the HUD, F11 for the inspector, or F12 to capture the next Metal frame."
-            .style(|s| {
+            .style(move |s| {
                 s.font_size(14.0)
                     .line_height(1.35)
                     .text_wrap()
                     .text_align(Alignment::Center)
-                    .max_width(760.0)
-                    .color(Color::from_rgb8(155, 169, 177))
+                    // .max_width(760.0)
+                    .width_full()
+                    // .color(Color::from_rgb8(155, 169, 177))
+                    .color(FloemBrush::Image(ImageBrush::from(
+                        surface_view.image(ImageSize::new(100.pct(), 100.pct())),
+                    )))
             }),
-        cube_canvas(surface_image),
+        cube_canvas(surface_view),
     ))
         .style(|s| {
             s.width_full()
@@ -76,17 +80,16 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         })
 }
 
-fn cube_canvas(surface_image: CompositorSurfaceImage) -> impl IntoView {
-    let cube_image = surface_image.image((300., 300.).into());
+fn cube_canvas(surface_image: SurfaceView) -> impl IntoView {
+    let cube_image = surface_image.image((CUBE_SIZE as f64, CUBE_SIZE as f64));
     let shimmer_uniforms = ShaderUniform::new([0.0_f32; 4]);
     let source_uniforms = ShaderUniform::new([0.0_f32; 4]);
     drive_shimmer_uniforms(shimmer_uniforms.clone(), None);
     drive_shimmer_uniforms(source_uniforms.clone(), None);
-    let canvas_cube_image = cube_image.clone();
     let canvas = canvas(move |cx, size| {
         let layout = CubeCanvasLayout::new(size);
         layout.paint_source_panel(cx, source_uniforms.clone());
-        layout.paint_filtered_panel(cx, &canvas_cube_image, shimmer_uniforms.clone());
+        layout.paint_filtered_panel(cx, surface_image, shimmer_uniforms.clone());
     })
     .style(|s| {
         s.width(780.0)
@@ -100,15 +103,19 @@ fn cube_canvas(surface_image: CompositorSurfaceImage) -> impl IntoView {
     (
         canvas,
         Image::new(cube_image).style(|s| {
-            s.object_position(ObjectPosition::Center)
-                .object_fit(ObjectFit::ScaleDown)
+            s.width(150)
+                .height(300)
+                .object_position(ObjectPosition::Center)
+                .object_fit(ObjectFit::Contain)
+                .border(3)
+                .opacity(0.5)
+                .border_color(css::RED)
         }),
     )
 }
 
 struct CubeCanvasLayout {
     canvas: Rect,
-    cube: Rect,
     filtered_panel: Rect,
     label: Rect,
     label_text: Rect,
@@ -129,7 +136,6 @@ impl CubeCanvasLayout {
 
         Self {
             canvas,
-            cube,
             filtered_panel,
             label,
             label_text,
@@ -149,7 +155,7 @@ impl CubeCanvasLayout {
     fn paint_filtered_panel(
         &self,
         cx: &mut PaintCx<'_>,
-        cube_image: &FloemImage,
+        surface_view: SurfaceView,
         shimmer_uniforms: ShaderUniform<[f32; 4]>,
     ) {
         let filters = [
@@ -175,7 +181,7 @@ impl CubeCanvasLayout {
                     Color::from_rgba8(247, 226, 164, 230),
                 )
                 .draw();
-                self.paint_texture_text(p, effective_scale, cube_image);
+                self.paint_texture_text(p, effective_scale, surface_view);
             },
         );
     }
@@ -184,15 +190,12 @@ impl CubeCanvasLayout {
         &self,
         painter: &mut Painter<'_, S, FloemFilter, Composite, FloemBrush>,
         effective_scale: f64,
-        cube_image: &FloemImage,
+        surface_view: SurfaceView,
     ) where
-        S: PaintSink<FloemFilter, Composite, FloemBrush> + ImagingSceneSink + ?Sized,
+        S: PaintSink<FloemFilter, Composite, FloemBrush> + ImagingSceneSink,
     {
-        let image_size = image_size(&cube_image);
-        let image_origin = Point::new(
-            self.cube.x0 + (self.cube.width() - image_size.width) * 0.5,
-            self.cube.y0 + (self.cube.height() - image_size.height) * 0.5,
-        );
+        let image_side = self.label_text.width().max(self.label_text.height());
+        let cube_image = surface_view.image((image_side, image_side));
         let brush = FloemBrush::Image(ImageBrush::from(cube_image.clone()));
         let mut text = TextLayout::new_with_text(
             "TEXTURE BRUSH",
@@ -210,26 +213,18 @@ impl CubeCanvasLayout {
             self.label_text.y0 + ((self.label_text.height() - text_height) * 0.5)
                 - f64::from(min_y),
         );
-        text.draw_with_painter_brush(
-            Painter::new(painter.sink_mut()),
+        let image_origin = Point::new(
+            self.label_text.x0 + (self.label_text.width() - image_side) * 0.5,
+            self.label_text.y0 + (self.label_text.height() - image_side) * 0.5,
+        );
+        text.draw_with_painter_floem_brush(
+            painter.as_dyn(),
             origin,
             Vec2::ZERO,
             effective_scale,
             brush,
-            Some(Affine::translate((
-                image_origin.x - origin.x,
-                image_origin.y - origin.y,
-            ))),
+            Some(Affine::translate((-image_origin.x, -image_origin.y))),
         );
-    }
-}
-
-fn image_size(image: &FloemImage) -> Size {
-    match image {
-        FloemImage::Raster(image) => Size::new(f64::from(image.width), f64::from(image.height)),
-        FloemImage::Scene(image) => Size::new(f64::from(image.width()), f64::from(image.height())),
-        FloemImage::Surface(surface) => surface.size,
-        FloemImage::Source(source) => source.size,
     }
 }
 
@@ -741,7 +736,7 @@ fn main() {
             app_view,
             Some(
                 WindowConfig::default()
-                    .size(Size::new(900.0, 660.0))
+                    .size(Size::new(1200.0, 660.0))
                     .title("Compositor Surface Cube"),
             ),
         )

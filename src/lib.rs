@@ -213,6 +213,7 @@ pub mod external_surface;
 pub mod frame;
 pub(crate) mod frame_source;
 pub(crate) mod gpu_completion;
+pub mod gradient;
 pub(crate) mod hud;
 mod inspector;
 pub mod layout;
@@ -258,15 +259,16 @@ pub(crate) use box_tree::{bump_focus_nav_meta_revision, focus_nav_meta_revision}
 pub use compositor_surface::{
     CompositorSurfaceAlphaMode, CompositorSurfaceConfig, CompositorSurfaceContent,
     CompositorSurfaceFrameArgs, CompositorSurfaceFrameCx, CompositorSurfaceFrameUpdate,
-    CompositorSurfaceHandle, CompositorSurfaceId, CompositorSurfaceImage, CompositorSurfaceKind,
-    CompositorSurfaceOutcome, CompositorSurfaceProducer, CompositorSurfaceProducerConfig,
-    CompositorSurfaceProvider, CompositorSurfaceProviderHandle, ExternalTexture,
+    CompositorSurfaceHandle, CompositorSurfaceId, CompositorSurfaceKind, CompositorSurfaceOutcome,
+    CompositorSurfaceProducer, CompositorSurfaceProducerConfig, CompositorSurfaceProvider,
+    CompositorSurfaceProviderHandle, ExternalTexture, SurfaceSlotId, SurfaceView,
 };
 pub use effects::{
     AnimatableShaderUniforms, Brush, ColorFilter, ColorFilterShader, Composite, CompositorShader,
-    Filter, GroupRef, Image, ImageBrush, ImageBrushRef, ImageRef, LayerFilter, LayerFilterShader,
-    ShaderArgs, ShaderComposite, ShaderFrameUniform, ShaderSource, ShaderSourceImage,
-    ShaderSourceShader, ShaderTransition, ShaderUniform, ShaderUniforms, SurfaceImage, group_ref,
+    Filter, GroupRef, Image, ImageBrush, ImageBrushRef, ImageRef, ImageSize, LayerFilter,
+    LayerFilterShader, ShaderArgs, ShaderComposite, ShaderFrameUniform, ShaderSource,
+    ShaderSourceImage, ShaderSourceShader, ShaderTransition, ShaderUniform, ShaderUniforms,
+    SurfaceImage, group_ref,
 };
 pub use external_surface::{
     ExternalSurface, ExternalSurfaceError, ExternalSurfaceHandle, ExternalSurfaceId,
@@ -278,6 +280,7 @@ pub use frame::{
     PresentationInterval,
 };
 pub use gpu_resources::GpuResources;
+pub use gradient::{ColorStop, ColorStops, ColorStopsSource, Gradient, GradientPoint};
 pub use imbl;
 pub use layout::ScreenLayout;
 #[cfg(not(target_arch = "wasm32"))]
@@ -307,9 +310,10 @@ pub use app::take_close_window_event_count;
 pub use style::{theme, unit};
 
 pub mod prelude {
+    pub use crate::ImageSize;
     pub use crate::compositor_surface::{
-        CompositorSurfaceConfig, CompositorSurfaceImage, CompositorSurfaceProducer,
-        CompositorSurfaceProducerConfig, ExternalTexture,
+        CompositorSurfaceConfig, CompositorSurfaceProducer, CompositorSurfaceProducerConfig,
+        ExternalTexture, SurfaceSlotId, SurfaceView,
     };
     pub use crate::event::listener as el;
     pub use crate::event::listener;
@@ -320,6 +324,7 @@ pub mod prelude {
         FrameRatePreferenceBuilder, FrameTime, FrameTimingFeedback, PresentPacing,
         PresentationInterval,
     };
+    pub use crate::gradient::{ColorStop, ColorStops, ColorStopsSource, Gradient, GradientPoint};
     pub use crate::unit::{DurationUnitExt, UnitExt};
     pub use crate::view::IntoViewIter;
     pub use crate::view::ViewTuple;

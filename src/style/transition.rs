@@ -14,6 +14,7 @@ use taffy::prelude::{auto, fr};
 use crate::platform::{Duration, Instant};
 
 use crate::animate::{Bezier, Easing, Linear, Spring};
+use crate::effects::Brush;
 use crate::theme::StyleThemeExt;
 use crate::view::{IntoView, View};
 use crate::views::{ContainerExt, Decorators, Label, Stack, TooltipExt, canvas};
@@ -149,7 +150,7 @@ impl Transition {
             }
 
             // Draw the curve
-            let curve_brush = peniko::Brush::Solid(curve_color.get());
+            let curve_brush = Brush::Solid(curve_color.get());
             cx.painter
                 .stroke(
                     path,
@@ -168,7 +169,7 @@ impl Transition {
             };
 
             // X axis
-            let axis_brush = peniko::Brush::Solid(axis_color.get());
+            let axis_brush = Brush::Solid(axis_color.get());
             cx.painter
                 .stroke(
                     kurbo::Line::new(

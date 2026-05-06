@@ -1,8 +1,9 @@
 use super::profiler::{PROFILE, profiler};
 use crate::{
-    AnyView, ElementId, IntoView, View, ViewId,
+    AnyView, Brush, ElementId, IntoView, View, ViewId,
     action::inspect,
     app::{AppUpdateEvent, UserEvent, add_app_update_event},
+    effects::BrushAlphaExt as _,
     event::{EventPropagation, listener},
     inspector::{
         CAPTURE, Capture, CaptureView, CapturedElement, INSPECTOR_WINDOW, InspectorSelection,
@@ -24,7 +25,7 @@ use crate::{
 };
 use floem_reactive::{Effect, Memo, RwSignal, SignalGet, SignalUpdate};
 use peniko::{
-    Brush, Color,
+    Color,
     color::palette::{self, css},
     kurbo::{Rect, Stroke},
 };

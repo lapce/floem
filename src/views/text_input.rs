@@ -41,7 +41,7 @@ use crate::{
     text::{Affinity, Attrs, AttrsList, FamilyOwned, TextLayoutState, TextSelection},
 };
 
-use peniko::Brush;
+use crate::effects::Brush;
 use peniko::kurbo::{Point, Rect, Size};
 use std::{cell::RefCell, rc::Rc};
 
@@ -121,6 +121,13 @@ impl BufferState {
 pub struct TextInputEnter;
 
 custom_event!(TextInputEnter);
+
+fn solid_text_color(brush: Option<&Brush>) -> peniko::Color {
+    match brush {
+        Some(Brush::Solid(color)) => *color,
+        _ => palette::css::BLACK,
+    }
+}
 
 /// Text Input View.
 pub struct TextInput {
@@ -728,10 +735,10 @@ impl TextInput {
 
     /// Retrieve attributes for the placeholder text.
     pub fn get_placeholder_text_attrs(&self) -> AttrsList {
-        let mut attrs = Attrs::new().color(
+        let mut attrs = Attrs::new().brush(
             self.placeholder_style
                 .color()
-                .unwrap_or(palette::css::BLACK),
+                .unwrap_or(palette::css::BLACK.into()),
         );
 
         //TODO:
@@ -778,7 +785,8 @@ impl TextInput {
 
     /// Retrieve attributes for the text.
     pub fn get_text_attrs(&self) -> AttrsList {
-        let mut attrs = Attrs::new().color(self.style.color().unwrap_or(palette::css::BLACK));
+        let mut attrs =
+            Attrs::new().brush(self.style.color().unwrap_or(palette::css::BLACK.into()));
 
         attrs = attrs.font_size(self.font_size());
 
@@ -1492,7 +1500,7 @@ impl View for TextInput {
                 .borrow()
                 .with_effective_text_layout(|text_layout| {
                     text_layout.draw_with_painter(
-                        p.as_imaging_dyn(),
+                        p.as_dyn(),
                         Point::new(text_start_point.x - self.scroll_offset, text_start_point.y),
                         cx.font_embolden,
                         cx.window_state.effective_scale(),
@@ -1513,7 +1521,7 @@ impl View for TextInput {
                             + text_layout.cursor_point(end_idx, Affinity::Upstream).x
                             - self.scroll_offset;
 
-                        let color = self.style.color().unwrap_or(palette::css::BLACK);
+                        let color = solid_text_color(self.style.color().as_ref());
                         let y = text_start_point.y
                             + text_layout
                                 .line_metrics_at(start_idx, Affinity::Upstream)

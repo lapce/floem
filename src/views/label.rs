@@ -218,7 +218,11 @@ impl Label {
     }
 
     fn get_attrs_list(&self) -> AttrsList {
-        let mut attrs = Attrs::new().color(self.label_props.color().unwrap_or(palette::css::BLACK));
+        let mut attrs = Attrs::new().brush(
+            self.label_props
+                .color()
+                .unwrap_or(palette::css::BLACK.into()),
+        );
         let font_size = self.font_props.size();
         attrs = attrs.font_size(font_size as f32);
 

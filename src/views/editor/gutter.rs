@@ -1,5 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
+use crate::effects::Brush;
 use crate::{
     context::PaintCx,
     peniko::kurbo::Point,
@@ -12,9 +13,9 @@ use crate::{
 };
 use floem_editor_core::{cursor::CursorMode, mode::Mode};
 use floem_reactive::{Effect, RwSignal, SignalGet, SignalTrack, SignalWith};
+use peniko::Color;
 use peniko::color::palette;
 use peniko::kurbo::Rect;
-use peniko::{Brush, Color};
 
 use super::{CurrentLineColor, Editor};
 
@@ -33,7 +34,10 @@ prop_extractor! {
 }
 impl GutterStyle {
     fn gs_accent_color(&self) -> Color {
-        self.accent_color().unwrap_or(palette::css::BLACK)
+        match self.accent_color() {
+            Some(Brush::Solid(color)) => color,
+            _ => palette::css::BLACK,
+        }
     }
 
     fn gs_dim_color(&self) -> Color {

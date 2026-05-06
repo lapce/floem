@@ -282,7 +282,7 @@ fn brush_summary_view(brush: &Brush) -> AnyView {
                     .font_bold()
                     .with_theme(|s, t| s.color(t.text_muted()))
             }),
-            gradient.clone().into_any(),
+            crate::gradient::Gradient::from(gradient.clone()).into_any(),
         ))
         .style(|s| s.gap(4.0).min_width(0.0))
         .into_any(),

@@ -14,6 +14,7 @@ pub use view::capture;
 
 use crate::{
     AnyView, Clipboard, ElementId, ViewId, WindowState,
+    effects::Brush,
     event::EventPropagation,
     inspector::data::CapturedDatas,
     platform::{Duration, Instant},
@@ -391,7 +392,7 @@ fn box_model_view(data: BoxModelViewData) -> impl View {
                             blend_box_model_color(content_fill, t.bg_base(), false)
                         };
                         let l = fill.convert::<Oklab>().components[0];
-                        Some(if l < 0.5 { css::WHITE } else { css::BLACK })
+                        Some(Brush::Solid(if l < 0.5 { css::WHITE } else { css::BLACK }))
                     }),
                 )
             })

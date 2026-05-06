@@ -7,8 +7,9 @@ use std::{
     sync::LazyLock,
 };
 
-use crate::text::{AttrsList, GlyphRunRef, TextBrush};
-use imaging::{Brush, Composite, PaintSink, Painter, record::Glyph as ImagingGlyph};
+use crate::effects::{Brush as FloemBrush, ImageBrush};
+use crate::text::{AttrsList, TextBrush};
+use imaging::{PaintSink, Painter, record::Glyph as ImagingGlyph};
 use parking_lot::Mutex;
 use parley::swash::{FontRef, StringId, Tag, scale::ScaleContext, tag_from_bytes, zeno};
 use parley::{
@@ -18,8 +19,79 @@ use parley::{
 };
 use peniko::{
     Fill, FontData,
-    kurbo::{Affine, Point, Size},
+    kurbo::{Affine, Point, Rect, Size},
 };
+
+fn default_text_brush() -> FloemBrush {
+    FloemBrush::Solid(peniko::Color::from_rgba8(0, 0, 0, 255))
+}
+
+/// Resolves text-layout-relative brush inputs before recording glyph runs.
+///
+/// Floem images can use percentage sizes such as `100.pct()`. For text, those
+/// percentages are defined relative to the text layout bounds, not to each
+/// glyph run's approximate ink bounds. Display-list lowering only sees glyph
+/// runs, so resolving here freezes the intended source size before lowering can
+/// otherwise resolve it against the wrong rectangle.
+fn text_layout_brush(
+    brush: FloemBrush,
+    bounds: Rect,
+    font_size_cx: &crate::unit::FontSizeCx,
+) -> FloemBrush {
+    match brush {
+        FloemBrush::Image(image) => {
+            let peniko::ImageBrush { image, sampler } = image.0;
+            FloemBrush::Image(ImageBrush(peniko::ImageBrush {
+                image: image.resolve_size(bounds, font_size_cx),
+                sampler,
+            }))
+        }
+        brush => brush,
+    }
+}
+
+fn text_layout_brush_transform(
+    brush: &FloemBrush,
+    bounds: Rect,
+    draw_origin: Point,
+    font_size_cx: &crate::unit::FontSizeCx,
+    brush_transform: Option<Affine>,
+) -> Option<Affine> {
+    match brush {
+        FloemBrush::Image(image) => {
+            let Some(size) = image.0.image.size_in_bounds(bounds, font_size_cx) else {
+                return brush_transform;
+            };
+            let origin = Point::new(
+                draw_origin.x + bounds.x0 + (bounds.width() - size.width) * 0.5,
+                draw_origin.y + bounds.y0 + (bounds.height() - size.height) * 0.5,
+            );
+            if std::env::var_os("FLOEM_TEXT_IMAGE_BRUSH_DIAG").is_some() {
+                eprintln!(
+                    "floem text image brush bounds={bounds:?} draw_origin={draw_origin:?} size={size:?} origin={origin:?} brush_transform={brush_transform:?}",
+                );
+            }
+            Some(
+                Affine::translate((-origin.x, -origin.y))
+                    * brush_transform.unwrap_or(Affine::IDENTITY),
+            )
+        }
+        _ => brush_transform,
+    }
+}
+
+fn automatic_text_layout_brush(
+    brush: FloemBrush,
+    bounds: Rect,
+    draw_origin: Point,
+    font_size_cx: &crate::unit::FontSizeCx,
+    brush_transform: Option<Affine>,
+) -> (FloemBrush, Option<Affine>) {
+    let brush = text_layout_brush(brush, bounds, font_size_cx);
+    let brush_transform =
+        text_layout_brush_transform(&brush, bounds, draw_origin, font_size_cx, brush_transform);
+    (brush, brush_transform)
+}
 
 /// Shared Parley font context used by Floem text layout construction.
 ///
@@ -220,6 +292,7 @@ pub struct TextLayout {
     height_opt: Option<f32>,
     tab_width: Option<NonZeroU8>,
     tab_info: Option<TabInfo>,
+    brushes: Vec<FloemBrush>,
 }
 
 impl std::fmt::Debug for TextLayout {
@@ -436,6 +509,7 @@ impl TextLayout {
             height_opt: None,
             tab_width: None,
             tab_info: None,
+            brushes: vec![default_text_brush()],
         }
     }
 
@@ -461,6 +535,8 @@ impl TextLayout {
             .tab_info
             .as_ref()
             .map_or(text, |ti| ti.display_text.as_str());
+        self.brushes.clear();
+        self.brushes.push(default_text_brush());
 
         {
             let mut font_cx = FONT_CONTEXT.lock();
@@ -470,16 +546,19 @@ impl TextLayout {
 
                 if let Some(ref ti) = self.tab_info {
                     let defaults = attrs_list.defaults();
-                    defaults.apply_defaults(&mut builder);
+                    defaults.apply_defaults(&mut builder, &mut self.brushes);
                     for (range, attrs_owned) in attrs_list.spans() {
                         let display_range =
                             ti.orig_to_display(range.start)..ti.orig_to_display(range.end);
-                        attrs_owned
-                            .as_attrs()
-                            .apply_range(&mut builder, display_range, &defaults);
+                        attrs_owned.as_attrs().apply_range(
+                            &mut builder,
+                            display_range,
+                            &defaults,
+                            &mut self.brushes,
+                        );
                     }
                 } else {
-                    attrs_list.apply_to_builder(&mut builder);
+                    attrs_list.apply_to_builder(&mut builder, &mut self.brushes);
                 }
 
                 builder.push_default(StyleProperty::TextWrapMode(self.text_wrap_mode));
@@ -558,6 +637,17 @@ impl TextLayout {
     /// Returns the overall layout size in layout coordinates.
     pub fn size(&self) -> Size {
         Size::new(self.layout.full_width() as f64, self.layout.height() as f64)
+    }
+
+    fn paint_bounds(&self) -> Rect {
+        let size = self.size();
+        let width = self.width_opt.map(f64::from).unwrap_or(size.width);
+        let height = self
+            .height_opt
+            .filter(|height| height.is_finite() && *height < f32::MAX)
+            .map(f64::from)
+            .unwrap_or(size.height);
+        Rect::ZERO.with_size(Size::new(width, height))
     }
 
     /// Performs hit testing and returns the nearest Parley cursor.
@@ -849,69 +939,36 @@ impl TextLayout {
         (min_y.is_finite() && max_y.is_finite()).then_some((min_y, max_y))
     }
 
-    pub fn draw_with_painter(
+    pub fn draw_with_painter<S, F, C>(
         &self,
-        mut painter: Painter<'_>,
+        painter: Painter<'_, S, F, C, FloemBrush>,
         origin: impl Into<Point>,
         font_embolden: peniko::kurbo::Vec2,
         effective_scale: f64,
-    ) {
+    ) where
+        S: PaintSink<F, C, FloemBrush> + ?Sized,
+    {
         let origin = origin.into();
-        for line in self.layout.lines() {
-            for item in line.items() {
-                let parley::layout::PositionedLayoutItem::GlyphRun(glyph_run) = item else {
-                    continue;
-                };
-
-                let run = glyph_run.run();
-                let synthesis = run.synthesis();
-                let glyph_transform = synthesis
-                    .skew()
-                    .map(|angle| Affine::skew((angle as f64).to_radians().tan(), 0.0));
-
-                let style = peniko::Style::Fill(Fill::NonZero);
-                let normalized_coords = effective_normalized_coords(
-                    run.font(),
-                    run.font_size(),
-                    effective_scale,
-                    run.normalized_coords(),
-                );
-                let run: GlyphRunRef<'_, Brush> = GlyphRunRef {
-                    font: run.font(),
-                    transform: Affine::IDENTITY,
-                    glyph_transform,
-                    font_size: run.font_size(),
-                    font_embolden,
-                    hint: false,
-                    normalized_coords: normalized_coords.as_ref(),
-                    style: &style,
-                    brush: glyph_run.style().brush.0.into(),
-                    brush_transform: None,
-                    composite: Composite::default(),
-                };
-                let brush = run.brush.to_owned().multiply_alpha(run.composite.alpha);
-                let glyphs = glyph_run.positioned_glyphs().map(|glyph| ImagingGlyph {
-                    id: glyph.id,
-                    x: glyph.x,
-                    y: glyph.y,
-                });
-
-                painter
-                    .glyphs(run.font, &brush)
-                    .transform(run.transform * Affine::translate(origin.to_vec2()))
-                    .glyph_transform(run.glyph_transform)
-                    .font_size(run.font_size)
-                    .font_embolden(run.font_embolden)
-                    .hint(run.hint)
-                    .normalized_coords(run.normalized_coords)
-                    .draw(run.style, glyphs);
-            }
-        }
+        let layout_bounds = self.paint_bounds();
+        self.draw_with_painter_resolved_brushes(
+            painter,
+            origin,
+            font_embolden,
+            effective_scale,
+            |brush_index, font_size_cx| {
+                let brush = self
+                    .brushes
+                    .get(brush_index)
+                    .cloned()
+                    .unwrap_or_else(default_text_brush);
+                automatic_text_layout_brush(brush, layout_bounds, origin, font_size_cx, None)
+            },
+        );
     }
 
     pub fn draw_with_painter_brush<S, F, C, B>(
         &self,
-        mut painter: Painter<'_, S, F, C, B>,
+        painter: Painter<'_, S, F, C, B>,
         origin: impl Into<Point>,
         font_embolden: peniko::kurbo::Vec2,
         effective_scale: f64,
@@ -922,7 +979,49 @@ impl TextLayout {
         B: Clone,
     {
         let origin = origin.into();
+        self.draw_with_painter_resolved_brushes(
+            painter,
+            origin,
+            font_embolden,
+            effective_scale,
+            |_, _| (brush.clone(), brush_transform),
+        );
+    }
+
+    pub fn draw_with_painter_floem_brush<S, F, C>(
+        &self,
+        painter: Painter<'_, S, F, C, FloemBrush>,
+        origin: impl Into<Point>,
+        font_embolden: peniko::kurbo::Vec2,
+        effective_scale: f64,
+        brush: FloemBrush,
+        brush_transform: Option<Affine>,
+    ) where
+        S: PaintSink<F, C, FloemBrush> + ?Sized,
+    {
+        let origin = origin.into();
+        self.draw_with_painter_resolved_brushes(
+            painter,
+            origin,
+            font_embolden,
+            effective_scale,
+            |_, _| (brush.clone(), brush_transform),
+        );
+    }
+
+    fn draw_with_painter_resolved_brushes<S, F, C, B>(
+        &self,
+        mut painter: Painter<'_, S, F, C, B>,
+        origin: Point,
+        font_embolden: peniko::kurbo::Vec2,
+        effective_scale: f64,
+        mut resolve_brush: impl FnMut(usize, &crate::unit::FontSizeCx) -> (B, Option<Affine>),
+    ) where
+        S: PaintSink<F, C, B> + ?Sized,
+        B: Clone,
+    {
         for line in self.layout.lines() {
+            let line_metrics = *line.metrics();
             for item in line.items() {
                 let parley::layout::PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                     continue;
@@ -941,6 +1040,12 @@ impl TextLayout {
                     effective_scale,
                     run.normalized_coords(),
                 );
+                let font_size_cx = crate::unit::FontSizeCx::new(
+                    f64::from(run.font_size()),
+                    f64::from(line_metrics.line_height),
+                );
+                let (brush, brush_transform) =
+                    resolve_brush(glyph_run.style().brush.0, &font_size_cx);
                 let glyphs = glyph_run.positioned_glyphs().map(|glyph| ImagingGlyph {
                     id: glyph.id,
                     x: glyph.x,
@@ -965,11 +1070,6 @@ impl TextLayout {
     pub fn draw(&self, cx: &mut crate::paint::PaintCx<'_>, origin: impl Into<Point>) {
         let font_embolden = cx.font_embolden;
         let effective_scale = cx.effective_scale;
-        self.draw_with_painter(
-            cx.painter.as_imaging_dyn(),
-            origin,
-            font_embolden,
-            effective_scale,
-        );
+        self.draw_with_painter(cx.painter.as_dyn(), origin, font_embolden, effective_scale);
     }
 }

@@ -1,13 +1,14 @@
 //! Direct compositor surfaces owned by an external producer.
 //!
 //! [`ExternalSurface`] is the direct-composition counterpart to
-//! [`crate::compositor_surface::CompositorSurfaceImage`]. It is for content that
+//! [`crate::compositor_surface::SurfaceView`]. It is for content that
 //! the producer already owns as a compositor-compatible texture or native
-//! layer. Floem validates each submission synchronously and returns an error
-//! when the content cannot be directly composited. It does not fall back to
-//! renderer sampling.
+//! layer. Floem validates each submitted texture synchronously and returns an
+//! error when the content cannot be directly composited. If the surface is also
+//! used as an image brush, normal display-list lowering may sample that
+//! submitted texture when direct layer promotion is not legal.
 //!
-//! Use [`crate::compositor_surface::CompositorSurfaceImage`] with
+//! Use [`crate::compositor_surface::SurfaceView`] with
 //! [`crate::compositor_surface::CompositorSurfaceProducer`] when Floem should
 //! place the content as an image and remain free to flatten it for clips,
 //! masks, filters, effects, or grouped rendering.
@@ -20,33 +21,31 @@ use winit::window::WindowId;
 use crate::{
     Application,
     app::UserEvent,
-    compositor_surface::{CompositorSurfaceContent, CompositorSurfaceId, ExternalTexture},
+    compositor_surface::{CompositorSurfaceContent, ExternalTexture, SurfaceSlotId, SurfaceView},
     frame::FrameRatePreference,
 };
 
 /// Stable identity for a direct external compositor slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ExternalSurfaceId(CompositorSurfaceId);
+pub struct ExternalSurfaceId(SurfaceSlotId);
 
 impl ExternalSurfaceId {
     #[must_use]
-    pub fn compositor_surface_id(self) -> CompositorSurfaceId {
+    pub fn surface_slot_id(self) -> SurfaceSlotId {
         self.0
     }
 }
 
 /// Direct compositor slot supplied by an external producer.
 ///
-/// Use this for producer-owned textures or native layers that must be
-/// published as compositor content. Submissions are validated immediately. If a
-/// texture or native layer cannot be attached directly, the submit call returns
-/// [`ExternalSurfaceError`] instead of silently changing to renderer fallback.
+/// Use this for producer-owned textures or native layers that are submitted
+/// directly to Floem rather than requested through a Floem frame callback.
+/// Texture submissions are validated immediately. If a texture cannot be
+/// attached directly, the submit call returns [`ExternalSurfaceError`].
 ///
-/// This API is intentionally stricter than
-/// [`crate::compositor_surface::CompositorSurfaceImage`]. If the content needs
-/// normal image behavior inside the Floem scene, including flattening under
-/// clips, masks, filters, effects, or opacity groups, use a compositor surface
-/// image instead.
+/// Call [`Self::view`] to use the latest submitted content as an image brush in
+/// the Floem scene. The external surface still owns submission and
+/// presentation policy; the view is only the paint-facing handle.
 #[derive(Clone, Debug)]
 pub struct ExternalSurface {
     id: ExternalSurfaceId,
@@ -58,7 +57,7 @@ impl ExternalSurface {
     #[must_use]
     pub fn new(window_id: WindowId) -> Self {
         Self {
-            id: ExternalSurfaceId(CompositorSurfaceId::next()),
+            id: ExternalSurfaceId(SurfaceSlotId::next()),
             window_id,
         }
     }
@@ -68,17 +67,13 @@ impl ExternalSurface {
         self.id
     }
 
-    /// Creates a Floem image identifier for this surface.
+    /// Returns the paint-facing view for this external surface.
     ///
-    /// This is useful for sharing identity with the display list, but direct
-    /// external surfaces still require direct-compositable content on submit.
+    /// Each [`SurfaceView::image`] call on the returned view supplies an
+    /// explicit logical source size for that brush placement.
     #[must_use]
-    pub fn image(&self, width: u32, height: u32) -> crate::effects::Image {
-        crate::effects::SurfaceImage::new(
-            self.id.compositor_surface_id(),
-            peniko::kurbo::Size::new(f64::from(width), f64::from(height)),
-        )
-        .into()
+    pub fn view(&self) -> SurfaceView {
+        SurfaceView::new(self.window_id, self.id.surface_slot_id())
     }
 
     #[must_use]
@@ -152,7 +147,7 @@ impl ExternalSurfaceHandle {
         validate_direct_texture(&texture)?;
         Application::send_proxy_event(UserEvent::CompositorSurfaceContent {
             window_id: self.window_id,
-            surface_id: self.id.compositor_surface_id(),
+            surface_id: self.id.surface_slot_id(),
             content: CompositorSurfaceContent::Texture(texture),
         });
         Ok(())
@@ -165,7 +160,7 @@ impl ExternalSurfaceHandle {
     ) -> Result<(), ExternalSurfaceError> {
         Application::send_proxy_event(UserEvent::CompositorSurfaceContent {
             window_id: self.window_id,
-            surface_id: self.id.compositor_surface_id(),
+            surface_id: self.id.surface_slot_id(),
             content: CompositorSurfaceContent::NativeLayer(native_layer),
         });
         Ok(())
@@ -174,7 +169,7 @@ impl ExternalSurfaceHandle {
     pub fn clear(&self) {
         Application::send_proxy_event(UserEvent::CompositorSurfaceContent {
             window_id: self.window_id,
-            surface_id: self.id.compositor_surface_id(),
+            surface_id: self.id.surface_slot_id(),
             content: CompositorSurfaceContent::Empty,
         });
     }
@@ -182,7 +177,7 @@ impl ExternalSurfaceHandle {
     pub fn set_frame_rate_preference(&self, frame_rate: FrameRatePreference) {
         Application::send_proxy_event(UserEvent::CompositorSurfaceFrameRatePreference {
             window_id: self.window_id,
-            surface_id: self.id.compositor_surface_id(),
+            surface_id: self.id.surface_slot_id(),
             frame_rate,
         });
     }
@@ -195,7 +190,7 @@ impl ExternalSurfaceHandle {
     pub fn presents_with_transaction(&self, presents_with_transaction: bool) {
         Application::send_proxy_event(UserEvent::CompositorSurfacePresentsWithTransaction {
             window_id: self.window_id,
-            surface_id: self.id.compositor_surface_id(),
+            surface_id: self.id.surface_slot_id(),
             presents_with_transaction,
         });
     }

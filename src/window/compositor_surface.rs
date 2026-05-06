@@ -144,6 +144,8 @@ impl WindowCompositorSurfaces {
             let Ok(mut provider) = provider.lock() else {
                 continue;
             };
+            let target_size =
+                provider.target_size(planned_surface.requested_source_size, effective_scale);
             let poll_update = provider.poll_current_content();
             frame_update.request_next_frame |= poll_update.request_next_frame;
             if poll_update.content_changed {
@@ -163,7 +165,6 @@ impl WindowCompositorSurfaces {
                 frame_update.request_next_frame = true;
                 continue;
             }
-            let size_px = planned_surface.source_size * effective_scale;
             let target = match (provider.can_accept_frame_target(), gpu_resources) {
                 (false, _) => None,
                 (true, Some(gpu_resources)) => {
@@ -178,8 +179,8 @@ impl WindowCompositorSurfaces {
                         continue;
                     };
                     let size = wgpu::Extent3d {
-                        width: size_px.width.ceil().max(1.0) as u32,
-                        height: size_px.height.ceil().max(1.0) as u32,
+                        width: target_size.width.ceil().max(1.0) as u32,
+                        height: target_size.height.ceil().max(1.0) as u32,
                         depth_or_array_layers: 1,
                     };
                     let opportunity = subduction::wgpu::SurfaceFrameOpportunity {
@@ -229,7 +230,7 @@ impl WindowCompositorSurfaces {
                 is_window_resize: is_resize_frame,
                 visible: true,
                 rect: planned_surface.rect,
-                size_px,
+                size_px: target_size,
                 gpu_resources: gpu_resources.cloned(),
                 target,
                 previous_outcome: entry.previous_outcome,
@@ -363,7 +364,7 @@ impl WindowCompositorSurfaceFrameUpdate {
 struct PlannedCompositorSurface {
     surface_id: CompositorSurfaceId,
     rect: Rect,
-    source_size: Size,
+    requested_source_size: Size,
     key: Option<crate::paint::composition::CompositionKey>,
 }
 
@@ -373,36 +374,39 @@ fn planned_compositor_surfaces(plan: &CompositionPlan) -> Vec<PlannedCompositorS
     for item in &plan.items {
         match item {
             CompositionItem::CompositorSurface(layer) => {
-                let request_key = (layer.surface_id, size_key(layer.source_size));
-                if let Some(index) = requested.get(&request_key).copied() {
+                if let Some(index) = requested.get(&layer.surface_id).copied() {
                     let planned: &mut PlannedCompositorSurface = &mut surfaces[index];
+                    planned.requested_source_size =
+                        max_size(planned.requested_source_size, layer.source_size);
                     if planned.key.is_none() {
                         planned.key = Some(layer.key.clone());
                         planned.rect = layer.rect;
                     }
                 } else {
-                    requested.insert(request_key, surfaces.len());
+                    requested.insert(layer.surface_id, surfaces.len());
                     surfaces.push(PlannedCompositorSurface {
                         surface_id: layer.surface_id,
                         rect: layer.rect,
-                        source_size: layer.source_size,
+                        requested_source_size: layer.source_size,
                         key: Some(layer.key.clone()),
                     });
                 }
             }
             CompositionItem::Scene(layer) => {
                 for image in &layer.external_images {
-                    let request_key = (image.surface_id, size_key(image.source_size));
-                    if requested.contains_key(&request_key) {
-                        continue;
+                    if let Some(index) = requested.get(&image.surface_id).copied() {
+                        let planned: &mut PlannedCompositorSurface = &mut surfaces[index];
+                        planned.requested_source_size =
+                            max_size(planned.requested_source_size, image.source_size);
+                    } else {
+                        requested.insert(image.surface_id, surfaces.len());
+                        surfaces.push(PlannedCompositorSurface {
+                            surface_id: image.surface_id,
+                            rect: image.rect,
+                            requested_source_size: image.source_size,
+                            key: None,
+                        });
                     }
-                    requested.insert(request_key, surfaces.len());
-                    surfaces.push(PlannedCompositorSurface {
-                        surface_id: image.surface_id,
-                        rect: image.rect,
-                        source_size: image.source_size,
-                        key: None,
-                    });
                 }
             }
         }
@@ -410,8 +414,8 @@ fn planned_compositor_surfaces(plan: &CompositionPlan) -> Vec<PlannedCompositorS
     surfaces
 }
 
-fn size_key(size: Size) -> (u64, u64) {
-    (size.width.to_bits(), size.height.to_bits())
+fn max_size(a: Size, b: Size) -> Size {
+    Size::new(a.width.max(b.width), a.height.max(b.height))
 }
 
 #[cfg(test)]
@@ -458,7 +462,7 @@ mod tests {
         let planned = planned_compositor_surfaces(&plan);
         assert_eq!(planned.len(), 1);
         assert_eq!(planned[0].surface_id, surface_id);
-        assert_eq!(planned[0].source_size, Size::new(100.0, 50.0));
+        assert_eq!(planned[0].requested_source_size, Size::new(100.0, 50.0));
         assert_eq!(
             planned[0].key,
             Some(CompositionKey::CompositorSurface {
@@ -517,6 +521,47 @@ mod tests {
             })
         );
         assert_eq!(planned[0].rect, Rect::new(200.0, 0.0, 300.0, 50.0));
+    }
+
+    #[test]
+    fn planned_compositor_surfaces_dedupes_repeated_scene_images() {
+        let surface_id = CompositorSurfaceId::test_new(44);
+        let mut plan = CompositionPlan::new();
+        plan.items.push(CompositionItem::Scene(SceneLayer {
+            key: CompositionKey::SceneRun { run_index: 0 },
+            source_element_id: None,
+            debug_name: None,
+            scene: imaging::record::Scene::new(),
+            external_images: vec![
+                SceneExternalImage {
+                    image_id: imaging::ExternalImageId(44),
+                    surface_id,
+                    rect: Rect::new(0.0, 0.0, 100.0, 50.0),
+                    source_size: Size::new(100.0, 50.0),
+                },
+                SceneExternalImage {
+                    image_id: imaging::ExternalImageId(45),
+                    surface_id,
+                    rect: Rect::new(200.0, 0.0, 360.0, 90.0),
+                    source_size: Size::new(160.0, 90.0),
+                },
+            ],
+            color_filters: Vec::new(),
+            content_revision: 0,
+            transform: peniko::kurbo::Affine::IDENTITY,
+            clip: None,
+            bounds: Rect::new(0.0, 0.0, 360.0, 90.0),
+            content_bounds: None,
+            opacity: 1.0,
+            promoted: false,
+            frame_rate: None,
+        }));
+
+        let planned = planned_compositor_surfaces(&plan);
+        assert_eq!(planned.len(), 1);
+        assert_eq!(planned[0].surface_id, surface_id);
+        assert_eq!(planned[0].requested_source_size, Size::new(160.0, 90.0));
+        assert_eq!(planned[0].key, None);
     }
 }
 

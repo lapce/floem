@@ -1,10 +1,10 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Duration, time::Instant};
 
 use floem::imaging::record::Scene;
-use floem::imaging::{Painter, SceneImage};
+use floem::imaging::{Brush as ImagingBrush, Painter, SceneImage};
 use floem::kurbo::Affine;
 use floem::peniko::color::Oklch;
-use floem::{Image, ImageBrush};
+use floem::{Brush, Gradient, Image, ImageBrush};
 use floem::{
     ViewId,
     context::{EventCx, LayoutChanged, LayoutChangedListener, PaintCx},
@@ -15,7 +15,7 @@ use floem::{
     },
     kurbo::{Circle, Point, Rect, Shape, Size, Stroke},
     peniko::{
-        Brush, Compose, Extend, Gradient, ImageQuality, Mix,
+        Compose, Extend, ImageQuality, Mix,
         color::{
             AlphaColor,
             ColorSpaceTag::{self, LinearSrgb},
@@ -184,8 +184,8 @@ fn cached_checkerboard_tile_image(light_color: Color, dark_color: Color) -> Scen
 fn build_checkerboard_tile_image(light_color: Color, dark_color: Color) -> SceneImage {
     let mut scene = Scene::new();
     let mut painter = Painter::new(&mut scene);
-    let dark_brush = Brush::Solid(dark_color);
-    let light_brush = Brush::Solid(light_color);
+    let dark_brush = ImagingBrush::Solid(dark_color);
+    let light_brush = ImagingBrush::Solid(light_color);
 
     // Fill whole 2x2 with light
     painter
@@ -208,22 +208,24 @@ fn build_sat_value_field(size: Size, hue: f32) -> Rc<Scene> {
     let mut scene = Scene::new();
     let mut p = Painter::new(&mut scene);
     {
-        let white = Brush::Solid(css::WHITE);
+        let white = ImagingBrush::Solid(css::WHITE);
         p.fill(rect_path, &white).draw();
 
-        let sat_gradient: Brush = Gradient::new_linear(Point::ZERO, Point::new(size.width, 0.0))
-            .with_stops([
-                (0.0, css::WHITE),
-                (1.0, AlphaColor::<Hsl>::new([hue, 100., 50., 1.]).convert()),
-            ])
-            .with_interpolation_cs(ColorSpaceTag::LinearSrgb)
-            .into();
+        let sat_gradient: ImagingBrush =
+            floem::peniko::Gradient::new_linear(Point::ZERO, Point::new(size.width, 0.0))
+                .with_stops([
+                    (0.0, css::WHITE),
+                    (1.0, AlphaColor::<Hsl>::new([hue, 100., 50., 1.]).convert()),
+                ])
+                .with_interpolation_cs(ColorSpaceTag::LinearSrgb)
+                .into();
         p.fill(rect_path, &sat_gradient).draw();
 
-        let val_gradient: Brush = Gradient::new_linear(Point::ZERO, Point::new(0.0, size.height))
-            .with_stops([(0.0, Color::from_rgba8(0, 0, 0, 0)), (1.0, css::BLACK)])
-            .with_interpolation_cs(ColorSpaceTag::LinearSrgb)
-            .into();
+        let val_gradient: ImagingBrush =
+            floem::peniko::Gradient::new_linear(Point::ZERO, Point::new(0.0, size.height))
+                .with_stops([(0.0, Color::from_rgba8(0, 0, 0, 0)), (1.0, css::BLACK)])
+                .with_interpolation_cs(ColorSpaceTag::LinearSrgb)
+                .into();
         let group = floem::imaging::GroupRef::new()
             .with_clip(floem::imaging::ClipRef::fill(rect_path))
             .with_composite(floem::imaging::Composite::new(
@@ -245,7 +247,7 @@ fn build_hue_picker_gradient(size: Size) -> Rc<Scene> {
     let mut scene = Scene::new();
     let mut p = Painter::new(&mut scene);
     {
-        let hue_gradient: Brush = Gradient::new_linear(
+        let hue_gradient: ImagingBrush = floem::peniko::Gradient::new_linear(
             Point::new(0.0, size.height / 2.0),
             Point::new(size.width, size.height / 2.0),
         )

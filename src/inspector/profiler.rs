@@ -1,6 +1,7 @@
 use super::{TimingKind, TimingReport, TimingThread};
 use crate::app::UserEvent;
 use crate::context::{LayoutChanged, LayoutChangedListener, PaintCx, StyleCx};
+use crate::effects::Brush;
 use crate::event::{Event, EventPropagation, PointerScrollEventExt, listener};
 use crate::prelude::palette::css;
 use crate::prelude::{EventListenerTrait, TooltipExt};
@@ -16,8 +17,8 @@ use crate::views::{
 };
 use crate::{ElementId, box_tree::ElementMeta};
 use floem_reactive::{Effect, Memo, RwSignal, Scope, SignalGet, SignalUpdate};
+use peniko::Color;
 use peniko::kurbo::{Affine, Line, Point, Rect, Size, Stroke};
-use peniko::{Brush, Color};
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::mem;
@@ -1177,7 +1178,7 @@ impl View for ProfilerTimelineView {
             );
             cx.painter.with_fill_clip(rect, |p| {
                 element.label_layout.draw_with_painter(
-                    p.as_imaging_dyn(),
+                    p.as_dyn(),
                     text_origin,
                     cx.font_embolden,
                     cx.window_state.effective_scale(),

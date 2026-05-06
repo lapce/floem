@@ -11,7 +11,7 @@ use muda::MenuTheme as MudaMenuTheme;
 
 use crate::platform::{Duration, Instant};
 #[cfg(target_os = "macos")]
-use subduction_backend_apple::{MetalCaptureScopeGuard, request_next_metal_capture};
+use subduction_backend_apple::{request_next_metal_capture, try_start_armed_metal_capture};
 use ui_events::keyboard::{Key, KeyboardEvent, Modifiers, NamedKey};
 use ui_events::pointer::PointerEvent;
 use ui_events_winit::WindowEventReducer;
@@ -1186,6 +1186,15 @@ impl WindowHandle {
                     .map(|end| end.max(render_end))
                     .unwrap_or(render_end),
             );
+            #[cfg(target_os = "macos")]
+            if self
+                .compositor_runtime
+                .metal_capture_frame_ready_to_commit()
+            {
+                let result = self.attempt_compositor_commit("metal-capture-ready");
+                self.apply_compositor_commit_result(result);
+                return true;
+            }
             if self.compositor_runtime.has_pending_scene_renders() {
                 return true;
             }
@@ -1273,6 +1282,15 @@ impl WindowHandle {
                     self.gpu_work_estimate,
                     gpu_end.saturating_duration_since(cpu_end),
                 );
+            }
+            #[cfg(target_os = "macos")]
+            if self
+                .compositor_runtime
+                .metal_capture_frame_ready_to_commit()
+            {
+                let result = self.attempt_compositor_commit("metal-capture-ready");
+                self.apply_compositor_commit_result(result);
+                return true;
             }
             if self.compositor_runtime.has_pending_scene_renders() {
                 return true;
@@ -2060,8 +2078,7 @@ impl WindowHandle {
         if self
             .gpu_resources
             .as_ref()
-            .and_then(|resources| MetalCaptureScopeGuard::begin_frame(&resources.queue))
-            .is_some()
+            .is_some_and(|resources| try_start_armed_metal_capture(&resources.queue))
         {
             self.compositor_runtime.mark_metal_capture_active();
         }
@@ -2386,6 +2403,14 @@ impl WindowHandle {
             }
             status = self.compositor_work_status();
             frame_demand = self.status_frame_demand(status);
+        }
+
+        #[cfg(target_os = "macos")]
+        if self
+            .compositor_runtime
+            .metal_capture_waiting_for_rendered_frame()
+        {
+            return self.current_frame_schedule();
         }
 
         let has_compositor_surface_pull = self.has_compositor_surface_pull();

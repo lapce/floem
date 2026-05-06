@@ -21,7 +21,7 @@ use imaging::{
 };
 use peniko::{
     ImageData,
-    kurbo::{Affine, Size},
+    kurbo::{Affine, Rect, Size},
 };
 use subduction::wgpu::SurfaceColorSpace;
 
@@ -29,8 +29,10 @@ use crate::{
     Application,
     animate::easing::{Bezier, Easing, Linear, Spring},
     app::UserEvent,
-    compositor_surface::CompositorSurfaceId,
+    compositor_surface::SurfaceSlotId,
+    gradient::Gradient,
     platform::{Duration, Instant},
+    unit::{FontSizeCx, Length},
 };
 
 /// A Floem group filter.
@@ -110,6 +112,30 @@ impl Image {
             Self::Source(source) => ImageRef::Source(source),
         }
     }
+
+    #[must_use]
+    pub(crate) fn resolve_size(self, bounds: Rect, font_size: &FontSizeCx) -> Self {
+        match self {
+            Self::Surface(surface) if surface.size.needs_bounds() => {
+                Self::Surface(surface.with_size(surface.size.resolve(bounds, font_size)))
+            }
+            Self::Source(source) if source.size.needs_bounds() => {
+                let size = source.size.resolve(bounds, font_size);
+                Self::Source(source.with_size(size))
+            }
+            image => image,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn size_in_bounds(&self, bounds: Rect, font_size: &FontSizeCx) -> Option<Size> {
+        match self {
+            Self::Raster(image) => Some(Size::new(f64::from(image.width), f64::from(image.height))),
+            Self::Scene(image) => Some(Size::new(f64::from(image.width()), f64::from(image.height()))),
+            Self::Surface(surface) => Some(surface.size.resolve(bounds, font_size)),
+            Self::Source(source) => Some(source.size.resolve(bounds, font_size)),
+        }
+    }
 }
 
 impl TryFrom<imaging::Image> for Image {
@@ -154,7 +180,45 @@ impl From<ShaderSourceImage> for Image {
 /// payloads and Peniko gradients. Renderer-backed images and
 /// compositor-generated shader sources share the same brush path until the
 /// display-list recorder lowers source images into compositor passes.
-pub type Brush = imaging::Brush<ImageBrush, peniko::Gradient>;
+pub type Brush = imaging::Brush<ImageBrush, Gradient>;
+
+/// Alpha helpers for Floem's concrete brush specialization.
+pub trait BrushAlphaExt {
+    /// Return the brush with the alpha component set to `alpha`.
+    #[must_use]
+    fn with_alpha(self, alpha: f32) -> Self;
+
+    /// Return the brush with its alpha component multiplied by `alpha`.
+    #[must_use]
+    #[track_caller]
+    fn multiply_alpha(self, alpha: f32) -> Self;
+}
+
+impl BrushAlphaExt for Brush {
+    fn with_alpha(self, alpha: f32) -> Self {
+        match self {
+            Self::Solid(color) => Self::Solid(color.with_alpha(alpha)),
+            Self::Gradient(gradient) => Self::Gradient(gradient.with_alpha(alpha)),
+            Self::Image(image) => Self::Image(image.with_alpha(alpha)),
+        }
+    }
+
+    fn multiply_alpha(self, alpha: f32) -> Self {
+        debug_assert!(
+            alpha.is_finite() && alpha >= 0.0,
+            "A non-finite or negative alpha ({alpha}) is meaningless."
+        );
+        if alpha == 1.0 {
+            self
+        } else {
+            match self {
+                Self::Solid(color) => Self::Solid(color.multiply_alpha(alpha)),
+                Self::Gradient(gradient) => Self::Gradient(gradient.multiply_alpha(alpha)),
+                Self::Image(image) => Self::Image(image.multiply_alpha(alpha)),
+            }
+        }
+    }
+}
 
 /// Borrowed Floem image payload.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -339,16 +403,101 @@ impl From<&ImageBrush> for Brush {
     }
 }
 
+impl From<Gradient> for Brush {
+    fn from(value: Gradient) -> Self {
+        Self::Gradient(value)
+    }
+}
+
 /// Sized image view for a [`ShaderSource`].
 ///
 /// Shader sources are shader programs, not image brushes. Create one of these
 /// explicit image views with [`ShaderSource::image`] before using a source as
 /// an [`ImageBrush`] payload. The size is the source image's natural logical
-/// size for image-brush sampling.
+/// size for image-brush sampling. Length-based sizes are resolved against the
+/// bounds of the painted geometry during display-list lowering.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShaderSourceImage {
     pub source: ShaderSource,
-    pub size: Size,
+    pub size: ImageSize,
+}
+
+impl ShaderSourceImage {
+    #[must_use]
+    pub(crate) fn with_size(mut self, size: impl Into<ImageSize>) -> Self {
+        self.size = size.into();
+        self
+    }
+}
+
+/// Natural logical image size used by Floem-owned image payloads.
+///
+/// This is separate from `kurbo::Size` so image source sizes can be expressed
+/// relative to the bounds of the painted geometry. Absolute numeric sizes keep
+/// the existing behavior, while `pct()`/`Length::Pct` sizes resolve during
+/// display-list lowering. For a background that means the full view bounds; for
+/// explicit fills and strokes it means the painted shape's bounds.
+///
+/// ```
+/// # use floem::{ImageSize, prelude::*};
+/// let full_paint_bounds = ImageSize::new(100.0.pct(), 100.0.pct());
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ImageSize {
+    pub width: Length,
+    pub height: Length,
+}
+
+impl ImageSize {
+    #[must_use]
+    pub fn new(width: impl Into<Length>, height: impl Into<Length>) -> Self {
+        Self {
+            width: width.into(),
+            height: height.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn resolve(self, bounds: Rect, font_size: &FontSizeCx) -> Size {
+        Size::new(
+            self.width.resolve(bounds.width(), font_size).max(0.0),
+            self.height.resolve(bounds.height(), font_size).max(0.0),
+        )
+    }
+
+    #[must_use]
+    pub(crate) fn needs_bounds(self) -> bool {
+        matches!(self.width, Length::Pct(_)) || matches!(self.height, Length::Pct(_))
+    }
+
+    #[must_use]
+    pub fn as_absolute(self) -> Option<Size> {
+        match (self.width, self.height) {
+            (Length::Pt(width), Length::Pt(height)) => {
+                Some(Size::new(width.max(0.0), height.max(0.0)))
+            }
+            _ => None,
+        }
+    }
+}
+
+impl From<Size> for ImageSize {
+    fn from(value: Size) -> Self {
+        Self {
+            width: Length::Pt(value.width),
+            height: Length::Pt(value.height),
+        }
+    }
+}
+
+impl<W, H> From<(W, H)> for ImageSize
+where
+    W: Into<Length>,
+    H: Into<Length>,
+{
+    fn from(value: (W, H)) -> Self {
+        Self::new(value.0, value.1)
+    }
 }
 
 /// Floem image identity for compositor/external surface content.
@@ -356,19 +505,48 @@ pub struct ShaderSourceImage {
 /// Surface images stay as Floem image payloads in paint commands. They are
 /// converted to [`imaging::ExternalImage`] only when Floem lowers the display
 /// list for renderer/compositor consumption.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SurfaceImage {
-    /// Stable surface identity used to resolve submitted compositor content.
-    pub surface_id: CompositorSurfaceId,
+    /// Stable image-placement identity. Multiple image handles can reference
+    /// the same producer surface with independent source sizing.
+    pub(crate) image_id: SurfaceImageId,
+    /// Stable slot identity used to resolve submitted surface content.
+    pub slot_id: SurfaceSlotId,
     /// Natural logical image size for brush sampling.
-    pub size: Size,
+    pub size: ImageSize,
 }
 
 impl SurfaceImage {
     /// Create a new surface image identity with an explicit natural size.
+    ///
+    /// The size can be absolute or length-based. Length-based sizes are
+    /// resolved against the painted geometry bounds when the display list is
+    /// lowered.
     #[must_use]
-    pub fn new(surface_id: CompositorSurfaceId, size: Size) -> Self {
-        Self { surface_id, size }
+    pub fn new(slot_id: SurfaceSlotId, size: impl Into<ImageSize>) -> Self {
+        Self {
+            image_id: SurfaceImageId::next(),
+            slot_id,
+            size: size.into(),
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn with_size(mut self, size: impl Into<ImageSize>) -> Self {
+        self.size = size.into();
+        self
+    }
+}
+
+static NEXT_SURFACE_IMAGE_ID: AtomicU64 = AtomicU64::new(1);
+
+/// Internal stable identity for one Floem image handle backed by a compositor surface.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct SurfaceImageId(u64);
+
+impl SurfaceImageId {
+    fn next() -> Self {
+        Self(NEXT_SURFACE_IMAGE_ID.fetch_add(1, Ordering::Relaxed))
     }
 }
 
@@ -757,8 +935,11 @@ impl ShaderSource {
     /// can be painted with an [`ImageBrush`]. That size defines the source
     /// image space used by image-brush sampling.
     #[must_use]
-    pub fn image(self, size: Size) -> ShaderSourceImage {
-        ShaderSourceImage { source: self, size }
+    pub fn image(self, size: impl Into<ImageSize>) -> ShaderSourceImage {
+        ShaderSourceImage {
+            source: self,
+            size: size.into(),
+        }
     }
 
     /// Creates a WGSL shader source from a function body.

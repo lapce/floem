@@ -4,14 +4,17 @@
 mod values_extended_scene;
 pub(crate) use values_extended_scene::scene_debug_view_with_size;
 
-use crate::effects::Brush;
 use crate::text::{FontWeight, LineHeightValue};
+use crate::{
+    effects::Brush,
+    gradient::{ColorStop, ColorStops, Gradient},
+};
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
 use peniko::color::{HueDirection, palette};
 use peniko::kurbo::{self, Affine, Point, Shape, Stroke, Vec2};
 use peniko::{
-    Color, ColorStop, ColorStops, Gradient, GradientKind, ImageQuality, ImageSampler,
-    InterpolationAlphaSpace, LinearGradientPosition,
+    Color, GradientKind, ImageQuality, ImageSampler, InterpolationAlphaSpace,
+    LinearGradientPosition,
 };
 use smallvec::SmallVec;
 use std::collections::HashSet;
@@ -949,8 +952,9 @@ impl IntoView for Gradient {
         let box_width = 34.;
         let box_height = 18.;
         let mut grad = self.clone();
-        grad.kind = match grad.kind {
-            GradientKind::Linear(LinearGradientPosition { start, end }) => {
+        grad.kind = match (grad.kind, grad.geometry) {
+            (GradientKind::Linear(position), crate::gradient::GradientGeometry::Absolute) => {
+                let LinearGradientPosition { start, end } = position;
                 let dx = end.x - start.x;
                 let dy = end.y - start.y;
 
@@ -976,7 +980,7 @@ impl IntoView for Gradient {
                     end: new_end,
                 })
             }
-            _ => grad.kind,
+            (kind, _) => kind,
         };
         let color = ().style(move |s| {
             s.background(grad.clone())
@@ -1029,7 +1033,7 @@ impl IntoView for Gradient {
                     Stack::horizontal((
                         Label::new(format!("[{idx}]"))
                             .style(|s| s.font_bold().min_width(36.0).justify_end()),
-                        Label::new(format!("{:.3}", stop.offset)).style(|s| s.min_width(52.0)),
+                        Label::new(format!("{:?}", stop.offset)).style(|s| s.min_width(52.0)),
                         stop.color.to_alpha_color().into_any(),
                     ))
                     .style(|s| s.items_center().gap(10.0))
@@ -1277,6 +1281,7 @@ impl StylePropValue for Brush {
                     hue_direction: gradient.hue_direction,
                     stops: ColorStops::from(&*interpolated_stops),
                     interpolation_alpha_space: InterpolationAlphaSpace::Premultiplied,
+                    geometry: gradient.geometry,
                 }))
             }
             (Brush::Solid(solid), Brush::Gradient(gradient)) => {
@@ -1299,6 +1304,7 @@ impl StylePropValue for Brush {
                     hue_direction: gradient.hue_direction,
                     stops: ColorStops::from(&*interpolated_stops),
                     interpolation_alpha_space: InterpolationAlphaSpace::Premultiplied,
+                    geometry: gradient.geometry,
                 }))
             }
 

@@ -1929,10 +1929,12 @@ define_builtin_props!(
     /// Changes the appearance of the mouse cursor.
     Cursor cursor { }: Option<CursorStyle> [CursorStyle] {} = None,
 
-    /// Sets the text color.
+    /// Sets the text brush.
     ///
-    /// This property is inherited by child views.
-    TextColor color { tr }: Option<Color> [Color] { inherited } = None,
+    /// This property is inherited by child views. Solid colors remain the common
+    /// case, but text can also use Floem gradients, images, surfaces, and shader
+    /// sources through the same brush path as other paint commands.
+    TextColor color { tr }: Option<Brush> [Brush] { inherited } = None,
 
     /// Sets the background color or image.
     ///

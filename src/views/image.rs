@@ -12,7 +12,7 @@ use imaging::Image as ImagingImage;
 use peniko::{Blob, ImageAlphaType, ImageData, kurbo::Rect};
 
 use crate::{
-    effects::{Brush, Image as FloemImage, ImageBrush, ShaderSourceImage},
+    effects::{Brush, Image as FloemImage, ImageBrush, ImageSize, ShaderSourceImage},
     prop_extractor,
     style::{FontSizeCx, ObjectFit, ObjectPosition},
     view::{LayoutNodeCx, MeasureFn, View, ViewId},
@@ -51,13 +51,16 @@ impl ImageLayoutData {
         _object_fit: ObjectFit,
     ) -> Box<MeasureFn> {
         Box::new(
-            move |known_dimensions, _available_space, _node_id, _style, _measure_ctx| {
+            move |known_dimensions, _available_space, _node_id, style, _measure_ctx| {
                 use taffy::*;
 
                 let data = layout_data.borrow();
                 let natural_width = data.natural_width as f32;
                 let natural_height = data.natural_height as f32;
-                let natural_aspect = data.aspect_ratio();
+                let preferred_aspect = style
+                    .aspect_ratio
+                    .filter(|aspect| aspect.is_finite() && *aspect > 0.0)
+                    .unwrap_or_else(|| data.aspect_ratio());
                 if natural_width == 0.0 || natural_height == 0.0 {
                     return Size {
                         width: 0.0,
@@ -69,7 +72,7 @@ impl ImageLayoutData {
                 if let Some(w) = known_dimensions.width {
                     let h = known_dimensions.height.unwrap_or_else(|| {
                         // Use aspect ratio to compute height
-                        w / natural_aspect
+                        w / preferred_aspect
                     });
                     return Size {
                         width: w,
@@ -79,20 +82,18 @@ impl ImageLayoutData {
 
                 // If only height is set, compute width from aspect ratio
                 if let Some(h) = known_dimensions.height {
-                    let w = h * natural_aspect;
+                    let w = h * preferred_aspect;
                     return Size {
                         width: w,
                         height: h,
                     };
                 }
 
-                // No explicit dimensions: use intrinsic size to match CSS img default
-                // behavior when width/height are `auto`.
+                // No explicit dimensions: keep the intrinsic width, but honor an explicit
+                // preferred aspect ratio when computing the auto height.
                 Size {
-                    // Both dimensions provided by layout context still do not force a resized
-                    // intrinsic image; object-fit is a paint-time behavior for sized boxes.
                     width: natural_width,
-                    height: natural_height,
+                    height: natural_width / preferred_aspect,
                 }
             },
         )
@@ -388,8 +389,8 @@ impl Image {
         };
 
         let layout_data = Rc::new(RefCell::new(ImageLayoutData::new(
-            image_width(&img),
-            image_height(&img),
+            intrinsic_image_width(&img),
+            intrinsic_image_height(&img),
         )));
 
         let mut img = Self {
@@ -404,8 +405,8 @@ impl Image {
     }
 
     fn set_image(&mut self, image: FloemImage) {
-        self.layout_data.borrow_mut().natural_width = image_width(&image);
-        self.layout_data.borrow_mut().natural_height = image_height(&image);
+        self.layout_data.borrow_mut().natural_width = intrinsic_image_width(&image);
+        self.layout_data.borrow_mut().natural_height = intrinsic_image_height(&image);
         self.img = image;
         self.id.request_mark_view_layout_dirty();
         self.id.request_layout();
@@ -447,8 +448,8 @@ impl Image {
         object_fit: ObjectFit,
         object_position: ObjectPosition,
     ) -> Rect {
-        let natural_w = image_width(&self.img) as f64;
-        let natural_h = image_height(&self.img) as f64;
+        let natural_w = intrinsic_image_width(&self.img) as f64;
+        let natural_h = intrinsic_image_height(&self.img) as f64;
         if natural_w == 0.0 || natural_h == 0.0 {
             return content_rect;
         }
@@ -544,19 +545,20 @@ impl View for Image {
             image: self.img.clone(),
             sampler: self.style.image_sampler(),
         }));
-        let source_width = image_width(&self.img) as f64;
-        let source_height = image_height(&self.img) as f64;
+        let source_size = resolved_image_size(&self.img, content_rect);
+        let source_width = source_size.width;
+        let source_height = source_size.height;
 
         if source_width <= 0.0 || source_height <= 0.0 {
             return;
         }
 
         let source_rect = Rect::new(0.0, 0.0, source_width, source_height);
-        let image_transform = peniko::kurbo::Affine::translate((dest_rect.x0, dest_rect.y0))
-            .then_scale_non_uniform(
-                dest_rect.width() / source_width,
-                dest_rect.height() / source_height,
-            );
+        let image_transform = peniko::kurbo::Affine::scale_non_uniform(
+            dest_rect.width() / source_width,
+            dest_rect.height() / source_height,
+        )
+        .then_translate(dest_rect.origin().to_vec2());
 
         if self.needs_clip() {
             cx.painter.with_fill_clip(content_rect, |p| {
@@ -573,29 +575,47 @@ impl View for Image {
     }
 }
 
-fn image_width(image: &FloemImage) -> u32 {
+fn intrinsic_image_width(image: &FloemImage) -> u32 {
     match image {
         FloemImage::Raster(image) => image.width,
         FloemImage::Scene(image) => image.width(),
-        FloemImage::Surface(surface) => {
-            surface.size.width.max(0.0).round().min(u32::MAX as f64) as u32
-        }
-        FloemImage::Source(source) => {
-            source.size.width.max(0.0).round().min(u32::MAX as f64) as u32
-        }
+        FloemImage::Surface(surface) => absolute_image_width(surface.size),
+        FloemImage::Source(source) => absolute_image_width(source.size),
     }
 }
 
-fn image_height(image: &FloemImage) -> u32 {
+fn intrinsic_image_height(image: &FloemImage) -> u32 {
     match image {
         FloemImage::Raster(image) => image.height,
         FloemImage::Scene(image) => image.height(),
-        FloemImage::Surface(surface) => {
-            surface.size.height.max(0.0).round().min(u32::MAX as f64) as u32
+        FloemImage::Surface(surface) => absolute_image_height(surface.size),
+        FloemImage::Source(source) => absolute_image_height(source.size),
+    }
+}
+
+fn absolute_image_width(size: ImageSize) -> u32 {
+    size.as_absolute()
+        .map(|size| size.width.max(0.0).round().min(u32::MAX as f64) as u32)
+        .unwrap_or(0)
+}
+
+fn absolute_image_height(size: ImageSize) -> u32 {
+    size.as_absolute()
+        .map(|size| size.height.max(0.0).round().min(u32::MAX as f64) as u32)
+        .unwrap_or(0)
+}
+
+fn resolved_image_size(image: &FloemImage, bounds: Rect) -> peniko::kurbo::Size {
+    let font_size_cx = FontSizeCx::new(16.0, 16.0);
+    match image {
+        FloemImage::Raster(image) => {
+            peniko::kurbo::Size::new(f64::from(image.width), f64::from(image.height))
         }
-        FloemImage::Source(source) => {
-            source.size.height.max(0.0).round().min(u32::MAX as f64) as u32
+        FloemImage::Scene(image) => {
+            peniko::kurbo::Size::new(f64::from(image.width()), f64::from(image.height()))
         }
+        FloemImage::Surface(surface) => surface.size.resolve(bounds, &font_size_cx),
+        FloemImage::Source(source) => source.size.resolve(bounds, &font_size_cx),
     }
 }
 
@@ -611,17 +631,35 @@ mod tests {
         known: taffy::Size<Option<f32>>,
         available: taffy::Size<taffy::AvailableSpace>,
     ) -> taffy::Size<f32> {
+        run_measure_with_style(
+            width,
+            height,
+            object_fit,
+            known,
+            available,
+            taffy::Style::default(),
+        )
+    }
+
+    fn run_measure_with_style(
+        width: u32,
+        height: u32,
+        object_fit: ObjectFit,
+        known: taffy::Size<Option<f32>>,
+        available: taffy::Size<taffy::AvailableSpace>,
+        style: taffy::Style,
+    ) -> taffy::Size<f32> {
         let layout_data = Rc::new(RefCell::new(ImageLayoutData::new(width, height)));
         let mut measure = ImageLayoutData::create_taffy_layout_fn(layout_data, object_fit);
         let mut tree = taffy::TaffyTree::<()>::new();
-        let node_id = tree.new_leaf(taffy::Style::default()).unwrap();
+        let node_id = tree.new_leaf(style.clone()).unwrap();
         let mut measure_ctx = MeasureCx::default();
 
         measure(
             known,
             available,
             node_id,
-            &taffy::Style::default(),
+            &style,
             &mut measure_ctx,
         )
     }
@@ -629,6 +667,14 @@ mod tests {
     fn assert_close(actual: f32, expected: f32) {
         let epsilon = 0.01f64;
         assert!((actual as f64 - expected as f64).abs() < epsilon);
+    }
+
+    fn assert_rect_close(actual: Rect, expected: Rect) {
+        let epsilon = 0.01;
+        assert!((actual.x0 - expected.x0).abs() < epsilon);
+        assert!((actual.y0 - expected.y0).abs() < epsilon);
+        assert!((actual.x1 - expected.x1).abs() < epsilon);
+        assert!((actual.y1 - expected.y1).abs() < epsilon);
     }
 
     #[test]
@@ -743,5 +789,71 @@ mod tests {
         );
         assert_close(result.width, 200.0);
         assert_close(result.height, 60.0);
+    }
+
+    #[test]
+    fn img_object_fit_contain_centers_square_image_vertically() {
+        let image = Image::new(ImageData {
+            data: Blob::new(Arc::new([])),
+            width: 640,
+            height: 640,
+            format: peniko::ImageFormat::Rgba8,
+            alpha_type: ImageAlphaType::AlphaPremultiplied,
+        });
+        let dest_rect = image.object_fit_dest_rect_with(
+            Rect::new(0.0, 0.0, 150.0, 300.0),
+            ObjectFit::Contain,
+            ObjectPosition::Center,
+        );
+
+        assert_rect_close(dest_rect, Rect::new(0.0, 75.0, 150.0, 225.0));
+    }
+
+    #[test]
+    fn img_aspect_ratio_overrides_intrinsic_auto_height() {
+        let result = run_measure_with_style(
+            600,
+            600,
+            ObjectFit::Contain,
+            taffy::Size {
+                width: None,
+                height: None,
+            },
+            taffy::Size {
+                width: taffy::AvailableSpace::MaxContent,
+                height: taffy::AvailableSpace::MaxContent,
+            },
+            taffy::Style {
+                aspect_ratio: Some(1.5),
+                ..Default::default()
+            },
+        );
+
+        assert_close(result.width, 600.0);
+        assert_close(result.height, 400.0);
+    }
+
+    #[test]
+    fn img_aspect_ratio_overrides_intrinsic_from_explicit_width() {
+        let result = run_measure_with_style(
+            600,
+            600,
+            ObjectFit::Contain,
+            taffy::Size {
+                width: Some(300.0),
+                height: None,
+            },
+            taffy::Size {
+                width: taffy::AvailableSpace::MaxContent,
+                height: taffy::AvailableSpace::MaxContent,
+            },
+            taffy::Style {
+                aspect_ratio: Some(1.5),
+                ..Default::default()
+            },
+        );
+
+        assert_close(result.width, 300.0);
+        assert_close(result.height, 200.0);
     }
 }

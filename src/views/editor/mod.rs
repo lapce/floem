@@ -132,7 +132,10 @@ prop_extractor! {
 }
 impl EditorStyle {
     pub fn ed_text_color(&self) -> Color {
-        self.text_color().unwrap_or(palette::css::BLACK)
+        match self.text_color() {
+            Some(Brush::Solid(color)) => color,
+            _ => palette::css::BLACK,
+        }
     }
 }
 impl EditorStyle {
