@@ -52,6 +52,7 @@ pub(crate) struct WindowCompositor {
 
     layer_host: Option<subduction::LayerHost>,
     layer_host_failed: bool,
+    surface_pool_retained_extras: usize,
     unsupported_publications: FxHashSet<UnsupportedPublication>,
     unused_resource_releases: Arc<Mutex<Vec<u64>>>,
     scene_content_by_key: FxHashMap<CompositionKey, ExternalTextureContent>,
@@ -90,6 +91,13 @@ pub(crate) struct CompositorCommit {
 }
 
 impl WindowCompositor {
+    pub(crate) fn set_surface_pool_retained_extras(&mut self, extras: usize) {
+        self.surface_pool_retained_extras = extras;
+        if let Some(layer_host) = &mut self.layer_host {
+            layer_host.set_max_idle_wgpu_surface_resources(extras);
+        }
+    }
+
     pub(crate) fn invalidate_compositor_surface_content(
         &mut self,
         surface_id: CompositorSurfaceId,
@@ -115,7 +123,8 @@ impl WindowCompositor {
             if self.pending_scene_renders.remove(key).is_some() {
                 crate::floem_debug_log!(
                     "floem compositor pending scene cancel reason=external_surface_invalidate key={:?} surface={:?}",
-                    key, surface_id,
+                    key,
+                    surface_id,
                 );
             }
         }
@@ -141,6 +150,7 @@ impl WindowCompositor {
         }
         match subduction::LayerHost::from_window(window) {
             Ok(mut layer_host) => {
+                layer_host.set_max_idle_wgpu_surface_resources(self.surface_pool_retained_extras);
                 if crate::frame_source::frame_pacing_diag_enabled() {
                     crate::floem_debug_log!(
                         "floem compositor layer host backend={}",
@@ -455,7 +465,8 @@ impl WindowCompositor {
         if crate::frame_source::frame_pacing_diag_enabled() {
             crate::floem_debug_log!(
                 "floem compositor render_scene_layers end call={} scheduled_frames={}",
-                render_call_id, scheduled_scene_frames,
+                render_call_id,
+                scheduled_scene_frames,
             );
         }
         #[cfg(target_os = "macos")]
@@ -506,7 +517,8 @@ impl WindowCompositor {
             if crate::frame_source::frame_pacing_diag_enabled() {
                 crate::floem_debug_log!(
                     "floem compositor pending scene cancel reason={} count={}",
-                    reason, pending_scene_renders,
+                    reason,
+                    pending_scene_renders,
                 );
             }
         }
@@ -718,7 +730,10 @@ impl WindowCompositor {
                 if self.unsupported_publications.insert(failure) {
                     crate::floem_debug_log!(
                         "floem compositor: scene layer {:?} target {}x{} exceeds max texture dimension {}",
-                        layer.key, width, height, max_texture_dimension,
+                        layer.key,
+                        width,
+                        height,
+                        max_texture_dimension,
                     );
                 }
                 continue;
@@ -966,7 +981,10 @@ impl WindowCompositor {
             if crate::frame_source::frame_pacing_diag_enabled() {
                 crate::floem_debug_log!(
                     "floem compositor scene render scheduled key={:?} surface={:?} size={}x{}",
-                    layer.key, surface_id, width, height,
+                    layer.key,
+                    surface_id,
+                    width,
+                    height,
                 );
             }
             scheduled_frames += 1;
@@ -1115,7 +1133,9 @@ impl WindowCompositor {
         if crate::frame_source::frame_pacing_diag_enabled() {
             crate::floem_debug_log!(
                 "floem compositor scene effect ready key={:?} revision={} gpu_end={:?}",
-                key, pending.content_revision, gpu_end,
+                key,
+                pending.content_revision,
+                gpu_end,
             );
         }
         self.publish_completed_scene_render(key, signature)
@@ -1252,7 +1272,8 @@ impl WindowCompositor {
                 if self.unsupported_publications.insert(failure) {
                     crate::floem_debug_log!(
                         "floem compositor: scene layer {:?} cannot flatten compositor surface {:?} without a submitted texture",
-                        layer.key, external.surface_id,
+                        layer.key,
+                        external.surface_id,
                     );
                 }
                 return None;
@@ -1269,7 +1290,8 @@ impl WindowCompositor {
                 if self.unsupported_publications.insert(failure) {
                     crate::floem_debug_log!(
                         "floem compositor: scene layer {:?} cannot flatten non-Subduction compositor surface {:?}; refusing silent copy/fallback",
-                        layer.key, external.surface_id,
+                        layer.key,
+                        external.surface_id,
                     );
                 }
                 return None;
@@ -1358,7 +1380,9 @@ impl WindowCompositor {
                             if self.unsupported_publications.insert(failure) {
                                 crate::floem_debug_log!(
                                     "floem compositor: compositor surface {:?} submitted a non-Subduction texture {:?} for surface {:?}; refusing silent copy/fallback",
-                                    layer.surface_id, texture.size, surface_id,
+                                    layer.surface_id,
+                                    texture.size,
+                                    surface_id,
                                 );
                             }
                         }
@@ -1371,7 +1395,10 @@ impl WindowCompositor {
                         if self.unsupported_publications.insert(failure) {
                             crate::floem_debug_log!(
                                 "floem compositor: compositor surface {:?} submitted CPU image {}x{} for surface {:?}; refusing silent copy/fallback",
-                                layer.surface_id, image.width, image.height, surface_id,
+                                layer.surface_id,
+                                image.width,
+                                image.height,
+                                surface_id,
                             );
                         }
                     }

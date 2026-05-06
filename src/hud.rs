@@ -398,8 +398,8 @@ fn cadence_miss_threshold_ms(target: Option<Duration>, source: Option<Duration>)
     };
 
     let expected_gap_ms = if source < target {
-            let multiple = target.as_nanos().div_ceil(source.as_nanos()).max(1);
-            duration_ms(source.saturating_mul(multiple.min(u32::MAX as u128) as u32))
+        let multiple = target.as_nanos().div_ceil(source.as_nanos()).max(1);
+        duration_ms(source.saturating_mul(multiple.min(u32::MAX as u128) as u32))
     } else {
         target_ms
     };
@@ -442,11 +442,7 @@ fn metrics_from_report(report: &LayerReport) -> LayerMetrics {
     };
     if !report.samples.is_empty() {
         metrics.avg_ms = total_ms / report.samples.len() as f64;
-        metrics.fps = 1000.0
-            / report
-                .smoothed_ms
-                .unwrap_or(metrics.avg_ms)
-                .max(0.001);
+        metrics.fps = 1000.0 / report.smoothed_ms.unwrap_or(metrics.avg_ms).max(0.001);
         metrics.min_ms = min_ms;
         metrics.max_ms = max_ms;
     }

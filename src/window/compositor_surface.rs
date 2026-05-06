@@ -16,7 +16,6 @@ use subduction_core::layer::SurfaceId;
 
 use super::compositor::WindowCompositor;
 
-#[derive(Default)]
 pub(crate) struct WindowCompositorSurfaces {
     entries: FxHashMap<CompositorSurfaceId, CompositorSurfaceEntry>,
     intermediate_pool: IntermediateTexturePool,
@@ -24,7 +23,22 @@ pub(crate) struct WindowCompositorSurfaces {
     pending_outcomes: Vec<CompositorSurfaceOutcome>,
 }
 
+impl Default for WindowCompositorSurfaces {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
 impl WindowCompositorSurfaces {
+    pub(crate) fn new(surface_pool_retained_extras: usize) -> Self {
+        Self {
+            entries: FxHashMap::default(),
+            intermediate_pool: IntermediateTexturePool::new(surface_pool_retained_extras),
+            needs_frame_pull: false,
+            pending_outcomes: Vec::new(),
+        }
+    }
+
     pub(crate) fn from_entries(
         entries: FxHashMap<CompositorSurfaceId, CompositorSurfaceEntry>,
     ) -> Self {
@@ -536,12 +550,12 @@ fn create_intermediate_wgpu_surface_frame(
     }))
 }
 
-#[derive(Default)]
 struct IntermediateTexturePool {
     resources: FxHashMap<u64, IntermediateTextureResource>,
     next_key: u64,
     clock: u64,
     releases: Arc<Mutex<Vec<u64>>>,
+    max_idle_resources: usize,
 }
 
 struct IntermediateTextureResource {
@@ -556,6 +570,16 @@ struct IntermediateTextureResource {
 }
 
 impl IntermediateTexturePool {
+    fn new(max_idle_resources: usize) -> Self {
+        Self {
+            resources: FxHashMap::default(),
+            next_key: 0,
+            clock: 0,
+            releases: Arc::new(Mutex::new(Vec::new())),
+            max_idle_resources,
+        }
+    }
+
     fn acquire(
         &mut self,
         device: &wgpu::Device,
@@ -638,7 +662,6 @@ impl IntermediateTexturePool {
         format: wgpu::TextureFormat,
         usage: wgpu::TextureUsages,
     ) {
-        const MAX_IDLE_PER_KEY: usize = 3;
         let mut idle = self
             .resources
             .iter()
@@ -651,7 +674,7 @@ impl IntermediateTexturePool {
                     .then_some(key)
             })
             .collect::<Vec<_>>();
-        let remove_count = idle.len().saturating_sub(MAX_IDLE_PER_KEY);
+        let remove_count = idle.len().saturating_sub(self.max_idle_resources);
         idle.truncate(remove_count);
         for key in idle {
             self.resources.remove(&key);
@@ -659,7 +682,6 @@ impl IntermediateTexturePool {
     }
 
     fn prune_idle_total(&mut self) {
-        const MAX_IDLE_TOTAL: usize = 8;
         let mut idle = self
             .resources
             .iter()
@@ -667,7 +689,7 @@ impl IntermediateTexturePool {
                 (!resource.checked_out).then_some((key, resource.last_used))
             })
             .collect::<Vec<_>>();
-        let remove_count = idle.len().saturating_sub(MAX_IDLE_TOTAL);
+        let remove_count = idle.len().saturating_sub(self.max_idle_resources);
         if remove_count == 0 {
             return;
         }

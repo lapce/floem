@@ -639,7 +639,10 @@ impl ApplicationHandle {
                 if crate::frame_source::frame_pacing_diag_enabled() {
                     crate::floem_debug_log!(
                         "floem frame pacing app tick window={:?} tick={} predicted={:?} refresh={:?}",
-                        window_id, tick.frame_index, tick.predicted_present, tick.refresh_interval,
+                        window_id,
+                        tick.frame_index,
+                        tick.predicted_present,
+                        tick.refresh_interval,
                     );
                 }
                 #[cfg(target_os = "macos")]
@@ -1137,6 +1140,7 @@ impl ApplicationHandle {
             win_os_config,
             web_config,
             maximum_drawable_count,
+            surface_pool_retained_extras,
         }: WindowConfig,
     ) {
         let logical_size = size.map(|size| LogicalSize::new(size.width, size.height));
@@ -1326,6 +1330,7 @@ impl ApplicationHandle {
             transparent,
             apply_default_theme,
             maximum_drawable_count,
+            surface_pool_retained_extras,
         );
         self.window_handles.insert(window_id, window_handle);
     }

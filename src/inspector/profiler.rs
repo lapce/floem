@@ -2028,6 +2028,9 @@ pub fn profiler(window_id: WindowId, inspector_window_id: WindowId) -> impl Into
             }
         }))
         .action(move || {
+            if !profiling.get() {
+                PROFILE.with(|profile| profile.set(None));
+            }
             crate::Application::send_proxy_event(UserEvent::InspectorProfileWindow {
                 window_id,
                 inspector_window_id,

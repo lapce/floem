@@ -170,9 +170,19 @@ pub(crate) struct SceneFragmentRenderCompletion {
 pub(crate) struct SceneFragmentRendererPool {
     name: &'static str,
     compositor_texture_format: Option<wgpu::TextureFormat>,
-    workers: Vec<SceneFragmentRenderWorker>,
+    workers: Mutex<SceneFragmentWorkerPoolState>,
+    chooser: RendererChooser,
+    cx: NewRendererCx,
+    worker_gpu_callback_pump: Option<GpuCallbackPump>,
+    max_workers: usize,
     #[cfg(not(target_arch = "wasm32"))]
     _gpu_callback_pump: Option<GpuCallbackPumpThread>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct SceneFragmentWorkerPoolState {
+    workers: Vec<SceneFragmentRenderWorker>,
+    next_worker_index: usize,
 }
 
 #[derive(Clone)]
@@ -713,14 +723,14 @@ impl RendererInit {
 #[cfg(not(target_arch = "wasm32"))]
 impl SceneFragmentRendererPool {
     fn new(chooser: RendererChooser, cx: NewRendererCx) -> Result<Self, String> {
-        let worker_count = std::env::var("FLOEM_RENDER_THREADS")
+        let max_workers = std::env::var("FLOEM_RENDER_THREADS")
             .ok()
             .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or_else(|| {
                 std::thread::available_parallelism()
                     .map(usize::from)
                     .unwrap_or(1)
-                    .clamp(1, 8)
+                    .clamp(1, 4)
             })
             .max(1);
         #[cfg(not(target_arch = "wasm32"))]
@@ -731,19 +741,13 @@ impl SceneFragmentRendererPool {
             .transpose()?;
         #[cfg(not(target_arch = "wasm32"))]
         let worker_gpu_callback_pump = gpu_callback_pump.as_ref().map(GpuCallbackPumpThread::pump);
-        let mut workers = Vec::with_capacity(worker_count);
-        let mut init = None;
-        for index in 0..worker_count {
-            let (worker, worker_init) = SceneFragmentRenderWorker::spawn(
-                index,
-                Arc::clone(&chooser),
-                cx.clone(),
-                worker_gpu_callback_pump.clone(),
-            )?;
-            init.get_or_insert(worker_init);
-            workers.push(worker);
-        }
-        let init = init.expect("at least one renderer worker");
+        let (worker, init) = SceneFragmentRenderWorker::spawn(
+            0,
+            Arc::clone(&chooser),
+            cx.clone(),
+            worker_gpu_callback_pump.clone(),
+            None,
+        )?;
         let compositor_texture_format = match &init {
             RendererInit::Gpu { surface_format, .. } => Some(*surface_format),
             RendererInit::Cpu { .. } => None,
@@ -751,7 +755,14 @@ impl SceneFragmentRendererPool {
         Ok(Self {
             name: init.name(),
             compositor_texture_format,
-            workers,
+            workers: Mutex::new(SceneFragmentWorkerPoolState {
+                workers: vec![worker],
+                next_worker_index: 1,
+            }),
+            chooser,
+            cx,
+            worker_gpu_callback_pump,
+            max_workers,
             #[cfg(not(target_arch = "wasm32"))]
             _gpu_callback_pump: gpu_callback_pump,
         })
@@ -763,14 +774,98 @@ impl SceneFragmentRendererPool {
 
     pub(crate) fn debug_info(&self) -> String {
         format!(
-            "Renderer: {} (scene fragment pool, workers={})",
+            "Renderer: {} (scene fragment pool, workers={}/{})",
             self.name,
-            self.workers.len()
+            self.workers
+                .lock()
+                .map(|state| state.workers.len())
+                .unwrap_or(0),
+            self.max_workers,
         )
     }
 
     pub(crate) fn submit(
         &self,
+        job: SceneFragmentRenderJob,
+        completion: SceneFragmentRenderCompletion,
+    ) -> bool {
+        let mut state = self.workers.lock().expect("renderer worker pool poisoned");
+        state.reap_finished();
+        if state.should_spawn_extra(self.max_workers)
+            && let Err(err) = state.spawn_extra(
+                Arc::clone(&self.chooser),
+                self.cx.clone(),
+                self.worker_gpu_callback_pump.clone(),
+            )
+        {
+            crate::floem_debug_log!("floem render pool failed to spawn extra worker: {err}");
+        }
+        state.submit(job, completion)
+    }
+
+    fn render_for_capture(&self, job: SceneFragmentRenderJob) -> bool {
+        let mut state = self.workers.lock().expect("renderer worker pool poisoned");
+        state.reap_finished();
+        state.render_for_capture(job)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for SceneFragmentRendererPool {
+    fn drop(&mut self) {
+        let Ok(mut state) = self.workers.lock() else {
+            return;
+        };
+        for worker in &mut state.workers {
+            worker.shutdown();
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl SceneFragmentWorkerPoolState {
+    fn reap_finished(&mut self) {
+        let mut index = 0;
+        while index < self.workers.len() {
+            if self.workers[index].is_finished() {
+                let mut worker = self.workers.remove(index);
+                worker.join();
+            } else {
+                index += 1;
+            }
+        }
+    }
+
+    fn should_spawn_extra(&self, max_workers: usize) -> bool {
+        self.workers.len() < max_workers
+            && self
+                .workers
+                .iter()
+                .all(|worker| worker.in_flight.load(Ordering::Relaxed) > 0)
+    }
+
+    fn spawn_extra(
+        &mut self,
+        chooser: RendererChooser,
+        cx: NewRendererCx,
+        gpu_callback_pump: Option<GpuCallbackPump>,
+    ) -> Result<(), String> {
+        const EXTRA_WORKER_IDLE_TIMEOUT: Duration = Duration::from_secs(2);
+        let index = self.next_worker_index;
+        self.next_worker_index = self.next_worker_index.wrapping_add(1).max(1);
+        let (worker, _) = SceneFragmentRenderWorker::spawn(
+            index,
+            chooser,
+            cx,
+            gpu_callback_pump,
+            Some(EXTRA_WORKER_IDLE_TIMEOUT),
+        )?;
+        self.workers.push(worker);
+        Ok(())
+    }
+
+    fn submit(
+        &mut self,
         job: SceneFragmentRenderJob,
         completion: SceneFragmentRenderCompletion,
     ) -> bool {
@@ -780,7 +875,7 @@ impl SceneFragmentRendererPool {
         worker.submit(job, completion)
     }
 
-    fn render_for_capture(&self, job: SceneFragmentRenderJob) -> bool {
+    fn render_for_capture(&mut self, job: SceneFragmentRenderJob) -> bool {
         let Some(worker) = self.least_loaded_worker() else {
             return false;
         };
@@ -795,21 +890,13 @@ impl SceneFragmentRendererPool {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl Drop for SceneFragmentRendererPool {
-    fn drop(&mut self) {
-        for worker in &mut self.workers {
-            worker.shutdown();
-        }
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 impl SceneFragmentRenderWorker {
     fn spawn(
         index: usize,
         chooser: RendererChooser,
         cx: NewRendererCx,
         gpu_callback_pump: Option<GpuCallbackPump>,
+        idle_timeout: Option<Duration>,
     ) -> Result<(Self, RendererInit), String> {
         let (command_tx, command_rx) = mpsc::channel();
         let (init_tx, init_rx) = mpsc::channel();
@@ -823,7 +910,23 @@ impl SceneFragmentRenderWorker {
                 if init_tx.send(init).is_err() {
                     return;
                 }
-                while let Ok(command) = command_rx.recv() {
+                loop {
+                    let command = match idle_timeout {
+                        Some(timeout) => match command_rx.recv_timeout(timeout) {
+                            Ok(command) => command,
+                            Err(mpsc::RecvTimeoutError::Timeout) => {
+                                if worker_in_flight.load(Ordering::Relaxed) == 0 {
+                                    break;
+                                }
+                                continue;
+                            }
+                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        },
+                        None => match command_rx.recv() {
+                            Ok(command) => command,
+                            Err(_) => break,
+                        },
+                    };
                     match command {
                         SceneFragmentRenderCommand::Render { job, completion } => {
                             let render_start = Instant::now();
@@ -935,6 +1038,16 @@ impl SceneFragmentRenderWorker {
 
     fn shutdown(&mut self) {
         let _ = self.sender.send(SceneFragmentRenderCommand::Shutdown);
+        self.join();
+    }
+
+    fn is_finished(&self) -> bool {
+        self.join_handle
+            .as_ref()
+            .is_some_and(thread::JoinHandle::is_finished)
+    }
+
+    fn join(&mut self) {
         if let Some(join_handle) = self.join_handle.take() {
             let _ = join_handle.join();
         }

@@ -1,4 +1,4 @@
-use super::profiler::profiler;
+use super::profiler::{PROFILE, profiler};
 use crate::{
     AnyView, ElementId, IntoView, View, ViewId,
     action::inspect,
@@ -42,6 +42,7 @@ const OS_MOD: Modifiers = if cfg!(target_os = "macos") {
 
 pub fn capture(window_id: WindowId) {
     if !RUNNING.get() {
+        RUNNING.set(true);
         new_window(
             move |inspector_window_id| {
                 INSPECTOR_WINDOW.set(Some(inspector_window_id));
@@ -113,6 +114,8 @@ pub fn capture(window_id: WindowId) {
                     .on_event(el::WindowClosed, |_, _| {
                         RUNNING.set(false);
                         INSPECTOR_WINDOW.set(None);
+                        CAPTURE.with(|capture| capture.set(None));
+                        PROFILE.with(|profile| profile.set(None));
                         EventPropagation::Continue
                     })
                     .on_event_stop(

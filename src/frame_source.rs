@@ -59,7 +59,10 @@ pub(crate) fn new_window_frame_source(window_id: WindowId, output_id: u32) -> Fr
         if frame_pacing_diag_enabled() {
             crate::floem_debug_log!(
                 "floem frame pacing display link callback window={:?} tick={} predicted={:?} refresh={:?}",
-                window_id, tick.frame_index, tick.predicted_present, tick.refresh_interval,
+                window_id,
+                tick.frame_index,
+                tick.predicted_present,
+                tick.refresh_interval,
             );
         }
         Application::send_proxy_event(UserEvent::FrameTick { window_id, tick });
@@ -116,7 +119,9 @@ impl FrameSource {
         if frame_pacing_diag_enabled() {
             crate::floem_debug_log!(
                 "floem frame source target window={:?} monitor={:?} refresh_millihz={:?}",
-                self.window_id, target.monitor_name, target.refresh_millihertz,
+                self.window_id,
+                target.monitor_name,
+                target.refresh_millihertz,
             );
         }
         let changed = self.target.as_ref() != Some(&target);
@@ -160,7 +165,8 @@ impl FrameSource {
         } else if frame_pacing_diag_enabled() {
             crate::floem_debug_log!(
                 "floem frame source preferred deferred window={:?} millihertz={:?}",
-                self.window_id, self.preferred_source_millihertz,
+                self.window_id,
+                self.preferred_source_millihertz,
             );
         }
     }
@@ -298,7 +304,8 @@ impl FrameSource {
             if frame_pacing_diag_enabled() {
                 crate::floem_debug_log!(
                     "floem frame source preferred apply-on-active window={:?} millihertz={:?}",
-                    self.window_id, self.preferred_source_millihertz,
+                    self.window_id,
+                    self.preferred_source_millihertz,
                 );
             }
             self.inner

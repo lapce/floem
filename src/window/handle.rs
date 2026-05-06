@@ -422,6 +422,7 @@ impl WindowHandle {
         transparent: bool,
         apply_default_theme: bool,
         maximum_drawable_count: u32,
+        surface_pool_retained_extras: usize,
     ) -> Self {
         let window_winit_id = window.id();
         let os_scale = window.scale_factor();
@@ -470,7 +471,7 @@ impl WindowHandle {
             },
             ui,
             compositor_runtime: CompositorRuntime::default(),
-            compositor_surfaces: WindowCompositorSurfaces::default(),
+            compositor_surfaces: WindowCompositorSurfaces::new(surface_pool_retained_extras),
             is_maximized,
             transparent,
             profile: None,
@@ -516,6 +517,9 @@ impl WindowHandle {
             }
         }
 
+        window_handle
+            .compositor_runtime
+            .set_surface_pool_retained_extras(surface_pool_retained_extras);
         window_handle
             .compositor_runtime
             .ensure_platform_presenter(window_winit_id, window_handle.window.as_ref());
@@ -1641,7 +1645,9 @@ impl WindowHandle {
             if crate::frame_source::frame_pacing_diag_enabled() {
                 crate::floem_debug_log!(
                     "floem compositor deadline stale window={:?} generation={} token={:?}",
-                    self.window_id, generation, token,
+                    self.window_id,
+                    generation,
+                    token,
                 );
             }
             return false;
@@ -1894,7 +1900,9 @@ impl WindowHandle {
                 if crate::frame_source::frame_pacing_diag_enabled() {
                     crate::floem_debug_log!(
                         "floem begin frame finish window={:?} pending={} demand={:?}",
-                        self.window_id, pending.sequence, demand,
+                        self.window_id,
+                        pending.sequence,
+                        demand,
                     );
                 }
                 if !demand.is_empty() {
@@ -2104,7 +2112,8 @@ impl WindowHandle {
         if crate::frame_source::frame_pacing_diag_enabled() {
             crate::floem_debug_log!(
                 "floem frame pacing window tick window={:?} tick={}",
-                self.window_id, tick.frame_index,
+                self.window_id,
+                tick.frame_index,
             );
         }
         self.frame_source.receive_frame_tick(tick);
@@ -2197,7 +2206,9 @@ impl WindowHandle {
         if crate::frame_source::frame_pacing_diag_enabled() {
             crate::floem_debug_log!(
                 "floem frame source activity window={:?} active={} status={:?}",
-                self.window_id, active, status,
+                self.window_id,
+                active,
+                status,
             );
         }
         self.frame_source.set_active(active);
@@ -2553,7 +2564,8 @@ impl WindowHandle {
         } else if crate::frame_source::frame_pacing_diag_enabled() {
             crate::floem_debug_log!(
                 "floem frame advance no_render window={:?} prepared={} pending_paint=false pending_render=false",
-                self.window_id, prepared,
+                self.window_id,
+                prepared,
             );
         }
 

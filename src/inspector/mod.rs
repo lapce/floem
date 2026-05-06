@@ -24,7 +24,15 @@ use crate::{
     },
 };
 
-use std::{cell::Cell, collections::HashMap, fmt::Display, rc::Rc};
+use std::{
+    collections::HashMap,
+    fmt::Display,
+    rc::Rc,
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 use understory_box_tree::NodeFlags;
 use winit::window::WindowId;
 
@@ -1852,11 +1860,58 @@ struct CaptureView {
 }
 
 thread_local! {
-    pub(crate) static RUNNING: Cell<bool> = const { Cell::new(false) };
-    pub(crate) static INSPECTOR_WINDOW: Cell<Option<WindowId>> = const { Cell::new(None) };
     pub(crate) static CAPTURE: RwSignal<Option<Rc<Capture>>> = {
         Scope::new().create_rw_signal(None)
     };
+}
+
+pub(crate) static RUNNING: InspectorRunning = InspectorRunning::new();
+pub(crate) static INSPECTOR_WINDOW: InspectorWindow = InspectorWindow::new();
+
+pub(crate) struct InspectorRunning {
+    running: AtomicBool,
+}
+
+impl InspectorRunning {
+    const fn new() -> Self {
+        Self {
+            running: AtomicBool::new(false),
+        }
+    }
+
+    pub(crate) fn get(&self) -> bool {
+        self.running.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn set(&self, running: bool) {
+        self.running.store(running, Ordering::Relaxed);
+    }
+}
+
+pub(crate) struct InspectorWindow {
+    window_id: Mutex<Option<WindowId>>,
+}
+
+impl InspectorWindow {
+    const fn new() -> Self {
+        Self {
+            window_id: Mutex::new(None),
+        }
+    }
+
+    pub(crate) fn get(&self) -> Option<WindowId> {
+        *self
+            .window_id
+            .lock()
+            .expect("inspector window mutex poisoned")
+    }
+
+    pub(crate) fn set(&self, window_id: Option<WindowId>) {
+        *self
+            .window_id
+            .lock()
+            .expect("inspector window mutex poisoned") = window_id;
+    }
 }
 
 fn find_view(name: &str, views: &Rc<CapturedView>) -> Vec<ViewId> {

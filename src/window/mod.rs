@@ -56,6 +56,7 @@ pub struct WindowConfig {
     pub(crate) win_os_config: Option<WinOSWindowConfig>,
     pub(crate) web_config: Option<WebWindowConfig>,
     pub(crate) maximum_drawable_count: u32,
+    pub(crate) surface_pool_retained_extras: usize,
 }
 
 impl Default for WindowConfig {
@@ -84,6 +85,7 @@ impl Default for WindowConfig {
             win_os_config: None,
             web_config: None,
             maximum_drawable_count: 2,
+            surface_pool_retained_extras: 0,
         }
     }
 }
@@ -237,6 +239,20 @@ impl WindowConfig {
     #[inline]
     pub fn maximum_drawable_count(mut self, count: u32) -> Self {
         self.maximum_drawable_count = count;
+        self
+    }
+
+    /// Sets how many idle compositor surface resources may be retained.
+    ///
+    /// This applies to both Subduction-owned native/wgpu surface resources and
+    /// Floem's intermediate wgpu texture pool for flattened external images.
+    /// `0` disables retained extras: resources that are no longer checked out
+    /// or published are dropped on the next pool prune. Increase this when the
+    /// extra memory is preferable to reallocating during steady resizing or
+    /// frequent surface-size changes.
+    #[inline]
+    pub fn surface_pool_retained_extras(mut self, extras: usize) -> Self {
+        self.surface_pool_retained_extras = extras;
         self
     }
 

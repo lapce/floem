@@ -676,7 +676,8 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
             if diag {
                 crate::floem_debug_log!(
                     "floem compositor surface provider skip surface={:?} frame={} reason=not_visible",
-                    args.surface_id, args.frame_index,
+                    args.surface_id,
+                    args.frame_index,
                 );
             }
             return CompositorSurfaceFrameUpdate {
@@ -690,7 +691,8 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
             if diag {
                 crate::floem_debug_log!(
                     "floem compositor surface provider skip surface={:?} frame={} reason=no_gpu_resources",
-                    args.surface_id, args.frame_index,
+                    args.surface_id,
+                    args.frame_index,
                 );
             }
             return CompositorSurfaceFrameUpdate {
@@ -704,7 +706,9 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
             if diag {
                 crate::floem_debug_log!(
                     "floem compositor surface provider skip surface={:?} frame={} reason=already_requested content_changed={}",
-                    args.surface_id, args.frame_index, frame_update.content_changed,
+                    args.surface_id,
+                    args.frame_index,
+                    frame_update.content_changed,
                 );
             }
             frame_update.request_next_frame = true;
@@ -765,7 +769,8 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
                 if diag {
                     crate::floem_debug_log!(
                         "floem compositor surface provider decision surface={:?} frame={} decision=present",
-                        args.surface_id, args.frame_index,
+                        args.surface_id,
+                        args.frame_index,
                     );
                 }
                 true
@@ -777,7 +782,8 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
                 if diag {
                     crate::floem_debug_log!(
                         "floem compositor surface provider decision surface={:?} frame={} decision=skip reason={reason:?}",
-                        args.surface_id, args.frame_index,
+                        args.surface_id,
+                        args.frame_index,
                     );
                 }
                 false
@@ -786,7 +792,8 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
                 if diag {
                     crate::floem_debug_log!(
                         "floem compositor surface provider decision surface={:?} frame={} decision=none",
-                        args.surface_id, args.frame_index,
+                        args.surface_id,
+                        args.frame_index,
                     );
                 }
                 false
@@ -798,7 +805,8 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
                 if diag {
                     crate::floem_debug_log!(
                         "floem compositor surface provider decision surface={:?} frame={} decision=error error={err:?}",
-                        args.surface_id, args.frame_index,
+                        args.surface_id,
+                        args.frame_index,
                     );
                 }
                 true
@@ -807,7 +815,8 @@ impl CompositorSurfaceProvider for CompositorSurfaceProducerProvider {
                 if diag {
                     crate::floem_debug_log!(
                         "floem compositor surface provider decision surface={:?} frame={} decision=no_callback",
-                        args.surface_id, args.frame_index,
+                        args.surface_id,
+                        args.frame_index,
                     );
                 }
                 false
