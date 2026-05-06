@@ -186,7 +186,7 @@ fn user_display(user_resource: Resource<Option<UserResult>>) -> impl IntoView {
                 let user = &user_with_avatar.user;
                 let avatar_data = user_with_avatar.avatar_data.clone();
 
-                let avatar = Img::new(move || avatar_data.clone())
+                let avatar = Image::new(move || avatar_data.clone())
                     .style(|s| s.size(60.0, 60.0))
                     .clip()
                     .style(|s| {

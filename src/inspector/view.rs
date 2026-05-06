@@ -17,7 +17,7 @@ use crate::{
     theme::StyleThemeExt as _,
     unit::LengthAuto,
     views::{
-        Button, CheckboxClass, ContainerExt, Decorators, Img, Label, ListClass, ListItemClass,
+        Button, CheckboxClass, ContainerExt, Decorators, Image, Label, ListClass, ListItemClass,
         ScrollExt, Stack, TabSelectorClass, TooltipExt, resizable::Resizable,
     },
     window::WindowConfig,
@@ -213,7 +213,7 @@ fn capture_view(
     let window_capture_error = capture.window_capture_error.clone();
     let capture_ = capture.clone();
     let size = capture_.window_size;
-    let image_width = size.width;
+    let Imagege_width = size.width;
     let image_height = size.height;
     let image = if let Some(window) = window {
         Img::new(window.clone()).into_any()

@@ -107,8 +107,8 @@ prop_extractor! {
     }
 }
 
-/// Holds the data needed for [img] view fn to display images.
-pub struct Img {
+/// Holds the data needed for [Image] view to display images.
+pub struct Image {
     id: ViewId,
     img: ImagingImage,
     layout_data: Rc<RefCell<ImageLayoutData>>,
@@ -147,25 +147,25 @@ impl ImgDataSource for ImagingImage {
 
 impl ImgDataSource for Vec<u8> {
     fn into_image_data(self) -> ImagingImage {
-        ImagingImage::Raster(Img::image_data_from_bytes(&self))
+        ImagingImage::Raster(Image::image_data_from_bytes(&self))
     }
 }
 
 impl ImgDataSource for &'static [u8] {
     fn into_image_data(self) -> ImagingImage {
-        ImagingImage::Raster(Img::image_data_from_bytes(self))
+        ImagingImage::Raster(Image::image_data_from_bytes(self))
     }
 }
 
 impl<const N: usize> ImgDataSource for &'static [u8; N] {
     fn into_image_data(self) -> ImagingImage {
-        ImagingImage::Raster(Img::image_data_from_bytes(self.as_slice()))
+        ImagingImage::Raster(Image::image_data_from_bytes(self.as_slice()))
     }
 }
 
 impl ImgDataSource for PathBuf {
     fn into_image_data(self) -> ImagingImage {
-        ImagingImage::Raster(Img::image_data_from_path(&self))
+        ImagingImage::Raster(Image::image_data_from_path(&self))
     }
 }
 
@@ -301,8 +301,8 @@ where
 /// });
 /// ```
 #[deprecated(note = "Use Img::new(...) instead")]
-pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
-    Img::new(image)
+pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Image {
+    Image::new(image)
 }
 
 /// A view that can display an image and controls its position.
@@ -324,11 +324,11 @@ pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
 /// The `img` function is not reactive, so to make it change on event, wrap it
 /// with [`dyn_view`](crate::views::dyn_view::dyn_view).
 #[deprecated(note = "Use Img::new(...) instead")]
-pub fn img_from_path(image: impl Fn() -> PathBuf + 'static) -> Img {
-    Img::new(image)
+pub fn img_from_path(image: impl Fn() -> PathBuf + 'static) -> Image {
+    Image::new(image)
 }
 
-impl Img {
+impl Image {
     /// Decode static image bytes, a static image path, or reuse existing image
     /// content.
     pub fn image_data(source: impl ImgDataSource) -> ImagingImage {
@@ -491,7 +491,7 @@ impl Img {
     }
 }
 
-impl View for Img {
+impl View for Image {
     fn id(&self) -> ViewId {
         self.id
     }

@@ -99,7 +99,7 @@ fn cube_canvas(surface_image: CompositorSurfaceImage) -> impl IntoView {
     });
     (
         canvas,
-        Img::new(cube_image).style(|s| {
+        Image::new(cube_image).style(|s| {
             s.object_position(ObjectPosition::Center)
                 .object_fit(ObjectFit::ScaleDown)
         }),

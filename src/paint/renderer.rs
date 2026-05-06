@@ -629,6 +629,7 @@ impl GpuCallbackPump {
             if matches!(result, Err(wgpu::PollError::Timeout)) {
                 let mut state = self.inner.state.lock().unwrap();
                 state.pending.push_back(submission_index);
+                self.inner.cvar.notify_one();
             }
         }
     }
