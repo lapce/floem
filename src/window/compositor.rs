@@ -536,30 +536,6 @@ impl WindowCompositor {
             || self.has_pending_compositor_surface_publications(false)
     }
 
-    pub(crate) fn discard_pending_scene_frame_work(&mut self, reason: &'static str) -> bool {
-        let pending_scene_renders = self.pending_scene_renders.len();
-        if pending_scene_renders > 0 {
-            self.pending_scene_renders.clear();
-            if crate::frame_source::frame_pacing_diag_enabled() {
-                crate::floem_debug_log!(
-                    "floem compositor pending scene cancel reason={} count={}",
-                    reason,
-                    pending_scene_renders,
-                );
-            }
-        }
-
-        let pending_scene_publications = self.pending_scene_publications.len();
-        self.pending_scene_publications.clear();
-
-        let had_layer_changes = self
-            .pending_layer_changes
-            .take()
-            .is_some_and(|changes| !frame_changes_empty(&changes));
-
-        pending_scene_renders > 0 || pending_scene_publications > 0 || had_layer_changes
-    }
-
     pub(crate) fn has_independent_compositor_surface_commit_work(&self) -> bool {
         self.has_pending_compositor_surface_publications(true)
             || !self.native_layer_attachments(true).is_empty()
@@ -1237,6 +1213,7 @@ impl WindowCompositor {
                         layer.transform,
                         layer.bounds,
                         layer.opacity,
+                        layer.blend_mode,
                         effective_scale,
                     );
                 }
@@ -1270,6 +1247,7 @@ impl WindowCompositor {
                         layer.transform,
                         layer.rect,
                         layer.opacity,
+                        layer.blend_mode,
                         effective_scale,
                     );
                 }
@@ -1789,6 +1767,7 @@ fn append_texture_layer(
     transform: Affine,
     logical_bounds: Rect,
     opacity: f32,
+    blend_mode: BlendMode,
     effective_scale: f64,
 ) {
     let width = content.size.width.max(1);
@@ -1824,7 +1803,7 @@ fn append_texture_layer(
         brush,
         brush_transform: None,
         shape: Geometry::Rect(Rect::new(0.0, 0.0, f64::from(width), f64::from(height))),
-        composite: Composite::new(BlendMode::default(), 1.0),
+        composite: Composite::new(blend_mode, 1.0),
     });
 }
 
@@ -2876,6 +2855,7 @@ pub(crate) struct SceneCompositorLayer {
     pub bounds: peniko::kurbo::Rect,
     pub content_bounds: Option<peniko::kurbo::Rect>,
     pub opacity: f32,
+    pub blend_mode: BlendMode,
     pub content_revision: u64,
     pub command_count: usize,
     pub promoted: bool,
@@ -2904,6 +2884,7 @@ impl SceneCompositorLayer {
             bounds: layer.bounds,
             content_bounds: layer.content_bounds,
             opacity: layer.opacity,
+            blend_mode: layer.blend_mode,
             content_revision: layer.content_revision,
             command_count: layer.scene.commands().len(),
             promoted: layer.promoted,
@@ -2958,6 +2939,7 @@ pub(crate) struct CompositorSurfaceCompositorLayer {
     pub transform: peniko::kurbo::Affine,
     pub clip: Option<peniko::kurbo::RoundedRect>,
     pub opacity: f32,
+    pub blend_mode: BlendMode,
     pub content: CompositorSurfaceContent,
     pub content_version: u64,
     pub presents_without_transaction: bool,
@@ -2978,6 +2960,7 @@ impl CompositorSurfaceCompositorLayer {
             transform: layer.transform,
             clip: layer.clip,
             opacity: layer.opacity,
+            blend_mode: layer.blend_mode,
             content: compositor_surfaces
                 .get(&layer.surface_id)
                 .map(|entry| entry.content.clone())
@@ -3072,6 +3055,7 @@ mod tests {
             bounds: Rect::new(0.0, 0.0, 100.0, 80.0),
             content_bounds: None,
             opacity: 1.0,
+            blend_mode: BlendMode::default(),
             promoted: false,
             frame_rate: None,
         }

@@ -561,7 +561,6 @@ impl WindowHandle {
             supports_submitted_textures: true,
         };
         let cx = crate::paint::renderer::NewRendererCx {
-            window,
             gpu_resources: Some(gpu_resources),
             surface_caps: Some(surface_caps),
             transparent,
@@ -815,7 +814,6 @@ impl WindowHandle {
         self.size = size;
         self.pending_resize_frame = true;
         self.record_frame_demand(FrameDemand::CONTINUOUS_INPUT);
-        self.preempt_active_frame_for_resize();
 
         let is_maximized = self.window.is_maximized();
         self.ui.resize(size, is_maximized);
@@ -826,31 +824,6 @@ impl WindowHandle {
 
         self.resize_present_surface_to_window();
         self.schedule_repaint();
-    }
-
-    fn preempt_active_frame_for_resize(&mut self) {
-        if !self.compositor_frame_scheduler.has_active_frame()
-            && self.pending_compositor_commit.is_none()
-            && !self.compositor_runtime.has_pending_scene_renders()
-            && !self.compositor_runtime.has_pending_commit_work()
-        {
-            return;
-        }
-
-        if let Some(pending) = self.pending_compositor_commit.take() {
-            pending.token.cancel();
-        }
-        let discarded = self
-            .compositor_runtime
-            .discard_pending_scene_frame_work("resize");
-        self.pending_scene_frame_work_started_at = None;
-        self.pending_scene_frame_work_cpu_end_at = None;
-        self.pending_timing = FrameTimingAccumulator::default();
-        self.active_frame_time = None;
-        self.note_begin_frame_finished();
-        if discarded {
-            self.record_frame_demand(FrameDemand::CONTINUOUS_INPUT);
-        }
     }
 
     fn resize_present_surface_to_window(&mut self) {
@@ -1748,8 +1721,6 @@ impl WindowHandle {
         }
         let (submission, next_timing) = self.ui.prepare_display_list(
             self.gpu_resources.clone(),
-            self.compositor_runtime.has_layer_host(),
-            crate::paint::is_paint_order_tracking_enabled(),
             self.compositor_surfaces.entries().clone(),
             std::mem::take(timing),
         );

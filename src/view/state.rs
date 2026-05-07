@@ -94,6 +94,9 @@ prop_extractor! {
         pub border_right_color: BorderRightColor,
         pub border_bottom_color: BorderBottomColor,
         pub background: Background,
+        pub filters: crate::style::Filters,
+        pub blend_mode: crate::style::BlendModeProp,
+        pub opacity: crate::style::Opacity,
         pub shadow: BoxShadowProp,
         pub font_embolden: FontEmbolden,
     }

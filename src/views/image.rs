@@ -655,13 +655,7 @@ mod tests {
         let node_id = tree.new_leaf(style.clone()).unwrap();
         let mut measure_ctx = MeasureCx::default();
 
-        measure(
-            known,
-            available,
-            node_id,
-            &style,
-            &mut measure_ctx,
-        )
+        measure(known, available, node_id, &style, &mut measure_ctx)
     }
 
     fn assert_close(actual: f32, expected: f32) {

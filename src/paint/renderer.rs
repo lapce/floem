@@ -67,7 +67,7 @@ use imaging_wgpu::{
 };
 use peniko::ImageData;
 use peniko::kurbo::Size;
-use winit::window::{Window, WindowId};
+use winit::window::WindowId;
 
 use crate::platform::{Duration, Instant};
 #[cfg(not(target_arch = "wasm32"))]
@@ -187,7 +187,6 @@ struct SceneFragmentWorkerPoolState {
 
 #[derive(Clone)]
 pub struct NewRendererCx {
-    pub window: Arc<dyn Window>,
     pub gpu_resources: Option<GpuResources>,
     pub surface_caps: Option<subduction::wgpu::ExternalSurfaceCapabilities>,
     pub transparent: bool,

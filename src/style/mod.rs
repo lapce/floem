@@ -127,12 +127,12 @@
 //!
 //! You can create custom extractors and embed them in your custom views so that you can get out any built in prop, or any of your custom props from the final combined style that is applied to your `View`.
 
-use crate::effects::Brush;
+use crate::effects::{Brush, Filter};
 use crate::frame::FrameRatePreference;
 use crate::text::FontWeight as FontWeightProp;
-use peniko::Color;
 use peniko::color::palette;
 use peniko::kurbo::{self, Affine, RoundedRect, Stroke, Vec2};
+use peniko::{BlendMode, Color};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::any::Any;
@@ -1940,6 +1940,20 @@ define_builtin_props!(
     ///
     /// Can be a solid color, gradient, or image.
     Background background { tr }: Option<Brush> [Brush] {} = None,
+
+    /// Applies one or more filters to the rendered view subtree.
+    ///
+    /// Filters isolate the view subtree into a compositor scene layer before
+    /// applying the filter chain. Compositor surface children under a filtered
+    /// view are sampled into that layer instead of being directly promoted.
+    Filters filters {}: SmallVec<[Filter; 3]> {} = SmallVec::new(),
+
+    /// Sets the blend mode used when compositing this view subtree with content behind it.
+    ///
+    /// Native compositor layers currently support normal source-over blending.
+    /// Non-default blend modes are carried through Floem's scene/capture paths
+    /// and prevent direct compositor-surface promotion.
+    BlendModeProp blend_mode {}: BlendMode {} = BlendMode::default(),
 
     /// Sets the foreground color or pattern.
     ///

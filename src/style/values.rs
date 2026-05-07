@@ -6,14 +6,14 @@ pub(crate) use values_extended_scene::scene_debug_view_with_size;
 
 use crate::text::{FontWeight, LineHeightValue};
 use crate::{
-    effects::Brush,
+    effects::{Brush, Filter},
     gradient::{ColorStop, ColorStops, Gradient},
 };
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _};
 use peniko::color::{HueDirection, palette};
 use peniko::kurbo::{self, Affine, Point, Shape, Stroke, Vec2};
 use peniko::{
-    Color, GradientKind, ImageQuality, ImageSampler, InterpolationAlphaSpace,
+    BlendMode, Color, GradientKind, ImageQuality, ImageSampler, InterpolationAlphaSpace,
     LinearGradientPosition,
 };
 use smallvec::SmallVec;
@@ -156,6 +156,8 @@ impl StylePropValue for f64 {
     }
 }
 impl StylePropValue for crate::frame::FrameRatePreference {}
+impl StylePropValue for BlendMode {}
+impl StylePropValue for Filter {}
 impl StylePropValue for Vec2 {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         Some(Vec2::new(

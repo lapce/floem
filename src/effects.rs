@@ -131,7 +131,10 @@ impl Image {
     pub(crate) fn size_in_bounds(&self, bounds: Rect, font_size: &FontSizeCx) -> Option<Size> {
         match self {
             Self::Raster(image) => Some(Size::new(f64::from(image.width), f64::from(image.height))),
-            Self::Scene(image) => Some(Size::new(f64::from(image.width()), f64::from(image.height()))),
+            Self::Scene(image) => Some(Size::new(
+                f64::from(image.width()),
+                f64::from(image.height()),
+            )),
             Self::Surface(surface) => Some(surface.size.resolve(bounds, font_size)),
             Self::Source(source) => Some(source.size.resolve(bounds, font_size)),
         }

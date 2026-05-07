@@ -274,7 +274,11 @@ impl StageRecorder {
         bounds: Rect,
     ) -> imaging::Image {
         let source_size = surface.size.resolve(bounds, &self.font_size_cx);
-        imaging::Image::External(self.surface_images.borrow_mut().register(surface, source_size))
+        imaging::Image::External(
+            self.surface_images
+                .borrow_mut()
+                .register(surface, source_size),
+        )
     }
 
     fn register_transformed_surface_image(
@@ -1049,14 +1053,6 @@ impl RetainedDisplayList {
             || !element.post.transform_class.supports(diff)
     }
 
-    pub(crate) fn root_slots(&self) -> &[DisplayNodeSlot] {
-        &self.roots
-    }
-
-    pub(crate) fn node_element_id(&self, slot: DisplayNodeSlot) -> Option<ElementId> {
-        self.node(slot)?.element_id
-    }
-
     pub(crate) fn child_slots(&self, slot: DisplayNodeSlot) -> Option<&[DisplayNodeSlot]> {
         Some(&self.node(slot)?.children.ordered)
     }
@@ -1106,10 +1102,6 @@ impl RetainedDisplayList {
 
     pub(crate) fn composed_scene(&self, slot: DisplayNodeSlot) -> Option<&Scene> {
         Some(&self.node(slot)?.composed_scene)
-    }
-
-    pub(crate) fn snapshot_for_slot(&self, slot: DisplayNodeSlot) -> Option<ElementSnapshot> {
-        self.node(slot)?.display.snapshot
     }
 
     pub(crate) fn slot_has_composed_scene(&self, slot: DisplayNodeSlot) -> bool {
@@ -1196,6 +1188,14 @@ impl RetainedDisplayList {
         } else {
             property_state
         };
+        let scoped_compositing_state;
+        let property_state = if let Some(style) = element_compositing_style(element_id) {
+            scoped_compositing_state =
+                property_state.with_compositing(&style, snapshot.world_transform);
+            &scoped_compositing_state
+        } else {
+            property_state
+        };
 
         if snapshot.wants_layer {
             chunks.push(LoweredChunk::LayerStart(LayerRunSource {
@@ -1208,7 +1208,7 @@ impl RetainedDisplayList {
             element_id,
             PaintStage::Paint,
             &node.display.paint,
-            snapshot,
+            &snapshot,
             chunks,
             chunk_index,
             external_occurrence,
@@ -1234,7 +1234,7 @@ impl RetainedDisplayList {
             element_id,
             PaintStage::Post,
             &node.display.post,
-            snapshot,
+            &snapshot,
             chunks,
             chunk_index,
             external_occurrence,
@@ -1255,7 +1255,7 @@ impl RetainedDisplayList {
         element_id: ElementId,
         stage_kind: PaintStage,
         stage: &'a ElementStage,
-        snapshot: ElementSnapshot,
+        snapshot: &ElementSnapshot,
         chunks: &mut Vec<LoweredChunk<'a>>,
         chunk_index: &mut u32,
         external_occurrence: &mut u32,
@@ -1316,6 +1316,7 @@ impl RetainedDisplayList {
                     *external_occurrence,
                     surface_images,
                     snapshot.world_transform,
+                    property_state.opacity,
                 )
             {
                 push_scene_range(
@@ -1575,10 +1576,12 @@ impl DisplayNode {
 // chunks carry the nearest active clip/effect state separately from their draw
 // commands; layerization then coalesces adjacent chunks with identical property
 // state and materializes that state only once in the final scene run.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct PropertyState {
     clips: Vec<PropertyClip>,
     effects: Vec<CompositorShaderPass>,
+    opacity: f32,
+    blend_mode: BlendMode,
 }
 
 impl PropertyState {
@@ -1595,9 +1598,75 @@ impl PropertyState {
         next
     }
 
-    fn can_direct_promote(&self) -> bool {
-        self.clips.is_empty() && self.effects.is_empty()
+    fn with_compositing(&self, style: &PropertyCompositingStyle, transform: Affine) -> Self {
+        let mut next = self.clone();
+        next.opacity = (next.opacity * style.opacity).clamp(0.0, 1.0);
+        if style.blend_mode != BlendMode::default() {
+            next.blend_mode = style.blend_mode;
+        }
+        let effects = style
+            .filters
+            .iter()
+            .map(|filter| match filter {
+                Filter::Imaging(filter) => CompositorShader::Layer(
+                    compositor_effect_for_imaging_filter(*filter).unwrap_or_else(|| {
+                        panic!(
+                            "cannot preserve style filter with unsupported Imaging filter: {filter:?}"
+                        )
+                    }),
+                ),
+                Filter::Color(effect) => CompositorShader::Color(effect.clone()),
+                Filter::Layer(effect) => CompositorShader::Layer(effect.clone()),
+            })
+            .map(|shader| CompositorShaderPass {
+                shader,
+                clip: None,
+                position_transform: Affine::IDENTITY,
+            })
+            .collect::<Vec<_>>();
+        next.effects
+            .extend(transform_shader_passes(&effects, transform));
+        next
     }
+
+    fn can_direct_promote(&self) -> bool {
+        self.clips.is_empty() && self.effects.is_empty() && self.blend_mode == BlendMode::default()
+    }
+}
+
+impl Default for PropertyState {
+    fn default() -> Self {
+        Self {
+            clips: Vec::new(),
+            effects: Vec::new(),
+            opacity: 1.0,
+            blend_mode: BlendMode::default(),
+        }
+    }
+}
+
+struct PropertyCompositingStyle {
+    opacity: f32,
+    filters: smallvec::SmallVec<[Filter; 3]>,
+    blend_mode: BlendMode,
+}
+
+fn element_compositing_style(element_id: ElementId) -> Option<PropertyCompositingStyle> {
+    if !element_id.is_view() {
+        return None;
+    }
+    let state = element_id.owning_id().state();
+    let state = state.borrow();
+    let opacity = state.view_style_props.opacity().clamp(0.0, 1.0);
+    let filters = state.view_style_props.filters();
+    let blend_mode = state.view_style_props.blend_mode();
+    (opacity != 1.0 || !filters.is_empty() || blend_mode != BlendMode::default()).then_some(
+        PropertyCompositingStyle {
+            opacity,
+            filters,
+            blend_mode,
+        },
+    )
 }
 
 fn transform_shader_passes(
@@ -1856,7 +1925,8 @@ impl<'a> SceneRunBuilder<'a> {
             clip: None,
             bounds: Rect::from_origin_size(Point::ZERO, bounds.size()),
             content_bounds: local_content_bounds,
-            opacity: 1.0,
+            opacity: property_state.opacity,
+            blend_mode: property_state.blend_mode,
             promoted: false,
             frame_rate,
         }));
@@ -1880,7 +1950,7 @@ fn push_scene_range<'a>(
     end: usize,
     effective_scale: f64,
     surface_images: &SurfaceImageRegistry,
-    snapshot: ElementSnapshot,
+    snapshot: &ElementSnapshot,
     property_state: &PropertyState,
 ) {
     if start >= end {
@@ -2016,6 +2086,7 @@ fn promotable_external_image_fill(
     occurrence: u32,
     surface_images: &SurfaceImageRegistry,
     transform: Affine,
+    opacity: f32,
 ) -> Option<CompositorSurfaceLayer> {
     let Command::Draw(draw_id) = command else {
         return None;
@@ -2056,7 +2127,7 @@ fn promotable_external_image_fill(
         return None;
     }
     let promoted_rect = transform_rect_bbox(*draw_transform, *rect);
-    let opacity = (composite.alpha * image.sampler.alpha).clamp(0.0, 1.0);
+    let opacity = (opacity * composite.alpha * image.sampler.alpha).clamp(0.0, 1.0);
     Some(CompositorSurfaceLayer {
         key: CompositionKey::CompositorSurface {
             surface_id: registered.slot_id,
@@ -2068,6 +2139,7 @@ fn promotable_external_image_fill(
         transform,
         clip: None,
         opacity,
+        blend_mode: BlendMode::default(),
     })
 }
 

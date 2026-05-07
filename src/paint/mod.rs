@@ -12,9 +12,8 @@ pub mod renderer;
 use crate::effects::{Composite, Filter};
 use crate::gpu_resources::{GpuResourceError, GpuResources};
 pub use border_path_iter::{BorderPath, BorderPathEvent};
-use imaging::{PaintSink, Painter};
-use peniko::kurbo::{Affine, Point, RoundedRect, Size};
-use rustc_hash::FxHashSet;
+use imaging::Painter;
+use peniko::kurbo::{Affine, RoundedRect, Size};
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -28,8 +27,8 @@ use crate::style::FontSizeCx;
 use crate::view::ViewId;
 use crate::view::{paint_bg, paint_border, paint_outline};
 use crate::window::state::WindowState;
-use composition::{CompositionItem, clip_scene_layers_to_viewport};
-use display_list::{ElementSnapshot, StageRecorder, replay_scene};
+use composition::clip_scene_layers_to_viewport;
+use display_list::{ElementSnapshot, StageRecorder};
 
 std::thread_local! {
     /// Holds the ID of a View being painted very briefly if it is being rendered as
@@ -58,12 +57,6 @@ impl PaintOrderTracker {
         Self {
             enabled: false,
             order: Vec::new(),
-        }
-    }
-
-    fn record(&mut self, id: ViewId) {
-        if self.enabled {
-            self.order.push(id);
         }
     }
 }
@@ -110,22 +103,11 @@ pub fn is_paint_order_tracking_enabled() -> bool {
     PAINT_ORDER_TRACKER.with(|tracker| tracker.borrow().enabled)
 }
 
-/// Record a view being painted (internal use).
-#[inline]
-fn record_paint(id: ViewId) {
-    PAINT_ORDER_TRACKER.with(|tracker| {
-        tracker.borrow_mut().record(id);
-    });
-}
-
 /// Global paint context - holds shared state for entire paint pass
 /// Similar to GlobalEventCx in event dispatch
 pub struct GlobalPaintCx<'a> {
     pub window_state: &'a mut WindowState,
     pub gpu_resources: Option<GpuResources>,
-    pub has_layer_host: bool,
-    /// Whether to record paint order for testing. Cached from thread-local at creation.
-    pub(crate) record_paint_order: bool,
 }
 
 /// Per-target paint context - created for each visual node
@@ -158,27 +140,6 @@ impl<'a> PaintCx<'a> {
 }
 
 impl GlobalPaintCx<'_> {
-    pub(crate) fn paint_with_traversal_into(&mut self, root_id: ViewId, sink: &mut dyn PaintSink) {
-        self.prepare_display_list(root_id);
-
-        if self.has_layer_host {
-            return;
-        }
-
-        if self.window_state.composition_plan.has_compositor_surfaces() {
-            Self::replay_composition_prefix_to_sink(self.window_state, sink, Point::ZERO, None);
-            return;
-        }
-        Self::replay_display_list_to_sink_with_state(
-            self.window_state,
-            self.record_paint_order,
-            sink,
-            None,
-            Point::ZERO,
-            None,
-        );
-    }
-
     pub(crate) fn prepare_display_list(&mut self, root_id: ViewId) {
         let root_element_id = root_id.get_element_id();
         let dragging_element_id = self
@@ -267,214 +228,10 @@ impl GlobalPaintCx<'_> {
         self.window_state.composition_plan = plan;
     }
 
-    fn replay_composition_prefix_to_sink(
-        window_state: &mut WindowState,
-        sink: &mut dyn PaintSink,
-        target_origin: Point,
-        render_size: Option<Size>,
-    ) {
-        let effective_scale = window_state.effective_scale();
-        let root_size = window_state.root_size;
-        let os_scale = window_state.os_scale;
-        let render_size = render_size.unwrap_or_else(|| root_size * os_scale);
-
-        for item in &window_state.composition_plan.items {
-            match item {
-                CompositionItem::Scene(layer) if !layer.promoted => {
-                    let base_transform = layer
-                        .transform
-                        .then_scale(effective_scale)
-                        .then_translate(-target_origin.to_vec2());
-                    if let Some(clip) = layer.clip {
-                        display_list::replay_view_clip(sink, clip, base_transform, render_size);
-                    }
-                    replay_scene(&layer.scene, sink, base_transform, render_size);
-                    if layer.clip.is_some() {
-                        PaintSink::pop_clip(sink);
-                    }
-                }
-                CompositionItem::Scene(_) | CompositionItem::CompositorSurface(_) => {}
-            }
-        }
-    }
-
-    fn replay_display_list_to_sink_with_state(
-        window_state: &mut WindowState,
-        record_paint_order: bool,
-        sink: &mut dyn PaintSink,
-        included_ids: Option<&FxHashSet<ElementId>>,
-        target_origin: Point,
-        render_size: Option<Size>,
-    ) {
-        let root_slots = window_state.display_list.root_slots().to_vec();
-        for slot in root_slots {
-            Self::replay_display_slot_to_sink_with_state(
-                window_state,
-                record_paint_order,
-                sink,
-                slot,
-                included_ids,
-                target_origin,
-                render_size,
-            );
-        }
-    }
-
-    fn replay_display_slot_to_sink_with_state(
-        window_state: &mut WindowState,
-        record_paint_order: bool,
-        sink: &mut dyn PaintSink,
-        slot: display_list::DisplayNodeSlot,
-        included_ids: Option<&FxHashSet<ElementId>>,
-        target_origin: Point,
-        render_size: Option<Size>,
-    ) {
-        let Some(element_id) = window_state.display_list.node_element_id(slot) else {
-            return;
-        };
-        if included_ids.is_some_and(|ids| !ids.contains(&element_id)) {
-            return;
-        }
-
-        if !record_paint_order
-            && included_ids.is_none()
-            && window_state.display_list.slot_has_composed_scene(slot)
-        {
-            window_state.display_list.ensure_composed_scene(slot);
-            let effective_scale = window_state.effective_scale();
-            let root_size = window_state.root_size;
-            let os_scale = window_state.os_scale;
-            let display_list = &window_state.display_list;
-            if let (Some(snapshot), Some(scene)) = (
-                display_list.snapshot_for_slot(slot),
-                display_list.composed_scene(slot),
-            ) {
-                let base_transform = snapshot
-                    .world_transform
-                    .then_scale(effective_scale)
-                    .then_translate(-target_origin.to_vec2());
-                let render_size = render_size.unwrap_or_else(|| root_size * os_scale);
-                replay_scene(scene, sink, base_transform, render_size);
-                return;
-            }
-        }
-
-        if record_paint_order {
-            record_paint(element_id.owning_id());
-        }
-        if element_id.is_view() {
-            Self::replay_element_overflow_clip_to_sink_with_state(
-                window_state,
-                sink,
-                element_id,
-                target_origin,
-                render_size,
-            );
-        }
-        Self::replay_visual_node_to_sink_with_state(
-            window_state,
-            sink,
-            element_id,
-            false,
-            target_origin,
-            render_size,
-        );
-
-        let children = window_state
-            .display_list
-            .child_slots(slot)
-            .map(|children| children.to_vec())
-            .unwrap_or_default();
-        for child in children {
-            Self::replay_display_slot_to_sink_with_state(
-                window_state,
-                record_paint_order,
-                sink,
-                child,
-                included_ids,
-                target_origin,
-                render_size,
-            );
-        }
-
-        Self::replay_visual_node_to_sink_with_state(
-            window_state,
-            sink,
-            element_id,
-            true,
-            target_origin,
-            render_size,
-        );
-        if element_id.is_view() {
-            let has_clip = window_state
-                .box_tree
-                .borrow()
-                .local_clip(element_id.0)
-                .flatten()
-                .is_some();
-            if has_clip {
-                PaintSink::pop_clip(sink);
-            }
-        }
-    }
-
-    fn replay_element_overflow_clip_to_sink_with_state(
-        window_state: &mut WindowState,
-        sink: &mut dyn PaintSink,
-        element_id: ElementId,
-        target_origin: Point,
-        render_size: Option<Size>,
-    ) {
-        let box_tree = window_state.box_tree.borrow();
-        let Some(clip) = box_tree.local_clip(element_id.0).flatten() else {
-            return;
-        };
-        drop(box_tree);
-
-        let base_transform = Self::element_base_transform_from_state(window_state, element_id)
-            .then_scale(window_state.effective_scale())
-            .then_translate(-target_origin.to_vec2());
-        let render_size =
-            render_size.unwrap_or_else(|| window_state.root_size * window_state.os_scale);
-        display_list::replay_view_clip(sink, clip, base_transform, render_size);
-    }
-
     fn element_base_transform(&mut self, element_id: ElementId) -> Affine {
         // Get state from box tree for this visual node
         let box_tree = self.window_state.box_tree.borrow();
         box_tree.world_transform(element_id.0).unwrap_or_default()
-    }
-
-    fn element_base_transform_from_state(
-        window_state: &mut WindowState,
-        element_id: ElementId,
-    ) -> Affine {
-        let box_tree = window_state.box_tree.borrow();
-        box_tree.world_transform(element_id.0).unwrap_or_default()
-    }
-
-    fn replay_visual_node_to_sink_with_state(
-        window_state: &mut WindowState,
-        sink: &mut dyn PaintSink,
-        element_id: ElementId,
-        is_post: bool,
-        target_origin: Point,
-        render_size: Option<Size>,
-    ) {
-        let base_transform = Self::element_base_transform_from_state(window_state, element_id)
-            .then_scale(window_state.effective_scale())
-            .then_translate(-target_origin.to_vec2());
-        let Some(element) = window_state.display_list.element(element_id) else {
-            return;
-        };
-        let stage = if is_post {
-            &element.post
-        } else {
-            &element.paint
-        };
-        let render_size =
-            render_size.unwrap_or_else(|| window_state.root_size * window_state.os_scale);
-        replay_scene(&stage.scene, sink, base_transform, render_size);
     }
 
     /// Record a single visual node in local coordinates.

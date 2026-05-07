@@ -369,20 +369,12 @@ impl WindowUiRuntime {
     pub(crate) fn prepare_display_list(
         &self,
         gpu_resources: Option<GpuResources>,
-        has_layer_host: bool,
-        record_paint_order: bool,
         compositor_surfaces: FxHashMap<CompositorSurfaceId, CompositorSurfaceEntry>,
         mut timing: FrameTimingAccumulator,
     ) -> (UiSceneSubmission, FrameTimingAccumulator) {
         self.call(move |ui| {
             let surfaces = WindowCompositorSurfaces::from_entries(compositor_surfaces);
-            let submission = ui.prepare_display_list(
-                gpu_resources,
-                has_layer_host,
-                record_paint_order,
-                &surfaces,
-                &mut timing,
-            );
+            let submission = ui.prepare_display_list(gpu_resources, &surfaces, &mut timing);
             (submission, timing)
         })
     }

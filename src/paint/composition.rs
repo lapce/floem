@@ -1,6 +1,9 @@
 use std::hash::{Hash, Hasher};
 
-use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size};
+use peniko::{
+    BlendMode,
+    kurbo::{Affine, Point, Rect, RoundedRect, Size},
+};
 
 use crate::{
     ElementId, compositor_surface::CompositorSurfaceId, effects::CompositorShaderPass,
@@ -73,6 +76,7 @@ pub(crate) struct SceneLayer {
     pub bounds: Rect,
     pub content_bounds: Option<Rect>,
     pub opacity: f32,
+    pub blend_mode: BlendMode,
     pub promoted: bool,
     pub frame_rate: Option<FrameRatePreference>,
 }
@@ -94,6 +98,7 @@ pub(crate) struct CompositorSurfaceLayer {
     pub transform: Affine,
     pub clip: Option<RoundedRect>,
     pub opacity: f32,
+    pub blend_mode: BlendMode,
 }
 
 pub(crate) fn clip_scene_layers_to_viewport(plan: &mut CompositionPlan, viewport_size: Size) {

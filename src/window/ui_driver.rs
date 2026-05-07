@@ -966,8 +966,6 @@ impl WindowUiDriver {
     pub(crate) fn prepare_display_list(
         &mut self,
         gpu_resources: Option<GpuResources>,
-        has_layer_host: bool,
-        record_paint_order: bool,
         compositor_surfaces: &WindowCompositorSurfaces,
         timing: &mut FrameTimingAccumulator,
     ) -> UiSceneSubmission {
@@ -976,8 +974,6 @@ impl WindowUiDriver {
         let mut cx = crate::paint::GlobalPaintCx {
             window_state: &mut self.state,
             gpu_resources,
-            has_layer_host,
-            record_paint_order,
         };
         cx.prepare_display_list(self.root_id);
         let submission = self.scene_submission(compositor_surfaces);

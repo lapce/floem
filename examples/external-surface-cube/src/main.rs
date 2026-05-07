@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bytemuck::{Pod, Zeroable};
 use floem::{
@@ -32,6 +32,11 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         },
     );
     let surface_view = cube_producer.view();
+    let shimmer_uniforms = ShaderUniform::new([0., 0., 0., 0.]);
+    drive_shimmer_uniforms(
+        shimmer_uniforms.clone(),
+        Instant::now().checked_add(Duration::from_millis(300)),
+    );
 
     Stack::vertical((
         "Compositor Surface as Image Brush".style(|s| {
@@ -54,11 +59,12 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             }),
         cube_canvas(surface_view),
     ))
-        .style(|s| {
+        .style(move |s| {
             s.width_full()
                 .height_full()
                 .items_center()
                 .justify_center()
+                .filters(vec![FloemFilter::Layer(shimmer_filter(shimmer_uniforms.clone()))])
                 .padding(36.0)
                 .background(Color::from_rgb8(11, 15, 17))
         })

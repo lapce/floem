@@ -444,6 +444,7 @@ mod tests {
                 transform: peniko::kurbo::Affine::IDENTITY,
                 clip: None,
                 opacity: 1.0,
+                blend_mode: peniko::BlendMode::default(),
             }));
         plan.items
             .push(CompositionItem::CompositorSurface(CompositorSurfaceLayer {
@@ -457,6 +458,7 @@ mod tests {
                 transform: peniko::kurbo::Affine::IDENTITY,
                 clip: None,
                 opacity: 1.0,
+                blend_mode: peniko::BlendMode::default(),
             }));
 
         let planned = planned_compositor_surfaces(&plan);
@@ -494,6 +496,7 @@ mod tests {
             bounds: Rect::new(0.0, 0.0, 100.0, 50.0),
             content_bounds: None,
             opacity: 1.0,
+            blend_mode: peniko::BlendMode::default(),
             promoted: false,
             frame_rate: None,
         }));
@@ -509,6 +512,7 @@ mod tests {
                 transform: peniko::kurbo::Affine::IDENTITY,
                 clip: None,
                 opacity: 1.0,
+                blend_mode: peniko::BlendMode::default(),
             }));
 
         let planned = planned_compositor_surfaces(&plan);
@@ -553,6 +557,7 @@ mod tests {
             bounds: Rect::new(0.0, 0.0, 360.0, 90.0),
             content_bounds: None,
             opacity: 1.0,
+            blend_mode: peniko::BlendMode::default(),
             promoted: false,
             frame_rate: None,
         }));

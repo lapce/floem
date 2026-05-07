@@ -473,10 +473,9 @@ impl ApplicationHandle {
             }
             UserEvent::GpuResourcesUpdate { window_id } => {
                 let handle = self.window_handles.get_mut(&window_id).unwrap();
-                if let PaintState::PendingGpuResources { window, rx } = &handle.paint_state {
+                if let PaintState::PendingGpuResources { rx, .. } = &handle.paint_state {
                     let (gpu_resources, surface_caps) = rx.recv().unwrap().unwrap();
                     let cx = crate::paint::renderer::NewRendererCx {
-                        window: window.clone(),
                         gpu_resources: Some(gpu_resources.clone()),
                         surface_caps: Some(surface_caps),
                         transparent: handle.transparent,
@@ -928,6 +927,11 @@ impl ApplicationHandle {
             WindowEvent::CloseRequested => {
                 if let Some(handle) = self.window_handles.get_mut(&window_id) {
                     handle.ui.route_close_requested();
+                }
+                if crate::app::take_close_window_event_count(window_id) > 0 {
+                    self.close_window(window_id, event_loop);
+                    self.update_control_flow(event_loop);
+                    return;
                 }
             }
             WindowEvent::Destroyed => {
