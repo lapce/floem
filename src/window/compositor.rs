@@ -1,5 +1,6 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::window::render_plan::SceneRenderPlan;
 use crate::{
     app::{Application, UserEvent},
     compositor_surface::{CompositorSurfaceContent, CompositorSurfaceId, ExternalTexture},
@@ -39,6 +40,7 @@ use winit::window::WindowId;
 use super::compositor_surface::CompositorSurfaceEntry;
 
 static COMPOSITOR_RENDER_CALL_ID: AtomicU64 = AtomicU64::new(1);
+const MAX_EXTERNAL_WRITER_TEXTURE_POOL_ENTRIES: usize = 4;
 
 #[derive(Default)]
 pub(crate) struct WindowCompositor {
@@ -61,6 +63,8 @@ pub(crate) struct WindowCompositor {
     pending_scene_publications: Vec<(subduction::SubmittedContentInfo, subduction::ResourceKey)>,
     published_compositor_surface_versions: FxHashMap<CompositionKey, u64>,
     effect_renderer: ShaderRenderer,
+    external_writer_texture_pool:
+        FxHashMap<EffectIntermediateTextureKey, Vec<TrackedEffectTexture>>,
     pending_layer_changes: Option<FrameChanges>,
     #[cfg(target_os = "macos")]
     metal_capture_active: bool,
@@ -122,7 +126,8 @@ impl WindowCompositor {
         for key in &keys {
             self.scene_content_by_key.remove(key);
             self.scene_render_signatures.remove(key);
-            if self.pending_scene_renders.remove(key).is_some() {
+            if let Some(pending) = self.pending_scene_renders.remove(key) {
+                self.release_pending_scene_textures(pending);
                 crate::floem_debug_log!(
                     "floem compositor pending scene cancel reason=external_surface_invalidate key={:?} surface={:?}",
                     key,
@@ -211,7 +216,8 @@ impl WindowCompositor {
             self.visible_layers_by_key.remove(key);
             self.scene_content_by_key.remove(key);
             self.scene_render_signatures.remove(key);
-            if self.pending_scene_renders.remove(key).is_some() {
+            if let Some(pending) = self.pending_scene_renders.remove(key) {
+                self.release_pending_scene_textures(pending);
                 crate::floem_debug_log!(
                     "floem compositor pending scene cancel reason=layer_removed key={:?}",
                     key,
@@ -436,24 +442,14 @@ impl WindowCompositor {
     ) -> usize {
         let render_call_id = COMPOSITOR_RENDER_CALL_ID.fetch_add(1, Ordering::Relaxed);
         if crate::frame_source::frame_pacing_diag_enabled() {
-            let scene_layers = plan
-                .items
-                .iter()
-                .filter(|item| matches!(item, CompositionItem::Scene(_)))
-                .count();
-            let effect_scene_layers = plan
-                .items
-                .iter()
-                .filter(|item| {
-                    matches!(item, CompositionItem::Scene(layer) if !layer.color_filters.is_empty())
-                })
-                .count();
+            let render_plan = SceneRenderPlan::from_composition_plan(plan);
             crate::floem_debug_log!(
-                "floem compositor render_scene_layers begin call={} plan_items={} scene_layers={} effect_scene_layers={}",
+                "floem compositor render_scene_layers begin call={} plan_items={} scene_layers={} effect_scene_layers={} batches={}",
                 render_call_id,
                 plan.items.len(),
-                scene_layers,
-                effect_scene_layers,
+                render_plan.node_count(),
+                render_plan.effect_node_count(),
+                render_plan.batches().len(),
             );
         }
         let scheduled_scene_frames = self.render_scene_content(
@@ -702,6 +698,57 @@ impl WindowCompositor {
             .find(|layer_id| self.layer_store.content(*layer_id) == Some(surface_id))
     }
 
+    fn acquire_external_writer_texture(
+        &mut self,
+        device: &wgpu::Device,
+        size: wgpu::Extent3d,
+        format: wgpu::TextureFormat,
+        label: &'static str,
+    ) -> TrackedEffectTexture {
+        let key = EffectIntermediateTextureKey {
+            width: size.width,
+            height: size.height,
+            format,
+        };
+        if let Some(texture) = self
+            .external_writer_texture_pool
+            .get_mut(&key)
+            .and_then(|textures| textures.pop())
+        {
+            return texture;
+        }
+        TrackedEffectTexture {
+            key,
+            texture: create_assumed_initialized_external_writer_texture(
+                device, size, format, label,
+            ),
+        }
+    }
+
+    fn release_external_writer_texture(&mut self, texture: TrackedEffectTexture) {
+        let retained_count = self
+            .external_writer_texture_pool
+            .values()
+            .map(Vec::len)
+            .sum::<usize>();
+        let entry = self
+            .external_writer_texture_pool
+            .entry(texture.key)
+            .or_default();
+        if entry.is_empty() && retained_count < MAX_EXTERNAL_WRITER_TEXTURE_POOL_ENTRIES {
+            entry.push(texture);
+        }
+    }
+
+    fn release_pending_scene_textures(&mut self, mut pending: PendingSceneRender) {
+        if let Some(texture) = pending.scene_texture.take() {
+            self.release_external_writer_texture(texture);
+        }
+        if let Some(texture) = pending.effect_mask_texture.take() {
+            self.release_external_writer_texture(texture);
+        }
+    }
+
     fn render_scene_content(
         &mut self,
         render_call_id: u64,
@@ -713,280 +760,305 @@ impl WindowCompositor {
         effective_scale: f64,
     ) -> usize {
         let mut scheduled_frames = 0;
-        for item in &plan.items {
-            let CompositionItem::Scene(layer) = item else {
-                continue;
-            };
-            let Some(surface_id) = self.content_surface_for_key(&layer.key) else {
-                continue;
-            };
-            let bounds = layer.bounds;
-            let width = (bounds.width() * effective_scale).ceil().max(1.0) as u32;
-            let height = (bounds.height() * effective_scale).ceil().max(1.0) as u32;
-            let max_texture_dimension = gpu_resources.device.limits().max_texture_dimension_2d;
-            if width > max_texture_dimension || height > max_texture_dimension {
-                let failure = UnsupportedPublication::Scene {
-                    key: layer.key.clone(),
-                    revision: layer.content_revision,
-                };
-                if self.unsupported_publications.insert(failure) {
-                    crate::floem_debug_log!(
-                        "floem compositor: scene layer {:?} target {}x{} exceeds max texture dimension {}",
-                        layer.key,
-                        width,
-                        height,
-                        max_texture_dimension,
-                    );
-                }
-                continue;
-            }
-            let size = wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            };
-            let Some(format) = renderer_pool.compositor_texture_format() else {
-                let failure = UnsupportedPublication::Scene {
-                    key: layer.key.clone(),
-                    revision: layer.content_revision,
-                };
-                if self.unsupported_publications.insert(failure) {
-                    crate::floem_debug_log!(
-                        "floem compositor: scene layer {:?} renderer has no Subduction wgpu target format",
-                        layer.key,
-                    );
-                }
-                continue;
-            };
-            let target_origin = (layer.transform * bounds.origin()).to_vec2() * effective_scale;
-            let base_transform = layer
-                .transform
-                .then_scale(effective_scale)
-                .then_translate(-target_origin);
-            let signature = scene_render_signature(
-                layer,
-                compositor_surfaces,
-                effective_scale,
-                format,
-                size,
-                base_transform,
-                render_call_id,
-            );
-            if self.scene_render_signatures.get(&layer.key) == Some(&signature)
-                && self.scene_content_by_key.contains_key(&layer.key)
-            {
-                continue;
-            }
-            if self
-                .pending_scene_renders
-                .get(&layer.key)
-                .is_some_and(|pending| pending.signature == signature)
-            {
-                continue;
-            }
-            let Some(external_images) =
-                self.external_image_resources_for_scene(layer, compositor_surfaces)
-            else {
-                if crate::frame_source::frame_pacing_diag_enabled() {
-                    crate::floem_debug_log!(
-                        "floem compositor scene render skip key={:?} reason=external_image_unavailable",
-                        layer.key,
-                    );
-                }
-                continue;
-            };
-            let opportunity = subduction::wgpu::SurfaceFrameOpportunity {
-                surface_id,
-                frame_index: layer.content_revision,
-                now: subduction_core::time::HostTime(0),
-                target_timestamp: None,
-                target_present: None,
-                previous_present: None,
-                refresh_interval: None,
-                confidence: subduction_core::timing::TimingConfidence::PacingOnly,
-            };
-            let Ok(lease) = self.create_wgpu_surface_frame(
-                &gpu_resources.device,
-                opportunity,
-                size,
-                format,
-                wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            ) else {
-                let failure = UnsupportedPublication::Scene {
-                    key: layer.key.clone(),
-                    revision: layer.content_revision,
-                };
-                if self.unsupported_publications.insert(failure) {
-                    crate::floem_debug_log!(
-                        "floem compositor: scene layer {:?} could not acquire a Subduction wgpu target",
-                        layer.key,
-                    );
-                }
-                continue;
-            };
-            let scene_texture = if layer.color_filters.is_empty() {
-                None
-            } else {
-                // Scene fragments are rendered asynchronously by the render pool.
-                // Do not reuse this texture across pending scene renders: another
-                // effect layer can otherwise clear or overwrite the input before
-                // this layer's shader chain consumes it.
-                let texture = create_effect_intermediate_texture(
-                    &gpu_resources.device,
-                    size,
-                    format,
-                    "floem compositor effect scene input",
-                );
-                initialize_texture_for_external_writer(
-                    &gpu_resources.device,
-                    &gpu_resources.queue,
-                    &texture,
-                    "floem compositor effect scene input init",
-                );
-                Some(texture)
-            };
-            let render_size = Size::new(f64::from(width), f64::from(height));
-            let effect_clip_transform = Affine::translate((-bounds.x0, -bounds.y0));
-            let render_effects =
-                transform_compositor_shader_passes(&layer.color_filters, effect_clip_transform);
-            let EffectClip {
-                analytic: analytic_clip,
-                mask_scene: effect_mask_scene,
-            } = if render_effects.is_empty() {
-                EffectClip::default()
-            } else {
-                classify_effect_clips(&render_effects, render_size)
-            };
-            let effect_mask_texture = effect_mask_scene.as_ref().map(|_| {
-                let texture = create_effect_intermediate_texture(
-                    &gpu_resources.device,
-                    size,
-                    format,
-                    "floem compositor effect clip mask",
-                );
-                initialize_texture_for_external_writer(
-                    &gpu_resources.device,
-                    &gpu_resources.queue,
-                    &texture,
-                    "floem compositor effect clip mask init",
-                );
-                texture
-            });
-            let render_texture = scene_texture.as_ref().unwrap_or(&lease.texture).clone();
-            let mask_texture_for_submit = effect_mask_texture.clone();
-            let has_effect_mask = effect_mask_texture.is_some();
-            self.pending_scene_renders.insert(
-                layer.key.clone(),
-                PendingSceneRender {
-                    signature: signature.clone(),
-                    layer_state: SceneCompositorLayer::from_layer(layer, compositor_surfaces),
-                    lease,
-                    scene_texture,
-                    effect_mask_texture,
-                    analytic_clip,
-                    content_ready: false,
-                    mask_ready: !has_effect_mask,
-                    effect_submitted: false,
-                    effects: render_effects,
-                    format,
-                    size,
-                    effective_scale,
-                    render_call_id,
-                    content_revision: layer.content_revision,
-                },
-            );
-            if crate::frame_source::frame_pacing_diag_enabled() {
+        let mut prepared_submissions = Vec::new();
+        let render_plan = SceneRenderPlan::from_composition_plan(plan);
+        for batch in render_plan.batches() {
+            if crate::frame_source::frame_pacing_diag_enabled() && batch.len() > 1 {
                 crate::floem_debug_log!(
-                    "floem compositor scene render call={} key={:?} revision={} size={}x{} bounds={:?} transform={:?} commands={} external_images={} color_filters={}",
+                    "floem compositor scene render batch call={} nodes={} key={:?} bounds={:?}",
                     render_call_id,
-                    layer.key,
-                    layer.content_revision,
-                    width,
-                    height,
-                    layer.bounds,
-                    layer.transform,
-                    layer.scene.commands().len(),
-                    layer.external_images.len(),
-                    layer.color_filters.len(),
+                    batch.len(),
+                    batch.key(),
+                    batch.bounds(),
                 );
             }
-            let render_submitted = renderer_pool.submit(
-                SceneFragmentRenderJob {
-                    scene: layer.scene.clone(),
-                    base_transform,
-                    clip: layer.clip,
-                    render_size,
-                    texture: render_texture,
-                    external_images,
-                },
-                SceneFragmentRenderCompletion {
-                    window_id,
-                    key: layer.key.clone(),
-                    signature: signature.clone(),
-                    kind: SceneFragmentRenderKind::Content,
-                },
-            );
-            if !render_submitted {
-                let failure = UnsupportedPublication::Scene {
-                    key: layer.key.clone(),
-                    revision: layer.content_revision,
+            for node_id in batch.nodes() {
+                let node = render_plan.node(*node_id);
+                let layer = node.layer();
+                debug_assert!(node.phases().content);
+                debug_assert!(node.phases().publish);
+                debug_assert_eq!(node.phases().effect, !layer.color_filters.is_empty());
+                let _ = (node.id(), node.plan_index(), node.phases().clip_mask);
+                let Some(surface_id) = self.content_surface_for_key(&layer.key) else {
+                    continue;
                 };
-                if self.unsupported_publications.insert(failure) {
-                    crate::floem_debug_log!(
-                        "floem compositor: scene layer {:?} renderer cannot render into a Subduction wgpu target",
-                        layer.key,
-                    );
-                }
-                if crate::frame_source::frame_pacing_diag_enabled() {
-                    crate::floem_debug_log!(
-                        "floem compositor scene render skip key={:?} reason=renderer_failed",
-                        layer.key,
-                    );
-                }
-                self.pending_scene_renders.remove(&layer.key);
-                continue;
-            }
-            if let (Some(mask_scene), Some(mask_texture)) =
-                (effect_mask_scene, mask_texture_for_submit.as_ref())
-            {
-                let mask_submitted = renderer_pool.submit(
-                    SceneFragmentRenderJob {
-                        scene: mask_scene,
-                        base_transform: Affine::scale(effective_scale),
-                        clip: None,
-                        render_size,
-                        texture: mask_texture.clone(),
-                        external_images: ExternalImageResources::default(),
-                    },
-                    SceneFragmentRenderCompletion {
-                        window_id,
-                        key: layer.key.clone(),
-                        signature: signature.clone(),
-                        kind: SceneFragmentRenderKind::ClipMask,
-                    },
-                );
-                if !mask_submitted {
+                let bounds = layer.bounds;
+                let width = (bounds.width() * effective_scale).ceil().max(1.0) as u32;
+                let height = (bounds.height() * effective_scale).ceil().max(1.0) as u32;
+                let max_texture_dimension = gpu_resources.device.limits().max_texture_dimension_2d;
+                if width > max_texture_dimension || height > max_texture_dimension {
                     let failure = UnsupportedPublication::Scene {
                         key: layer.key.clone(),
                         revision: layer.content_revision,
                     };
                     if self.unsupported_publications.insert(failure) {
                         crate::floem_debug_log!(
-                            "floem compositor: scene layer {:?} renderer cannot render effect clip mask",
+                            "floem compositor: scene layer {:?} target {}x{} exceeds max texture dimension {}",
+                            layer.key,
+                            width,
+                            height,
+                            max_texture_dimension,
+                        );
+                    }
+                    continue;
+                }
+                let size = wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                };
+                let Some(format) = renderer_pool.compositor_texture_format() else {
+                    let failure = UnsupportedPublication::Scene {
+                        key: layer.key.clone(),
+                        revision: layer.content_revision,
+                    };
+                    if self.unsupported_publications.insert(failure) {
+                        crate::floem_debug_log!(
+                            "floem compositor: scene layer {:?} renderer has no Subduction wgpu target format",
                             layer.key,
                         );
                     }
-                    self.pending_scene_renders.remove(&layer.key);
+                    continue;
+                };
+                let target_origin = (layer.transform * bounds.origin()).to_vec2() * effective_scale;
+                let base_transform = layer
+                    .transform
+                    .then_scale(effective_scale)
+                    .then_translate(-target_origin);
+                let signature = scene_render_signature(
+                    layer,
+                    compositor_surfaces,
+                    effective_scale,
+                    format,
+                    size,
+                    base_transform,
+                    render_call_id,
+                );
+                if self.scene_render_signatures.get(&layer.key) == Some(&signature)
+                    && self.scene_content_by_key.contains_key(&layer.key)
+                {
                     continue;
                 }
+                if self
+                    .pending_scene_renders
+                    .get(&layer.key)
+                    .is_some_and(|pending| pending.signature == signature)
+                {
+                    continue;
+                }
+                let Some(external_images) =
+                    self.external_image_resources_for_scene(layer, compositor_surfaces)
+                else {
+                    if crate::frame_source::frame_pacing_diag_enabled() {
+                        crate::floem_debug_log!(
+                            "floem compositor scene render skip key={:?} reason=external_image_unavailable",
+                            layer.key,
+                        );
+                    }
+                    continue;
+                };
+                let opportunity = subduction::wgpu::SurfaceFrameOpportunity {
+                    surface_id,
+                    frame_index: layer.content_revision,
+                    now: subduction_core::time::HostTime(0),
+                    target_timestamp: None,
+                    target_present: None,
+                    previous_present: None,
+                    refresh_interval: None,
+                    confidence: subduction_core::timing::TimingConfidence::PacingOnly,
+                };
+                let Ok(lease) = self.create_wgpu_surface_frame(
+                    &gpu_resources.device,
+                    opportunity,
+                    size,
+                    format,
+                    wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                ) else {
+                    let failure = UnsupportedPublication::Scene {
+                        key: layer.key.clone(),
+                        revision: layer.content_revision,
+                    };
+                    if self.unsupported_publications.insert(failure) {
+                        crate::floem_debug_log!(
+                            "floem compositor: scene layer {:?} could not acquire a Subduction wgpu target",
+                            layer.key,
+                        );
+                    }
+                    continue;
+                };
+                let scene_texture = if layer.color_filters.is_empty() {
+                    None
+                } else {
+                    // Scene fragments are rendered asynchronously by the render pool.
+                    // Do not reuse this texture across pending scene renders: another
+                    // effect layer can otherwise clear or overwrite the input before
+                    // this layer's shader chain consumes it.
+                    let texture = self.acquire_external_writer_texture(
+                        &gpu_resources.device,
+                        size,
+                        format,
+                        "floem compositor effect scene input",
+                    );
+                    Some(texture)
+                };
+                let render_size = Size::new(f64::from(width), f64::from(height));
+                let effect_clip_transform = Affine::translate((-bounds.x0, -bounds.y0));
+                let render_effects =
+                    transform_compositor_shader_passes(&layer.color_filters, effect_clip_transform);
+                let EffectClip {
+                    analytic: analytic_clip,
+                    mask_scene: effect_mask_scene,
+                } = if render_effects.is_empty() {
+                    EffectClip::default()
+                } else {
+                    classify_effect_clips(&render_effects, render_size)
+                };
+                let effect_mask_texture = effect_mask_scene.as_ref().map(|_| {
+                    let texture = self.acquire_external_writer_texture(
+                        &gpu_resources.device,
+                        size,
+                        format,
+                        "floem compositor effect clip mask",
+                    );
+                    texture
+                });
+                let render_texture = scene_texture
+                    .as_ref()
+                    .map(|texture| texture.texture.clone())
+                    .unwrap_or_else(|| lease.texture.clone());
+                let mask_texture_for_submit = effect_mask_texture.clone();
+                let has_effect_mask = effect_mask_texture.is_some();
+                self.pending_scene_renders.insert(
+                    layer.key.clone(),
+                    PendingSceneRender {
+                        signature: signature.clone(),
+                        layer_state: SceneCompositorLayer::from_layer(layer, compositor_surfaces),
+                        lease,
+                        scene_texture,
+                        effect_mask_texture,
+                        analytic_clip,
+                        content_ready: false,
+                        mask_ready: !has_effect_mask,
+                        effect_submitted: false,
+                        effects: render_effects,
+                        format,
+                        size,
+                        effective_scale,
+                        render_call_id,
+                        content_revision: layer.content_revision,
+                    },
+                );
+                if crate::frame_source::frame_pacing_diag_enabled() {
+                    crate::floem_debug_log!(
+                        "floem compositor scene render call={} key={:?} revision={} size={}x{} bounds={:?} transform={:?} commands={} external_images={} color_filters={}",
+                        render_call_id,
+                        layer.key,
+                        layer.content_revision,
+                        width,
+                        height,
+                        layer.bounds,
+                        layer.transform,
+                        layer.scene.commands().len(),
+                        layer.external_images.len(),
+                        layer.color_filters.len(),
+                    );
+                }
+                let content_job = SceneFragmentRenderJob {
+                    scene: layer.scene.clone(),
+                    base_transform,
+                    clip: layer.clip,
+                    render_size,
+                    texture: render_texture,
+                    external_images,
+                };
+                let content_completion = SceneFragmentRenderCompletion {
+                    window_id,
+                    key: layer.key.clone(),
+                    signature: signature.clone(),
+                    kind: SceneFragmentRenderKind::Content,
+                };
+                let mask_job = if let (Some(mask_scene), Some(mask_texture)) =
+                    (effect_mask_scene, mask_texture_for_submit.as_ref())
+                {
+                    Some((
+                        SceneFragmentRenderJob {
+                            scene: mask_scene,
+                            base_transform: Affine::scale(effective_scale),
+                            clip: None,
+                            render_size,
+                            texture: mask_texture.texture.clone(),
+                            external_images: ExternalImageResources::default(),
+                        },
+                        SceneFragmentRenderCompletion {
+                            window_id,
+                            key: layer.key.clone(),
+                            signature: signature.clone(),
+                            kind: SceneFragmentRenderKind::ClipMask,
+                        },
+                    ))
+                } else {
+                    None
+                };
+                prepared_submissions.push(PreparedSceneRenderSubmission {
+                    key: layer.key.clone(),
+                    revision: layer.content_revision,
+                    surface_id,
+                    width,
+                    height,
+                    content: (content_job, content_completion),
+                    mask: mask_job,
+                });
+            }
+        }
+        for prepared in prepared_submissions {
+            let render_submitted = renderer_pool.submit(prepared.content.0, prepared.content.1);
+            if !render_submitted {
+                let failure = UnsupportedPublication::Scene {
+                    key: prepared.key.clone(),
+                    revision: prepared.revision,
+                };
+                if self.unsupported_publications.insert(failure) {
+                    crate::floem_debug_log!(
+                        "floem compositor: scene layer {:?} renderer cannot render into a Subduction wgpu target",
+                        prepared.key,
+                    );
+                }
+                if crate::frame_source::frame_pacing_diag_enabled() {
+                    crate::floem_debug_log!(
+                        "floem compositor scene render skip key={:?} reason=renderer_failed",
+                        prepared.key,
+                    );
+                }
+                if let Some(pending) = self.pending_scene_renders.remove(&prepared.key) {
+                    self.release_pending_scene_textures(pending);
+                }
+                continue;
+            }
+            if let Some((mask_job, mask_completion)) = prepared.mask
+                && !renderer_pool.submit(mask_job, mask_completion)
+            {
+                let failure = UnsupportedPublication::Scene {
+                    key: prepared.key.clone(),
+                    revision: prepared.revision,
+                };
+                if self.unsupported_publications.insert(failure) {
+                    crate::floem_debug_log!(
+                        "floem compositor: scene layer {:?} renderer cannot render effect clip mask",
+                        prepared.key,
+                    );
+                }
+                if let Some(pending) = self.pending_scene_renders.remove(&prepared.key) {
+                    self.release_pending_scene_textures(pending);
+                }
+                continue;
             }
             if crate::frame_source::frame_pacing_diag_enabled() {
                 crate::floem_debug_log!(
                     "floem compositor scene render scheduled key={:?} surface={:?} size={}x{}",
-                    layer.key,
-                    surface_id,
-                    width,
-                    height,
+                    prepared.key,
+                    prepared.surface_id,
+                    prepared.width,
+                    prepared.height,
                 );
             }
             scheduled_frames += 1;
@@ -1016,7 +1088,7 @@ impl WindowCompositor {
         if !rendered {
             if let Some(pending) = self.pending_scene_renders.remove(&key) {
                 let failure = UnsupportedPublication::Scene {
-                    key,
+                    key: key.clone(),
                     revision: pending.content_revision,
                 };
                 if self.unsupported_publications.insert(failure) {
@@ -1025,6 +1097,7 @@ impl WindowCompositor {
                         pending.content_revision,
                     );
                 }
+                self.release_pending_scene_textures(pending);
             }
             return false;
         };
@@ -1057,9 +1130,12 @@ impl WindowCompositor {
                 &gpu_resources.queue,
                 pending.render_call_id,
                 &key,
-                scene_texture,
+                &scene_texture.texture,
                 &pending.lease.texture,
-                pending.effect_mask_texture.as_ref(),
+                pending
+                    .effect_mask_texture
+                    .as_ref()
+                    .map(|texture| &texture.texture),
                 pending.analytic_clip,
                 pending.format,
                 pending.size,
@@ -1078,7 +1154,9 @@ impl WindowCompositor {
                             "floem compositor: scene layer failed compositor color filter pass: {err}",
                         );
                     }
-                    self.pending_scene_renders.remove(&key);
+                    if let Some(pending) = self.pending_scene_renders.remove(&key) {
+                        self.release_pending_scene_textures(pending);
+                    }
                     return false;
                 }
             }
@@ -1148,11 +1226,19 @@ impl WindowCompositor {
         key: CompositionKey,
         signature: SceneRenderSignature,
     ) -> bool {
-        let Some(pending) = self.pending_scene_renders.remove(&key) else {
+        let Some(mut pending) = self.pending_scene_renders.remove(&key) else {
             return false;
         };
+        let scene_texture = pending.scene_texture.take();
+        let effect_mask_texture = pending.effect_mask_texture.take();
         let subduction::wgpu::SurfaceFrameCompletion::Submitted(frame) = pending.lease.submit()
         else {
+            if let Some(texture) = scene_texture {
+                self.release_external_writer_texture(texture);
+            }
+            if let Some(texture) = effect_mask_texture {
+                self.release_external_writer_texture(texture);
+            }
             return false;
         };
         let publication = publication_for_frame(&frame);
@@ -1166,6 +1252,12 @@ impl WindowCompositor {
             key.clone(),
             CompositorLayerState::Scene(pending.layer_state),
         );
+        if let Some(texture) = scene_texture {
+            self.release_external_writer_texture(texture);
+        }
+        if let Some(texture) = effect_mask_texture {
+            self.release_external_writer_texture(texture);
+        }
         if let Some(publication) = publication {
             let changes = self.sync_layer_store();
             self.stage_layer_changes(changes);
@@ -1566,8 +1658,8 @@ struct PendingSceneRender {
     signature: SceneRenderSignature,
     layer_state: SceneCompositorLayer,
     lease: subduction::wgpu::SurfaceFrameLease,
-    scene_texture: Option<wgpu::Texture>,
-    effect_mask_texture: Option<wgpu::Texture>,
+    scene_texture: Option<TrackedEffectTexture>,
+    effect_mask_texture: Option<TrackedEffectTexture>,
     analytic_clip: AnalyticClipSet,
     content_ready: bool,
     mask_ready: bool,
@@ -1578,6 +1670,16 @@ struct PendingSceneRender {
     effective_scale: f64,
     render_call_id: u64,
     content_revision: u64,
+}
+
+struct PreparedSceneRenderSubmission {
+    key: CompositionKey,
+    revision: u64,
+    surface_id: SurfaceId,
+    width: u32,
+    height: u32,
+    content: (SceneFragmentRenderJob, SceneFragmentRenderCompletion),
+    mask: Option<(SceneFragmentRenderJob, SceneFragmentRenderCompletion)>,
 }
 
 const MAX_ANALYTIC_EFFECT_CLIPS: usize = 4;
@@ -1950,11 +2052,20 @@ impl ShaderRenderer {
             }
         }
 
+        let encoder_label = format!(
+            "floem compositor color filter chain encoder call={render_call_id} key={key:?} revision={frame_index} passes={}",
+            effects.len()
+        );
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some(&encoder_label),
+        });
+
         for (index, effect) in leading.iter().enumerate() {
             let output_texture = &ping_pong[index % ping_pong.len()];
-            let _ = self.render_single_effect(
+            self.encode_single_effect(
                 device,
                 queue,
+                &mut encoder,
                 render_call_id,
                 key,
                 index,
@@ -1972,9 +2083,10 @@ impl ShaderRenderer {
             input_texture = output_texture.clone();
         }
 
-        let submission_index = self.render_single_effect(
+        self.encode_single_effect(
             device,
             queue,
+            &mut encoder,
             render_call_id,
             key,
             leading.len(),
@@ -1989,13 +2101,14 @@ impl ShaderRenderer {
             frame_index,
             effective_scale,
         )?;
-        Ok(Some(submission_index))
+        Ok(Some(queue.submit([encoder.finish()])))
     }
 
-    fn render_single_effect(
+    fn encode_single_effect(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
         render_call_id: u64,
         key: &CompositionKey,
         pass_index: usize,
@@ -2009,7 +2122,7 @@ impl ShaderRenderer {
         effect: &CompositorShaderPass,
         frame_index: u64,
         effective_scale: f64,
-    ) -> Result<wgpu::SubmissionIndex, String> {
+    ) -> Result<(), String> {
         let pipeline = self.pipeline(device, format, &effect.shader)?;
         let input_view = input.create_view(&wgpu::TextureViewDescriptor {
             label: Some("floem compositor color filter input view"),
@@ -2074,15 +2187,9 @@ impl ShaderRenderer {
             ],
         });
         let pass_number = pass_index + 1;
-        let encoder_label = format!(
-            "floem compositor color filter encoder call={render_call_id} key={key:?} revision={frame_index} pass={pass_number}/{pass_count}"
-        );
         let pass_label = format!(
             "floem compositor color filter pass call={render_call_id} key={key:?} revision={frame_index} pass={pass_number}/{pass_count}"
         );
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some(&encoder_label),
-        });
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some(&pass_label),
@@ -2111,7 +2218,7 @@ impl ShaderRenderer {
             }
             pass.draw(0..3, 0..1);
         }
-        Ok(queue.submit([encoder.finish()]))
+        Ok(())
     }
 
     fn pipeline(
@@ -2277,6 +2384,12 @@ struct EffectIntermediateTextureKey {
     format: wgpu::TextureFormat,
 }
 
+#[derive(Clone, Debug)]
+struct TrackedEffectTexture {
+    key: EffectIntermediateTextureKey,
+    texture: wgpu::Texture,
+}
+
 fn create_effect_intermediate_texture(
     device: &wgpu::Device,
     size: wgpu::Extent3d,
@@ -2293,6 +2406,68 @@ fn create_effect_intermediate_texture(
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     })
+}
+
+fn create_assumed_initialized_external_writer_texture(
+    device: &wgpu::Device,
+    size: wgpu::Extent3d,
+    format: wgpu::TextureFormat,
+    label: &'static str,
+) -> wgpu::Texture {
+    create_assumed_initialized_external_writer_texture_inner(device, size, format, label)
+        .unwrap_or_else(|| create_effect_intermediate_texture(device, size, format, label))
+}
+
+#[cfg(target_os = "macos")]
+fn create_assumed_initialized_external_writer_texture_inner(
+    device: &wgpu::Device,
+    size: wgpu::Extent3d,
+    format: wgpu::TextureFormat,
+    label: &'static str,
+) -> Option<wgpu::Texture> {
+    let usage = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
+    let hal_usage = wgpu::TextureUses::COLOR_TARGET | wgpu::TextureUses::RESOURCE;
+    let hal_desc = wgpu::hal::TextureDescriptor {
+        label: Some(label),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: hal_usage,
+        memory_flags: wgpu::hal::MemoryFlags::empty(),
+        view_formats: Vec::new(),
+    };
+    let texture_desc = wgpu::TextureDescriptor {
+        label: Some(label),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage,
+        view_formats: &[],
+    };
+    // SAFETY: The HAL texture is created from this wgpu device's Metal handle and
+    // with a descriptor matching the wgpu descriptor below. `create_texture_from_hal`
+    // marks the texture initialized in wgpu-core; this is valid for Floem's
+    // external-writer path because the imaging renderer fully overwrites the
+    // texture before any later wgpu sampling/rendering observes it.
+    unsafe {
+        let hal_device = device.as_hal::<wgpu::hal::api::Metal>()?;
+        let hal_texture = wgpu::hal::Device::create_texture(&*hal_device, &hal_desc).ok()?;
+        Some(device.create_texture_from_hal::<wgpu::hal::api::Metal>(hal_texture, &texture_desc))
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn create_assumed_initialized_external_writer_texture_inner(
+    _device: &wgpu::Device,
+    _size: wgpu::Extent3d,
+    _format: wgpu::TextureFormat,
+    _label: &'static str,
+) -> Option<wgpu::Texture> {
+    None
 }
 
 fn classify_effect_clips(effects: &[CompositorShaderPass], render_size: Size) -> EffectClip {
@@ -2398,39 +2573,6 @@ fn effect_clip_mask_scene_from_clips(clips: &[Clip], render_size: Size) -> Optio
         scene.pop_clip();
     }
     Some(scene)
-}
-
-fn initialize_texture_for_external_writer(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    texture: &wgpu::Texture,
-    label: &'static str,
-) {
-    let view = texture.create_view(&wgpu::TextureViewDescriptor {
-        label: Some(label),
-        ..Default::default()
-    });
-    let mut encoder =
-        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
-    {
-        let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some(label),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-    }
-    queue.submit([encoder.finish()]);
 }
 
 fn color_filter_shader_hash(effect: &CompositorShader) -> u64 {

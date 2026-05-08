@@ -3,6 +3,7 @@ pub(crate) mod compositor_surface;
 pub(crate) mod handle;
 pub(crate) mod id;
 pub mod mock;
+pub(crate) mod render_plan;
 pub(crate) mod state;
 pub(crate) mod tracking;
 pub(crate) mod ui_driver;

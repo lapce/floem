@@ -445,7 +445,6 @@ impl WindowHandle {
             Self::new_gpu_backed_paint_state(
                 &renderer_chooser,
                 &scene_renderer_pool,
-                window.clone(),
                 resources,
                 transparent,
                 os_scale,
@@ -453,7 +452,7 @@ impl WindowHandle {
                 maximum_drawable_count,
             )
         } else if prefer_gpu_installers {
-            Self::new_pending_paint_state(window.clone(), frame_size, required_features, backends)
+            Self::new_pending_paint_state(window.clone(), required_features, backends)
         } else {
             Self::new_cpu_backed_paint_state()
         };
@@ -536,7 +535,6 @@ impl WindowHandle {
     fn new_gpu_backed_paint_state(
         renderer_chooser: &crate::paint::renderer::RendererChooser,
         scene_renderer_pool: &SharedSceneFragmentRendererPool,
-        window: Arc<dyn Window>,
         gpu_resources: GpuResources,
         transparent: bool,
         os_scale: f64,
@@ -580,7 +578,6 @@ impl WindowHandle {
 
     fn new_pending_paint_state(
         window: Arc<dyn Window>,
-        size: Size,
         required_features: wgpu::Features,
         backends: Option<wgpu::Backends>,
     ) -> PaintState {
@@ -592,7 +589,7 @@ impl WindowHandle {
             backends,
             window.clone(),
         );
-        PaintState::new_pending(window, gpu_resources_rx, size)
+        PaintState::new_pending(gpu_resources_rx)
     }
 
     /// Creates a headless WindowHandle for testing purposes.

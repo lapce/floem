@@ -473,7 +473,7 @@ impl ApplicationHandle {
             }
             UserEvent::GpuResourcesUpdate { window_id } => {
                 let handle = self.window_handles.get_mut(&window_id).unwrap();
-                if let PaintState::PendingGpuResources { rx, .. } = &handle.paint_state {
+                if let PaintState::PendingGpuResources { rx } = &handle.paint_state {
                     let (gpu_resources, surface_caps) = rx.recv().unwrap().unwrap();
                     let cx = crate::paint::renderer::NewRendererCx {
                         gpu_resources: Some(gpu_resources.clone()),

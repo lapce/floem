@@ -32,11 +32,6 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         },
     );
     let surface_view = cube_producer.view();
-    let shimmer_uniforms = ShaderUniform::new([0., 0., 0., 0.]);
-    drive_shimmer_uniforms(
-        shimmer_uniforms.clone(),
-        Instant::now().checked_add(Duration::from_millis(300)),
-    );
 
     Stack::vertical((
         "Compositor Surface as Image Brush".style(|s| {
@@ -64,7 +59,6 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 .height_full()
                 .items_center()
                 .justify_center()
-                .filters(vec![FloemFilter::Layer(shimmer_filter(shimmer_uniforms.clone()))])
                 .padding(36.0)
                 .background(Color::from_rgb8(11, 15, 17))
         })
@@ -92,7 +86,7 @@ fn cube_canvas(surface_image: SurfaceView) -> impl IntoView {
     let source_uniforms = ShaderUniform::new([0.0_f32; 4]);
     drive_shimmer_uniforms(shimmer_uniforms.clone(), None);
     drive_shimmer_uniforms(source_uniforms.clone(), None);
-    let canvas = canvas(move |cx, size| {
+    let main_canvas = canvas(move |cx, size| {
         let layout = CubeCanvasLayout::new(size);
         layout.paint_source_panel(cx, source_uniforms.clone());
         layout.paint_filtered_panel(cx, surface_image, shimmer_uniforms.clone());
@@ -107,14 +101,13 @@ fn cube_canvas(surface_image: SurfaceView) -> impl IntoView {
             .border_color(Color::from_rgba8(241, 219, 167, 55))
     });
     (
-        canvas,
+        main_canvas,
         Image::new(cube_image).style(|s| {
             s.width(150)
                 .height(300)
                 .object_position(ObjectPosition::Center)
                 .object_fit(ObjectFit::Contain)
                 .border(3)
-                .opacity(0.5)
                 .border_color(css::RED)
         }),
     )

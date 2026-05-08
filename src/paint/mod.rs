@@ -13,9 +13,7 @@ use crate::effects::{Composite, Filter};
 use crate::gpu_resources::{GpuResourceError, GpuResources};
 pub use border_path_iter::{BorderPath, BorderPathEvent};
 use imaging::Painter;
-use peniko::kurbo::{Affine, RoundedRect, Size};
-use std::sync::Arc;
-use winit::window::Window;
+use peniko::kurbo::{Affine, RoundedRect};
 
 #[cfg(feature = "crossbeam")]
 use crossbeam::channel::Receiver;
@@ -349,7 +347,6 @@ impl PaintCx<'_> {
 pub(crate) enum PaintState {
     /// The renderer is not yet initialized. This state is used to wait for the GPU resources to be acquired.
     PendingGpuResources {
-        window: Arc<dyn Window>,
         rx: Receiver<
             Result<(GpuResources, subduction::wgpu::ExternalSurfaceCapabilities), GpuResourceError>,
         >,
@@ -361,13 +358,11 @@ pub(crate) enum PaintState {
 
 impl PaintState {
     pub fn new_pending(
-        window: Arc<dyn Window>,
         rx: Receiver<
             Result<(GpuResources, subduction::wgpu::ExternalSurfaceCapabilities), GpuResourceError>,
         >,
-        _size: Size,
     ) -> Self {
-        Self::PendingGpuResources { window, rx }
+        Self::PendingGpuResources { rx }
     }
 
     pub(crate) fn is_initialized(&self) -> bool {
