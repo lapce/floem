@@ -1,6 +1,10 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use crate::text::{Attrs, AttrsList, AttrsOwned};
+use crate::{
+    prop_extractor,
+    style::{TextBrushScaleX, TextBrushScaleY, TextBrushTransform},
+    text::{Attrs, AttrsList, AttrsOwned},
+};
 use floem_reactive::Effect;
 use peniko::{Color, color::palette};
 use smallvec::{SmallVec, smallvec};
@@ -14,8 +18,17 @@ pub struct RichText {
     id: ViewId,
     /// Layout data containing text layouts and overflow handling logic
     layout_data: Rc<RefCell<TextLayoutState>>,
+    style: RichTextStyle,
     text_node: Option<NodeId>,
     layout_node: Option<NodeId>,
+}
+
+prop_extractor! {
+    RichTextStyle {
+        text_brush_transform: TextBrushTransform,
+        text_brush_scale_x: TextBrushScaleX,
+        text_brush_scale_y: TextBrushScaleY,
+    }
 }
 
 pub fn rich_text(
@@ -44,6 +57,7 @@ pub fn rich_text(
     let mut rich_text = RichText {
         id,
         layout_data,
+        style: RichTextStyle::default(),
         text_node: None,
         layout_node: None,
     };
@@ -127,6 +141,12 @@ impl View for RichText {
         }
     }
 
+    fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        if self.style.read(cx) {
+            self.id.request_paint();
+        }
+    }
+
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         let (Some(parent_node), Some(text_node)) = (self.layout_node, self.text_node) else {
             return;
@@ -141,7 +161,12 @@ impl View for RichText {
         self.layout_data
             .borrow()
             .with_effective_text_layout(|layout| {
-                layout.draw(cx, text_loc);
+                let text_brush_transform = crate::text::TextBrushTransformSpec::new(
+                    self.style.text_brush_transform(),
+                    self.style.text_brush_scale_x(),
+                    self.style.text_brush_scale_y(),
+                );
+                layout.draw_with_text_brush_transform(cx, text_loc, text_brush_transform);
             });
     }
 }

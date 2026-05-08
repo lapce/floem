@@ -579,18 +579,17 @@ fn imaging_brush_from_svg_brush(brush: &Brush, bounds: Rect) -> Option<imaging::
         Brush::Image(image_brush) => match &image_brush.image {
             crate::effects::Image::Raster(image) => Some(imaging::Brush::Image(
                 imaging::ImageBrush(peniko::ImageBrush {
-                    image: imaging::Image::Raster(image.clone()),
+                    image: imaging::Image::Raster(image.image.clone()),
                     sampler: image_brush.sampler,
                 }),
             )),
             crate::effects::Image::Scene(image) => Some(imaging::Brush::Image(
                 imaging::ImageBrush(peniko::ImageBrush {
-                    image: imaging::Image::Scene(image.clone()),
+                    image: imaging::Image::Scene(image.image.clone()),
                     sampler: image_brush.sampler,
                 }),
             )),
-            crate::effects::Image::Surface(_) => None,
-            crate::effects::Image::Source(_) => None,
+            crate::effects::Image::Surface(_) | crate::effects::Image::Source(_) => None,
         },
     }
 }

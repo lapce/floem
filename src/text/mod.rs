@@ -18,7 +18,7 @@ mod layout_state;
 pub use attrs::{Attrs, AttrsList, AttrsOwned, FamilyOwned, LineHeightValue};
 pub use fontique::{FontStyle, FontWeight, FontWidth};
 pub use imaging::{GlyphRunRef, NormalizedCoord};
-pub use layout::{FONT_CONTEXT, TextLayout, TextSelection};
+pub use layout::{FONT_CONTEXT, TextBrushTransformSpec, TextLayout, TextSelection};
 pub use layout_state::{TextLayoutState, TextOverflowChanged};
 pub use parley::Alignment;
 pub use parley::layout::Glyph;

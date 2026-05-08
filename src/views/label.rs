@@ -9,8 +9,8 @@ use crate::{
     prop_extractor,
     style::{
         ContextValue, CustomStylable, CustomStyle, ExprStyle, FontProps, LineHeight, Selectable,
-        SelectionCornerRadius, SelectionStyle, Style, TextAlignProp, TextColor, TextOverflow,
-        TextOverflowProp,
+        SelectionCornerRadius, SelectionStyle, Style, TextAlignProp, TextBrushScaleX,
+        TextBrushScaleY, TextBrushTransform, TextColor, TextOverflow, TextOverflowProp,
     },
     style_class,
     text::{
@@ -37,6 +37,9 @@ prop_extractor! {
         color: TextColor,
         text_overflow: TextOverflowProp,
         line_height: LineHeight,
+        text_brush_transform: TextBrushTransform,
+        text_brush_scale_x: TextBrushScaleX,
+        text_brush_scale_y: TextBrushScaleY,
         text_selectable: Selectable,
         text_align: TextAlignProp,
     }
@@ -523,9 +526,14 @@ impl View for Label {
         };
 
         let text_loc = self.get_text_origin(this_node, text_node);
+        let text_brush_transform = crate::text::TextBrushTransformSpec::new(
+            self.label_props.text_brush_transform(),
+            self.label_props.text_brush_scale_x(),
+            self.label_props.text_brush_scale_y(),
+        );
 
         self.with_effective_text_layout(|l| {
-            l.draw(cx, text_loc);
+            l.draw_with_text_brush_transform(cx, text_loc, text_brush_transform);
             if cx.window_state.is_focused(self.id) {
                 self.paint_selection(text_loc, cx);
             }

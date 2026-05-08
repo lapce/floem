@@ -1172,6 +1172,7 @@ fn border_to_radii_view(
 }
 
 pub(crate) fn paint_bg(cx: &mut PaintCx, style: &ViewStyleProps, rect: Rect) {
+    let brush_transform = background_brush_transform(style, rect, &cx.font_size_cx);
     let radii = border_to_radii_view(style, rect.size(), &cx.font_size_cx);
     if radii_max(radii) > 0.0 {
         paint_box_shadow(cx, style, rect, Some(radii));
@@ -1180,15 +1181,58 @@ pub(crate) fn paint_bg(cx: &mut PaintCx, style: &ViewStyleProps, rect: Rect) {
             None => return,
         };
         let rounded_rect = rect.to_rounded_rect(radii);
-        cx.painter.fill(rounded_rect, &bg).draw();
+        cx.painter
+            .fill(rounded_rect, &bg)
+            .brush_transform(brush_transform)
+            .draw();
     } else {
         paint_box_shadow(cx, style, rect, None);
         let bg = match style.background() {
             Some(color) => color,
             None => return,
         };
-        cx.painter.fill(rect, &bg).draw();
+        cx.painter
+            .fill(rect, &bg)
+            .brush_transform(brush_transform)
+            .draw();
     }
+}
+
+fn background_brush_transform(
+    style: &ViewStyleProps,
+    rect: Rect,
+    font_size_cx: &crate::style::FontSizeCx,
+) -> Option<Affine> {
+    let mut transform = Affine::IDENTITY;
+    let center = rect.center().to_vec2();
+    let rotation = style.background_brush_rotation().to_radians();
+    if rotation != 0.0 {
+        transform *=
+            Affine::translate(center) * Affine::rotate(rotation) * Affine::translate(-center);
+    }
+
+    let scale_width = style
+        .background_brush_scale_x()
+        .map(|scale| scale.resolve(rect.width(), font_size_cx));
+    let scale_height = style
+        .background_brush_scale_y()
+        .map(|scale| scale.resolve(rect.height(), font_size_cx));
+    let scale_x = scale_width
+        .filter(|width| *width > 0.0)
+        .map(|width| rect.width() / width)
+        .unwrap_or(1.0);
+    let scale_y = scale_height
+        .filter(|height| *height > 0.0)
+        .map(|height| rect.height() / height)
+        .unwrap_or(1.0);
+    if scale_x != 1.0 || scale_y != 1.0 {
+        transform *= Affine::translate(center)
+            * Affine::scale_non_uniform(scale_x, scale_y)
+            * Affine::translate(-center);
+    }
+
+    transform *= style.background_brush_transform();
+    (transform != Affine::IDENTITY).then_some(transform)
 }
 
 fn paint_box_shadow(

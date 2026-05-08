@@ -2714,7 +2714,6 @@ impl WindowHandle {
             self.layer_host_commit_estimate =
                 smooth_duration_estimate(self.layer_host_commit_estimate, commit_feedback_latency);
         }
-        self.route_paint_present_event(submitted_at, pending.frame_time);
         let pacing_presented_at = self
             .active_frame_time
             .filter(|active| {
@@ -2726,6 +2725,7 @@ impl WindowHandle {
             .and_then(|frame_time| frame_time.interval.predicted_present)
             .filter(|predicted_present| *predicted_present >= committed_at)
             .unwrap_or(committed_at);
+        self.route_paint_present_event(pacing_presented_at, pending.frame_time);
         if let Some(frame_time) = pending.frame_time {
             let interval = frame_time.frame_interval;
             let interval_ms = interval.as_secs_f64() * 1000.0;

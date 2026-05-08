@@ -1,10 +1,10 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use bytemuck::{Pod, Zeroable};
 use floem::{
     Application, Brush as FloemBrush, Composite, CompositorSurfaceProducer,
     CompositorSurfaceProducerConfig, Filter as FloemFilter, FrameRatePreference, GpuResources,
-    ImageBrush, LayerFilter, ShaderSource, ShaderUniform, SurfaceView,
+    ImageBrush, LayerFilter, ShaderSource, ShaderUniform, SurfaceImage,
     action::{capture_metal, inspect, set_animation_frame_callback},
     context::PaintCx,
     group_ref,
@@ -12,6 +12,7 @@ use floem::{
     kurbo::{Affine, Point, Rect, Size, Vec2},
     peniko::Color,
     prelude::*,
+    reactive::SyncRwSignal,
     style::{ObjectFit, ObjectPosition, Position},
     text::{Alignment, Attrs, AttrsList, FontWeight, TextLayout},
     window::{WindowConfig, WindowId},
@@ -22,6 +23,7 @@ const CUBE_SIZE: u32 = 640;
 const CUBE_TARGET_FPS: f64 = 120.0;
 
 fn app_view(window_id: WindowId) -> impl IntoView {
+    let rotation_speed = SyncRwSignal::new_sync(1.0_f64);
     let cube_frame_rate = FrameRatePreference::at_most(CUBE_TARGET_FPS).unwrap();
     let cube_producer = CompositorSurfaceProducer::new(
         window_id,
@@ -31,7 +33,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             ..CompositorSurfaceProducerConfig::default()
         },
     );
-    let surface_view = cube_producer.view();
+    let surface_image = cube_producer.image();
 
     Stack::vertical((
         "Compositor Surface as Image Brush".style(|s| {
@@ -48,11 +50,34 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                     // .max_width(760.0)
                     .width_full()
                     // .color(Color::from_rgb8(155, 169, 177))
-                    .color(FloemBrush::Image(ImageBrush::from(
-                        surface_view.image(ImageSize::new(100.pct(), 100.pct())),
-                    )))
+                    .color(surface_image)
+                    .text_brush_scale(150.pct())
             }),
-        cube_canvas(surface_view),
+        Stack::horizontal((
+            "Rotation speed".style(|s| {
+                s.font_size(13.0)
+                    .color(Color::from_rgb8(205, 214, 208))
+                    .width(104.0)
+            }),
+            slider::Slider::new_ranged(move || rotation_speed.get(), 0.0..=3.0)
+                .step(0.05)
+                .on_event_stop(slider::SliderChanged::listener(), move |_cx, state| {
+                    rotation_speed.set(state.value);
+                })
+                .style(|s| s.width(260.0).height(14.0)),
+            Label::derived(move || format!("{:.2}x", rotation_speed.get())).style(|s| {
+                s.font_size(13.0)
+                    .color(Color::from_rgb8(205, 214, 208))
+                    .width(48.0)
+            }),
+        ))
+        .style(|s| {
+            s.items_center()
+                .gap(12.0)
+                .margin_top(16.0)
+                .margin_bottom(2.0)
+        }),
+        cube_canvas(surface_image, rotation_speed),
     ))
         .style(move |s| {
             s.width_full()
@@ -65,8 +90,11 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         .on_event_stop(
             listener::WindowGpuResourcesReady,
             move |_cx, gpu_resources| {
-                if let Err(err) = start_cube_target(cube_producer.clone(), gpu_resources.clone())
-                {
+                if let Err(err) = start_cube_target(
+                    cube_producer.clone(),
+                    gpu_resources.clone(),
+                    rotation_speed,
+                ) {
                     eprintln!("compositor-surface-cube: failed to start producer target: {err}");
                 }
             },
@@ -80,16 +108,15 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         })
 }
 
-fn cube_canvas(surface_image: SurfaceView) -> impl IntoView {
-    let cube_image = surface_image.image((CUBE_SIZE as f64, CUBE_SIZE as f64));
+fn cube_canvas(cube_image: SurfaceImage, animation_speed: SyncRwSignal<f64>) -> impl IntoView {
     let shimmer_uniforms = ShaderUniform::new([0.0_f32; 4]);
     let source_uniforms = ShaderUniform::new([0.0_f32; 4]);
-    drive_shimmer_uniforms(shimmer_uniforms.clone(), None);
-    drive_shimmer_uniforms(source_uniforms.clone(), None);
+    drive_shimmer_uniforms(shimmer_uniforms.clone(), animation_speed);
+    drive_shimmer_uniforms(source_uniforms.clone(), animation_speed);
     let main_canvas = canvas(move |cx, size| {
         let layout = CubeCanvasLayout::new(size);
         layout.paint_source_panel(cx, source_uniforms.clone());
-        layout.paint_filtered_panel(cx, surface_image, shimmer_uniforms.clone());
+        layout.paint_filtered_panel(cx, cube_image, shimmer_uniforms.clone());
     })
     .style(|s| {
         s.width(780.0)
@@ -154,7 +181,7 @@ impl CubeCanvasLayout {
     fn paint_filtered_panel(
         &self,
         cx: &mut PaintCx<'_>,
-        surface_view: SurfaceView,
+        cube_image: SurfaceImage,
         shimmer_uniforms: ShaderUniform<[f32; 4]>,
     ) {
         let filters = [
@@ -180,7 +207,7 @@ impl CubeCanvasLayout {
                     Color::from_rgba8(247, 226, 164, 230),
                 )
                 .draw();
-                self.paint_texture_text(p, effective_scale, surface_view);
+                self.paint_texture_text(p, effective_scale, cube_image);
             },
         );
     }
@@ -189,22 +216,25 @@ impl CubeCanvasLayout {
         &self,
         painter: &mut Painter<'_, S, FloemFilter, Composite, FloemBrush>,
         effective_scale: f64,
-        surface_view: SurfaceView,
+        cube_image: SurfaceImage,
     ) where
         S: PaintSink<FloemFilter, Composite, FloemBrush> + ImagingSceneSink,
     {
-        let image_side = self.label_text.width().max(self.label_text.height());
-        let cube_image = surface_view.image((image_side, image_side));
-        let brush = FloemBrush::Image(ImageBrush::from(cube_image.clone()));
         let mut text = TextLayout::new_with_text(
             "TEXTURE BRUSH",
-            AttrsList::new(Attrs::new().font_size(34.0).weight(FontWeight::BOLD)),
+            AttrsList::new(
+                Attrs::new()
+                    .font_size(34.0)
+                    .weight(FontWeight::BOLD)
+                    .brush(cube_image),
+            ),
             Some(Alignment::Center),
         );
         text.set_size(
             self.label_text.width() as f32,
             self.label_text.height() as f32,
         );
+
         let (min_y, max_y) = text.centering_bounds_y().unwrap_or((0.0, 0.0));
         let text_height = f64::from(max_y - min_y);
         let origin = Point::new(
@@ -212,18 +242,7 @@ impl CubeCanvasLayout {
             self.label_text.y0 + ((self.label_text.height() - text_height) * 0.5)
                 - f64::from(min_y),
         );
-        let image_origin = Point::new(
-            self.label_text.x0 + (self.label_text.width() - image_side) * 0.5,
-            self.label_text.y0 + (self.label_text.height() - image_side) * 0.5,
-        );
-        text.draw_with_painter_floem_brush(
-            painter.as_dyn(),
-            origin,
-            Vec2::ZERO,
-            effective_scale,
-            brush,
-            Some(Affine::translate((-image_origin.x, -image_origin.y))),
-        );
+        text.draw_with_painter(painter.as_dyn(), origin, Vec2::ZERO, effective_scale);
     }
 }
 
@@ -289,8 +308,9 @@ return vec4<f32>(sampled.rgb + highlight, sampled.a);
     .with_color_space(subduction::wgpu::SurfaceColorSpace::ExtendedLinearSrgb)
 }
 
-fn drive_shimmer_uniforms(uniforms: ShaderUniform<[f32; 4]>, origin: Option<Instant>) {
-    let mut animation_origin = origin;
+fn drive_shimmer_uniforms(uniforms: ShaderUniform<[f32; 4]>, animation_speed: SyncRwSignal<f64>) {
+    let mut last_present = None;
+    let mut animation_seconds = 0.0_f32;
     set_animation_frame_callback(
         FrameRatePreference::at_most(CUBE_TARGET_FPS).unwrap(),
         move |frame_time| {
@@ -298,12 +318,14 @@ fn drive_shimmer_uniforms(uniforms: ShaderUniform<[f32; 4]>, origin: Option<Inst
                 .interval
                 .predicted_present
                 .unwrap_or(frame_time.now);
-            let origin = animation_origin.unwrap_or(present);
-            let seconds = present.saturating_duration_since(origin).as_secs_f32();
+            let delta_seconds = last_present
+                .map(|last| present.saturating_duration_since(last).as_secs_f32())
+                .unwrap_or(0.0)
+                .min(0.25);
+            last_present = Some(present);
+            animation_seconds += delta_seconds * animation_speed.get_untracked() as f32;
+            let seconds = animation_seconds;
             uniforms.set([seconds, (seconds * 1.7).sin(), (seconds * 1.3).cos(), 0.0]);
-            if animation_origin.is_none() {
-                animation_origin = Some(present);
-            }
         },
     );
 }
@@ -319,6 +341,7 @@ fn centered_rect(container: Size, size: Size) -> Rect {
 fn start_cube_target(
     producer: CompositorSurfaceProducer,
     gpu_resources: GpuResources,
+    rotation_speed: SyncRwSignal<f64>,
 ) -> Result<(), String> {
     let mut renderer = CubeRenderer::new(
         gpu_resources.clone(),
@@ -327,6 +350,8 @@ fn start_cube_target(
         wgpu::TextureFormat::Bgra8Unorm,
     )?;
     let animation_origin = Instant::now();
+    let mut last_animation_time = animation_origin;
+    let mut rotation_seconds = 0.0_f32;
     producer.set_frame_callback(move |cx| {
         let lease = match cx.acquire_target() {
             Ok(lease) => lease,
@@ -342,10 +367,14 @@ fn start_cube_target(
             .interval
             .predicted_present
             .unwrap_or(frame_time.now);
-        let seconds = animation_time
-            .saturating_duration_since(animation_origin)
-            .as_secs_f32();
-        match renderer.render(seconds, lease) {
+        let delta_seconds = animation_time
+            .saturating_duration_since(last_animation_time)
+            .as_secs_f32()
+            .min(0.25);
+        last_animation_time = animation_time;
+        let rotation_speed = rotation_speed.get_untracked() as f32;
+        rotation_seconds += delta_seconds * rotation_speed;
+        match renderer.render(rotation_seconds, lease) {
             Ok(completion) => {
                 let _ = completion_tx.send(completion);
             }
@@ -478,7 +507,7 @@ impl CubeRenderer {
 
     fn render(
         &mut self,
-        seconds: f32,
+        rotation_seconds: f32,
         frame: subduction::wgpu::SurfaceFrameLease,
     ) -> Result<subduction::wgpu::SurfaceFrameCompletion, String> {
         if self.width != frame.size.width || self.height != frame.size.height {
@@ -487,7 +516,10 @@ impl CubeRenderer {
             self.depth = create_depth_texture(&self.gpu_resources.device, self.width, self.height);
         }
         let aspect = self.width as f32 / self.height as f32;
-        let model = mul(rotation_y(seconds * 0.9), rotation_x(seconds * 0.55));
+        let model = mul(
+            rotation_y(rotation_seconds * 0.9),
+            rotation_x(rotation_seconds * 0.55),
+        );
         let view = translation(0.0, 0.0, -4.8);
         let projection = perspective(45_f32.to_radians(), aspect, 0.1, 100.0);
         let mvp = mul(projection, mul(view, model));

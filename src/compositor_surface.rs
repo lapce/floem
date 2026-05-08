@@ -2,7 +2,7 @@
 //!
 //! This module models compositor content that still behaves like an image in
 //! the Floem display list. A [`SurfaceView`] is the paint-facing
-//! identity used by views and `imaging::ImageBrush`. A
+//! identity used to create intrinsic surface image payloads. A
 //! [`CompositorSurfaceProducer`] is the producer-facing handle that renders
 //! frames for that image into Subduction-owned wgpu targets.
 //!
@@ -175,13 +175,15 @@ impl SurfaceImageRegistry {
 /// Paint-facing identity for compositor-produced image content.
 ///
 /// `SurfaceView` is the consumer side of the API. It gives the view
-/// tree a stable image identity, but it does not render frames itself. Use
-/// [`SurfaceView::image`] to create the Floem image payload that an
-/// `ImageBrush` paints.
+/// tree a stable submitted-content identity, but it does not render frames
+/// itself. Use [`SurfaceView::image`] to create the intrinsic Floem image
+/// payload that an `ImageBrush` paints. Use [`crate::effects::Image::view`] or
+/// [`crate::effects::SurfaceImage::view`] when a placement needs an explicit
+/// image-view source size.
 ///
-/// The same surface can be viewed through more than one image handle and at
-/// more than one source size. Each [`SurfaceView::image`] call
-/// creates a distinct image handle; clones of that handle preserve identity.
+/// The same surface can be viewed through more than one image handle. Each
+/// [`SurfaceView::image`] call creates a distinct image handle; clones of that
+/// handle preserve identity.
 /// At composition time each placement may either be promoted to a compositor
 /// layer or sampled by the renderer, depending on the surrounding display-list
 /// state.
@@ -194,12 +196,17 @@ impl SurfaceImageRegistry {
 pub struct SurfaceView {
     slot_id: SurfaceSlotId,
     window_id: WindowId,
+    intrinsic_size: Size,
 }
 
 impl SurfaceView {
     #[must_use]
-    pub(crate) fn new(window_id: WindowId, slot_id: SurfaceSlotId) -> Self {
-        Self { slot_id, window_id }
+    pub(crate) fn new(window_id: WindowId, slot_id: SurfaceSlotId, intrinsic_size: Size) -> Self {
+        Self {
+            slot_id,
+            window_id,
+            intrinsic_size,
+        }
     }
 
     #[must_use]
@@ -212,25 +219,13 @@ impl SurfaceView {
         self.slot_id
     }
 
-    /// Creates a Floem image handle for this surface at `size`.
+    /// Creates a Floem image handle for this surface.
     ///
-    /// The returned image can be used with `floem::ImageBrush`. `size` is the
-    /// logical source size for this brush placement. It may be absolute or
-    /// length-based; length-based sizes are resolved against the painted
-    /// geometry bounds during display-list lowering. It does not create a new
-    /// surface identity: multiple calls to `image` return handles for the same
-    /// submitted compositor content with different advertised source sizes.
-    ///
-    /// Each `image(size)` call creates a distinct image handle for the same
-    /// submitted surface content. Cloning that handle preserves its identity;
-    /// reusing it at the same resolved source size is deduped during lowering.
-    ///
-    /// If the brush is used in a simple promotable fill, Floem may publish the
-    /// surface directly as a compositor layer. If active group state requires
-    /// flattening, the renderer samples the same submitted surface content.
+    /// The returned image has the view's intrinsic source size. Use paint
+    /// transforms or brush transforms to place/sample it differently.
     #[must_use]
-    pub fn image(&self, size: impl Into<crate::effects::ImageSize>) -> crate::effects::Image {
-        crate::effects::SurfaceImage::new(self.slot_id, size).into()
+    pub fn image(&self) -> crate::effects::SurfaceImage {
+        crate::effects::SurfaceImage::new(self.slot_id, self.intrinsic_size)
     }
 
     #[must_use]
@@ -350,15 +345,14 @@ impl CompositorSurfaceProducer {
     /// change the producer's allocation size.
     ///
     /// Paint code gets the lightweight [`SurfaceView`] with [`Self::view`] and
-    /// then creates one or more [`SurfaceView::image`] handles with explicit
-    /// logical source sizes.
+    /// then creates one or more [`SurfaceView::image`] handles.
     ///
     /// This separation is intentional: producer size is physical
     /// allocation/rendering state, while image size is logical
     /// brush/source-coordinate state.
     #[must_use]
     pub fn new(window_id: WindowId, size: Size, config: CompositorSurfaceProducerConfig) -> Self {
-        let view = SurfaceView::new(window_id, SurfaceSlotId::next());
+        let view = SurfaceView::new(window_id, SurfaceSlotId::next(), size);
         view.handle().set_frame_rate_preference(config.frame_rate);
         let producer = Self::from_view(view, size, config);
         producer
@@ -390,6 +384,16 @@ impl CompositorSurfaceProducer {
         self.view
     }
 
+    /// Creates a Floem image handle for this producer's submitted surface.
+    ///
+    /// The image's intrinsic source size is the producer's current physical
+    /// target size. Use paint transforms or brush transforms to place/sample it
+    /// differently.
+    #[must_use]
+    pub fn image(&self) -> crate::effects::SurfaceImage {
+        crate::effects::SurfaceImage::new(self.view.slot_id, self.target_size())
+    }
+
     /// Returns the producer's current physical-pixel target size.
     #[must_use]
     pub fn target_size(&self) -> Size {
@@ -400,7 +404,7 @@ impl CompositorSurfaceProducer {
     ///
     /// This changes the wgpu target size Floem leases for the producer. It does
     /// not change existing [`SurfaceView::image`] handles or their logical
-    /// image-brush source sizes.
+    /// image-view source sizes.
     pub fn set_target_size(&self, size: Size) {
         *self.target_size.lock().unwrap() = size;
         self.handle.request_frame();

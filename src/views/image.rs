@@ -12,7 +12,7 @@ use imaging::Image as ImagingImage;
 use peniko::{Blob, ImageAlphaType, ImageData, kurbo::Rect};
 
 use crate::{
-    effects::{Brush, Image as FloemImage, ImageBrush, ImageSize, ShaderSourceImage},
+    effects::{Brush, Image as FloemImage, ImageBrush, ShaderSourceImage},
     prop_extractor,
     style::{FontSizeCx, ObjectFit, ObjectPosition},
     view::{LayoutNodeCx, MeasureFn, View, ViewId},
@@ -153,6 +153,12 @@ impl ImgDataSource for ShaderSourceImage {
     }
 }
 
+impl ImgDataSource for crate::effects::SurfaceImage {
+    fn into_image_data(self) -> FloemImage {
+        self.into()
+    }
+}
+
 impl ImgDataSource for Vec<u8> {
     fn into_image_data(self) -> FloemImage {
         Image::image_data_from_bytes(&self).into()
@@ -232,6 +238,12 @@ impl ImgSource for ShaderSourceImage {
     }
 }
 
+impl ImgSource for crate::effects::SurfaceImage {
+    fn into_img_reader(self) -> ImgReader {
+        ImgReader::Static(self.into())
+    }
+}
+
 impl<T, F> ImgSource for F
 where
     F: Fn() -> T + 'static,
@@ -271,6 +283,20 @@ where
 /// A view that can display an image and controls its position.
 ///
 /// It takes function that produce `Vec<u8>` and will convert it into [Image](peniko::Image).
+///
+/// Image painting follows CSS-like object sizing from the image payload's
+/// intrinsic size:
+///
+/// 1. Layout computes this view's content box.
+/// 2. [`ObjectFit`] and [`ObjectPosition`] choose the destination rect inside
+///    that content box. `Contain`/`ScaleDown` may make the destination smaller
+///    than the content box; `Cover` may make it larger and then clip it.
+/// 3. The image brush is transformed from the intrinsic source rect into the
+///    destination rect.
+///
+/// Brush placement and sampling changes should be expressed with the draw
+/// command's brush transform or style brush-transform properties, not by
+/// changing the image payload.
 ///
 /// ### Example:
 /// ```rust
@@ -434,8 +460,9 @@ impl Image {
     /// following CSS object-fit rules. The returned rect is in local coords
     /// and may be larger than `content_rect` (for Cover) or smaller (for Contain).
     pub fn object_fit_dest_rect(&self, content_rect: Rect) -> Rect {
-        self.object_fit_dest_rect_with(
+        self.object_fit_dest_rect_with_size(
             content_rect,
+            object_fit_natural_size(&self.img, content_rect),
             self.style.object_fit(),
             self.style.object_position(),
         )
@@ -448,8 +475,23 @@ impl Image {
         object_fit: ObjectFit,
         object_position: ObjectPosition,
     ) -> Rect {
-        let natural_w = intrinsic_image_width(&self.img) as f64;
-        let natural_h = intrinsic_image_height(&self.img) as f64;
+        self.object_fit_dest_rect_with_size(
+            content_rect,
+            object_fit_natural_size(&self.img, content_rect),
+            object_fit,
+            object_position,
+        )
+    }
+
+    fn object_fit_dest_rect_with_size(
+        &self,
+        content_rect: Rect,
+        natural_size: peniko::kurbo::Size,
+        object_fit: ObjectFit,
+        object_position: ObjectPosition,
+    ) -> Rect {
+        let natural_w = natural_size.width;
+        let natural_h = natural_size.height;
         if natural_w == 0.0 || natural_h == 0.0 {
             return content_rect;
         }
@@ -541,11 +583,10 @@ impl View for Image {
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         let content_rect = self.id.get_content_rect_local();
         let dest_rect = self.object_fit_dest_rect(content_rect);
-        let image_brush = Brush::Image(ImageBrush(peniko::ImageBrush {
-            image: self.img.clone(),
-            sampler: self.style.image_sampler(),
-        }));
-        let source_size = resolved_image_size(&self.img, content_rect);
+        let mut image_brush = ImageBrush::new(self.img.clone());
+        image_brush.sampler = self.style.image_sampler();
+        let image_brush = Brush::Image(image_brush);
+        let source_size = resolved_image_size(&self.img, dest_rect);
         let source_width = source_size.width;
         let source_height = source_size.height;
 
@@ -576,47 +617,29 @@ impl View for Image {
 }
 
 fn intrinsic_image_width(image: &FloemImage) -> u32 {
-    match image {
-        FloemImage::Raster(image) => image.width,
-        FloemImage::Scene(image) => image.width(),
-        FloemImage::Surface(surface) => absolute_image_width(surface.size),
-        FloemImage::Source(source) => absolute_image_width(source.size),
-    }
+    size_width(image.intrinsic_size())
 }
 
 fn intrinsic_image_height(image: &FloemImage) -> u32 {
-    match image {
-        FloemImage::Raster(image) => image.height,
-        FloemImage::Scene(image) => image.height(),
-        FloemImage::Surface(surface) => absolute_image_height(surface.size),
-        FloemImage::Source(source) => absolute_image_height(source.size),
-    }
+    size_height(image.intrinsic_size())
 }
 
-fn absolute_image_width(size: ImageSize) -> u32 {
-    size.as_absolute()
-        .map(|size| size.width.max(0.0).round().min(u32::MAX as f64) as u32)
-        .unwrap_or(0)
+fn size_width(size: peniko::kurbo::Size) -> u32 {
+    size.width.max(0.0).round().min(u32::MAX as f64) as u32
 }
 
-fn absolute_image_height(size: ImageSize) -> u32 {
-    size.as_absolute()
-        .map(|size| size.height.max(0.0).round().min(u32::MAX as f64) as u32)
-        .unwrap_or(0)
+fn size_height(size: peniko::kurbo::Size) -> u32 {
+    size.height.max(0.0).round().min(u32::MAX as f64) as u32
 }
 
 fn resolved_image_size(image: &FloemImage, bounds: Rect) -> peniko::kurbo::Size {
-    let font_size_cx = FontSizeCx::new(16.0, 16.0);
-    match image {
-        FloemImage::Raster(image) => {
-            peniko::kurbo::Size::new(f64::from(image.width), f64::from(image.height))
-        }
-        FloemImage::Scene(image) => {
-            peniko::kurbo::Size::new(f64::from(image.width()), f64::from(image.height()))
-        }
-        FloemImage::Surface(surface) => surface.size.resolve(bounds, &font_size_cx),
-        FloemImage::Source(source) => source.size.resolve(bounds, &font_size_cx),
-    }
+    let _ = bounds;
+    image.intrinsic_size()
+}
+
+fn object_fit_natural_size(image: &FloemImage, bounds: Rect) -> peniko::kurbo::Size {
+    let _ = bounds;
+    image.intrinsic_size()
 }
 
 #[cfg(test)]

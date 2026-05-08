@@ -1836,17 +1836,17 @@ fn imaging_brush_from_floem_background(
             gradient.to_peniko(bounds, &crate::unit::FontSizeCx::new(14.0, 16.0)),
         )),
         FloemBrush::Image(image_brush) => {
-            let peniko::ImageBrush { image, sampler } = image_brush.0;
+            let peniko::ImageBrush { image, sampler } = image_brush.brush;
             match image {
                 FloemImage::Raster(image) => {
                     Ok(ImagingBrush::Image(ImageBrush(peniko::ImageBrush {
-                        image: imaging::Image::Raster(image),
+                        image: imaging::Image::Raster(image.image),
                         sampler,
                     })))
                 }
                 FloemImage::Scene(image) => {
                     Ok(ImagingBrush::Image(ImageBrush(peniko::ImageBrush {
-                        image: imaging::Image::Scene(image),
+                        image: imaging::Image::Scene(image.image),
                         sampler,
                     })))
                 }

@@ -21,7 +21,7 @@ use imaging::{
 };
 use peniko::{
     ImageData,
-    kurbo::{Affine, Rect, Size},
+    kurbo::{Affine, Size},
 };
 use subduction::wgpu::SurfaceColorSpace;
 
@@ -32,7 +32,6 @@ use crate::{
     compositor_surface::SurfaceSlotId,
     gradient::Gradient,
     platform::{Duration, Instant},
-    unit::{FontSizeCx, Length},
 };
 
 /// A Floem group filter.
@@ -91,9 +90,9 @@ impl From<LayerFilter> for Filter {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Image {
     /// Raster image content.
-    Raster(ImageData),
+    Raster(RasterImage),
     /// Retained scene image content.
-    Scene(imaging::SceneImage),
+    Scene(SceneImage),
     /// Compositor/external surface content lowered to an Imaging external image
     /// during display-list processing.
     Surface(SurfaceImage),
@@ -114,29 +113,12 @@ impl Image {
     }
 
     #[must_use]
-    pub(crate) fn resolve_size(self, bounds: Rect, font_size: &FontSizeCx) -> Self {
+    pub fn intrinsic_size(&self) -> Size {
         match self {
-            Self::Surface(surface) if surface.size.needs_bounds() => {
-                Self::Surface(surface.with_size(surface.size.resolve(bounds, font_size)))
-            }
-            Self::Source(source) if source.size.needs_bounds() => {
-                let size = source.size.resolve(bounds, font_size);
-                Self::Source(source.with_size(size))
-            }
-            image => image,
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn size_in_bounds(&self, bounds: Rect, font_size: &FontSizeCx) -> Option<Size> {
-        match self {
-            Self::Raster(image) => Some(Size::new(f64::from(image.width), f64::from(image.height))),
-            Self::Scene(image) => Some(Size::new(
-                f64::from(image.width()),
-                f64::from(image.height()),
-            )),
-            Self::Surface(surface) => Some(surface.size.resolve(bounds, font_size)),
-            Self::Source(source) => Some(source.size.resolve(bounds, font_size)),
+            Self::Raster(image) => image.intrinsic_size,
+            Self::Scene(image) => image.intrinsic_size,
+            Self::Surface(surface) => surface.intrinsic_size,
+            Self::Source(source) => source.intrinsic_size,
         }
     }
 }
@@ -146,8 +128,8 @@ impl TryFrom<imaging::Image> for Image {
 
     fn try_from(image: imaging::Image) -> Result<Self, Self::Error> {
         match image {
-            imaging::Image::Raster(image) => Ok(Self::Raster(image)),
-            imaging::Image::Scene(image) => Ok(Self::Scene(image)),
+            imaging::Image::Raster(image) => Ok(Self::Raster(image.into())),
+            imaging::Image::Scene(image) => Ok(Self::Scene(image.into())),
             imaging::Image::External(image) => Err(image),
         }
     }
@@ -155,13 +137,13 @@ impl TryFrom<imaging::Image> for Image {
 
 impl From<ImageData> for Image {
     fn from(image: ImageData) -> Self {
-        Self::Raster(image)
+        Self::Raster(image.into())
     }
 }
 
 impl From<imaging::SceneImage> for Image {
     fn from(image: imaging::SceneImage) -> Self {
-        Self::Scene(image)
+        Self::Scene(image.into())
     }
 }
 
@@ -227,9 +209,9 @@ impl BrushAlphaExt for Brush {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ImageRef<'a> {
     /// Borrowed raster image content.
-    Raster(&'a ImageData),
+    Raster(&'a RasterImage),
     /// Borrowed retained scene image content.
-    Scene(&'a imaging::SceneImage),
+    Scene(&'a SceneImage),
     /// Borrowed compositor/external surface image content.
     Surface(&'a SurfaceImage),
     /// Borrowed compositor-generated image content.
@@ -255,20 +237,22 @@ impl ImageRef<'_> {
 /// modes, quality hint, and alpha multiplier. Use [`Image`] for owned Floem
 /// image content and [`ImageRef`] for borrowed content.
 #[derive(Clone, Debug, PartialEq)]
-#[repr(transparent)]
-pub struct ImageBrush<D = Image>(pub peniko::ImageBrush<D>);
+pub struct ImageBrush<D = Image> {
+    /// Peniko image brush payload and sampler.
+    pub brush: peniko::ImageBrush<D>,
+}
 
 impl<D> Deref for ImageBrush<D> {
     type Target = peniko::ImageBrush<D>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.brush
     }
 }
 
 impl<D> DerefMut for ImageBrush<D> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.brush
     }
 }
 
@@ -276,28 +260,28 @@ impl<D> ImageBrush<D> {
     /// Builder method for setting the image extend mode in both directions.
     #[must_use]
     pub fn with_extend(mut self, mode: peniko::Extend) -> Self {
-        self.0 = self.0.with_extend(mode);
+        self.brush = self.brush.with_extend(mode);
         self
     }
 
     /// Builder method for setting the image extend mode in the horizontal direction.
     #[must_use]
     pub fn with_x_extend(mut self, mode: peniko::Extend) -> Self {
-        self.0 = self.0.with_x_extend(mode);
+        self.brush = self.brush.with_x_extend(mode);
         self
     }
 
     /// Builder method for setting the image extend mode in the vertical direction.
     #[must_use]
     pub fn with_y_extend(mut self, mode: peniko::Extend) -> Self {
-        self.0 = self.0.with_y_extend(mode);
+        self.brush = self.brush.with_y_extend(mode);
         self
     }
 
     /// Builder method for setting the desired image quality hint.
     #[must_use]
     pub fn with_quality(mut self, quality: peniko::ImageQuality) -> Self {
-        self.0 = self.0.with_quality(quality);
+        self.brush = self.brush.with_quality(quality);
         self
     }
 
@@ -305,7 +289,7 @@ impl<D> ImageBrush<D> {
     #[must_use]
     #[track_caller]
     pub fn with_alpha(mut self, alpha: f32) -> Self {
-        self.0 = self.0.with_alpha(alpha);
+        self.brush = self.brush.with_alpha(alpha);
         self
     }
 
@@ -313,7 +297,7 @@ impl<D> ImageBrush<D> {
     #[must_use]
     #[track_caller]
     pub fn multiply_alpha(mut self, alpha: f32) -> Self {
-        self.0 = self.0.multiply_alpha(alpha);
+        self.brush = self.brush.multiply_alpha(alpha);
         self
     }
 }
@@ -322,19 +306,23 @@ impl ImageBrush {
     /// Create a new image brush with default sampling.
     #[must_use]
     pub fn new(image: impl Into<Image>) -> Self {
-        Self(peniko::ImageBrush {
-            image: image.into(),
-            sampler: peniko::ImageSampler::default(),
-        })
+        Self {
+            brush: peniko::ImageBrush {
+                image: image.into(),
+                sampler: peniko::ImageSampler::default(),
+            },
+        }
     }
 
     /// Borrow this image brush.
     #[must_use]
     pub fn as_ref(&self) -> ImageBrushRef<'_> {
-        ImageBrush(peniko::ImageBrush {
-            image: self.image.as_ref(),
-            sampler: self.sampler,
-        })
+        ImageBrush {
+            brush: peniko::ImageBrush {
+                image: self.image.as_ref(),
+                sampler: self.sampler,
+            },
+        }
     }
 }
 
@@ -347,32 +335,36 @@ impl From<Image> for ImageBrush {
 impl From<imaging::ImageBrush> for ImageBrush {
     fn from(image: imaging::ImageBrush) -> Self {
         let image_payload = match image.image.clone() {
-            imaging::Image::Raster(image) => Image::Raster(image),
-            imaging::Image::Scene(image) => Image::Scene(image),
+            imaging::Image::Raster(image) => Image::Raster(image.into()),
+            imaging::Image::Scene(image) => Image::Scene(image.into()),
             imaging::Image::External(_) => {
                 panic!("imaging::ExternalImage cannot be stored in a Floem image brush")
             }
         };
-        Self(peniko::ImageBrush {
-            image: image_payload,
-            sampler: image.sampler,
-        })
+        Self {
+            brush: peniko::ImageBrush {
+                image: image_payload,
+                sampler: image.sampler,
+            },
+        }
     }
 }
 
 impl From<imaging::ImageBrushRef<'_>> for ImageBrush {
     fn from(image: imaging::ImageBrushRef<'_>) -> Self {
         let image_payload = match image.image {
-            imaging::ImageRef::Raster(image) => Image::Raster(image.clone()),
-            imaging::ImageRef::Scene(image) => Image::Scene(image.clone()),
+            imaging::ImageRef::Raster(image) => Image::Raster(image.clone().into()),
+            imaging::ImageRef::Scene(image) => Image::Scene(image.clone().into()),
             imaging::ImageRef::External(_) => {
                 panic!("imaging::ExternalImage cannot be stored in a Floem image brush")
             }
         };
-        Self(peniko::ImageBrush {
-            image: image_payload,
-            sampler: image.sampler,
-        })
+        Self {
+            brush: peniko::ImageBrush {
+                image: image_payload,
+                sampler: image.sampler,
+            },
+        }
     }
 }
 
@@ -382,21 +374,47 @@ impl From<ShaderSourceImage> for ImageBrush {
     }
 }
 
+impl From<SurfaceImage> for ImageBrush {
+    fn from(image: SurfaceImage) -> Self {
+        Self::new(image)
+    }
+}
+
 /// Borrowed Floem image brush.
 pub type ImageBrushRef<'a> = ImageBrush<ImageRef<'a>>;
 
 impl From<ImageBrushRef<'_>> for ImageBrush {
     fn from(value: ImageBrushRef<'_>) -> Self {
-        Self(peniko::ImageBrush {
-            image: value.image.to_owned(),
-            sampler: value.sampler,
-        })
+        Self {
+            brush: peniko::ImageBrush {
+                image: value.image.to_owned(),
+                sampler: value.sampler,
+            },
+        }
     }
 }
 
 impl From<ImageBrush> for Brush {
     fn from(value: ImageBrush) -> Self {
         Self::Image(value)
+    }
+}
+
+impl From<Image> for Brush {
+    fn from(value: Image) -> Self {
+        Self::Image(ImageBrush::from(value))
+    }
+}
+
+impl From<SurfaceImage> for Brush {
+    fn from(value: SurfaceImage) -> Self {
+        Self::Image(ImageBrush::from(value))
+    }
+}
+
+impl From<ShaderSourceImage> for Brush {
+    fn from(value: ShaderSourceImage) -> Self {
+        Self::Image(ImageBrush::from(value))
     }
 }
 
@@ -412,95 +430,63 @@ impl From<Gradient> for Brush {
     }
 }
 
-/// Sized image view for a [`ShaderSource`].
+/// Raster image content with its intrinsic source size.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RasterImage {
+    pub image: ImageData,
+    pub intrinsic_size: Size,
+}
+
+impl RasterImage {
+    #[must_use]
+    pub fn new(image: ImageData) -> Self {
+        let intrinsic_size = Size::new(f64::from(image.width), f64::from(image.height));
+        Self {
+            image,
+            intrinsic_size,
+        }
+    }
+}
+
+impl From<ImageData> for RasterImage {
+    fn from(image: ImageData) -> Self {
+        Self::new(image)
+    }
+}
+
+/// Retained scene image content with its intrinsic source size.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SceneImage {
+    pub image: imaging::SceneImage,
+    pub intrinsic_size: Size,
+}
+
+impl SceneImage {
+    #[must_use]
+    pub fn new(image: imaging::SceneImage) -> Self {
+        let intrinsic_size = Size::new(f64::from(image.width()), f64::from(image.height()));
+        Self {
+            image,
+            intrinsic_size,
+        }
+    }
+}
+
+impl From<imaging::SceneImage> for SceneImage {
+    fn from(image: imaging::SceneImage) -> Self {
+        Self::new(image)
+    }
+}
+
+/// Shader source image content with its intrinsic source size.
 ///
 /// Shader sources are shader programs, not image brushes. Create one of these
-/// explicit image views with [`ShaderSource::image`] before using a source as
-/// an [`ImageBrush`] payload. The size is the source image's natural logical
-/// size for image-brush sampling. Length-based sizes are resolved against the
-/// bounds of the painted geometry during display-list lowering.
+/// explicit image payloads with [`ShaderSource::image`] before using a source
+/// as an [`ImageBrush`] payload.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShaderSourceImage {
     pub source: ShaderSource,
-    pub size: ImageSize,
-}
-
-impl ShaderSourceImage {
-    #[must_use]
-    pub(crate) fn with_size(mut self, size: impl Into<ImageSize>) -> Self {
-        self.size = size.into();
-        self
-    }
-}
-
-/// Natural logical image size used by Floem-owned image payloads.
-///
-/// This is separate from `kurbo::Size` so image source sizes can be expressed
-/// relative to the bounds of the painted geometry. Absolute numeric sizes keep
-/// the existing behavior, while `pct()`/`Length::Pct` sizes resolve during
-/// display-list lowering. For a background that means the full view bounds; for
-/// explicit fills and strokes it means the painted shape's bounds.
-///
-/// ```
-/// # use floem::{ImageSize, prelude::*};
-/// let full_paint_bounds = ImageSize::new(100.0.pct(), 100.0.pct());
-/// ```
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ImageSize {
-    pub width: Length,
-    pub height: Length,
-}
-
-impl ImageSize {
-    #[must_use]
-    pub fn new(width: impl Into<Length>, height: impl Into<Length>) -> Self {
-        Self {
-            width: width.into(),
-            height: height.into(),
-        }
-    }
-
-    #[must_use]
-    pub fn resolve(self, bounds: Rect, font_size: &FontSizeCx) -> Size {
-        Size::new(
-            self.width.resolve(bounds.width(), font_size).max(0.0),
-            self.height.resolve(bounds.height(), font_size).max(0.0),
-        )
-    }
-
-    #[must_use]
-    pub(crate) fn needs_bounds(self) -> bool {
-        matches!(self.width, Length::Pct(_)) || matches!(self.height, Length::Pct(_))
-    }
-
-    #[must_use]
-    pub fn as_absolute(self) -> Option<Size> {
-        match (self.width, self.height) {
-            (Length::Pt(width), Length::Pt(height)) => {
-                Some(Size::new(width.max(0.0), height.max(0.0)))
-            }
-            _ => None,
-        }
-    }
-}
-
-impl From<Size> for ImageSize {
-    fn from(value: Size) -> Self {
-        Self {
-            width: Length::Pt(value.width),
-            height: Length::Pt(value.height),
-        }
-    }
-}
-
-impl<W, H> From<(W, H)> for ImageSize
-where
-    W: Into<Length>,
-    H: Into<Length>,
-{
-    fn from(value: (W, H)) -> Self {
-        Self::new(value.0, value.1)
-    }
+    pub intrinsic_size: Size,
 }
 
 /// Floem image identity for compositor/external surface content.
@@ -515,29 +501,19 @@ pub struct SurfaceImage {
     pub(crate) image_id: SurfaceImageId,
     /// Stable slot identity used to resolve submitted surface content.
     pub slot_id: SurfaceSlotId,
-    /// Natural logical image size for brush sampling.
-    pub size: ImageSize,
+    /// Intrinsic source size for brush sampling.
+    pub intrinsic_size: Size,
 }
 
 impl SurfaceImage {
-    /// Create a new surface image identity with an explicit natural size.
-    ///
-    /// The size can be absolute or length-based. Length-based sizes are
-    /// resolved against the painted geometry bounds when the display list is
-    /// lowered.
+    /// Create a new surface image identity with a concrete intrinsic source size.
     #[must_use]
-    pub fn new(slot_id: SurfaceSlotId, size: impl Into<ImageSize>) -> Self {
+    pub fn new(slot_id: SurfaceSlotId, intrinsic_size: Size) -> Self {
         Self {
             image_id: SurfaceImageId::next(),
             slot_id,
-            size: size.into(),
+            intrinsic_size,
         }
-    }
-
-    #[must_use]
-    pub(crate) fn with_size(mut self, size: impl Into<ImageSize>) -> Self {
-        self.size = size.into();
-        self
     }
 }
 
@@ -932,16 +908,16 @@ pub struct ShaderSource {
 }
 
 impl ShaderSource {
-    /// Creates a sized image view for this shader source.
+    /// Creates an image payload for this shader source.
     ///
-    /// Shader sources must be given an explicit natural image size before they
-    /// can be painted with an [`ImageBrush`]. That size defines the source
-    /// image space used by image-brush sampling.
+    /// Shader sources must be given a concrete intrinsic source size before
+    /// they can be painted with an [`ImageBrush`]. Use
+    /// [`ShaderSourceImage::view`] for percentage- or length-based brush views.
     #[must_use]
-    pub fn image(self, size: impl Into<ImageSize>) -> ShaderSourceImage {
+    pub fn image(self, intrinsic_size: impl Into<Size>) -> ShaderSourceImage {
         ShaderSourceImage {
             source: self,
-            size: size.into(),
+            intrinsic_size: intrinsic_size.into(),
         }
     }
 

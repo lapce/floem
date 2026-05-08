@@ -26,7 +26,9 @@ fn duration_ms(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1000.0
 }
 
-const SAMPLE_COUNT: usize = 90;
+const DEFAULT_SAMPLE_COUNT: usize = 90;
+const MAX_SAMPLE_COUNT: usize = 1000;
+const MISS_WINDOW_SECONDS: f64 = 1.5;
 const GRAPH_COUNT: usize = 44;
 const HUD_WIDTH: f64 = 268.0;
 const HUD_HEADER_HEIGHT: f64 = 58.0;
@@ -64,11 +66,10 @@ struct LayerReport {
     layer_id: u32,
     name: String,
     last_presented_at: Option<Instant>,
-    samples: VecDeque<Duration>,
+    samples: VecDeque<HudFrameSample>,
     smoothed_ms: Option<f64>,
     present_count: u64,
     missed_deadlines: u64,
-    missed_presents: u64,
     target_interval: Option<Duration>,
     source_interval: Option<Duration>,
 }
@@ -79,11 +80,10 @@ impl LayerReport {
             layer_id,
             name: format!("Layer {layer_id}"),
             last_presented_at: None,
-            samples: VecDeque::with_capacity(SAMPLE_COUNT),
+            samples: VecDeque::with_capacity(DEFAULT_SAMPLE_COUNT),
             smoothed_ms: None,
             present_count: 0,
             missed_deadlines: 0,
-            missed_presents: 0,
             target_interval: None,
             source_interval: None,
         }
@@ -95,6 +95,12 @@ impl LayerReport {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+struct HudFrameSample {
+    duration: Duration,
+    missed_presents: u64,
+}
+
 #[derive(Clone, Debug)]
 struct LayerMetrics {
     layer_id: u32,
@@ -104,6 +110,7 @@ struct LayerMetrics {
     min_ms: f64,
     max_ms: f64,
     frame_ms: [f32; GRAPH_COUNT],
+    frame_misses: [u64; GRAPH_COUNT],
     frame_count: u64,
     missed_deadlines: u64,
     missed_presents: u64,
@@ -121,6 +128,7 @@ impl Default for LayerMetrics {
             min_ms: 0.0,
             max_ms: 0.0,
             frame_ms: [0.0; GRAPH_COUNT],
+            frame_misses: [0; GRAPH_COUNT],
             frame_count: 0,
             missed_deadlines: 0,
             missed_presents: 0,
@@ -272,38 +280,43 @@ impl Hud {
                     let dt = presented_at.saturating_duration_since(previous);
                     if !dt.is_zero() {
                         let target_ms = report.target_interval.map(duration_ms);
-                        let threshold_ms = cadence_miss_threshold_ms(
-                            report.target_interval,
-                            report.source_interval,
-                        );
                         let dt_ms = duration_ms(dt);
-                        if threshold_ms.is_some_and(|threshold_ms| dt_ms > threshold_ms) {
-                            report.missed_presents += 1;
+                        let missed_presents = target_rate_miss_count(
+                            dt,
+                            report.target_interval,
+                            layer.missed_deadline,
+                        );
+                        if missed_presents > 0 {
                             if crate::frame_source::frame_pacing_diag_enabled() {
                                 crate::floem_debug_log!(
-                                    "floem hud missed-present layer={} name={:?} dt={:.3}ms target={:?} threshold={:.3}ms frame_rate={:?} presented_at={:?} missed_total={} sample_count={}",
+                                    "floem hud missed-present layer={} name={:?} dt={:.3}ms target={:?} missed={} frame_rate={:?} presented_at={:?} sample_count={}",
                                     layer.layer_id,
                                     report.name,
                                     dt_ms,
                                     target_ms,
-                                    threshold_ms.unwrap_or(0.0),
+                                    missed_presents,
                                     layer.frame_rate,
                                     presented_at,
-                                    report.missed_presents,
-                                    report.samples.len().saturating_add(1).min(SAMPLE_COUNT),
+                                    report.samples.len().saturating_add(1),
                                 );
                             }
                         }
-                        if report.samples.len() == SAMPLE_COUNT {
-                            report.samples.pop_front();
-                        }
-                        report.samples.push_back(dt);
-                        let dt_ms = duration_ms(dt);
+                        report.samples.push_back(HudFrameSample {
+                            duration: dt,
+                            missed_presents,
+                        });
+                        trim_samples(&mut report.samples, report.target_interval);
                         report.smoothed_ms = Some(match report.smoothed_ms {
                             Some(previous) => previous * 0.9 + dt_ms * 0.1,
                             None => dt_ms,
                         });
                     }
+                } else if layer.missed_deadline {
+                    report.samples.push_back(HudFrameSample {
+                        duration: Duration::ZERO,
+                        missed_presents: 1,
+                    });
+                    trim_samples(&mut report.samples, report.target_interval);
                 }
             }
         }
@@ -390,23 +403,37 @@ fn metrics_from_reports(reports: &BTreeMap<u32, LayerReport>) -> HudMetrics {
     HudMetrics { layers }
 }
 
-fn cadence_miss_threshold_ms(target: Option<Duration>, source: Option<Duration>) -> Option<f64> {
-    let target = target?;
-    let target_ms = duration_ms(target);
-    let Some(source) = source.filter(|source| !source.is_zero()) else {
-        return Some(target_ms * 1.5);
+fn target_rate_miss_count(
+    elapsed: Duration,
+    target: Option<Duration>,
+    missed_deadline: bool,
+) -> u64 {
+    let Some(target) = target.filter(|target| !target.is_zero()) else {
+        return u64::from(missed_deadline);
     };
-
-    let expected_gap_ms = if source < target {
-        let multiple = target.as_nanos().div_ceil(source.as_nanos()).max(1);
-        duration_ms(source.saturating_mul(multiple.min(u32::MAX as u128) as u32))
+    let target_ns = target.as_nanos();
+    let elapsed_intervals = ((elapsed.as_nanos() + target_ns / 2) / target_ns).max(1);
+    let cadence_misses = elapsed_intervals.saturating_sub(1).min(u64::MAX as u128) as u64;
+    if missed_deadline {
+        cadence_misses.max(1)
     } else {
-        target_ms
-    };
+        cadence_misses
+    }
+}
 
-    // A present cadence miss is the next display opportunity after the expected
-    // one, not normal callback/present feedback jitter around the target.
-    Some(expected_gap_ms.max(target_ms) + duration_ms(source) * 0.5)
+fn target_rate_window_sample_count(target: Option<Duration>) -> usize {
+    target
+        .filter(|target| !target.is_zero())
+        .map(|target| (MISS_WINDOW_SECONDS / target.as_secs_f64()).ceil() as usize)
+        .unwrap_or(DEFAULT_SAMPLE_COUNT)
+        .clamp(1, MAX_SAMPLE_COUNT)
+}
+
+fn trim_samples(samples: &mut VecDeque<HudFrameSample>, target: Option<Duration>) {
+    let keep = target_rate_window_sample_count(target).max(GRAPH_COUNT);
+    while samples.len() > keep {
+        samples.pop_front();
+    }
 }
 
 fn metrics_from_report(report: &LayerReport) -> LayerMetrics {
@@ -419,17 +446,27 @@ fn metrics_from_report(report: &LayerReport) -> LayerMetrics {
     let mut min_ms = f64::INFINITY;
     let mut max_ms: f64 = 0.0;
     let mut total_ms = 0.0;
-    let threshold_ms = cadence_miss_threshold_ms(report.target_interval, report.source_interval);
-    let mut missed_presents = 0;
+    let mut duration_count = 0;
     for sample in &report.samples {
-        let ms = sample.as_secs_f64() * 1000.0;
+        if sample.duration.is_zero() {
+            continue;
+        }
+        let ms = sample.duration.as_secs_f64() * 1000.0;
         min_ms = min_ms.min(ms);
         max_ms = max_ms.max(ms);
         total_ms += ms;
-        if threshold_ms.is_some_and(|threshold_ms| ms > threshold_ms) {
-            missed_presents += 1;
-        }
+        duration_count += 1;
     }
+    let miss_window_offset = report
+        .samples
+        .len()
+        .saturating_sub(target_rate_window_sample_count(report.target_interval));
+    let missed_presents = report
+        .samples
+        .iter()
+        .skip(miss_window_offset)
+        .map(|sample| sample.missed_presents)
+        .sum();
     let mut metrics = LayerMetrics {
         layer_id: report.layer_id,
         name: report.name.clone(),
@@ -440,8 +477,8 @@ fn metrics_from_report(report: &LayerReport) -> LayerMetrics {
         source_ms,
         ..LayerMetrics::default()
     };
-    if !report.samples.is_empty() {
-        metrics.avg_ms = total_ms / report.samples.len() as f64;
+    if duration_count > 0 {
+        metrics.avg_ms = total_ms / duration_count as f64;
         metrics.fps = 1000.0 / report.smoothed_ms.unwrap_or(metrics.avg_ms).max(0.001);
         metrics.min_ms = min_ms;
         metrics.max_ms = max_ms;
@@ -449,7 +486,8 @@ fn metrics_from_report(report: &LayerReport) -> LayerMetrics {
 
     let graph_offset = report.samples.len().saturating_sub(GRAPH_COUNT);
     for (index, sample) in report.samples.iter().skip(graph_offset).enumerate() {
-        metrics.frame_ms[index] = (sample.as_secs_f64() * 1000.0) as f32;
+        metrics.frame_ms[index] = (sample.duration.as_secs_f64() * 1000.0) as f32;
+        metrics.frame_misses[index] = sample.missed_presents;
     }
     metrics
 }
@@ -519,7 +557,7 @@ fn draw_hud_header(
         text_cache,
         cx,
         Point::new(10.0, 38.0),
-        "miss = missed present cadence",
+        "miss = missed target opportunity",
         9.0,
         FontWeight::NORMAL,
         Color::from_rgba8(184, 255, 205, 210),
@@ -660,14 +698,6 @@ fn draw_graph(cx: &mut PaintCx<'_>, rect: Rect, metrics: &LayerMetrics) {
             .draw();
     }
 
-    let miss_threshold = cadence_miss_threshold_ms(
-        metrics
-            .target_ms
-            .map(|ms| Duration::from_secs_f64(ms / 1000.0)),
-        metrics
-            .source_ms
-            .map(|ms| Duration::from_secs_f64(ms / 1000.0)),
-    );
     let bar_width = rect.width() / GRAPH_COUNT as f64;
     for (index, ms) in metrics.frame_ms.iter().enumerate() {
         if *ms <= 0.0 {
@@ -678,7 +708,7 @@ fn draw_graph(cx: &mut PaintCx<'_>, rect: Rect, metrics: &LayerMetrics) {
         let height = (rect.height() * normalized).max(1.0);
         let x0 = rect.x0 + index as f64 * bar_width + 0.5;
         let x1 = (x0 + bar_width - 1.0).min(rect.x1);
-        let color = if miss_threshold.is_some_and(|threshold| ms > threshold) {
+        let color = if metrics.frame_misses[index] > 0 {
             Color::from_rgba8(255, 103, 92, 235)
         } else {
             Color::from_rgba8(92, 255, 151, 218)
@@ -728,4 +758,48 @@ fn draw_text_with_width(
     cache
         .borrow_mut()
         .draw_text(cx, origin, text, font_size, weight, color, width, false);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn target_rate_miss_count_counts_extra_target_intervals() {
+        let target = Duration::from_secs_f64(1.0 / 60.0);
+
+        assert_eq!(target_rate_miss_count(target, Some(target), false), 0);
+        assert_eq!(
+            target_rate_miss_count(target.saturating_mul(2), Some(target), false),
+            1
+        );
+        assert_eq!(
+            target_rate_miss_count(target.saturating_mul(3), Some(target), false),
+            2
+        );
+    }
+
+    #[test]
+    fn target_rate_miss_count_deadline_miss_counts_at_least_one() {
+        let target = Duration::from_secs_f64(1.0 / 60.0);
+
+        assert_eq!(target_rate_miss_count(target, Some(target), true), 1);
+        assert_eq!(
+            target_rate_miss_count(target.saturating_mul(3), Some(target), true),
+            2
+        );
+        assert_eq!(target_rate_miss_count(target, None, true), 1);
+    }
+
+    #[test]
+    fn target_rate_window_sample_count_uses_one_and_a_half_seconds() {
+        assert_eq!(
+            target_rate_window_sample_count(Some(Duration::from_secs_f64(1.0 / 60.0))),
+            90
+        );
+        assert_eq!(
+            target_rate_window_sample_count(Some(Duration::from_secs_f64(1.0 / 30.0))),
+            45
+        );
+    }
 }

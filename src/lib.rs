@@ -265,8 +265,8 @@ pub use compositor_surface::{
 };
 pub use effects::{
     AnimatableShaderUniforms, Brush, ColorFilter, ColorFilterShader, Composite, CompositorShader,
-    Filter, GroupRef, Image, ImageBrush, ImageBrushRef, ImageRef, ImageSize, LayerFilter,
-    LayerFilterShader, ShaderArgs, ShaderComposite, ShaderFrameUniform, ShaderSource,
+    Filter, GroupRef, Image, ImageBrush, ImageBrushRef, ImageRef, LayerFilter, LayerFilterShader,
+    RasterImage, SceneImage, ShaderArgs, ShaderComposite, ShaderFrameUniform, ShaderSource,
     ShaderSourceImage, ShaderSourceShader, ShaderTransition, ShaderUniform, ShaderUniforms,
     SurfaceImage, group_ref,
 };
@@ -310,7 +310,6 @@ pub use app::take_close_window_event_count;
 pub use style::{theme, unit};
 
 pub mod prelude {
-    pub use crate::ImageSize;
     pub use crate::compositor_surface::{
         CompositorSurfaceConfig, CompositorSurfaceProducer, CompositorSurfaceProducerConfig,
         ExternalTexture, SurfaceSlotId, SurfaceView,

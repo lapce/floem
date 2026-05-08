@@ -69,11 +69,15 @@ impl ExternalSurface {
 
     /// Returns the paint-facing view for this external surface.
     ///
-    /// Each [`SurfaceView::image`] call on the returned view supplies an
-    /// explicit logical source size for that brush placement.
+    /// The returned view creates intrinsic surface images. Use paint transforms
+    /// or brush transforms to place/sample them differently.
     #[must_use]
     pub fn view(&self) -> SurfaceView {
-        SurfaceView::new(self.window_id, self.id.surface_slot_id())
+        SurfaceView::new(
+            self.window_id,
+            self.id.surface_slot_id(),
+            peniko::kurbo::Size::ZERO,
+        )
     }
 
     #[must_use]

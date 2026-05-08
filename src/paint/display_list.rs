@@ -271,9 +271,8 @@ impl StageRecorder {
     fn register_surface_image(
         &self,
         surface: &crate::effects::SurfaceImage,
-        bounds: Rect,
+        source_size: Size,
     ) -> imaging::Image {
-        let source_size = surface.size.resolve(bounds, &self.font_size_cx);
         imaging::Image::External(
             self.surface_images
                 .borrow_mut()
@@ -284,10 +283,12 @@ impl StageRecorder {
     fn register_transformed_surface_image(
         &self,
         surface: &crate::effects::SurfaceImage,
+        source_size: Size,
         transform: Affine,
         bounds: Rect,
     ) -> imaging::Image {
-        self.register_surface_image(surface, transform_rect_bbox(transform, bounds))
+        let _ = transform_rect_bbox(transform, bounds);
+        self.register_surface_image(surface, source_size)
     }
 
     fn lower_gradient(&self, gradient: &Gradient, shape: GeometryRef<'_>) -> peniko::Gradient {
@@ -552,10 +553,10 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                 );
             }
             crate::effects::Brush::Image(image) => {
-                let peniko::ImageBrush { image, sampler } = image.0;
+                let peniko::ImageBrush { image, sampler } = image.brush;
                 match image {
                     Image::Raster(image) => {
-                        let image = imaging::Image::Raster(image);
+                        let image = imaging::Image::Raster(image.image);
                         let image = imaging::ImageBrush(peniko::ImageBrush { image, sampler });
                         let _ = self.scene.draw(
                             FillRef {
@@ -570,7 +571,7 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                         );
                     }
                     Image::Scene(image) => {
-                        let image = imaging::Image::Scene(image);
+                        let image = imaging::Image::Scene(image.image);
                         let image = imaging::ImageBrush(peniko::ImageBrush { image, sampler });
                         let _ = self.scene.draw(
                             FillRef {
@@ -586,11 +587,13 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                     }
                     Image::Surface(surface) => {
                         let bounds = geometry_ref_bounds(shape.clone());
-                        let image = imaging::ImageBrush(peniko::ImageBrush {
-                            image: self
-                                .register_transformed_surface_image(&surface, transform, bounds),
-                            sampler,
-                        });
+                        let image = self.register_transformed_surface_image(
+                            &surface,
+                            surface.intrinsic_size,
+                            transform,
+                            bounds,
+                        );
+                        let image = imaging::ImageBrush(peniko::ImageBrush { image, sampler });
                         let _ = self.scene.draw(
                             FillRef {
                                 transform,
@@ -656,10 +659,10 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                 );
             }
             crate::effects::Brush::Image(image) => {
-                let peniko::ImageBrush { image, sampler } = image.0;
+                let peniko::ImageBrush { image, sampler } = image.brush;
                 match image {
                     Image::Raster(image) => {
-                        let image = imaging::Image::Raster(image);
+                        let image = imaging::Image::Raster(image.image);
                         let _ = self.scene.draw(
                             StrokeRef {
                                 transform,
@@ -675,7 +678,7 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                         );
                     }
                     Image::Scene(image) => {
-                        let image = imaging::Image::Scene(image);
+                        let image = imaging::Image::Scene(image.image);
                         let _ = self.scene.draw(
                             StrokeRef {
                                 transform,
@@ -692,8 +695,12 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                     }
                     Image::Surface(surface) => {
                         let bounds = geometry_ref_bounds(shape.clone());
-                        let image =
-                            self.register_transformed_surface_image(&surface, transform, bounds);
+                        let image = self.register_transformed_surface_image(
+                            &surface,
+                            surface.intrinsic_size,
+                            transform,
+                            bounds,
+                        );
                         let _ = self.scene.draw(
                             StrokeRef {
                                 transform,
@@ -785,10 +792,10 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                 ));
             }
             crate::effects::Brush::Image(image) => {
-                let peniko::ImageBrush { image, sampler } = image.0;
+                let peniko::ImageBrush { image, sampler } = image.brush;
                 match image {
                     Image::Raster(image) => {
-                        let image = imaging::Image::Raster(image);
+                        let image = imaging::Image::Raster(image.image);
                         let _ = self.scene.draw(imaging::record::Draw::GlyphRun(
                             GlyphRunRef {
                                 font,
@@ -809,7 +816,7 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                         ));
                     }
                     Image::Scene(image) => {
-                        let image = imaging::Image::Scene(image);
+                        let image = imaging::Image::Scene(image.image);
                         let _ = self.scene.draw(imaging::record::Draw::GlyphRun(
                             GlyphRunRef {
                                 font,
@@ -831,14 +838,7 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                     }
                     Image::Surface(surface) => {
                         let glyphs = glyphs.collect::<Vec<_>>();
-                        let bounds = if surface.size.needs_bounds() {
-                            let bounds =
-                                glyph_run_glyph_bounds(font_size, &glyphs).unwrap_or(Rect::ZERO);
-                            bounds
-                        } else {
-                            Rect::ZERO
-                        };
-                        let image = self.register_surface_image(&surface, bounds);
+                        let image = self.register_surface_image(&surface, surface.intrinsic_size);
                         let _ = self.scene.draw(imaging::record::Draw::GlyphRun(
                             GlyphRunRef {
                                 font,
@@ -855,7 +855,7 @@ impl PaintSink<Filter, Composite, crate::effects::Brush> for StageRecorder {
                                 brush_transform,
                                 composite,
                             }
-                            .to_owned(glyphs),
+                            .to_owned(&mut glyphs.into_iter()),
                         ));
                     }
                     Image::Source(source) => {
