@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use floem::{
-    action::inspect,
     prelude::*,
     reactive::{DerivedRwSignal, Memo},
     receiver_signal::StreamSignal,
@@ -77,11 +76,6 @@ fn app_view() -> impl IntoView {
             .flex_col()
             .items_center()
             .justify_center()
-    })
-    .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
-        if *key == Key::Named(NamedKey::F11) {
-            inspect();
-        }
     })
 }
 

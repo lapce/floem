@@ -1,6 +1,6 @@
 use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 
-use crate::event::{PaintPresentInfo, PaintPresentLayer};
+use crate::event::{PaintPresentInfo, PaintPresentLayer, PaintPresentTiming};
 use crate::paint::{PaintState, renderer::SharedSceneFragmentRendererPool};
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
 use crate::platform::menu::MenuSpec;
@@ -877,7 +877,6 @@ impl WindowHandle {
 
     pub(crate) fn key_event(&mut self, key_event: KeyboardEvent) {
         let is_altgr = key_event.key == Key::Named(NamedKey::AltGraph);
-        let toggle_hud = !key_event.state.is_down() && key_event.key == Key::Named(NamedKey::F10);
         if key_event.state.is_down() {
             if is_altgr {
                 self.modifiers.set(Modifiers::ALT_GRAPH, true);
@@ -886,15 +885,6 @@ impl WindowHandle {
             self.modifiers.set(Modifiers::ALT_GRAPH, false);
         }
         self.route_platform_event(UiPlatformEvent::Key(key_event));
-        if toggle_hud {
-            self.toggle_hud();
-        }
-    }
-
-    fn toggle_hud(&mut self) {
-        self.ui.toggle_hud();
-        self.ui.request_root_paint();
-        self.refresh_frame_activity();
     }
 
     pub(crate) fn pointer_event(&mut self, pointer_event: PointerEvent) {
@@ -995,6 +985,7 @@ impl WindowHandle {
             |_| main_frame_time,
             &submission.composition_plan,
             &mut self.compositor_runtime,
+            submission.user_scale,
             submission.effective_scale,
             self.gpu_resources.as_ref(),
             is_resize_frame,
@@ -1032,6 +1023,7 @@ impl WindowHandle {
             |_| frame_time,
             &submission.composition_plan,
             &mut self.compositor_runtime,
+            submission.user_scale,
             submission.effective_scale,
             self.gpu_resources.as_ref(),
             is_resize_frame,
@@ -1091,6 +1083,7 @@ impl WindowHandle {
             &submission.compositor_surfaces,
             gpu_resources,
             &renderer_pool,
+            submission.user_scale,
             submission.effective_scale,
         );
         let end = Instant::now();
@@ -1463,7 +1456,7 @@ impl WindowHandle {
             self.arm_layer_host_commit_feedback(submitted_at, start);
         } else {
             let frame_time = self.active_frame_time;
-            self.route_paint_present_event(submitted_at, frame_time);
+            self.route_paint_present_event(submitted_at, Some(submitted_at), frame_time);
             self.finish_presented_frame(Some(submitted_at), submitted_at, frame_time);
         }
         let commit_label = if scene_pending_at_commit {
@@ -1730,6 +1723,7 @@ impl WindowHandle {
         let _composition_diff = self.compositor_runtime.apply_plan(
             &submission.composition_plan,
             &submission.compositor_surfaces,
+            submission.user_scale,
             self.gpu_resources.as_ref(),
         );
     }
@@ -2725,7 +2719,7 @@ impl WindowHandle {
             .and_then(|frame_time| frame_time.interval.predicted_present)
             .filter(|predicted_present| *predicted_present >= committed_at)
             .unwrap_or(committed_at);
-        self.route_paint_present_event(pacing_presented_at, pending.frame_time);
+        self.route_paint_present_event(pacing_presented_at, Some(submitted_at), pending.frame_time);
         if let Some(frame_time) = pending.frame_time {
             let interval = frame_time.frame_interval;
             let interval_ms = interval.as_secs_f64() * 1000.0;
@@ -2801,10 +2795,16 @@ impl WindowHandle {
         self.last_timing_report.take()
     }
 
-    fn route_paint_present_event(&mut self, presented_at: Instant, frame_time: Option<FrameTime>) {
+    fn route_paint_present_event(
+        &mut self,
+        presented_at: Instant,
+        submitted_at: Option<Instant>,
+        frame_time: Option<FrameTime>,
+    ) {
         let missed_deadline =
             frame_time.is_some_and(|frame| presented_at > frame.interval.deadline_max);
         let source_frame_interval = frame_time.map(|frame| frame.source_interval);
+        let timing = self.paint_present_timing(presented_at, submitted_at, frame_time);
         let layers = mem::take(&mut self.pending_presented_layers)
             .into_iter()
             .map(|layer| PaintPresentLayer {
@@ -2817,6 +2817,7 @@ impl WindowHandle {
                     .and_then(|preference| frame_rate_interval(preference, frame_time)),
                 source_frame_interval,
                 missed_deadline,
+                timing: timing.clone(),
             })
             .collect::<Vec<_>>();
         let active_layers = mem::take(&mut self.pending_active_layers)
@@ -2831,6 +2832,7 @@ impl WindowHandle {
                     .and_then(|preference| frame_rate_interval(preference, frame_time)),
                 source_frame_interval,
                 missed_deadline: false,
+                timing: None,
             })
             .collect::<Vec<_>>();
         let info = PaintPresentInfo {
@@ -2839,6 +2841,31 @@ impl WindowHandle {
             active_layers,
         };
         self.ui.route_paint_present(info);
+    }
+
+    fn paint_present_timing(
+        &self,
+        presented_at: Instant,
+        submitted_at: Option<Instant>,
+        frame_time: Option<FrameTime>,
+    ) -> Option<PaintPresentTiming> {
+        let frame_time = frame_time?;
+        let deadline_at = frame_time.interval.deadline_max;
+        let opportunity_started_at = self
+            .active_begin_frame_started_at
+            .unwrap_or(frame_time.interval.deadline_min);
+        let opportunity_late = opportunity_started_at > deadline_at;
+        let app_late = !opportunity_late
+            && submitted_at.is_some_and(|submitted_at| submitted_at > deadline_at);
+        let present_late = !opportunity_late && !app_late && presented_at > deadline_at;
+        Some(PaintPresentTiming {
+            opportunity_started_at,
+            deadline_at,
+            submitted_at,
+            opportunity_late,
+            app_late,
+            present_late,
+        })
     }
 
     fn capture_image(&mut self) -> crate::paint::renderer::CaptureOutput {

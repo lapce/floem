@@ -193,10 +193,6 @@ impl WindowUiRuntime {
         self.call(|ui| ui.request_root_paint());
     }
 
-    pub(crate) fn toggle_hud(&self) {
-        self.call(|ui| ui.toggle_hud());
-    }
-
     pub(crate) fn route_platform_event(
         &self,
         event: UiPlatformEvent,
@@ -362,6 +358,7 @@ impl WindowUiRuntime {
         self.call(move |ui| UiSceneSubmission {
             composition_plan: ui.state.composition_plan.clone(),
             compositor_surfaces,
+            user_scale: ui.user_scale(),
             effective_scale: ui.effective_scale(),
         })
     }

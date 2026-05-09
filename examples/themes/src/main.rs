@@ -143,11 +143,6 @@ fn app_view() -> impl IntoView {
         .justify_center()
     })
     .window_title(|| "Themes Example".to_string())
-    .on_event_stop(listener::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
-        if let Key::Named(NamedKey::F11) = key {
-            floem::action::inspect();
-        }
-    })
 }
 
 fn main() {

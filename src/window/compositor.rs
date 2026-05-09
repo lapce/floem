@@ -66,6 +66,7 @@ pub(crate) struct WindowCompositor {
     external_writer_texture_pool:
         FxHashMap<EffectIntermediateTextureKey, Vec<TrackedEffectTexture>>,
     pending_layer_changes: Option<FrameChanges>,
+    user_scale: f64,
     #[cfg(target_os = "macos")]
     metal_capture_active: bool,
     #[cfg(target_os = "macos")]
@@ -184,8 +185,10 @@ impl WindowCompositor {
         &mut self,
         plan: &CompositionPlan,
         compositor_surfaces: &FxHashMap<CompositorSurfaceId, CompositorSurfaceEntry>,
+        user_scale: f64,
         _gpu_resources: Option<&GpuResources>,
     ) -> CompositorDiff {
+        self.user_scale = normalized_user_scale(user_scale);
         let mut diff = CompositorDiff::default();
         let mut new_order = Vec::with_capacity(plan.items.len());
         let mut live_keys = FxHashSet::default();
@@ -376,8 +379,7 @@ impl WindowCompositor {
         if self.layer_store.bounds(layer_id) != bounds {
             self.layer_store.set_bounds(layer_id, bounds);
         }
-        let origin = layer.transform * layer.bounds.origin();
-        let transform = Transform3d::from_translation(origin.x, origin.y, 0.0);
+        let transform = presentation_transform(layer.transform, layer.bounds, self.user_scale);
         if self.layer_store.local_transform(layer_id) != transform {
             self.layer_store.set_transform(layer_id, transform);
         }
@@ -410,8 +412,7 @@ impl WindowCompositor {
         if self.layer_store.bounds(layer_id) != bounds {
             self.layer_store.set_bounds(layer_id, bounds);
         }
-        let origin = layer.transform * layer.rect.origin();
-        let transform = Transform3d::from_translation(origin.x, origin.y, 0.0);
+        let transform = presentation_transform(layer.transform, layer.rect, self.user_scale);
         if self.layer_store.local_transform(layer_id) != transform {
             self.layer_store.set_transform(layer_id, transform);
         }
@@ -438,8 +439,10 @@ impl WindowCompositor {
         compositor_surfaces: &FxHashMap<CompositorSurfaceId, CompositorSurfaceEntry>,
         gpu_resources: &GpuResources,
         renderer_pool: &SceneFragmentRendererPool,
+        user_scale: f64,
         effective_scale: f64,
     ) -> usize {
+        self.user_scale = normalized_user_scale(user_scale);
         let render_call_id = COMPOSITOR_RENDER_CALL_ID.fetch_add(1, Ordering::Relaxed);
         if crate::frame_source::frame_pacing_diag_enabled() {
             let render_plan = SceneRenderPlan::from_composition_plan(plan);
@@ -1909,6 +1912,31 @@ fn append_texture_layer(
     });
 }
 
+fn normalized_user_scale(user_scale: f64) -> f64 {
+    if user_scale.is_finite() && user_scale > 0.0 {
+        user_scale
+    } else {
+        1.0
+    }
+}
+
+fn presentation_transform(transform: Affine, bounds: Rect, user_scale: f64) -> Transform3d {
+    let user_scale = normalized_user_scale(user_scale);
+    let transform =
+        Affine::scale(user_scale) * transform * Affine::translate(bounds.origin().to_vec2());
+    transform3d_from_affine(transform)
+}
+
+fn transform3d_from_affine(transform: Affine) -> Transform3d {
+    let [a, b, c, d, e, f] = transform.as_coeffs();
+    Transform3d::from_cols(
+        [a, b, 0.0, 0.0],
+        [c, d, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [e, f, 0.0, 1.0],
+    )
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct SceneRenderSignature {
     content_revision: u64,
@@ -3214,6 +3242,29 @@ mod tests {
     fn f32_at(bytes: &[u8], index: usize) -> f32 {
         let start = index * std::mem::size_of::<f32>();
         f32::from_ne_bytes(bytes[start..start + 4].try_into().unwrap())
+    }
+
+    #[test]
+    fn presentation_transform_applies_user_scale_in_layer_coordinates() {
+        let transform =
+            presentation_transform(Affine::IDENTITY, Rect::new(10.0, 20.0, 110.0, 70.0), 2.0);
+
+        assert_eq!(transform.col(0), [2.0, 0.0, 0.0, 0.0]);
+        assert_eq!(transform.col(1), [0.0, 2.0, 0.0, 0.0]);
+        assert_eq!(transform.col(3), [20.0, 40.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn presentation_transform_preserves_affine_linear_part() {
+        let transform = presentation_transform(
+            Affine::translate((5.0, 7.0)) * Affine::scale_non_uniform(3.0, 4.0),
+            Rect::new(10.0, 20.0, 110.0, 70.0),
+            2.0,
+        );
+
+        assert_eq!(transform.col(0), [6.0, 0.0, 0.0, 0.0]);
+        assert_eq!(transform.col(1), [0.0, 8.0, 0.0, 0.0]);
+        assert_eq!(transform.col(3), [70.0, 174.0, 0.0, 1.0]);
     }
 
     #[test]

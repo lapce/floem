@@ -1,5 +1,4 @@
 use floem::{
-    action::inspect,
     prelude::*,
     text::{Attrs, AttrsList, FamilyOwned, FontWeight, FontWidth},
     views::editor::{
@@ -233,11 +232,6 @@ mod tests {
         .style(|s| s.width_full().flex_row().items_center().justify_center()),
     ))
     .style(|s| s.size_full().flex_col().items_center().justify_center())
-    .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
-        if *key == Key::Named(NamedKey::F11) {
-            inspect();
-        }
-    })
 }
 
 fn main() {

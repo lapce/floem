@@ -1,5 +1,4 @@
 use floem::{
-    action::inspect,
     prelude::*,
     reactive::{Context, Scope},
 };
@@ -54,11 +53,6 @@ fn app_view() -> impl IntoView {
             .items_center()
             .justify_center()
             .row_gap(5)
-    })
-    .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
-        if *key == Key::Named(NamedKey::F11) {
-            inspect();
-        }
     })
 }
 

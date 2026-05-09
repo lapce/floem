@@ -293,12 +293,14 @@ impl WindowCompositorSurfaces {
         mut frame_time_for_surface: impl FnMut(CompositorSurfaceId) -> FrameTime,
         plan: &CompositionPlan,
         compositor: &mut WindowCompositor,
+        user_scale: f64,
         effective_scale: f64,
         gpu_resources: Option<&GpuResources>,
         is_resize_frame: bool,
     ) -> WindowCompositorSurfaceFrameUpdate {
         self.take_frame_pull();
-        let _composition_diff = compositor.apply_plan(plan, &self.entries, gpu_resources);
+        let _composition_diff =
+            compositor.apply_plan(plan, &self.entries, user_scale, gpu_resources);
         let update = self.update_providers(
             plan,
             Some(compositor),
@@ -308,7 +310,8 @@ impl WindowCompositorSurfaces {
             &mut frame_time_for_surface,
         );
         if update.content_changed {
-            let _composition_diff = compositor.apply_plan(plan, &self.entries, gpu_resources);
+            let _composition_diff =
+                compositor.apply_plan(plan, &self.entries, user_scale, gpu_resources);
         }
         update
     }

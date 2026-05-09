@@ -12,7 +12,7 @@ use peniko::{
 
 use crate::{
     context::PaintCx,
-    event::PaintPresentInfo,
+    event::{PaintPresentInfo, PaintPresentLayer},
     paint::composition::LayerSourceId,
     platform::{Duration, Instant},
     prelude::*,
@@ -30,9 +30,9 @@ const DEFAULT_SAMPLE_COUNT: usize = 90;
 const MAX_SAMPLE_COUNT: usize = 1000;
 const MISS_WINDOW_SECONDS: f64 = 1.5;
 const GRAPH_COUNT: usize = 44;
-const HUD_WIDTH: f64 = 268.0;
-const HUD_HEADER_HEIGHT: f64 = 58.0;
-const HUD_LAYER_HEIGHT: f64 = 48.0;
+const HUD_WIDTH: f64 = 330.0;
+const HUD_HEADER_HEIGHT: f64 = 64.0;
+const HUD_LAYER_HEIGHT: f64 = 64.0;
 const HUD_MAX_HEIGHT: f64 = 360.0;
 const HUD_TARGET_FPS: f64 = 30.0;
 
@@ -69,7 +69,6 @@ struct LayerReport {
     samples: VecDeque<HudFrameSample>,
     smoothed_ms: Option<f64>,
     present_count: u64,
-    missed_deadlines: u64,
     target_interval: Option<Duration>,
     source_interval: Option<Duration>,
 }
@@ -83,7 +82,6 @@ impl LayerReport {
             samples: VecDeque::with_capacity(DEFAULT_SAMPLE_COUNT),
             smoothed_ms: None,
             present_count: 0,
-            missed_deadlines: 0,
             target_interval: None,
             source_interval: None,
         }
@@ -99,6 +97,10 @@ impl LayerReport {
 struct HudFrameSample {
     duration: Duration,
     missed_presents: u64,
+    hitch_ms: f64,
+    opportunity_misses: u64,
+    app_misses: u64,
+    present_misses: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -112,8 +114,11 @@ struct LayerMetrics {
     frame_ms: [f32; GRAPH_COUNT],
     frame_misses: [u64; GRAPH_COUNT],
     frame_count: u64,
-    missed_deadlines: u64,
     missed_presents: u64,
+    hitch_ms_per_s: f64,
+    opportunity_misses: u64,
+    app_misses: u64,
+    present_misses: u64,
     target_ms: Option<f64>,
     source_ms: Option<f64>,
 }
@@ -130,8 +135,11 @@ impl Default for LayerMetrics {
             frame_ms: [0.0; GRAPH_COUNT],
             frame_misses: [0; GRAPH_COUNT],
             frame_count: 0,
-            missed_deadlines: 0,
             missed_presents: 0,
+            hitch_ms_per_s: 0.0,
+            opportunity_misses: 0,
+            app_misses: 0,
+            present_misses: 0,
             target_ms: None,
             source_ms: None,
         }
@@ -273,38 +281,31 @@ impl Hud {
                 }
                 report.present_count += 1;
                 report.update_intervals(layer.target_frame_interval, layer.source_frame_interval);
-                if layer.missed_deadline {
-                    report.missed_deadlines += 1;
-                }
                 if let Some(previous) = report.last_presented_at.replace(presented_at) {
                     let dt = presented_at.saturating_duration_since(previous);
                     if !dt.is_zero() {
                         let target_ms = report.target_interval.map(duration_ms);
                         let dt_ms = duration_ms(dt);
-                        let missed_presents = target_rate_miss_count(
-                            dt,
-                            report.target_interval,
-                            layer.missed_deadline,
-                        );
-                        if missed_presents > 0 {
+                        let sample = frame_sample_for_present(dt, report.target_interval, layer);
+                        if sample.missed_presents > 0 {
                             if crate::frame_source::frame_pacing_diag_enabled() {
                                 crate::floem_debug_log!(
-                                    "floem hud missed-present layer={} name={:?} dt={:.3}ms target={:?} missed={} frame_rate={:?} presented_at={:?} sample_count={}",
+                                    "floem hud missed-present layer={} name={:?} dt={:.3}ms target={:?} missed={} opp={} app={} pres={} frame_rate={:?} presented_at={:?} sample_count={}",
                                     layer.layer_id,
                                     report.name,
                                     dt_ms,
                                     target_ms,
-                                    missed_presents,
+                                    sample.missed_presents,
+                                    sample.opportunity_misses,
+                                    sample.app_misses,
+                                    sample.present_misses,
                                     layer.frame_rate,
                                     presented_at,
                                     report.samples.len().saturating_add(1),
                                 );
                             }
                         }
-                        report.samples.push_back(HudFrameSample {
-                            duration: dt,
-                            missed_presents,
-                        });
+                        report.samples.push_back(sample);
                         trim_samples(&mut report.samples, report.target_interval);
                         report.smoothed_ms = Some(match report.smoothed_ms {
                             Some(previous) => previous * 0.9 + dt_ms * 0.1,
@@ -312,10 +313,10 @@ impl Hud {
                         });
                     }
                 } else if layer.missed_deadline {
-                    report.samples.push_back(HudFrameSample {
-                        duration: Duration::ZERO,
-                        missed_presents: 1,
-                    });
+                    report.samples.push_back(first_present_deadline_miss_sample(
+                        report.target_interval,
+                        layer,
+                    ));
                     trim_samples(&mut report.samples, report.target_interval);
                 }
             }
@@ -403,21 +404,80 @@ fn metrics_from_reports(reports: &BTreeMap<u32, LayerReport>) -> HudMetrics {
     HudMetrics { layers }
 }
 
-fn target_rate_miss_count(
-    elapsed: Duration,
-    target: Option<Duration>,
-    missed_deadline: bool,
-) -> u64 {
+fn target_rate_miss_count(elapsed: Duration, target: Option<Duration>) -> u64 {
     let Some(target) = target.filter(|target| !target.is_zero()) else {
-        return u64::from(missed_deadline);
+        return 0;
     };
     let target_ns = target.as_nanos();
     let elapsed_intervals = ((elapsed.as_nanos() + target_ns / 2) / target_ns).max(1);
-    let cadence_misses = elapsed_intervals.saturating_sub(1).min(u64::MAX as u128) as u64;
-    if missed_deadline {
+    elapsed_intervals.saturating_sub(1).min(u64::MAX as u128) as u64
+}
+
+fn frame_sample_for_present(
+    duration: Duration,
+    target: Option<Duration>,
+    layer: &PaintPresentLayer,
+) -> HudFrameSample {
+    let cadence_misses = target_rate_miss_count(duration, target);
+    let has_late_attribution = layer
+        .timing
+        .as_ref()
+        .is_some_and(|timing| timing.opportunity_late || timing.app_late || timing.present_late);
+    let missed_presents = if has_late_attribution {
         cadence_misses.max(1)
     } else {
         cadence_misses
+    };
+    let mut sample = HudFrameSample {
+        duration,
+        missed_presents,
+        hitch_ms: hitch_ms(duration, target, missed_presents),
+        opportunity_misses: 0,
+        app_misses: 0,
+        present_misses: 0,
+    };
+    if missed_presents == 0 {
+        return sample;
+    }
+
+    match layer.timing.as_ref() {
+        Some(timing) if timing.app_late => sample.app_misses = missed_presents,
+        Some(timing) if timing.present_late => sample.present_misses = missed_presents,
+        Some(timing) if timing.opportunity_late => sample.opportunity_misses = missed_presents,
+        _ => sample.opportunity_misses = missed_presents,
+    }
+    sample
+}
+
+fn first_present_deadline_miss_sample(
+    target: Option<Duration>,
+    layer: &PaintPresentLayer,
+) -> HudFrameSample {
+    let mut sample = HudFrameSample {
+        duration: Duration::ZERO,
+        missed_presents: 1,
+        hitch_ms: target.map(duration_ms).unwrap_or(0.0),
+        opportunity_misses: 0,
+        app_misses: 0,
+        present_misses: 0,
+    };
+    match layer.timing.as_ref() {
+        Some(timing) if timing.app_late => sample.app_misses = 1,
+        Some(timing) if timing.present_late => sample.present_misses = 1,
+        Some(timing) if timing.opportunity_late => sample.opportunity_misses = 1,
+        _ => sample.opportunity_misses = 1,
+    }
+    sample
+}
+
+fn hitch_ms(duration: Duration, target: Option<Duration>, missed_presents: u64) -> f64 {
+    let Some(target) = target.filter(|target| !target.is_zero()) else {
+        return 0.0;
+    };
+    if missed_presents == 0 {
+        0.0
+    } else {
+        duration_ms(duration.saturating_sub(target))
     }
 }
 
@@ -467,12 +527,39 @@ fn metrics_from_report(report: &LayerReport) -> LayerMetrics {
         .skip(miss_window_offset)
         .map(|sample| sample.missed_presents)
         .sum();
+    let hitch_ms: f64 = report
+        .samples
+        .iter()
+        .skip(miss_window_offset)
+        .map(|sample| sample.hitch_ms)
+        .sum();
+    let opportunity_misses = report
+        .samples
+        .iter()
+        .skip(miss_window_offset)
+        .map(|sample| sample.opportunity_misses)
+        .sum();
+    let app_misses = report
+        .samples
+        .iter()
+        .skip(miss_window_offset)
+        .map(|sample| sample.app_misses)
+        .sum();
+    let present_misses = report
+        .samples
+        .iter()
+        .skip(miss_window_offset)
+        .map(|sample| sample.present_misses)
+        .sum();
     let mut metrics = LayerMetrics {
         layer_id: report.layer_id,
         name: report.name.clone(),
         frame_count: report.present_count,
-        missed_deadlines: report.missed_deadlines,
         missed_presents,
+        hitch_ms_per_s: hitch_ms / MISS_WINDOW_SECONDS,
+        opportunity_misses,
+        app_misses,
+        present_misses,
         target_ms,
         source_ms,
         ..LayerMetrics::default()
@@ -548,7 +635,7 @@ fn draw_hud_header(
         text_cache,
         cx,
         Point::new(10.0, 24.0),
-        "dl   = missed compositor deadline",
+        "miss = missed target opportunities",
         9.0,
         FontWeight::NORMAL,
         Color::from_rgba8(184, 255, 205, 210),
@@ -557,7 +644,7 @@ fn draw_hud_header(
         text_cache,
         cx,
         Point::new(10.0, 38.0),
-        "miss = missed target opportunity",
+        "opp/app/pres = attribution buckets",
         9.0,
         FontWeight::NORMAL,
         Color::from_rgba8(184, 255, 205, 210),
@@ -566,7 +653,7 @@ fn draw_hud_header(
         draw_text(
             text_cache,
             cx,
-            Point::new(10.0, 47.0),
+            Point::new(10.0, 50.0),
             "Waiting for layer presents",
             9.0,
             FontWeight::NORMAL,
@@ -613,7 +700,7 @@ fn draw_layer_report(
     metrics: &LayerMetrics,
     text_cache: &RefCell<HudTextCache>,
 ) {
-    let graph_rect = Rect::new(rect.x1 - 76.0, rect.y0 + 7.0, rect.x1 - 7.0, rect.y1 - 7.0);
+    let graph_rect = Rect::new(rect.x1 - 86.0, rect.y0 + 8.0, rect.x1 - 7.0, rect.y1 - 8.0);
     let text_width = (graph_rect.x0 - rect.x0 - 13.0).max(1.0);
     cx.painter
         .fill(
@@ -668,8 +755,24 @@ fn draw_layer_report(
         cx,
         Point::new(rect.x0 + 7.0, rect.y0 + 32.0),
         &format!(
-            "target {target}{source} miss {} dl {} #{}",
-            metrics.missed_presents, metrics.missed_deadlines, metrics.frame_count
+            "target {target}{source} miss {} hitch {:.0}ms/s",
+            metrics.missed_presents, metrics.hitch_ms_per_s
+        ),
+        8.0,
+        FontWeight::NORMAL,
+        Color::from_rgba8(135, 176, 153, 230),
+        text_width,
+    );
+    draw_text_with_width(
+        text_cache,
+        cx,
+        Point::new(rect.x0 + 7.0, rect.y0 + 45.0),
+        &format!(
+            "opp {} app {} pres {} #{}",
+            metrics.opportunity_misses,
+            metrics.app_misses,
+            metrics.present_misses,
+            metrics.frame_count
         ),
         8.0,
         FontWeight::NORMAL,
@@ -768,27 +871,29 @@ mod tests {
     fn target_rate_miss_count_counts_extra_target_intervals() {
         let target = Duration::from_secs_f64(1.0 / 60.0);
 
-        assert_eq!(target_rate_miss_count(target, Some(target), false), 0);
+        assert_eq!(target_rate_miss_count(target, Some(target)), 0);
         assert_eq!(
-            target_rate_miss_count(target.saturating_mul(2), Some(target), false),
+            target_rate_miss_count(target.saturating_mul(2), Some(target)),
             1
         );
         assert_eq!(
-            target_rate_miss_count(target.saturating_mul(3), Some(target), false),
+            target_rate_miss_count(target.saturating_mul(3), Some(target)),
             2
         );
     }
 
     #[test]
-    fn target_rate_miss_count_deadline_miss_counts_at_least_one() {
+    fn frame_sample_deadline_miss_counts_at_least_one() {
         let target = Duration::from_secs_f64(1.0 / 60.0);
-
-        assert_eq!(target_rate_miss_count(target, Some(target), true), 1);
+        let layer = test_layer_with_timing(false, true, false);
+        let sample = frame_sample_for_present(target, Some(target), &layer);
+        assert_eq!(sample.missed_presents, 1);
+        assert_eq!(sample.app_misses, 1);
         assert_eq!(
-            target_rate_miss_count(target.saturating_mul(3), Some(target), true),
+            frame_sample_for_present(target.saturating_mul(3), Some(target), &layer)
+                .missed_presents,
             2
         );
-        assert_eq!(target_rate_miss_count(target, None, true), 1);
     }
 
     #[test]
@@ -801,5 +906,30 @@ mod tests {
             target_rate_window_sample_count(Some(Duration::from_secs_f64(1.0 / 30.0))),
             45
         );
+    }
+
+    fn test_layer_with_timing(
+        opportunity_late: bool,
+        app_late: bool,
+        present_late: bool,
+    ) -> PaintPresentLayer {
+        let now = Instant::now();
+        PaintPresentLayer {
+            layer_id: 1,
+            source_element_id: None,
+            debug_name: None,
+            frame_rate: None,
+            target_frame_interval: None,
+            source_frame_interval: None,
+            missed_deadline: opportunity_late || app_late || present_late,
+            timing: Some(crate::event::PaintPresentTiming {
+                opportunity_started_at: now,
+                deadline_at: now,
+                submitted_at: Some(now),
+                opportunity_late,
+                app_late,
+                present_late,
+            }),
+        }
     }
 }

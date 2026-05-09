@@ -125,6 +125,7 @@ pub(crate) enum UiPlatformEvent {
 pub(crate) struct UiSceneSubmission {
     pub(crate) composition_plan: CompositionPlan,
     pub(crate) compositor_surfaces: FxHashMap<CompositorSurfaceId, CompositorSurfaceEntry>,
+    pub(crate) user_scale: f64,
     pub(crate) effective_scale: f64,
 }
 
@@ -959,6 +960,7 @@ impl WindowUiDriver {
         UiSceneSubmission {
             composition_plan: self.state.composition_plan.clone(),
             compositor_surfaces: compositor_surfaces.entries().clone(),
+            user_scale: self.state.user_scale,
             effective_scale: self.state.effective_scale(),
         }
     }

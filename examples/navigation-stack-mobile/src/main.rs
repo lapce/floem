@@ -1,6 +1,6 @@
 use floem::{
     AnyView, Application, LazyView,
-    action::{request_animation_frame, set_window_scale},
+    action::request_animation_frame,
     event::listener,
     kurbo::Size,
     new_window,
@@ -35,12 +35,6 @@ const HOME_SVG: &str = r#"
 "#;
 
 static PAYMENT_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
-
-const OS_MOD: Modifiers = if cfg!(target_os = "macos") {
-    Modifiers::META
-} else {
-    Modifiers::CONTROL
-};
 
 #[derive(Clone, Copy)]
 struct Spot {
@@ -646,13 +640,11 @@ fn main() {
         .run();
 }
 
-fn app_view(window_id: WindowId) -> impl IntoView {
+fn app_view(_window_id: WindowId) -> impl IntoView {
     let router = Router::new();
     ROUTER.with(|current| {
         current.replace(Some(router));
     });
-    let mut window_scale = RwSignal::new(1.0);
-
     let nav = NavigationStack::new(router.path)
         .style(|s| s.width_full().max_width(500.))
         .container()
@@ -677,36 +669,6 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         })
         .window_title(|| "Navigation Stack Mobile".to_owned())
         .debug_name("app")
-        .on_event_stop(
-            el::KeyUp,
-            move |_cx, KeyboardEvent { modifiers, key, .. }| {
-                if *key == Key::Named(NamedKey::F11) {
-                    floem::action::inspect();
-                } else if *key == Key::Character("q".into()) && modifiers.contains(OS_MOD) {
-                    floem::quit_app();
-                } else if *key == Key::Character("w".into()) && modifiers.contains(OS_MOD) {
-                    floem::close_window(window_id);
-                }
-            },
-        )
-        .on_event_stop(
-            el::KeyDown,
-            move |_, KeyboardEvent { key, modifiers, .. }| match key {
-                Key::Character(ch) if (ch == "=" || ch == "+") && modifiers.contains(OS_MOD) => {
-                    window_scale *= 1.1;
-                    set_window_scale(window_scale.get());
-                }
-                Key::Character(ch) if ch == "-" && *modifiers == OS_MOD => {
-                    window_scale /= 1.1;
-                    set_window_scale(window_scale.get());
-                }
-                Key::Character(ch) if ch == "0" && *modifiers == OS_MOD => {
-                    window_scale.set(1.0);
-                    set_window_scale(window_scale.get());
-                }
-                _ => {}
-            },
-        )
 }
 
 fn home_screen() -> impl IntoView {

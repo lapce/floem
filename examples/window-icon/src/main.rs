@@ -49,11 +49,6 @@ fn app_view() -> impl IntoView {
             .height_full()
             .row_gap(10.0)
     })
-    .on_event_stop(listener::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
-        if let Key::Named(NamedKey::F11) = key {
-            floem::action::inspect();
-        }
-    })
 }
 
 fn main() {

@@ -1,5 +1,4 @@
 use floem::{
-    action::inspect,
     prelude::*,
     reactive::{SignalGet, SignalUpdate},
     responsive::{range, ScreenSize},
@@ -73,11 +72,6 @@ fn app_view() -> impl IntoView {
             .justify_center()
             .items_center()
             .padding(20)
-    })
-    .on_event_stop(el::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
-        if *key == Key::Named(NamedKey::F11) {
-            inspect();
-        }
     })
 }
 

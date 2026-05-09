@@ -56,9 +56,4 @@ pub fn draggable_sidebar_view() -> impl IntoView {
             s.handle_color(Brush::Solid(dragger_color))
                 .active(|s| s.handle_color(Brush::Solid(active_dragger_color)))
         })
-        .on_event_stop(el::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
-            if let Key::Named(NamedKey::F11) = key {
-                floem::action::inspect();
-            }
-        })
 }

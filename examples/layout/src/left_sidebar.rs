@@ -59,11 +59,5 @@ pub fn left_sidebar_view() -> impl IntoView {
             .width_full()
     });
 
-    Stack::vertical((top_bar, content))
-        .style(|s| s.width_full().height_full())
-        .on_event_stop(listener::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
-            if *key == Key::Named(NamedKey::F11) {
-                floem::action::inspect();
-            }
-        })
+    Stack::vertical((top_bar, content)).style(|s| s.width_full().height_full())
 }

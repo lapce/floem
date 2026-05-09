@@ -61,11 +61,6 @@ fn app_view() -> impl IntoView {
         .style(|s| s.width_full().flex_row().items_center().justify_center()),
     ))
     .style(|s| s.size_full().flex_col().items_center().justify_center())
-    .on_event_stop(el::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
-        if let Key::Named(NamedKey::F11) = key {
-            floem::action::inspect();
-        }
-    })
 }
 
 fn main() {

@@ -738,6 +738,26 @@ pub struct PaintPresentLayer {
     pub source_frame_interval: Option<Duration>,
     /// Whether the layer missed the submit deadline for that target interval.
     pub missed_deadline: bool,
+    /// Timing classification for this presentation, if Floem had frame timing
+    /// context for it.
+    pub timing: Option<PaintPresentTiming>,
+}
+
+/// Deterministic timing attribution for a presented paint frame.
+#[derive(Clone, Debug)]
+pub struct PaintPresentTiming {
+    /// When Floem started handling the frame opportunity.
+    pub opportunity_started_at: Instant,
+    /// Latest acceptable timestamp for the frame to be ready for presentation.
+    pub deadline_at: Instant,
+    /// When Floem submitted the frame to the compositor/layer host.
+    pub submitted_at: Option<Instant>,
+    /// Whether the frame opportunity was already late when Floem started it.
+    pub opportunity_late: bool,
+    /// Whether Floem submitted late after receiving a valid opportunity.
+    pub app_late: bool,
+    /// Whether Floem submitted on time but the presentation feedback was late.
+    pub present_late: bool,
 }
 
 /// Events related to the application window state.
@@ -1349,6 +1369,15 @@ pub enum Event {
     /// - `Space`, `Enter`, `NumpadEnter` (on key-up or repeat): Generates an
     ///   [`InteractionEvent::Click`] on the currently focused element.
     ///   See [`Event::is_keyboard_trigger`].
+    /// - Platform primary modifier + `Q` (KeyUp): Quits the app. The primary
+    ///   modifier is Command on macOS and Control on Windows/Linux and other
+    ///   non-macOS targets.
+    /// - Platform primary modifier + `W` (KeyUp): Requests the current window
+    ///   to close. On Windows, `Alt+F4` does the same.
+    /// - Platform primary modifier + `+`/`=`/`-`/`0` (KeyDown): Zooms the
+    ///   current window in, out, or back to 100%.
+    /// - `F10`, `F11`, `F12` (KeyUp, no modifiers): Toggles the HUD, opens
+    ///   the Inspector, and captures the next Metal frame, respectively.
     ///
     /// # Example
     /// ```rust

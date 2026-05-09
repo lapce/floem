@@ -1,4 +1,4 @@
-use floem::{action::inspect, prelude::*};
+use floem::prelude::*;
 
 mod dyn_stack;
 mod stack;
@@ -45,9 +45,4 @@ pub fn stacks_view() -> impl IntoView {
     (basic_stack, stack_from_iter, dyn_stack, virtual_stack)
         .h_stack()
         .style(|s| s.flex().margin(20).width_full().height_full().col_gap(10))
-        .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
-            if *key == Key::Named(NamedKey::F11) {
-                inspect();
-            }
-        })
 }

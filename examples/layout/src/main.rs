@@ -93,11 +93,6 @@ fn app_view() -> impl IntoView {
             .padding(10.0)
             .row_gap(10.0)
     })
-    .on_event_stop(listener::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
-        if let Key::Named(NamedKey::F11) = key {
-            floem::action::inspect();
-        }
-    })
     .window_title(|| String::from("Layout examples"))
 }
 

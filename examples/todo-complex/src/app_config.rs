@@ -1,6 +1,5 @@
 use floem::{
     action::set_window_scale,
-    event::EventPropagation,
     kurbo::{Point, Size},
     prelude::*,
     reactive::{Context, UpdaterEffect},
@@ -8,8 +7,6 @@ use floem::{
     Application,
 };
 use serde::{Deserialize, Serialize};
-
-use crate::OS_MOD;
 
 #[derive(Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum AppTheme {
@@ -75,38 +72,6 @@ pub fn launch_with_track<V: IntoView + 'static>(app_view: impl FnOnce() -> V + '
         move |_| {
             set_window_scale(app_config.with(|c| c.window_scale));
             app_view()
-                .on_event(
-                    el::KeyDown,
-                    move |_, KeyboardEvent { key, modifiers, .. }| match key {
-                        Key::Character(ch)
-                            if (ch == "=" || ch == "+") && modifiers.contains(OS_MOD) =>
-                        {
-                            app_config.update(|ac| {
-                                ac.window_scale *= 1.1;
-                                floem::action::set_window_scale(ac.window_scale);
-                            });
-                            EventPropagation::Stop
-                        }
-
-                        Key::Character(ch) if ch == "-" && *modifiers == OS_MOD => {
-                            app_config.update(|ac| {
-                                ac.window_scale /= 1.1;
-                                floem::action::set_window_scale(ac.window_scale);
-                            });
-                            EventPropagation::Stop
-                        }
-
-                        Key::Character(ch) if ch == "0" && *modifiers == OS_MOD => {
-                            app_config.update(|ac| {
-                                ac.window_scale = 1.;
-                                floem::action::set_window_scale(ac.window_scale);
-                            });
-                            EventPropagation::Stop
-                        }
-
-                        _ => EventPropagation::Continue,
-                    },
-                )
                 .on_event_stop(listener::WindowMoved, move |_cx, position| {
                     app_config.update(|val| {
                         val.position = *position;

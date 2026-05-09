@@ -218,7 +218,7 @@ criterion = { version = "0.8.1", features = ["html_reports"] }
 peniko = { workspace = true }
 
 [patch.crates-io]
-kurbo = { path = "../kurbo/kurbo" }
+kurbo = { git = "https://github.com/linebender/kurbo.git", rev = "6836244be0b280ff68728f100fca0a5fcf62638a", default-features = false }
 # naga = { path = "../wgpu/naga" }
 # wgpu = { path = "../wgpu/wgpu" }
 # wgpu-core = { path = "../wgpu/wgpu-core" }

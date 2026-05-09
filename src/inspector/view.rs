@@ -1,7 +1,6 @@
 use super::profiler::{PROFILE, profiler};
 use crate::{
     AnyView, Brush, ElementId, IntoView, View, ViewId,
-    action::inspect,
     app::{AppUpdateEvent, UserEvent, add_app_update_event},
     effects::BrushAlphaExt as _,
     event::{EventPropagation, listener},
@@ -96,22 +95,8 @@ pub fn capture(window_id: WindowId) {
                         .with_theme(|s, t| s.background(t.border()))
                 });
 
-                let mut window_scale = RwSignal::new(1.);
-
                 Stack::vertical((tabs, separator, tab))
                     .style(|s| s.width_full().height_full())
-                    .on_event(
-                        el::KeyUp,
-                        move |_cx, KeyboardEvent { key, modifiers, .. }| {
-                            if *key == ui_events::keyboard::Key::Named(NamedKey::F11)
-                                && modifiers.shift()
-                            {
-                                inspect();
-                                return EventPropagation::Stop;
-                            }
-                            EventPropagation::Continue
-                        },
-                    )
                     .on_event(el::WindowClosed, |_, _| {
                         RUNNING.set(false);
                         INSPECTOR_WINDOW.set(None);
@@ -119,40 +104,6 @@ pub fn capture(window_id: WindowId) {
                         PROFILE.with(|profile| profile.set(None));
                         EventPropagation::Continue
                     })
-                    .on_event_stop(
-                        listener::KeyUp,
-                        move |_cx, KeyboardEvent { modifiers, key, .. }| {
-                            if *key == Key::Character("q".into()) && modifiers.contains(OS_MOD) {
-                                crate::quit_app();
-                            } else if *key == Key::Character("w".into())
-                                && modifiers.contains(OS_MOD)
-                            {
-                                crate::close_window(inspector_window_id);
-                            }
-                        },
-                    )
-                    .on_event_stop(
-                        el::KeyDown,
-                        move |_, KeyboardEvent { key, modifiers, .. }| match key {
-                            Key::Character(ch)
-                                if (ch == "=" || ch == "+") && modifiers.contains(OS_MOD) =>
-                            {
-                                window_scale *= 1.1;
-                                crate::action::set_window_scale(window_scale.get());
-                            }
-
-                            Key::Character(ch) if ch == "-" && *modifiers == OS_MOD => {
-                                window_scale /= 1.1;
-                                crate::action::set_window_scale(window_scale.get());
-                            }
-
-                            Key::Character(ch) if ch == "0" && *modifiers == OS_MOD => {
-                                window_scale.set(1.);
-                                crate::action::set_window_scale(window_scale.get());
-                            }
-                            _ => {}
-                        },
-                    )
             },
             Some(WindowConfig::default().size((1200.0, 800.0))),
         );

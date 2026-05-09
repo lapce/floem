@@ -69,29 +69,23 @@ fn app_view() -> impl IntoView {
     let scale_buttons = Stack::horizontal((zoom_in_button, zoom_out_button, zoom_reset_button))
         .style(|s| s.absolute().inset_top(0).inset_right(0));
 
-    Stack::vertical((value_label, counter_buttons, scale_buttons))
-        .style(|s| {
-            s.size(100.pct(), 100.pct())
-                .items_center()
-                .justify_center()
-                .class(Button, |s| {
-                    s.border(1.0)
-                        .border_radius(10.0)
-                        .padding(10.0)
-                        .focus_visible(|s| s.border(2.).border_color(palette::css::BLUE))
-                        .disabled(|s| s.background(palette::css::LIGHT_GRAY))
-                        .hover(|s| s.background(palette::css::LIGHT_GREEN))
-                        .active(|s| {
-                            s.color(palette::css::WHITE)
-                                .background(palette::css::DARK_GREEN)
-                        })
-                })
-        })
-        .on_event_stop(listener::KeyUp, move |_cx, KeyboardEvent { key, .. }| {
-            if let Key::Named(NamedKey::F11) = key {
-                floem::action::inspect();
-            }
-        })
+    Stack::vertical((value_label, counter_buttons, scale_buttons)).style(|s| {
+        s.size(100.pct(), 100.pct())
+            .items_center()
+            .justify_center()
+            .class(Button, |s| {
+                s.border(1.0)
+                    .border_radius(10.0)
+                    .padding(10.0)
+                    .focus_visible(|s| s.border(2.).border_color(palette::css::BLUE))
+                    .disabled(|s| s.background(palette::css::LIGHT_GRAY))
+                    .hover(|s| s.background(palette::css::LIGHT_GREEN))
+                    .active(|s| {
+                        s.color(palette::css::WHITE)
+                            .background(palette::css::DARK_GREEN)
+                    })
+            })
+    })
 }
 
 fn main() {

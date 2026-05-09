@@ -2,7 +2,7 @@ use std::{any::Any, cell::RefCell, rc::Rc};
 
 use crate::{
     prop_extractor,
-    style::{TextBrushScaleX, TextBrushScaleY, TextBrushTransform},
+    style::TextBrushTransform,
     text::{Attrs, AttrsList, AttrsOwned},
 };
 use floem_reactive::Effect;
@@ -26,8 +26,6 @@ pub struct RichText {
 prop_extractor! {
     RichTextStyle {
         text_brush_transform: TextBrushTransform,
-        text_brush_scale_x: TextBrushScaleX,
-        text_brush_scale_y: TextBrushScaleY,
     }
 }
 
@@ -161,11 +159,7 @@ impl View for RichText {
         self.layout_data
             .borrow()
             .with_effective_text_layout(|layout| {
-                let text_brush_transform = crate::text::TextBrushTransformSpec::new(
-                    self.style.text_brush_transform(),
-                    self.style.text_brush_scale_x(),
-                    self.style.text_brush_scale_y(),
-                );
+                let text_brush_transform = Some(self.style.text_brush_transform());
                 layout.draw_with_text_brush_transform(cx, text_loc, text_brush_transform);
             });
     }

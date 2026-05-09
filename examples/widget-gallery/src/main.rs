@@ -1,6 +1,3 @@
-use std::cell::{Cell, RefCell};
-use std::time::{Duration, Instant};
-
 pub mod animation;
 pub mod buttons;
 pub mod canvas;
@@ -22,7 +19,6 @@ pub mod slider;
 pub mod tabs;
 pub mod texteditor;
 
-use floem::kurbo::{self, Rect, Shape, Vec2};
 use floem::{
     action::{set_theme, set_window_menu, toggle_global_theme, toggle_window_theme},
     kurbo::Size,
@@ -30,16 +26,8 @@ use floem::{
     new_window,
     prelude::{palette::css, *},
     style::{Background, CursorStyle, CustomStylable, Transition},
-    text::FontWeight,
     theme::StyleThemeExt,
-    ui_events::keyboard::{Key, KeyboardEvent, Modifiers, NamedKey},
     window::{Theme, WindowConfig, WindowId},
-};
-
-pub const OS_MOD: Modifiers = if cfg!(target_os = "macos") {
-    Modifiers::META
-} else {
-    Modifiers::CONTROL
 };
 
 fn app_view(window_id: WindowId) -> impl IntoView {
@@ -138,8 +126,6 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 .class(LabelClass, |s| s.selectable(false))
         });
 
-    let inspector = Button::new("Open Inspector").action(floem::action::inspect);
-
     let new_window_button = Button::new("Open In Window").action(move || {
         let name = tabs.with(|tabs| tabs.get(active_tab.get().unwrap_or(0)).copied());
         new_window(
@@ -156,7 +142,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         );
     });
 
-    let left_side_bar = Stack::vertical((side_tab_bar, new_window_button, inspector))
+    let left_side_bar = Stack::vertical((side_tab_bar, new_window_button))
         .debug_name("Left Side Bar")
         .style(|s| s.height_full().row_gap(5.0));
 
@@ -219,32 +205,26 @@ fn app_view(window_id: WindowId) -> impl IntoView {
     };
 
     let view_submenu = |m: SubMenu| {
-        m.item("Inspector", |i| {
-            i.action(|| {
-                floem::action::inspect();
+        m.submenu("Navigate to Widget", widget_submenu)
+            .separator()
+            .item("Next Tab", |i| {
+                i.action(move || {
+                    let current = active_tab.get().unwrap_or(0);
+                    let tab_count = tabs.get().len();
+                    active_tab.set(Some((current + 1) % tab_count));
+                })
             })
-        })
-        .separator()
-        .submenu("Navigate to Widget", widget_submenu)
-        .separator()
-        .item("Next Tab", |i| {
-            i.action(move || {
-                let current = active_tab.get().unwrap_or(0);
-                let tab_count = tabs.get().len();
-                active_tab.set(Some((current + 1) % tab_count));
+            .item("Previous Tab", |i| {
+                i.action(move || {
+                    let current = active_tab.get().unwrap_or(0);
+                    let tab_count = tabs.get().len();
+                    active_tab.set(if current == 0 {
+                        Some(tab_count - 1)
+                    } else {
+                        Some(current - 1)
+                    });
+                })
             })
-        })
-        .item("Previous Tab", |i| {
-            i.action(move || {
-                let current = active_tab.get().unwrap_or(0);
-                let tab_count = tabs.get().len();
-                active_tab.set(if current == 0 {
-                    Some(tab_count - 1)
-                } else {
-                    Some(current - 1)
-                });
-            })
-        })
     };
 
     let theme_submenu = |m: SubMenu| {
@@ -326,42 +306,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             }),
     );
 
-    let mut window_scale = RwSignal::new(1.);
-
-    view.on_event_stop(
-        listener::KeyUp,
-        move |_cx, KeyboardEvent { modifiers, key, .. }| {
-            if *key == Key::Named(NamedKey::F11) {
-                floem::action::inspect();
-            } else if *key == Key::Named(NamedKey::F12) {
-                floem::action::capture_metal();
-            } else if *key == Key::Character("q".into()) && modifiers.contains(OS_MOD) {
-                floem::quit_app();
-            } else if *key == Key::Character("w".into()) && modifiers.contains(OS_MOD) {
-                floem::close_window(window_id);
-            }
-        },
-    )
-    .on_event_stop(
-        el::KeyDown,
-        move |_, KeyboardEvent { key, modifiers, .. }| match key {
-            Key::Character(ch) if (ch == "=" || ch == "+") && modifiers.contains(OS_MOD) => {
-                window_scale *= 1.1;
-                floem::action::set_window_scale(window_scale.get());
-            }
-
-            Key::Character(ch) if ch == "-" && *modifiers == OS_MOD => {
-                window_scale /= 1.1;
-                floem::action::set_window_scale(window_scale.get());
-            }
-
-            Key::Character(ch) if ch == "0" && *modifiers == OS_MOD => {
-                window_scale.set(1.);
-                floem::action::set_window_scale(window_scale.get());
-            }
-            _ => {}
-        },
-    )
+    view
 }
 
 fn main() {

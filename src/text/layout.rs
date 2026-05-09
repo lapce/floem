@@ -9,7 +9,6 @@ use std::{
 
 use crate::effects::Brush as FloemBrush;
 use crate::text::{AttrsList, TextBrush};
-use crate::unit::Length;
 use imaging::{PaintSink, Painter, record::Glyph as ImagingGlyph};
 use parking_lot::Mutex;
 use parley::swash::{FontRef, StringId, Tag, scale::ScaleContext, tag_from_bytes, zeno};
@@ -22,28 +21,6 @@ use peniko::{
     Fill, FontData,
     kurbo::{Affine, Point, Rect, Size},
 };
-
-#[derive(Clone, Copy, Debug)]
-pub struct TextBrushTransformSpec {
-    pub transform: Affine,
-    pub scale_x: Option<Length>,
-    pub scale_y: Option<Length>,
-}
-
-impl TextBrushTransformSpec {
-    #[must_use]
-    pub fn new(
-        transform: Affine,
-        scale_x: Option<Length>,
-        scale_y: Option<Length>,
-    ) -> Option<Self> {
-        (transform != Affine::IDENTITY || scale_x.is_some() || scale_y.is_some()).then_some(Self {
-            transform,
-            scale_x,
-            scale_y,
-        })
-    }
-}
 
 fn default_text_brush() -> FloemBrush {
     FloemBrush::Solid(peniko::Color::from_rgba8(0, 0, 0, 255))
@@ -59,82 +36,8 @@ fn text_layout_brush(
     brush
 }
 
-fn text_layout_brush_transform(
-    brush: &FloemBrush,
-    layout_bounds: Rect,
-    draw_origin: Point,
-    font_size_cx: &crate::unit::FontSizeCx,
-    brush_transform: Option<TextBrushTransformSpec>,
-) -> Option<Affine> {
-    match brush {
-        FloemBrush::Image(image) => {
-            let _ = font_size_cx;
-            let intrinsic_size = image.image.intrinsic_size();
-            let (size, scale_transform) = if let Some(brush_transform) = brush_transform {
-                let source_width = brush_transform
-                    .scale_x
-                    .map(|scale| scale.resolve(layout_bounds.width(), font_size_cx))
-                    .unwrap_or(intrinsic_size.width);
-                let source_height = brush_transform
-                    .scale_y
-                    .map(|scale| scale.resolve(layout_bounds.height(), font_size_cx))
-                    .unwrap_or(intrinsic_size.height);
-                let size = Size::new(source_width, source_height);
-                let scale_x = if size.width > 0.0 {
-                    intrinsic_size.width / size.width
-                } else {
-                    1.0
-                };
-                let scale_y = if size.height > 0.0 {
-                    intrinsic_size.height / size.height
-                } else {
-                    1.0
-                };
-                (size, Affine::scale_non_uniform(scale_x, scale_y))
-            } else {
-                (intrinsic_size, Affine::IDENTITY)
-            };
-            // Glyph runs already carry `draw_origin` in their draw transform.
-            // Keep this brush transform in text-layout coordinates so the
-            // image is centered over the layout instead of being offset by the
-            // layout's absolute paint origin a second time.
-            let origin = Point::new(
-                layout_bounds.x0 + (layout_bounds.width() - size.width) * 0.5,
-                layout_bounds.y0 + (layout_bounds.height() - size.height) * 0.5,
-            );
-            if std::env::var_os("FLOEM_TEXT_IMAGE_BRUSH_DIAG").is_some() {
-                eprintln!(
-                    "floem text image brush layout_bounds={layout_bounds:?} draw_origin={draw_origin:?} size={size:?} local_origin={origin:?} brush_transform={brush_transform:?}",
-                );
-            }
-            Some(
-                Affine::translate(origin.to_vec2())
-                    * scale_transform
-                    * brush_transform
-                        .map(|brush_transform| brush_transform.transform)
-                        .unwrap_or(Affine::IDENTITY),
-            )
-        }
-        _ => brush_transform.map(|brush_transform| brush_transform.transform),
-    }
-}
-
-fn automatic_text_layout_brush(
-    brush: FloemBrush,
-    layout_bounds: Rect,
-    draw_origin: Point,
-    font_size_cx: &crate::unit::FontSizeCx,
-    brush_transform: Option<TextBrushTransformSpec>,
-) -> (FloemBrush, Option<Affine>) {
-    let brush = text_layout_brush(brush, layout_bounds, font_size_cx);
-    let brush_transform = text_layout_brush_transform(
-        &brush,
-        layout_bounds,
-        draw_origin,
-        font_size_cx,
-        brush_transform,
-    );
-    (brush, brush_transform)
+fn text_layout_brush_transform(brush_transform: Option<Affine>) -> Option<Affine> {
+    brush_transform.filter(|transform| *transform != Affine::IDENTITY)
 }
 
 /// Shared Parley font context used by Floem text layout construction.
@@ -1007,7 +910,7 @@ impl TextLayout {
         origin: impl Into<Point>,
         font_embolden: peniko::kurbo::Vec2,
         effective_scale: f64,
-        brush_transform: Option<TextBrushTransformSpec>,
+        brush_transform: Option<Affine>,
     ) where
         S: PaintSink<F, C, FloemBrush> + ?Sized,
     {
@@ -1024,13 +927,8 @@ impl TextLayout {
                     .get(brush_index)
                     .cloned()
                     .unwrap_or_else(default_text_brush);
-                automatic_text_layout_brush(
-                    brush,
-                    layout_bounds,
-                    origin,
-                    font_size_cx,
-                    brush_transform,
-                )
+                let brush = text_layout_brush(brush, layout_bounds, font_size_cx);
+                (brush, text_layout_brush_transform(brush_transform))
             },
         );
     }
@@ -1148,12 +1046,12 @@ impl TextLayout {
         );
     }
 
-    /// Draws the layout with an additional automatic text brush transform.
+    /// Draws the layout with an additional text brush transform.
     pub fn draw_with_text_brush_transform(
         &self,
         cx: &mut crate::paint::PaintCx<'_>,
         origin: impl Into<Point>,
-        brush_transform: Option<TextBrushTransformSpec>,
+        brush_transform: Option<Affine>,
     ) {
         let font_embolden = cx.font_embolden;
         let effective_scale = cx.effective_scale;

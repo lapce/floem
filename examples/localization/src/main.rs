@@ -1,4 +1,4 @@
-use floem::{action::inspect, prelude::*};
+use floem::prelude::*;
 use localization::*;
 
 fn main() {
@@ -55,21 +55,15 @@ fn counter_view() -> impl IntoView {
     ))
     .style(|s| s.size_full().items_center().justify_center().gap(10.));
 
-    Stack::vertical((lang_tabs, value_controls))
-        .style(move |s| {
-            s.size_full()
-                .items_center()
-                .justify_center()
-                .custom(|ls: L10nCustomStyle| {
-                    ls.bundle(localizations.clone())
-                        .apply_opt(langauge.get(), |ls, locale| {
-                            ls.locale(locale.parse::<LanguageIdentifier>().unwrap())
-                        })
-                })
-        })
-        .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
-            if *key == Key::Named(NamedKey::F11) {
-                inspect();
-            }
-        })
+    Stack::vertical((lang_tabs, value_controls)).style(move |s| {
+        s.size_full()
+            .items_center()
+            .justify_center()
+            .custom(|ls: L10nCustomStyle| {
+                ls.bundle(localizations.clone())
+                    .apply_opt(langauge.get(), |ls, locale| {
+                        ls.locale(locale.parse::<LanguageIdentifier>().unwrap())
+                    })
+            })
+    })
 }

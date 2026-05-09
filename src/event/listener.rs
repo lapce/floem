@@ -236,7 +236,15 @@ mod inner {
         ///
         /// # Default Actions (preventable with `cx.prevent_default()`)
         /// - `Space`, `Enter`, `NumpadEnter` (key-up): Generates [`InteractionEvent::Click`] on
-        ///   the focused element. (All other keys on key-up have no preventable default action.)
+        ///   the focused element.
+        /// - Platform primary modifier + `Q` (key-up): Quits the app. The primary modifier is
+        ///   Command on macOS and Control on Windows/Linux and other non-macOS targets.
+        /// - Platform primary modifier + `W` (key-up): Requests the current window to close. On
+        ///   Windows, `Alt+F4` does the same.
+        /// - Platform primary modifier + `+`/`=`/`-`/`0` (key-down): Zooms the current window in,
+        ///   out, or back to 100%.
+        /// - `F10`, `F11`, `F12` (key-up, no modifiers): Toggles the HUD, opens the Inspector,
+        ///   and captures the next Metal frame, respectively.
         pub KeyUp: ui_events::keyboard::KeyboardEvent,
         |event| {
             if let Event::Key(kb_event) = event

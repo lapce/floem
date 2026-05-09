@@ -1,4 +1,4 @@
-use floem::{action::inspect, kurbo, prelude::*, reactive::Effect};
+use floem::{kurbo, prelude::*, reactive::Effect};
 
 mod pan_zoom_view;
 
@@ -56,11 +56,6 @@ fn app_view() -> impl IntoView {
     pan_zoom_view(view_transform.get(), child.style(|s| s.size_full()))
         .style(|s| s.width_full().height_full().background(palette::css::BLACK))
         .on_pan_zoom(move |affine| view_transform.set(affine))
-        .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
-            if *key == Key::Named(NamedKey::F11) {
-                inspect();
-            }
-        })
 }
 
 fn main() {

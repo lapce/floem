@@ -10,15 +10,8 @@ use floem::{
     new_window,
     prelude::{palette::css, *},
     reactive::{RwSignal, SignalGet},
-    ui_events::keyboard::{Key, KeyboardEvent, Modifiers},
     views::{Button, Empty, Label, Overlay, Stack},
     window::{WindowConfig, WindowId},
-};
-
-const OS_MOD: Modifiers = if cfg!(target_os = "macos") {
-    Modifiers::META
-} else {
-    Modifiers::CONTROL
 };
 
 fn confirm_overlay(window_id: WindowId, show_confirm: RwSignal<bool>) -> Overlay {
@@ -77,14 +70,6 @@ fn closable_window<V: IntoView + 'static>(window_id: WindowId, content: V) -> im
             cx.prevent_default();
             show_confirm.set(true);
         })
-        .on_event_stop(
-            listener::KeyUp,
-            move |_cx, KeyboardEvent { modifiers, key, .. }| {
-                if *key == Key::Character("w".into()) && modifiers.contains(OS_MOD) {
-                    floem::request_close_window(window_id);
-                }
-            },
-        )
 }
 
 fn second_window_view(window_id: WindowId) -> impl IntoView {

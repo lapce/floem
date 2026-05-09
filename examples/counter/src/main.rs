@@ -1,4 +1,4 @@
-use floem::{action::inspect, prelude::*, unit::UnitExt};
+use floem::{prelude::*, unit::UnitExt};
 
 fn app_view() -> impl IntoView {
     let counter = RwSignal::new(0);
@@ -67,11 +67,6 @@ fn app_view() -> impl IntoView {
                 .flex_col()
                 .items_center()
                 .justify_center()
-        })
-        .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
-            if *key == Key::Named(NamedKey::F11) {
-                inspect();
-            }
         })
 }
 

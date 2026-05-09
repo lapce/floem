@@ -1,10 +1,7 @@
 use std::time::Instant;
 
 use floem::{
-    action::{exec_after, inspect},
-    event::EventPropagation,
-    prelude::*,
-    style::CustomStylable,
+    action::exec_after, event::EventPropagation, prelude::*, style::CustomStylable,
     ui_events::keyboard::Modifiers,
 };
 use todo::TodoState;
@@ -56,11 +53,6 @@ fn app_view() -> impl IntoView {
         })
         .action(move || {
             AppCommand::Escape.execute();
-        })
-        .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
-            if *key == Key::Named(NamedKey::F11) {
-                inspect();
-            }
         })
         .on_event(
             el::KeyDown,

@@ -19,7 +19,7 @@ use winit::keyboard::KeyCode;
 
 use crate::{
     BoxTree, ElementId, ElementMeta, ViewId,
-    action::show_context_menu,
+    action::{capture_metal, inspect, set_window_scale, show_context_menu, toggle_hud},
     context::Phases,
     event::{
         DragEvent, DragToken, Event, FocusEvent, InteractionEvent, Phase, PointerCaptureEvent,
@@ -32,6 +32,26 @@ use crate::{
 };
 
 static START_TIME: LazyLock<StdInstant> = LazyLock::new(StdInstant::now);
+
+fn platform_primary_modifier() -> Modifiers {
+    if cfg!(target_os = "macos") {
+        Modifiers::META
+    } else {
+        Modifiers::CONTROL
+    }
+}
+
+fn primary_modifier_with_optional_shift(modifiers: Modifiers) -> bool {
+    modifiers == platform_primary_modifier()
+        || modifiers == (platform_primary_modifier() | Modifiers::SHIFT)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ZoomShortcut {
+    In,
+    Out,
+    Reset,
+}
 
 /// A single step in a capture/target/bubble dispatch sequence.
 #[derive(Clone, Copy, Debug)]
@@ -1202,6 +1222,53 @@ impl RouteCx<'_, '_> {
             self.element_arrow_navigation(&arrow_key);
         }
 
+        // Platform window/app shortcuts.
+        if let Event::Key(key_event) = &self.event
+            && key_event.state == KeyState::Up
+        {
+            if self.is_quit_shortcut(key_event) {
+                crate::quit_app();
+            } else if self.is_close_window_shortcut(key_event)
+                && let Some(window_id) =
+                    crate::window::tracking::window_id_for_root(self.gcx.window_state.root_view_id)
+            {
+                crate::window::request_close_window(window_id);
+            }
+        }
+
+        // Platform zoom shortcuts.
+        if let Event::Key(key_event) = &self.event
+            && key_event.state == KeyState::Down
+        {
+            match self.zoom_shortcut(key_event) {
+                Some(ZoomShortcut::In) => {
+                    set_window_scale((self.gcx.window_state.user_scale * 1.1).clamp(0.1, 10.0));
+                }
+                Some(ZoomShortcut::Out) => {
+                    set_window_scale((self.gcx.window_state.user_scale / 1.1).clamp(0.1, 10.0));
+                }
+                Some(ZoomShortcut::Reset) => set_window_scale(1.0),
+                None => {}
+            }
+        }
+
+        // Debug shortcuts.
+        if let Event::Key(KeyboardEvent {
+            key: Key::Named(name @ (NamedKey::F10 | NamedKey::F11 | NamedKey::F12)),
+            modifiers,
+            state: KeyState::Up,
+            ..
+        }) = &self.event
+            && modifiers.is_empty()
+        {
+            match name {
+                NamedKey::F10 => toggle_hud(),
+                NamedKey::F11 => inspect(),
+                NamedKey::F12 => capture_metal(),
+                _ => {}
+            }
+        }
+
         // Context / popout menus (platform-specific timing).
         let pbe = match &self.event {
             Event::Pointer(PointerEvent::Down(pbe)) if cfg!(target_os = "macos") => Some(pbe),
@@ -1218,6 +1285,42 @@ impl RouteCx<'_, '_> {
                 crate::window::tracking::window_id_for_root(self.gcx.window_state.root_view_id)
         {
             crate::app::add_app_update_event(crate::app::AppUpdateEvent::CloseWindow { window_id });
+        }
+    }
+
+    fn is_quit_shortcut(&self, key_event: &KeyboardEvent) -> bool {
+        matches!(&key_event.key, Key::Character(ch) if ch.eq_ignore_ascii_case("q"))
+            && key_event.modifiers == platform_primary_modifier()
+    }
+
+    fn is_close_window_shortcut(&self, key_event: &KeyboardEvent) -> bool {
+        let primary_close = matches!(&key_event.key, Key::Character(ch) if ch.eq_ignore_ascii_case("w"))
+            && key_event.modifiers == platform_primary_modifier();
+        let windows_alt_f4 = cfg!(target_os = "windows")
+            && key_event.key == Key::Named(NamedKey::F4)
+            && key_event.modifiers == Modifiers::ALT;
+        primary_close || windows_alt_f4
+    }
+
+    fn zoom_shortcut(&self, key_event: &KeyboardEvent) -> Option<ZoomShortcut> {
+        match &key_event.key {
+            Key::Character(ch)
+                if (ch == "=" || ch == "+")
+                    && primary_modifier_with_optional_shift(key_event.modifiers) =>
+            {
+                Some(ZoomShortcut::In)
+            }
+            Key::Character(ch)
+                if ch == "-" && key_event.modifiers == platform_primary_modifier() =>
+            {
+                Some(ZoomShortcut::Out)
+            }
+            Key::Character(ch)
+                if ch == "0" && key_event.modifiers == platform_primary_modifier() =>
+            {
+                Some(ZoomShortcut::Reset)
+            }
+            _ => None,
         }
     }
 

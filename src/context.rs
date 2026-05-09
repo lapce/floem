@@ -143,7 +143,7 @@ pub type EventListenerVec = SmallVec<[(Rc<RefCell<EventCallback>>, EventCallback
 /// interacting with platform APIs that expect window coordinates.
 ///
 /// Use `box_local()` and `content_box_local()` to get coordinates in the view's local space.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct LayoutChanged {
     /// The new layout box relative to the parent layout
     pub new_box: Rect,

@@ -5,15 +5,15 @@ use floem::{
     Application, Brush as FloemBrush, Composite, CompositorSurfaceProducer,
     CompositorSurfaceProducerConfig, Filter as FloemFilter, FrameRatePreference, GpuResources,
     ImageBrush, LayerFilter, ShaderSource, ShaderUniform, SurfaceImage,
-    action::{capture_metal, inspect, set_animation_frame_callback},
-    context::PaintCx,
+    action::set_animation_frame_callback,
+    context::{LayoutChanged, PaintCx},
     group_ref,
     imaging::{ClipRef, GeometryRef, ImagingSceneSink, PaintSink, Painter},
     kurbo::{Affine, Point, Rect, Size, Vec2},
     peniko::Color,
     prelude::*,
-    reactive::SyncRwSignal,
-    style::{ObjectFit, ObjectPosition, Position},
+    reactive::{RwSignal, SyncRwSignal},
+    style::{ObjectFit, ObjectPosition, Pct, Position},
     text::{Alignment, Attrs, AttrsList, FontWeight, TextLayout},
     window::{WindowConfig, WindowId},
 };
@@ -21,6 +21,29 @@ use wgpu::util::DeviceExt;
 
 const CUBE_SIZE: u32 = 640;
 const CUBE_TARGET_FPS: f64 = 120.0;
+
+fn cube_text_brush_transform(layout_size: Size, pct: Pct) -> Affine {
+    if layout_size.width <= 0.0 || layout_size.height <= 0.0 {
+        return Affine::IDENTITY;
+    }
+
+    let source_size = Size::new(f64::from(CUBE_SIZE), f64::from(CUBE_SIZE));
+    let target_scale = pct.0 / 100.0;
+    let target_size = Size::new(
+        layout_size.width * target_scale,
+        layout_size.height * target_scale,
+    );
+    let target_origin = Point::new(
+        (layout_size.width - target_size.width) * 0.5,
+        (layout_size.height - target_size.height) * 0.5,
+    );
+
+    Affine::translate(target_origin.to_vec2())
+        * Affine::scale_non_uniform(
+            target_size.width / source_size.width,
+            target_size.height / source_size.height,
+        )
+}
 
 fn app_view(window_id: WindowId) -> impl IntoView {
     let rotation_speed = SyncRwSignal::new_sync(1.0_f64);
@@ -33,7 +56,8 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             ..CompositorSurfaceProducerConfig::default()
         },
     );
-    let surface_image = cube_producer.image();
+    let cube_image = cube_producer.image();
+    let text_layout = RwSignal::new(LayoutChanged::default());
 
     Stack::vertical((
         "Compositor Surface as Image Brush".style(|s| {
@@ -41,7 +65,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 .font_weight(FontWeight::BOLD)
                 .color(Color::from_rgb8(246, 241, 226))
         }),
-        "The cube is rendered by a compositor-surface producer into a Floem/Subduction-owned wgpu texture. Floem can publish that compositor-owned frame as a native layer, or sample the same frame through imaging as an external image brush. This example uses the cube texture as an image brush for the large glyph fill, then flattens the surrounding clip, blur, and checkerboard layer filter into one ordered render pass when direct layer promotion is not legal. Press F10 for the HUD, F11 for the inspector, or F12 to capture the next Metal frame."
+        "The cube is rendered by a compositor-surface producer into a Floem/Subduction-owned wgpu texture. Floem can publish that compositor-owned frame as a native layer, or sample the same frame through imaging as an external image brush. This example uses the cube texture as an image brush for the large glyph fill, then flattens the surrounding clip, blur, and checkerboard layer filter into one ordered render pass when direct layer promotion is not legal."
             .style(move |s| {
                 s.font_size(14.0)
                     .line_height(1.35)
@@ -50,8 +74,11 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                     // .max_width(760.0)
                     .width_full()
                     // .color(Color::from_rgb8(155, 169, 177))
-                    .color(surface_image)
-                    .text_brush_scale(150.pct())
+                    .color(cube_image)
+                    .text_brush_transform(cube_text_brush_transform(text_layout.get().new_content_box.size(), 200.pct()))
+            })
+            .on_event_stop(LayoutChanged::listener(), move |_cx, change| {
+                text_layout.set(*change);
             }),
         Stack::horizontal((
             "Rotation speed".style(|s| {
@@ -77,7 +104,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 .margin_top(16.0)
                 .margin_bottom(2.0)
         }),
-        cube_canvas(surface_image, rotation_speed),
+        cube_canvas(cube_image, rotation_speed),
     ))
         .style(move |s| {
             s.width_full()
@@ -99,13 +126,6 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 }
             },
         )
-        .on_event_stop(listener::KeyUp, |_, KeyboardEvent { key, .. }| {
-            match *key {
-                Key::Named(NamedKey::F11) => inspect(),
-                Key::Named(NamedKey::F12) => capture_metal(),
-                _ => {}
-            }
-        })
 }
 
 fn cube_canvas(cube_image: SurfaceImage, animation_speed: SyncRwSignal<f64>) -> impl IntoView {
@@ -242,7 +262,13 @@ impl CubeCanvasLayout {
             self.label_text.y0 + ((self.label_text.height() - text_height) * 0.5)
                 - f64::from(min_y),
         );
-        text.draw_with_painter(painter.as_dyn(), origin, Vec2::ZERO, effective_scale);
+        text.draw_with_painter_with_brush_transform(
+            painter.as_dyn(),
+            origin,
+            Vec2::ZERO,
+            effective_scale,
+            Some(cube_text_brush_transform(self.label_text.size(), 100.pct())),
+        );
     }
 }
 

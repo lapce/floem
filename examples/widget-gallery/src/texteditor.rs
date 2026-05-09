@@ -1,5 +1,4 @@
 use floem::{
-    action::inspect,
     prelude::*,
     views::editor::{
         command::{Command, CommandExecuted},
@@ -72,10 +71,5 @@ pub fn editor_view() -> impl IntoView {
             .gap(10)
             .items_center()
             .justify_center()
-    })
-    .on_event_stop(el::KeyUp, |_, KeyboardEvent { key, .. }| {
-        if *key == Key::Named(NamedKey::F11) {
-            inspect();
-        }
     })
 }

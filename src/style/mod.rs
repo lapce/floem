@@ -1940,25 +1940,8 @@ define_builtin_props!(
     ///
     /// This is inherited with text color. It only changes how gradient/image
     /// brushes are sampled for glyph fills; it does not move the glyphs. The
-    /// affine is not percentage-aware: it is applied in brush/source
-    /// coordinates after Floem has centered an image brush over the text layout.
-    /// Use [`Style::text_brush_scale`] for a percentage scale relative to the
-    /// concrete text layout bounds.
+    /// affine is applied directly in brush/source coordinates.
     TextBrushTransform text_brush_transform { tr }: Affine { inherited } = Affine::IDENTITY,
-
-    /// Optionally sets the text brush source width relative to the text layout bounds.
-    ///
-    /// `None` preserves the brush's intrinsic source width. `Some(100.pct())`
-    /// makes image brushes cover the text layout width; `Some(150.pct())`
-    /// makes them cover 150% of the text layout width while staying centered
-    /// over the layout. This affects brush sampling only; it does not move
-    /// glyphs or change text layout.
-    TextBrushScaleX text_brush_scale_x { tr }: Option<Length> [Length] { inherited } = None,
-
-    /// Optionally sets the text brush source height relative to the text layout bounds.
-    ///
-    /// See [`Style::text_brush_scale`] for the common uniform-scale case.
-    TextBrushScaleY text_brush_scale_y { tr }: Option<Length> [Length] { inherited } = None,
 
     /// Sets the background color or image.
     ///
@@ -1968,23 +1951,9 @@ define_builtin_props!(
     /// Applies an additional raw brush-space transform to background brushes.
     ///
     /// This only changes gradient/image sampling. It does not move the view
-    /// background geometry. The affine is not percentage-aware; use
-    /// [`Style::background_brush_scale`] for percentage scaling relative to the
-    /// background geometry bounds.
+    /// background geometry. The affine is applied directly in brush/source
+    /// coordinates.
     BackgroundBrushTransform background_brush_transform { tr }: Affine {} = Affine::IDENTITY,
-
-    /// Rotates the background brush around the background geometry center.
-    BackgroundBrushRotation background_brush_rotation { tr }: Angle {} = Angle::ZERO,
-
-    /// Optionally sets the background brush source width relative to the background geometry bounds.
-    ///
-    /// `None` preserves the brush's intrinsic source width. `Some(150.pct())`
-    /// makes the brush source 150% of the background geometry width and keeps
-    /// it centered.
-    BackgroundBrushScaleX background_brush_scale_x { tr }: Option<Length> [Length] {} = None,
-
-    /// Optionally sets the background brush source height relative to the background geometry bounds.
-    BackgroundBrushScaleY background_brush_scale_y { tr }: Option<Length> [Length] {} = None,
 
     /// Applies one or more filters to the rendered view subtree.
     ///
@@ -3595,19 +3564,6 @@ impl Style {
     pub fn scale(self, scale: impl Into<Pct>) -> Self {
         let val = scale.into();
         self.scale_x(val).scale_y(val)
-    }
-
-    /// Sets uniform text brush source size relative to text layout bounds.
-    pub fn text_brush_scale(self, scale: impl Into<Length>) -> Self {
-        let val = scale.into();
-        self.text_brush_scale_x(val).text_brush_scale_y(val)
-    }
-
-    /// Sets uniform background brush source size relative to background bounds.
-    pub fn background_brush_scale(self, scale: impl Into<Length>) -> Self {
-        let val = scale.into();
-        self.background_brush_scale_x(val)
-            .background_brush_scale_y(val)
     }
 
     /// Allow the application of a function if the option exists.

@@ -1,5 +1,5 @@
 use floem::{
-    kurbo::{self, Rect, Shape, Vec2},
+    kurbo::Rect,
     prelude::*,
     text::{Alignment, FontStyle, FontWeight},
     theme::StyleThemeExt,
