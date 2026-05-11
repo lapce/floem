@@ -710,29 +710,35 @@ impl Renderer for VgerRenderer {
         if self.capture {
             self.render_image()
         } else {
-            if let Ok(frame) = self.surface.get_current_texture() {
-                let texture_view = frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
-                let desc = wgpu::RenderPassDescriptor {
-                    label: None,
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &texture_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                            store: StoreOp::Store,
-                        },
-                        depth_slice: None,
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                };
+            let frame = match self.surface.get_current_texture() {
+                Ok(frame) => frame,
+                Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                    self.surface.configure(&self.device, &self.config);
+                    return None;
+                }
+                _ => return None,
+            };
+            let texture_view = frame
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            let desc = wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &texture_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            };
 
-                self.vger.encode(&desc);
-                frame.present();
-            }
+            self.vger.encode(&desc);
+            frame.present();
             None
         }
     }
