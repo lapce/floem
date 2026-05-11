@@ -453,11 +453,11 @@ impl Renderer for VelloRenderer {
                 .unwrap();
 
             // Perform the copy
-            let mut encoder =
-                self.device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("Surface Blit"),
-                    });
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Surface Blit"),
+                });
             self.surface.blitter.copy(
                 &self.device,
                 &mut encoder,
