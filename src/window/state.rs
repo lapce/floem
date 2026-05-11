@@ -83,11 +83,15 @@ fn build_focus_space_for_scope<'a>(
     out.clear();
 
     if !tree.is_alive(scope_root.0) {
-        return FocusSpace { nodes: &[] };
+        return FocusSpace {
+            nodes: &[],
+            autofocus: None,
+        };
     }
 
     // Match the upstream adapter traversal, but take focus policy from
     // Floem-owned metadata instead of raw box-tree focus flags.
+    let mut autofocus = None;
     let mut stack = vec![(scope_root.0, 0u8)];
     while let Some((id, depth)) = stack.pop() {
         if !tree.is_alive(id) {
@@ -102,6 +106,9 @@ fn build_focus_space_for_scope<'a>(
                 && focus.is_keyboard_navigable()
                 && focus.enabled
             {
+                if focus.autofocus && autofocus.is_none() {
+                    autofocus = Some(meta.element_id);
+                }
                 out.push(FocusEntry {
                     id: meta.element_id,
                     rect: bounds,
@@ -125,6 +132,7 @@ fn build_focus_space_for_scope<'a>(
 
     FocusSpace {
         nodes: out.as_slice(),
+        autofocus,
     }
 }
 
@@ -545,6 +553,17 @@ impl WindowState {
 
         understory_focus::FocusSpace {
             nodes: &self.focus_nav_cache.entries,
+            autofocus: self
+                .focus_nav_cache
+                .entries
+                .iter()
+                .find(|entry| {
+                    self.box_tree
+                        .borrow()
+                        .focus_nav_meta(entry.id.0)
+                        .is_some_and(|focus| focus.autofocus && focus.enabled)
+                })
+                .map(|entry| entry.id),
         }
     }
 

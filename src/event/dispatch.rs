@@ -1708,7 +1708,19 @@ impl RouteCx<'_, '_> {
     /// The ordering rules here match the linear policy model:
     /// explicit `order` first, then reading-order geometry.
     #[inline]
-    fn initial_tab_target(entries: &[FocusEntry<ElementId>], backwards: bool) -> Option<ElementId> {
+    fn initial_tab_target(
+        entries: &[FocusEntry<ElementId>],
+        autofocus: Option<ElementId>,
+        backwards: bool,
+    ) -> Option<ElementId> {
+        if let Some(autofocus) = autofocus
+            && entries
+                .iter()
+                .any(|entry| entry.id == autofocus && entry.enabled)
+        {
+            return Some(autofocus);
+        }
+
         let mut indices: SmallVec<[usize; 128]> = entries
             .iter()
             .enumerate()
@@ -1860,11 +1872,12 @@ impl RouteCx<'_, '_> {
         };
         let space = self.gcx.window_state.keyboard_focus_space();
         let entries = space.nodes;
+        let autofocus = space.autofocus;
 
         let next = if entries.is_empty() {
             None
         } else if active_focus.is_none() {
-            Self::initial_tab_target(entries, backwards)
+            Self::initial_tab_target(entries, autofocus, backwards)
         } else {
             let current_focus = active_focus.unwrap();
             if !entries.iter().any(|e| e.id == current_focus) {
@@ -1928,7 +1941,10 @@ impl RouteCx<'_, '_> {
                         .cloned()
                         .collect();
                     if grouped.iter().any(|e| e.id == current_focus) && grouped.len() > 1 {
-                        let grouped_space = FocusSpace { nodes: &grouped };
+                        let grouped_space = FocusSpace {
+                            nodes: &grouped,
+                            autofocus: None,
+                        };
                         if let Some(next) = policy.next(current_focus, navigation, &grouped_space) {
                             Some(next)
                         } else {
@@ -2012,19 +2028,31 @@ impl RouteCx<'_, '_> {
                 .cloned()
                 .collect();
             if grouped.iter().any(|e| e.id == current_focus) {
-                let grouped_space = FocusSpace { nodes: &grouped };
+                let grouped_space = FocusSpace {
+                    nodes: &grouped,
+                    autofocus: None,
+                };
                 policy
                     .next(current_focus, direction, &grouped_space)
                     .or_else(|| {
-                        let space = FocusSpace { nodes: &entries };
+                        let space = FocusSpace {
+                            nodes: &entries,
+                            autofocus: None,
+                        };
                         policy.next(current_focus, direction, &space)
                     })
             } else {
-                let space = FocusSpace { nodes: &entries };
+                let space = FocusSpace {
+                    nodes: &entries,
+                    autofocus: None,
+                };
                 policy.next(current_focus, direction, &space)
             }
         } else {
-            let space = FocusSpace { nodes: &entries };
+            let space = FocusSpace {
+                nodes: &entries,
+                autofocus: None,
+            };
             policy.next(current_focus, direction, &space)
         };
 

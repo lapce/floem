@@ -7,6 +7,6 @@ license.workspace = true
 [dependencies]
 bytemuck = { version = "1.21", features = ["derive"] }
 floem = { path = "../..", default-features = false, features = ["editor", "skia"] }
-subduction_core = { path = "../../../subduction/subduction_core", package = "subduction_core" }
-subduction = { path = "../../../subduction/subduction", package = "subduction" }
+subduction_core = { git = "https://github.com/forest-rs/subduction", rev = "c684827b4a4e", package = "subduction_core" }
+subduction = { git = "https://github.com/forest-rs/subduction", rev = "c684827b4a4e", package = "subduction" }
 wgpu.workspace = true

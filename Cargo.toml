@@ -57,10 +57,10 @@ ui-events = { version = "0.3", features = ["kurbo"] }
 ui-events-winit = { path = "./ui-events-winit", package = "ui-events-floem-winit" }
 dpi = { version = "0.1.2", default-features = false }
 rustc-hash = "2.1"
-imaging = { path = "../imaging/imaging", package = "imaging" }
-imaging_wgpu = { path = "../imaging/imaging_wgpu", package = "imaging_wgpu", features = ["wgpu-28"] }
-svg_imaging = { path = "../imaging/svg_imaging", package = "svg_imaging" }
-understory_frame_pacing = { path = "../understory/understory_frame_pacing", package = "understory_frame_pacing" }
+imaging = { git = "https://github.com/forest-rs/imaging",  rev = "ce53c4bceb10fbb653cb17bd4504ddae223ae169", package = "imaging" }
+imaging_wgpu = { git = "https://github.com/forest-rs/imaging", rev = "ce53c4bceb10fbb653cb17bd4504ddae223ae169",  package = "imaging_wgpu", features = ["wgpu-28"] }
+svg_imaging = { git = "https://github.com/forest-rs/imaging", rev = "ce53c4bceb10fbb653cb17bd4504ddae223ae169", package = "svg_imaging" }
+understory_frame_pacing = { git = "https://github.com/jrmoulton/understory", rev = "404febe54512", package = "understory_frame_pacing" }
 
 [dependencies]
 slotmap = "1.0"
@@ -89,16 +89,16 @@ strum = { workspace = true, optional = true }
 strum_macros = { workspace = true, optional = true }
 paste = "1.0"
 floem_vger_renderer = { path = "../vger-rs", package = "floem-vger", optional = true }
-imaging_vello = { path = "../imaging/imaging_vello", optional = true }
-imaging_skia = { path = "../imaging/imaging_skia", optional = true, features = ["gpu"] }
-imaging_tiny_skia = { path = "../imaging/imaging_tiny_skia", optional = true }
-imaging_vello_cpu = { path = "../imaging/imaging_vello_cpu", optional = true }
-imaging_vello_hybrid = { path = "../imaging/imaging_vello_hybrid", optional = true }
+imaging_vello = { git = "https://github.com/forest-rs/imaging", rev = "ce53c4bceb10fbb653cb17bd4504ddae223ae169", package = "imaging_vello", optional = true }
+imaging_skia = { git = "https://github.com/forest-rs/imaging", rev = "ce53c4bceb10fbb653cb17bd4504ddae223ae169", package = "imaging_skia", optional = true, features = ["gpu"] }
+imaging_tiny_skia = { git = "https://github.com/forest-rs/imaging", rev = "ce53c4bceb10fbb653cb17bd4504ddae223ae169", package = "imaging_tiny_skia", optional = true }
+imaging_vello_cpu = { git = "https://github.com/forest-rs/imaging", rev = "ce53c4bceb10fbb653cb17bd4504ddae223ae169", package = "imaging_vello_cpu", optional = true }
+imaging_vello_hybrid = { git = "https://github.com/forest-rs/imaging", rev = "ce53c4bceb10fbb653cb17bd4504ddae223ae169", package = "imaging_vello_hybrid", optional = true }
 floem_reactive = { path = "reactive", version = "0.2.0" }
 floem-editor-core = { path = "editor-core", version = "0.2.0", optional = true }
-subduction_core = { path = "../subduction/subduction_core", package = "subduction_core", features = ["std"] }
-subduction_render = { path = "../subduction/subduction_render", package = "subduction_render", features = ["std"] }
-subduction = { path = "../subduction/subduction", package = "subduction" }
+subduction_core = { git = "https://github.com/forest-rs/subduction", rev = "c684827b4a4e", package = "subduction_core", features = ["std"] }
+subduction_render = { git = "https://github.com/forest-rs/subduction", rev = "c684827b4a4e", package = "subduction_render", features = ["std"] }
+subduction = { git = "https://github.com/forest-rs/subduction", rev = "c684827b4a4e", package = "subduction" }
 copypasta = { version = "0.10", default-features = false, features = [
   "wayland",
   "x11",
@@ -118,12 +118,12 @@ fluent-bundle = { version = "0.16", optional = true }
 unic-langid = { version = "0.9", optional = true }
 sys-locale = { version = "0.3.2", optional = true }
 ouroboros = { version = "0.18", optional = true }
-understory_box_tree = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_box_tree" }
-understory_event_state = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_event_state" }
-understory_index = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_index" }
-understory_focus = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_focus" }
-understory_virtual_list = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_virtual_list" }
-understory_view2d = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_view2d" }
+understory_box_tree = { git = "https://github.com/jrmoulton/understory", rev = "404febe54512", package = "understory_box_tree" }
+understory_event_state = { git = "https://github.com/jrmoulton/understory", rev = "404febe54512", package = "understory_event_state" }
+understory_index = { git = "https://github.com/jrmoulton/understory", rev = "404febe54512", package = "understory_index" }
+understory_focus = { git = "https://github.com/jrmoulton/understory", rev = "404febe54512", package = "understory_focus" }
+understory_virtual_list = { git = "https://github.com/jrmoulton/understory", rev = "404febe54512", package = "understory_virtual_list" }
+understory_view2d = { git = "https://github.com/jrmoulton/understory", rev = "404febe54512", package = "understory_view2d" }
 understory_frame_pacing.workspace = true
 
 # understory_box_tree = { path = "../understory/understory_box_tree", package = "understory_box_tree" }
@@ -145,7 +145,7 @@ wgpu = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 clipboard-win = "5.4"
-subduction_backend_windows = { path = "../subduction/subduction_backend_windows", package = "subduction_backend_windows" }
+subduction_backend_windows = { git = "https://github.com/forest-rs/subduction", rev = "c684827b4a4e", package = "subduction_backend_windows" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block = "0.1"
@@ -159,7 +159,7 @@ objc2-app-kit = { version = "0.3", features = [
   "objc2-quartz-core",
 ] }
 dispatch2 = {version = "0.3.0"}
-subduction_backend_apple = { path = "../subduction/subduction_backend_apple", package = "subduction_backend_apple", default-features = false, features = ["appkit", "ca-display-link", "cametal-display-link", "cv-display-link", "wgpu"] }
+subduction_backend_apple = { git = "https://github.com/forest-rs/subduction", rev = "c684827b4a4e", package = "subduction_backend_apple", default-features = false, features = ["appkit", "ca-display-link", "cametal-display-link", "cv-display-link", "wgpu"] }
 
 [features]
 default = [
@@ -227,6 +227,9 @@ kurbo = { git = "https://github.com/linebender/kurbo.git", rev = "6836244be0b280
 # wgpu-types = { path = "../wgpu/wgpu-types" }
 vello_common = { path = "../vello/sparse_strips/vello_common" }
 vello_hybrid = { path = "../vello/sparse_strips/vello_hybrid" }
+
+[patch."https://github.com/forest-rs/imaging"]
+glifo = { git = "https://github.com/linebender/vello", rev = "1cf944ed46500194dcc6ee40392a626e0ec4c8a0", package = "glifo" }
 
 [[bench]]
 name = "event_dispatch"
