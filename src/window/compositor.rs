@@ -4,7 +4,7 @@ use crate::window::render_plan::SceneRenderPlan;
 use crate::{
     app::{Application, UserEvent},
     compositor_surface::{CompositorSurfaceContent, CompositorSurfaceId, ExternalTexture},
-    effects::{Brush as FloemBrush, CompositorShader, CompositorShaderPass, Image as FloemImage},
+    effects::{Brush, CompositorShader, CompositorShaderPass, Image},
     frame::FrameRatePreference,
     gpu_resources::GpuResources,
     paint::{
@@ -1274,7 +1274,7 @@ impl WindowCompositor {
         plan: &CompositionPlan,
         frame_size: Size,
         effective_scale: f64,
-        background: Option<FloemBrush>,
+        background: Option<Brush>,
     ) -> Result<CompositorCaptureScene, String> {
         let mut scene = Scene::new();
         if let Some(background) = background {
@@ -1282,7 +1282,7 @@ impl WindowCompositor {
             scene.draw(Draw::Fill {
                 transform: Affine::IDENTITY,
                 fill_rule: Fill::NonZero,
-                brush: imaging_brush_from_floem_background(background, background_bounds)?,
+                brush: imaging_brush_from_background(background, background_bounds)?,
                 brush_transform: None,
                 shape: Geometry::Rect(background_bounds),
                 composite: Composite::default(),
@@ -1829,34 +1829,27 @@ impl ExternalTextureContent {
     }
 }
 
-fn imaging_brush_from_floem_background(
-    brush: FloemBrush,
-    bounds: Rect,
-) -> Result<ImagingBrush, String> {
+fn imaging_brush_from_background(brush: Brush, bounds: Rect) -> Result<ImagingBrush, String> {
     match brush {
-        FloemBrush::Solid(color) => Ok(ImagingBrush::Solid(color)),
-        FloemBrush::Gradient(gradient) => Ok(ImagingBrush::Gradient(
+        Brush::Solid(color) => Ok(ImagingBrush::Solid(color)),
+        Brush::Gradient(gradient) => Ok(ImagingBrush::Gradient(
             gradient.to_peniko(bounds, &crate::unit::FontSizeCx::new(14.0, 16.0)),
         )),
-        FloemBrush::Image(image_brush) => {
+        Brush::Image(image_brush) => {
             let peniko::ImageBrush { image, sampler } = image_brush.brush;
             match image {
-                FloemImage::Raster(image) => {
-                    Ok(ImagingBrush::Image(ImageBrush(peniko::ImageBrush {
-                        image: imaging::Image::Raster(image.image),
-                        sampler,
-                    })))
-                }
-                FloemImage::Scene(image) => {
-                    Ok(ImagingBrush::Image(ImageBrush(peniko::ImageBrush {
-                        image: imaging::Image::Scene(image.image),
-                        sampler,
-                    })))
-                }
-                FloemImage::Surface(_) => {
+                Image::Raster(image) => Ok(ImagingBrush::Image(ImageBrush(peniko::ImageBrush {
+                    image: imaging::Image::Raster(image.image),
+                    sampler,
+                }))),
+                Image::Scene(image) => Ok(ImagingBrush::Image(ImageBrush(peniko::ImageBrush {
+                    image: imaging::Image::Scene(image.image),
+                    sampler,
+                }))),
+                Image::Surface(_) => {
                     Err("capture background surface image brushes are not supported".to_string())
                 }
-                FloemImage::Source(_) => {
+                Image::Source(_) => {
                     Err("capture background shader-source brushes are not supported".to_string())
                 }
             }

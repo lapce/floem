@@ -7,7 +7,7 @@ use std::{
     sync::LazyLock,
 };
 
-use crate::effects::Brush as FloemBrush;
+use crate::effects::Brush;
 use crate::text::{AttrsList, TextBrush};
 use imaging::{PaintSink, Painter, record::Glyph as ImagingGlyph};
 use parking_lot::Mutex;
@@ -22,16 +22,12 @@ use peniko::{
     kurbo::{Affine, Point, Rect, Size},
 };
 
-fn default_text_brush() -> FloemBrush {
-    FloemBrush::Solid(peniko::Color::from_rgba8(0, 0, 0, 255))
+fn default_text_brush() -> Brush {
+    Brush::Solid(peniko::Color::from_rgba8(0, 0, 0, 255))
 }
 
 /// Resolves text-layout-relative brush inputs before recording glyph runs.
-fn text_layout_brush(
-    brush: FloemBrush,
-    bounds: Rect,
-    font_size_cx: &crate::unit::FontSizeCx,
-) -> FloemBrush {
+fn text_layout_brush(brush: Brush, bounds: Rect, font_size_cx: &crate::unit::FontSizeCx) -> Brush {
     let _ = (bounds, font_size_cx);
     brush
 }
@@ -259,7 +255,7 @@ pub struct TextLayout {
     height_opt: Option<f32>,
     tab_width: Option<NonZeroU8>,
     tab_info: Option<TabInfo>,
-    brushes: Vec<FloemBrush>,
+    brushes: Vec<Brush>,
 }
 
 impl std::fmt::Debug for TextLayout {
@@ -908,12 +904,12 @@ impl TextLayout {
 
     pub fn draw_with_painter<S, F, C>(
         &self,
-        painter: Painter<'_, S, F, C, FloemBrush>,
+        painter: Painter<'_, S, F, C, Brush>,
         origin: impl Into<Point>,
         font_embolden: peniko::kurbo::Vec2,
         effective_scale: f64,
     ) where
-        S: PaintSink<F, C, FloemBrush> + ?Sized,
+        S: PaintSink<F, C, Brush> + ?Sized,
     {
         self.draw_with_painter_with_brush_transform(
             painter,
@@ -926,13 +922,13 @@ impl TextLayout {
 
     pub fn draw_with_painter_with_brush_transform<S, F, C>(
         &self,
-        painter: Painter<'_, S, F, C, FloemBrush>,
+        painter: Painter<'_, S, F, C, Brush>,
         origin: impl Into<Point>,
         font_embolden: peniko::kurbo::Vec2,
         effective_scale: f64,
         brush_transform: Option<Affine>,
     ) where
-        S: PaintSink<F, C, FloemBrush> + ?Sized,
+        S: PaintSink<F, C, Brush> + ?Sized,
     {
         let origin = origin.into();
         let layout_bounds = self.paint_bounds();
@@ -975,16 +971,16 @@ impl TextLayout {
         );
     }
 
-    pub fn draw_with_painter_floem_brush<S, F, C>(
+    pub fn draw_with_painter_brush_style<S, F, C>(
         &self,
-        painter: Painter<'_, S, F, C, FloemBrush>,
+        painter: Painter<'_, S, F, C, Brush>,
         origin: impl Into<Point>,
         font_embolden: peniko::kurbo::Vec2,
         effective_scale: f64,
-        brush: FloemBrush,
+        brush: Brush,
         brush_transform: Option<Affine>,
     ) where
-        S: PaintSink<F, C, FloemBrush> + ?Sized,
+        S: PaintSink<F, C, Brush> + ?Sized,
     {
         let origin = origin.into();
         self.draw_with_painter_resolved_brushes(

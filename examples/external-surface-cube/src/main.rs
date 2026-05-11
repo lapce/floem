@@ -2,9 +2,9 @@ use std::time::Instant;
 
 use bytemuck::{Pod, Zeroable};
 use floem::{
-    Application, Brush as FloemBrush, Composite, CompositorSurfaceProducer,
-    CompositorSurfaceProducerConfig, Filter as FloemFilter, FrameRatePreference, GpuResources,
-    ImageBrush, LayerFilter, ShaderSource, ShaderUniform, SurfaceImage,
+    Application, Brush, Composite, CompositorSurfaceProducer, CompositorSurfaceProducerConfig,
+    Filter, FrameRatePreference, GpuResources, ImageBrush, LayerFilter, ShaderSource,
+    ShaderUniform, SurfaceImage,
     action::set_animation_frame_callback,
     context::{LayoutChanged, PaintCx},
     group_ref,
@@ -193,7 +193,7 @@ impl CubeCanvasLayout {
         cx.painter
             .fill(
                 self.canvas.to_rounded_rect(32.0),
-                FloemBrush::Image(ImageBrush::from(source.image(self.canvas.size()))),
+                Brush::Image(ImageBrush::from(source.image(self.canvas.size()))),
             )
             .draw();
     }
@@ -234,11 +234,11 @@ impl CubeCanvasLayout {
 
     fn paint_texture_text<S>(
         &self,
-        painter: &mut Painter<'_, S, FloemFilter, Composite, FloemBrush>,
+        painter: &mut Painter<'_, S, Filter, Composite, Brush>,
         effective_scale: f64,
         cube_image: SurfaceImage,
     ) where
-        S: PaintSink<FloemFilter, Composite, FloemBrush> + ImagingSceneSink,
+        S: PaintSink<Filter, Composite, Brush> + ImagingSceneSink,
     {
         let mut text = TextLayout::new_with_text(
             "TEXTURE BRUSH",

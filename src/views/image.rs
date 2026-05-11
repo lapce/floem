@@ -12,7 +12,7 @@ use imaging::Image as ImagingImage;
 use peniko::{Blob, ImageAlphaType, ImageData, kurbo::Rect};
 
 use crate::{
-    effects::{Brush, Image as FloemImage, ImageBrush, ShaderSourceImage},
+    effects::{Brush, Image as EffectImage, ImageBrush, ShaderSourceImage},
     prop_extractor,
     style::{FontSizeCx, ObjectFit, ObjectPosition},
     view::{LayoutNodeCx, MeasureFn, View, ViewId},
@@ -111,74 +111,74 @@ prop_extractor! {
 /// Holds the data needed for [Image] view to display images.
 pub struct Image {
     id: ViewId,
-    img: FloemImage,
+    img: EffectImage,
     layout_data: Rc<RefCell<ImageLayoutData>>,
     style: Extractor,
 }
 
 #[doc(hidden)]
 pub enum ImgReader {
-    Static(FloemImage),
-    Reactive(Rc<dyn Fn() -> FloemImage>),
+    Static(EffectImage),
+    Reactive(Rc<dyn Fn() -> EffectImage>),
 }
 
 /// A static input that can be converted into image content for [`Img`].
 pub trait ImgDataSource {
     /// Convert this value into owned image data.
-    fn into_image_data(self) -> FloemImage;
+    fn into_image_data(self) -> EffectImage;
 }
 
 impl ImgDataSource for ImageData {
-    fn into_image_data(self) -> FloemImage {
+    fn into_image_data(self) -> EffectImage {
         self.into()
     }
 }
 
 impl ImgDataSource for ImagingImage {
-    fn into_image_data(self) -> FloemImage {
+    fn into_image_data(self) -> EffectImage {
         self.try_into()
             .expect("imaging::ExternalImage cannot be stored in a Floem Img")
     }
 }
 
-impl ImgDataSource for FloemImage {
-    fn into_image_data(self) -> FloemImage {
+impl ImgDataSource for EffectImage {
+    fn into_image_data(self) -> EffectImage {
         self
     }
 }
 
 impl ImgDataSource for ShaderSourceImage {
-    fn into_image_data(self) -> FloemImage {
+    fn into_image_data(self) -> EffectImage {
         self.into()
     }
 }
 
 impl ImgDataSource for crate::effects::SurfaceImage {
-    fn into_image_data(self) -> FloemImage {
+    fn into_image_data(self) -> EffectImage {
         self.into()
     }
 }
 
 impl ImgDataSource for Vec<u8> {
-    fn into_image_data(self) -> FloemImage {
+    fn into_image_data(self) -> EffectImage {
         Image::image_data_from_bytes(&self).into()
     }
 }
 
 impl ImgDataSource for &'static [u8] {
-    fn into_image_data(self) -> FloemImage {
+    fn into_image_data(self) -> EffectImage {
         Image::image_data_from_bytes(self).into()
     }
 }
 
 impl<const N: usize> ImgDataSource for &'static [u8; N] {
-    fn into_image_data(self) -> FloemImage {
+    fn into_image_data(self) -> EffectImage {
         Image::image_data_from_bytes(self.as_slice()).into()
     }
 }
 
 impl ImgDataSource for PathBuf {
-    fn into_image_data(self) -> FloemImage {
+    fn into_image_data(self) -> EffectImage {
         Image::image_data_from_path(&self).into()
     }
 }
@@ -226,7 +226,7 @@ impl ImgSource for ImagingImage {
     }
 }
 
-impl ImgSource for FloemImage {
+impl ImgSource for EffectImage {
     fn into_img_reader(self) -> ImgReader {
         ImgReader::Static(self)
     }
@@ -370,7 +370,7 @@ pub fn img_from_path(image: impl Fn() -> PathBuf + 'static) -> Image {
 impl Image {
     /// Decode static image bytes, a static image path, or reuse existing image
     /// content.
-    pub fn image_data(source: impl ImgDataSource) -> FloemImage {
+    pub fn image_data(source: impl ImgDataSource) -> EffectImage {
         source.into_image_data()
     }
 
@@ -430,7 +430,7 @@ impl Image {
         img
     }
 
-    fn set_image(&mut self, image: FloemImage) {
+    fn set_image(&mut self, image: EffectImage) {
         self.layout_data.borrow_mut().natural_width = intrinsic_image_width(&image);
         self.layout_data.borrow_mut().natural_height = intrinsic_image_height(&image);
         self.img = image;
@@ -556,7 +556,7 @@ impl View for Image {
     }
 
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
-        match state.downcast::<FloemImage>() {
+        match state.downcast::<EffectImage>() {
             Ok(img) => {
                 self.set_image(*img);
             }
@@ -616,11 +616,11 @@ impl View for Image {
     }
 }
 
-fn intrinsic_image_width(image: &FloemImage) -> u32 {
+fn intrinsic_image_width(image: &EffectImage) -> u32 {
     size_width(image.intrinsic_size())
 }
 
-fn intrinsic_image_height(image: &FloemImage) -> u32 {
+fn intrinsic_image_height(image: &EffectImage) -> u32 {
     size_height(image.intrinsic_size())
 }
 
@@ -632,12 +632,12 @@ fn size_height(size: peniko::kurbo::Size) -> u32 {
     size.height.max(0.0).round().min(u32::MAX as f64) as u32
 }
 
-fn resolved_image_size(image: &FloemImage, bounds: Rect) -> peniko::kurbo::Size {
+fn resolved_image_size(image: &EffectImage, bounds: Rect) -> peniko::kurbo::Size {
     let _ = bounds;
     image.intrinsic_size()
 }
 
-fn object_fit_natural_size(image: &FloemImage, bounds: Rect) -> peniko::kurbo::Size {
+fn object_fit_natural_size(image: &EffectImage, bounds: Rect) -> peniko::kurbo::Size {
     let _ = bounds;
     image.intrinsic_size()
 }
