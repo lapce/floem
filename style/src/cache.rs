@@ -26,14 +26,13 @@
 
 use std::hash::{Hash, Hasher};
 
-use super::cx::InheritedInteractionCx;
-use super::selectors::StyleSelectors;
-
 use rustc_hash::{FxHashMap, FxHasher};
 
-use super::Style;
-use crate::layout::responsive::ScreenSizeBp;
-use crate::style::{InteractionState, StyleClassRef};
+use crate::interaction::{InheritedInteractionCx, InteractionState};
+use crate::props::{StyleClassRef, StyleKeyInfo};
+use crate::responsive::ScreenSizeBp;
+use crate::selectors::StyleSelectors;
+use crate::style::Style;
 
 /// Maximum number of hash buckets in the cache.
 const MAX_CACHE_BUCKETS: usize = 256;
@@ -133,7 +132,9 @@ impl Hash for StyleCacheKey {
     }
 }
 
-/// The result of a cache hit, containing all outputs of `compute_combined()`.
+/// The result of a cache hit, carrying the cascade outputs that would
+/// otherwise be recomputed via [`resolve_nested_maps`](crate::resolve_nested_maps).
+#[derive(Debug)]
 pub struct CacheHit {
     /// The resolved combined style.
     pub combined_style: Style,
@@ -144,6 +145,7 @@ pub struct CacheHit {
 }
 
 /// A single cached entry with parent context for validation.
+#[derive(Debug)]
 struct CacheEntry {
     /// The resolved combined style.
     combined_style: Style,
@@ -163,6 +165,7 @@ struct CacheEntry {
 }
 
 /// A bucket that can hold multiple entries (handles hash collisions).
+#[derive(Debug)]
 struct CacheBucket {
     entries: Vec<CacheEntry>,
 }
@@ -259,6 +262,7 @@ impl CacheBucket {
 ///
 /// Unlike a simple hash cache, this validates parent inherited properties
 /// on lookup to ensure correctness (matching Chromium's MatchedPropertiesCache).
+#[derive(Debug)]
 pub struct StyleCache {
     /// The cached style buckets, keyed by style hash.
     cache: FxHashMap<StyleCacheKey, CacheBucket>,
@@ -270,7 +274,7 @@ pub struct StyleCache {
     stats: CacheStatsMut,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct CacheStatsMut {
     hits: u64,
     misses: u64,
@@ -480,41 +484,6 @@ fn hash_classes(classes: &[StyleClassRef]) -> u64 {
     hasher.finish()
 }
 
-impl InteractionState {
-    /// Pack interaction state into bits for efficient hashing.
-    fn to_bits(self) -> u16 {
-        let mut bits = 0u16;
-        if self.is_hovered {
-            bits |= 1 << 0;
-        }
-        if self.is_selected {
-            bits |= 1 << 1;
-        }
-        if self.is_disabled {
-            bits |= 1 << 2;
-        }
-        if self.is_focused {
-            bits |= 1 << 3;
-        }
-        if self.is_active {
-            bits |= 1 << 4;
-        }
-        if self.is_dark_mode {
-            bits |= 1 << 5;
-        }
-        if self.is_file_hover {
-            bits |= 1 << 6;
-        }
-        if self.using_keyboard_navigation {
-            bits |= 1 << 7;
-        }
-        if self.is_focus_within {
-            bits |= 1 << 8;
-        }
-        bits
-    }
-}
-
 impl Style {
     /// Compute a content hash of this style for cache keying.
     ///
@@ -522,8 +491,6 @@ impl Style {
     /// value-based hashing. Identical style values will produce identical
     /// hashes, enabling effective cache sharing.
     pub fn content_hash(&self) -> u64 {
-        use crate::style::props::StyleKeyInfo;
-
         // Use XOR-based order-independent hashing to avoid Vec allocation + sort.
         // Each entry is independently hashed and XOR'd into the accumulator.
         // We mix in the entry count separately to distinguish e.g. {A} from {A, B}
@@ -567,8 +534,6 @@ impl Style {
     /// Two styles with different inherited values cannot share a cache entry
     /// even if their non-inherited properties are identical.
     pub fn inherited_equal(&self, other: &Style) -> bool {
-        use crate::style::props::StyleKeyInfo;
-
         // Compare only inherited properties
         for (key, value) in self.map.iter() {
             if let StyleKeyInfo::Prop(prop_info) = key.info
@@ -962,7 +927,7 @@ mod tests {
 
     #[test]
     fn test_inherited_equal_with_actual_inherited_props() {
-        use crate::style::TextColor;
+        use crate::TextColor;
 
         let style1 = Style::new().set(TextColor, Some(css::RED));
         let style2 = Style::new().set(TextColor, Some(css::BLUE));

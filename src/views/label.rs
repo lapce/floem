@@ -481,14 +481,20 @@ impl View for Label {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        if self.font_props.read(cx) | self.label_props.read(cx) {
+        let mut transitioning = false;
+        if self.font_props.read(cx, &mut transitioning)
+            | self.label_props.read(cx, &mut transitioning)
+        {
             self.layout_data.borrow_mut().clear_overflow_state();
             self.set_text_layout();
             self.id.request_layout();
             self.id.request_paint();
         }
-        if self.selection_style.read(cx) {
+        if self.selection_style.read(cx, &mut transitioning) {
             cx.window_state.request_paint(self.id);
+        }
+        if transitioning {
+            cx.request_transition();
         }
     }
 

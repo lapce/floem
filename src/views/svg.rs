@@ -262,7 +262,8 @@ impl View for Svg {
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         let style = cx.style();
-        self.svg_style.read_style(cx, &style);
+        let mut transitioning = false;
+        self.svg_style.read_style(cx, &style, &mut transitioning);
         if let Some(tree) = &self.svg_tree {
             let size = tree.size();
             let aspect_ratio = size.width() / size.height();
@@ -276,6 +277,9 @@ impl View for Svg {
         {
             self.id
                 .update_state(SvgOrStyle::Style(prop_reader.css_string()));
+        }
+        if transitioning {
+            cx.request_transition();
         }
     }
 

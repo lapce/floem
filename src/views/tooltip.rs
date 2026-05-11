@@ -91,11 +91,15 @@ impl View for Tooltip {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        self.style.read(cx);
+        let mut transitioning = false;
+        self.style.read(cx, &mut transitioning);
         if self.overlay.borrow().is_some() && self.id.is_hidden() {
             let id = self.overlay.take().unwrap();
             self.hover_point = None;
             remove_overlay(id);
+        }
+        if transitioning {
+            cx.request_transition();
         }
     }
 

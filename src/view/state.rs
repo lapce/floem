@@ -8,14 +8,7 @@ use crate::{
     },
     event::listener::{self, EventListenerKey},
     message::UpdateMessage,
-    prop_extractor,
-    style::{
-        Background, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
-        BorderLeftColor, BorderRightColor, BorderTopColor, BorderTopLeftRadius,
-        BorderTopRightRadius, BoxShadowProp, CursorStyle, InheritedInteractionCx, LayoutProps,
-        Outline, OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
-        recalc::StyleReason,
-    },
+    style::{CursorStyle, Style, StyleClassRef, StyleStorage, recalc::StyleReason},
     view::LayoutTree,
 };
 use floem_reactive::Scope;
@@ -77,138 +70,7 @@ impl<T> Stack<T> {
     }
 }
 
-prop_extractor! {
-    pub(crate) ViewStyleProps {
-        pub border_top_left_radius: BorderTopLeftRadius,
-        pub border_top_right_radius: BorderTopRightRadius,
-        pub border_bottom_left_radius: BorderBottomLeftRadius,
-        pub border_bottom_right_radius: BorderBottomRightRadius,
-        pub border_progress: crate::style::BorderProgress,
-
-        pub outline: Outline,
-        pub outline_color: OutlineColor,
-        pub outline_progress: crate::style::OutlineProgress,
-        pub border_left_color: BorderLeftColor,
-        pub border_top_color: BorderTopColor,
-        pub border_right_color: BorderRightColor,
-        pub border_bottom_color: BorderBottomColor,
-        pub background: Background,
-        pub shadow: BoxShadowProp,
-    }
-}
-
-/// The current phase of visibility for enter/exit animations.
-///
-/// This enum tracks the display state during CSS-driven visibility transitions
-/// (e.g., animating from visible to display:none).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum VisibilityPhase {
-    /// Initial state - display not yet computed.
-    #[default]
-    Initial,
-    /// Visible with the given display mode.
-    Visible(taffy::style::Display),
-    /// Exit animation in progress.
-    Animating(taffy::style::Display),
-    /// Hidden (display: none).
-    Hidden,
-}
-
-impl VisibilityPhase {
-    pub(crate) fn get_display_override(&self) -> Option<taffy::style::Display> {
-        match self {
-            VisibilityPhase::Animating(dis) => Some(*dis),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn transition(
-        &mut self,
-        computed_display: taffy::Display,
-        remove_animations: impl FnOnce() -> bool,
-        add_animations: impl FnOnce(),
-        stop_reset_animations: impl FnOnce(),
-        num_waiting_anim: impl FnOnce() -> u16,
-    ) {
-        let computed_has_hide = computed_display == taffy::Display::None;
-        *self = match self {
-            // initial states (makes it so that the animations aren't run on initial app/view load)
-            Self::Initial if computed_has_hide => Self::Hidden,
-            Self::Initial if !computed_has_hide => Self::Visible(computed_display),
-            // do nothing
-            Self::Visible(dis) if !computed_has_hide => Self::Visible(*dis),
-            // transition to hidden
-            Self::Visible(dis) if computed_has_hide => {
-                let active_animations = remove_animations();
-                if active_animations {
-                    Self::Animating(*dis)
-                } else {
-                    Self::Hidden
-                }
-            }
-            Self::Animating(_) if !computed_has_hide => {
-                stop_reset_animations();
-                Self::Visible(computed_display)
-            }
-            Self::Animating(dis) if computed_has_hide => {
-                if num_waiting_anim() == 0 {
-                    Self::Hidden
-                } else {
-                    Self::Animating(*dis)
-                }
-            }
-            Self::Hidden if computed_has_hide => Self::Hidden,
-            Self::Hidden if !computed_has_hide => {
-                add_animations();
-                Self::Visible(computed_display)
-            }
-            _ => unreachable!(),
-        };
-    }
-}
-
-/// Controls view visibility state.
-///
-/// This struct consolidates two related aspects of visibility:
-/// - `phase`: CSS-driven visibility phase for enter/exit animations
-/// - `force_hidden`: API-driven hiding (e.g., Tab hiding inactive children)
-///
-/// When `force_hidden` is true, the view is immediately hidden without animations.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Visibility {
-    /// The current visibility phase (for enter/exit animations).
-    pub phase: VisibilityPhase,
-    // /// When true, view is force-hidden via set_hidden() API.
-    // /// This bypasses the normal transition logic.
-    // pub force_hidden: bool,
-}
-
-impl Visibility {
-    /// Returns true if the view should be treated as hidden.
-    pub fn is_hidden(&self) -> bool {
-        self.phase == VisibilityPhase::Hidden
-    }
-}
-
-impl ViewStyleProps {
-    pub fn border_radius(&self) -> crate::style::BorderRadius {
-        crate::style::BorderRadius {
-            top_left: Some(self.border_top_left_radius()),
-            top_right: Some(self.border_top_right_radius()),
-            bottom_left: Some(self.border_bottom_left_radius()),
-            bottom_right: Some(self.border_bottom_right_radius()),
-        }
-    }
-
-    pub fn border_color(&self) -> crate::style::BorderColor {
-        crate::style::BorderColor {
-            left: self.border_left_color(),
-            top: self.border_top_color(),
-            right: self.border_right_color(),
-            bottom: self.border_bottom_color(),
-        }
-    }
-}
+pub use floem_style::{ViewStyleProps, Visibility, VisibilityPhase};
 
 /// Cached prefix-sum style stack with dirty tracking.
 pub struct StyleStack {
@@ -325,67 +187,23 @@ pub struct ViewState {
     /// We store the stack offset to the view style to keep the api consistent but it should
     /// always be the first offset.
     pub(crate) view_style_offset: StackOffset<Style>,
-    pub(crate) has_style_selectors: Option<StyleSelectors>,
     // the translation value that this view applies to children elements. Scroll view can use this to scroll.
     pub(crate) child_translation: Vec2,
-    pub(crate) layout_props: LayoutProps,
-    pub(crate) view_style_props: ViewStyleProps,
-    pub(crate) view_transform_props: TransformProps,
     pub(crate) animations: Stack<Animation>,
     pub(crate) classes: SmallVec<[StyleClassRef; 4]>,
     pub(crate) dragging_style: Option<Style>,
-    pub(crate) combined_pre_animation_style: Style,
-    /// The resolved style for this view (base + selectors + classes).
-    /// Does NOT include inherited properties from ancestors.
-    ///
-    /// Use for style resolution logic (what did this view define?):
-    /// - Checking if a property is explicitly set on this view
-    /// - Computing class context propagation to children
-    /// - Building style cache keys
-    pub(crate) combined_style: Style,
-    /// The final computed style including inherited properties from ancestors.
-    /// This is combined_style merged with inherited context (font_size, color, etc.).
-    ///
-    /// Use for rendering and layout (what will the user see?):
-    /// - Layout calculations via prop extractors
-    /// - Visual properties (background, border, transform)
-    /// - Anything that affects what gets rendered
-    /// - Converting to taffy style for layout engine
-    ///
-    /// This DOES NOT have final interpolated values and it DOES NOT resolve properties into points.
-    pub(crate) computed_style: Style,
+    /// Engine-owned per-node style state (resolved styles, extracted props,
+    /// visibility phase, interaction cx, etc.). See [`StyleStorage`].
+    pub(crate) style_storage: StyleStorage,
+    /// Companion node in [`WindowState::style_tree`](crate::window::state::WindowState).
+    /// Populated when the view is first seen by the window and cleared on
+    /// teardown. Phase 2a wires lifecycle only; style data and cascade still
+    /// live in `StyleStorage` / `StyleCx`.
+    pub(crate) style_node: Option<floem_style::StyleNodeId>,
     /// this can be used to make it so that a view will pull it's style context from a different parent.
     /// This is useful for overlays that are children of the window root but should pull their style cx from the creating view
     pub(crate) style_cx_parent: Option<ViewId>,
-    /// The inherited properties context for children.
-    /// Contains only properties marked as `inherited` (font-size, color, etc.).
-    ///
-    /// Derived from this view's computed_style (which includes inherited properties
-    /// from ancestors). Children will merge this with their combined_style to produce
-    /// their computed_style.
-    pub(crate) style_cx: Style,
-    /// The class context containing class definitions for descendants.
-    /// Contains `.class(SomeClass, ...)` nested maps that flow down the tree.
-    ///
-    /// Derived from this view's combined_style (only explicitly set class definitions).
-    /// Children will use this to resolve their class references when computing their
-    /// combined_style.
-    pub(crate) class_cx: Style,
-    /// the style interaction cx that is saved after computing the final style.
-    /// This will be used as the base interaction for all **children** of this view as these are the inherited interactions
-    pub(crate) style_interaction_cx: InheritedInteractionCx,
-    /// View-local interaction flags derived from this view's resolved combined style.
-    ///
-    /// This excludes inherited parent interaction and is OR'ed onto StyleCx interaction
-    /// state during fast-path style passes that skip `compute_combined`.
-    pub(crate) post_compute_combined_interaction: InheritedInteractionCx,
-    /// This interaction context can be set by a parent on this view. This will be used when building the StyleCx for **this** view.
-    pub(crate) parent_set_style_interaction: InheritedInteractionCx,
-    /// Controls view visibility for phase transitions.
-    pub(crate) visibility: Visibility,
-    /// The cursor style set by the style pass on the view. There is also the [`Self::user_cursor`] that takes precedance over this cursor.
-    pub(crate) style_cursor: Option<CursorStyle>,
-    /// the cursor style that a user can set on a view through the `ViewId`. This takes precedance over style_cursor.
+    /// the cursor style that a user can set on a view through the `ViewId`. This takes precedance over `style_storage.style_cursor`.
     pub(crate) user_cursor: Option<CursorStyle>,
     pub(crate) taffy_style: taffy::style::Style,
     pub(crate) event_listeners: FxHashMap<EventListenerKey, EventListenerVec>,
@@ -396,7 +214,6 @@ pub struct ViewState {
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
     pub(crate) popout_menu: Option<Rc<MenuCallback>>,
     pub(crate) cleanup_listeners: Rc<RefCell<CleanupListeners>>,
-    pub(crate) num_waiting_animations: u16,
     pub(crate) disable_default_events: HashSet<EventListenerKey>,
     /// This transform is user settable and is a transfrom that is applied after the transfrom from the `view_transform_props` which is the transfrom applied by style properties.
     pub(crate) transform: Affine,
@@ -422,7 +239,7 @@ impl ViewState {
 
         let element_id = crate::ElementId(
             box_tree.push_child(None, understory_box_tree::LocalNode::default()),
-            id,
+            id.as_raw(),
             true,
         );
         box_tree.set_element_meta(element_id.0, Some(crate::ElementMeta::new(element_id)));
@@ -437,16 +254,12 @@ impl ViewState {
             element_id,
             style,
             view_style_offset,
-            layout_props: Default::default(),
-            view_style_props: Default::default(),
-            has_style_selectors: None,
             animations: Default::default(),
             classes: SmallVec::new(),
-            combined_pre_animation_style: Style::new(),
-            combined_style: Style::new(),
-            computed_style: Style::new(),
             taffy_style: taffy::style::Style::DEFAULT,
             dragging_style: None,
+            style_storage: StyleStorage::default(),
+            style_node: None,
             event_listeners: FxHashMap::default(),
             registered_listener_keys: SmallVec::new(),
             layout: None,
@@ -455,19 +268,10 @@ impl ViewState {
             popout_menu: None,
             child_translation: Vec2::ZERO,
             cleanup_listeners: Default::default(),
-            num_waiting_animations: 0,
             disable_default_events: HashSet::new(),
-            view_transform_props: Default::default(),
             transform: Affine::IDENTITY,
             debug_name: Default::default(),
             style_cx_parent: None,
-            style_cx: Style::new(),
-            class_cx: Style::new(),
-            style_interaction_cx: Default::default(),
-            post_compute_combined_interaction: Default::default(),
-            parent_set_style_interaction: Default::default(),
-            visibility: Visibility::default(),
-            style_cursor: None,
             user_cursor: None,
             children_scope: None,
             keyed_children: None,
@@ -479,122 +283,43 @@ impl ViewState {
         self.style.style()
     }
 
-    /// Get the content hash of the current style without cloning.
-    /// O(1) after the style stack is clean (hash is cached during recomputation).
-    pub(crate) fn style_content_hash(&mut self) -> u64 {
-        self.style.ensure_clean();
-        self.style.content_hash()
-    }
-
-    /// Check if the current style is cacheable without cloning.
-    pub(crate) fn style_is_cacheable(&mut self) -> bool {
-        self.style.ensure_clean();
-        self.style.is_cacheable()
-    }
-
     pub fn cursor(&self) -> Option<CursorStyle> {
-        self.style_cursor.or(self.user_cursor)
+        self.style_storage.style_cursor.or(self.user_cursor)
     }
 
-    /// Compute the combined style by applying selectors, responsive styles, and classes.
-    /// Returns the combined style and a flag indicating if new classes were applied.
-    ///
-    /// Takes two separate contexts:
-    /// - `inherited_context`: Contains inherited properties (font-size, color, etc.)
-    ///   Used for `with_context` evaluation and inherited prop resolution.
-    /// - `class_context`: Contains class nested maps (`.class(SomeClass, ...)`)
-    ///   Used for class styling that flows from ancestors.
-    pub(crate) fn compute_combined(
-        &mut self,
-        interact_state: &mut crate::style::InteractionState,
-        screen_size_bp: crate::layout::responsive::ScreenSizeBp,
-        view_class: Option<crate::style::StyleClassRef>,
-        inherited_context: &Style,
-        class_context: &Style,
-    ) {
-        // Start with the combined stacked styles
-        let base_style = self.style().with_inherited_context(inherited_context);
-        interact_state.is_disabled |= base_style.builtin().set_disabled();
-        interact_state.is_selected |= base_style.builtin().set_selected();
-        interact_state.is_hidden |= base_style.builtin().display() == taffy::Display::None;
-        let base_selectors = base_style.selectors() | class_context.selectors();
-
-        // Build the full class list: view's classes + view type class
-        let mut all_classes =
-            Vec::with_capacity(self.classes.len() + usize::from(view_class.is_some()));
-        all_classes.extend(self.classes.iter().copied());
-        if let Some(vc) = view_class {
-            all_classes.push(vc);
-        }
-
-        // Create mutable contexts - inherited for with_context evaluation
-        // Resolve all nested maps: selectors, responsive styles, and classes
-        let (combined, selectors) = crate::style::resolve_nested_maps(
-            base_style,
-            interact_state,
-            screen_size_bp,
-            &all_classes,
-            inherited_context,
-            class_context,
-        );
-
-        interact_state.is_hidden |= combined.builtin().display() == taffy::Display::None;
-        interact_state.is_selected |= combined.builtin().set_selected();
-        interact_state.is_disabled |= combined.builtin().set_disabled();
-        self.post_compute_combined_interaction = InheritedInteractionCx {
-            hidden: combined.builtin().display() == taffy::Display::None,
-            selected: combined.builtin().set_selected(),
-            disabled: combined.builtin().set_disabled(),
-        };
-
-        self.has_style_selectors = Some(selectors | base_selectors);
-        self.combined_pre_animation_style = combined.clone();
-        self.combined_style = combined.clone();
-    }
-
+    /// Apply this view's animation stack on top of `combined`, mutating
+    /// it in place with interpolated values. ORs any animated
+    /// `display:none`/`set_disabled`/`set_selected` into `interact_state`.
+    /// Returns `true` iff any animation is still active (so the tree
+    /// cascade can schedule another pass).
     pub fn apply_animations(
         &mut self,
+        combined: &mut Style,
         interact_state: &mut crate::style::InteractionState,
     ) -> bool {
-        let mut combined = self.combined_pre_animation_style.clone();
-        // ─────────────────────────────────────────────────────────────────────
-        // Process animations
-        // ─────────────────────────────────────────────────────────────────────
-        // Animations modify the computed style by interpolating between keyframe values.
-        // We process animations here, after the base style is computed but before
-        // it's stored, so animated values override static style values.
         let mut has_active_animation = false;
+        for animation in self
+            .animations
+            .stack
+            .iter_mut()
+            .filter(|anim| anim.can_advance() || anim.should_apply_folded())
         {
-            for animation in self
-                .animations
-                .stack
-                .iter_mut()
-                .filter(|anim| anim.can_advance() || anim.should_apply_folded())
-            {
-                if animation.can_advance() {
-                    has_active_animation = true;
-                    animation.animate_into(&mut combined);
-                    animation.advance();
-                } else {
-                    animation.apply_folded(&mut combined);
-                }
-                debug_assert!(
-                    !animation.is_idle(),
-                    "Animation should not be idle after processing"
-                );
+            if animation.can_advance() {
+                has_active_animation = true;
+                animation.animate_into(combined);
+                animation.advance();
+            } else {
+                animation.apply_folded(combined);
             }
+            debug_assert!(
+                !animation.is_idle(),
+                "Animation should not be idle after processing"
+            );
         }
 
         interact_state.is_hidden |= combined.builtin().display() == taffy::Display::None;
         interact_state.is_selected |= combined.builtin().set_selected();
         interact_state.is_disabled |= combined.builtin().set_disabled();
-        self.post_compute_combined_interaction = InheritedInteractionCx {
-            hidden: combined.builtin().display() == taffy::Display::None,
-            selected: combined.builtin().set_selected(),
-            disabled: combined.builtin().set_disabled(),
-        };
-
-        self.combined_style = combined;
 
         has_active_animation
     }

@@ -354,10 +354,14 @@ impl View for Img {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        if self.style.read(cx) {
+        let mut transitioning = false;
+        if self.style.read(cx, &mut transitioning) {
             // object_fit changed, update taffy layout
             self.set_taffy_layout();
             self.id.request_layout();
+        }
+        if transitioning {
+            cx.request_transition();
         }
     }
 

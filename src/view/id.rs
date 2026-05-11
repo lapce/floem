@@ -83,6 +83,15 @@ unsafe impl slotmap::Key for ViewId {
     }
 }
 
+impl ViewId {
+    /// Raw bits of this `ViewId`'s slotmap key, suitable for storing in
+    /// host-agnostic engine structures like `floem_style::ElementId`.
+    #[inline]
+    pub fn as_raw(&self) -> u64 {
+        self.0.as_ffi()
+    }
+}
+
 fn request_structural_selector_restyle(children: &[ViewId]) {
     for child in children {
         child.request_style(StyleReason::full_recalc());
@@ -792,7 +801,7 @@ impl ViewId {
     pub fn is_hidden(&self) -> bool {
         let state = self.state();
         let state = state.borrow();
-        state.visibility.is_hidden()
+        state.style_storage.visibility.is_hidden()
     }
 
     /// if the view has pointer events none
@@ -800,7 +809,7 @@ impl ViewId {
         let state = self.state();
         let state = state.borrow();
         state
-            .computed_style
+            .style_storage.computed_style
             .builtin()
             .pointer_events()
             .map(|p| p == PointerEvents::None)
@@ -811,7 +820,7 @@ impl ViewId {
     ///
     /// This is done by checking if the style for this view has `Disabled` set to true.
     pub fn is_disabled(&self) -> bool {
-        self.state().borrow_mut().style_interaction_cx.disabled
+        self.state().borrow_mut().style_storage.style_interaction_cx.disabled
     }
 
     /// Returns true if the view is selected
@@ -819,7 +828,7 @@ impl ViewId {
     /// This is done by checking if the parent has set this view as selected
     /// via `parent_set_selected()`.
     pub fn is_selected(&self) -> bool {
-        self.state().borrow().parent_set_style_interaction.selected
+        self.state().borrow().style_storage.parent_set_style_interaction.selected
     }
 
     /// Check if this id can be focused.
@@ -828,7 +837,7 @@ impl ViewId {
     pub fn can_focus(&self) -> bool {
         self.state()
             .borrow()
-            .computed_style
+            .style_storage.computed_style
             .get(Focusable)
             .is_focusable()
     }
@@ -1067,7 +1076,7 @@ impl ViewId {
     /// a [prop extractor](crate::prop_extractor) that is updated in a style method
     /// of the View to extract the property.
     pub fn get_combined_style(&self) -> Style {
-        self.state().borrow().combined_style.clone()
+        self.state().borrow().style_storage.combined_style.clone()
     }
 
     /// Add a class to the list of style classes that are associated with this `ViewId`
@@ -1289,7 +1298,7 @@ impl ViewId {
                 Some(parent_box_node.0),
                 understory_box_tree::LocalNode::default(),
             );
-            let element_id = ElementId(child_element_id, *self, false);
+            let element_id = ElementId(child_element_id, self.as_raw(), false);
             box_tree
                 .borrow_mut()
                 .set_element_meta(child_element_id, Some(crate::ElementMeta::new(element_id)));
@@ -1585,8 +1594,8 @@ impl ViewId {
         let changed = {
             let state = self.state();
             let mut state = state.borrow_mut();
-            if !state.parent_set_style_interaction.selected {
-                state.parent_set_style_interaction.selected = true;
+            if !state.style_storage.parent_set_style_interaction.selected {
+                state.style_storage.parent_set_style_interaction.selected = true;
                 true
             } else {
                 false
@@ -1604,8 +1613,8 @@ impl ViewId {
         let changed = {
             let state = self.state();
             let mut state = state.borrow_mut();
-            if state.parent_set_style_interaction.selected {
-                state.parent_set_style_interaction.selected = false;
+            if state.style_storage.parent_set_style_interaction.selected {
+                state.style_storage.parent_set_style_interaction.selected = false;
                 true
             } else {
                 false
@@ -1623,8 +1632,8 @@ impl ViewId {
         let changed = {
             let state = self.state();
             let mut state = state.borrow_mut();
-            if !state.parent_set_style_interaction.disabled {
-                state.parent_set_style_interaction.disabled = true;
+            if !state.style_storage.parent_set_style_interaction.disabled {
+                state.style_storage.parent_set_style_interaction.disabled = true;
                 true
             } else {
                 false
@@ -1642,8 +1651,8 @@ impl ViewId {
         let changed = {
             let state = self.state();
             let mut state = state.borrow_mut();
-            if state.parent_set_style_interaction.disabled {
-                state.parent_set_style_interaction.disabled = false;
+            if state.style_storage.parent_set_style_interaction.disabled {
+                state.style_storage.parent_set_style_interaction.disabled = false;
                 true
             } else {
                 false
@@ -1663,9 +1672,9 @@ impl ViewId {
         let changed = {
             let state = self.state();
             let mut state = state.borrow_mut();
-            if !state.parent_set_style_interaction.hidden {
-                state.parent_set_style_interaction.hidden = true;
-                state.visibility.phase = VisibilityPhase::Hidden;
+            if !state.style_storage.parent_set_style_interaction.hidden {
+                state.style_storage.parent_set_style_interaction.hidden = true;
+                state.style_storage.visibility.phase = VisibilityPhase::Hidden;
                 true
             } else {
                 false
@@ -1684,10 +1693,10 @@ impl ViewId {
         let changed = {
             let state = self.state();
             let mut state = state.borrow_mut();
-            if state.parent_set_style_interaction.hidden {
-                state.parent_set_style_interaction.hidden = false;
+            if state.style_storage.parent_set_style_interaction.hidden {
+                state.style_storage.parent_set_style_interaction.hidden = false;
                 // Reset phase to Initial so the normal transition logic can run
-                state.visibility.phase = VisibilityPhase::Initial;
+                state.style_storage.visibility.phase = VisibilityPhase::Initial;
                 true
             } else {
                 false

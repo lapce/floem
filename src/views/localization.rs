@@ -3,9 +3,9 @@
 use std::borrow::Cow;
 use std::rc::Rc;
 
-use crate::style::{CustomStylable, CustomStyle, Style, StylePropValue};
+use crate::style::{CustomStylable, CustomStyle, PropDebugView, Style, StylePropValue};
 use crate::views::Decorators;
-use crate::{AnyView, IntoView, View, ViewId, prop, prop_extractor, style_class};
+use crate::{IntoView, View, ViewId, prop, prop_extractor, style_class};
 use floem_reactive::UpdaterEffect;
 use fluent_bundle::{FluentBundle, FluentResource};
 use ouroboros::self_referencing;
@@ -56,15 +56,19 @@ impl PartialEq for LocaleMap {
     }
 }
 
-impl StylePropValue for LocaleMap {
-    fn debug_view(&self) -> Option<AnyView> {
+impl StylePropValue for LocaleMap {}
+impl PropDebugView for LocaleMap {
+    fn debug_view(
+        &self,
+        _r: &dyn crate::style::InspectorRender,
+    ) -> Option<Box<dyn std::any::Any>> {
         use crate::prelude::*;
 
         let languages: Vec<String> = self.0.keys().map(|lang_id| lang_id.to_string()).collect();
 
         let count = languages.len();
 
-        let view = Stack::new((
+        let view: Box<dyn crate::view::View> = Stack::new((
             format!("Languages ({count})").style(|s| {
                 s.font_size(12.0)
                     .font_weight(floem_renderer::text::FontWeight::SEMI_BOLD)
@@ -90,21 +94,17 @@ impl StylePropValue for LocaleMap {
                 .border_color(palette::css::WHITE.with_alpha(0.3))
                 .border_radius(6.0)
                 .min_width(120.0)
-        });
+        })
+        .into_any();
 
-        Some(view.into_any())
+        Some(Box::new(view))
     }
 }
 
-impl StylePropValue for LanguageIdentifier {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(crate::views::Label::new(format!("{self:?}")).into_any())
-    }
-
-    fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
-        None
-    }
-}
+// `impl StylePropValue for LanguageIdentifier` and
+// `impl PropDebugView for LanguageIdentifier` both live in
+// `floem_style::value_impls::localization` (behind the `localization` feature)
+// to satisfy the orphan rule.
 
 impl LocaleMap {
     /// Accepts list of the language resources in a form of a list implementing [IntoIterator]
@@ -463,7 +463,8 @@ impl View for L10n {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        if self.locale.read(cx) {
+        let mut transitioning = false;
+        if self.locale.read(cx, &mut transitioning) {
             self.has_format_value = false;
         }
         if !self.has_format_value
@@ -472,9 +473,12 @@ impl View for L10n {
             self.label_id.update_state(formatted);
             self.has_format_value = true;
         }
-        self.fallback.read(cx);
+        self.fallback.read(cx, &mut transitioning);
         if !self.has_format_value && !self.apply_fallback() {
             self.label_id.update_state(self.key.clone());
+        }
+        if transitioning {
+            cx.request_transition();
         }
     }
 

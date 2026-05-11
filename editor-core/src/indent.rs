@@ -25,6 +25,17 @@ impl std::fmt::Display for IndentStyle {
     }
 }
 
+impl floem_style::StylePropValue for IndentStyle {}
+
+impl floem_style::PropDebugView for IndentStyle {
+    fn debug_view(
+        &self,
+        r: &dyn floem_style::InspectorRender,
+    ) -> Option<Box<dyn std::any::Any>> {
+        Some(r.text(&self.to_string()))
+    }
+}
+
 impl IndentStyle {
     pub const LONGEST_INDENT: &'static str = "        "; // 8 spaces
     pub const DEFAULT_INDENT: IndentStyle = IndentStyle::Spaces(4);

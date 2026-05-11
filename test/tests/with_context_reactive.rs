@@ -48,6 +48,7 @@ impl floem::style::StylePropValue for TestTheme {
         None
     }
 }
+impl floem::style::PropDebugView for TestTheme {}
 
 /// Helper extension trait for using the test theme
 trait TestThemeExt {

@@ -17,8 +17,55 @@
 #![allow(deprecated)]
 use std::{ops::Neg, time::Duration};
 
-pub use floem_renderer::text::LineHeightValue;
 use taffy::style::{Dimension, LengthPercentage, LengthPercentageAuto};
+
+/// Specifies how line height is computed for text layout.
+///
+/// # Example
+///
+/// ```
+/// use floem_style::LineHeightValue;
+///
+/// // 1.5x the font size (e.g. 24px for a 16px font).
+/// let lh = LineHeightValue::Normal(1.5);
+///
+/// // Fixed 20-point line height regardless of font size.
+/// let lh = LineHeightValue::Pt(20.0);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LineHeightValue {
+    /// A multiplier of the font size (e.g. `1.0` means line height equals font size).
+    Normal(f32),
+    /// An absolute line height in points.
+    Pt(f32),
+}
+
+impl LineHeightValue {
+    pub fn resolve(&self, font_size: f32) -> f32 {
+        match self {
+            LineHeightValue::Pt(value) => *value,
+            LineHeightValue::Normal(multiplier) => font_size * multiplier,
+        }
+    }
+}
+
+impl From<f32> for LineHeightValue {
+    fn from(value: f32) -> Self {
+        LineHeightValue::Normal(value)
+    }
+}
+
+impl From<f64> for LineHeightValue {
+    fn from(value: f64) -> Self {
+        LineHeightValue::Normal(value as f32)
+    }
+}
+
+impl From<i32> for LineHeightValue {
+    fn from(value: i32) -> Self {
+        LineHeightValue::Normal(value as f32)
+    }
+}
 
 /// An absolute length value in Floem layout points.
 #[derive(Debug, Clone, Copy, PartialEq)]

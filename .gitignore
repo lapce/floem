@@ -3,6 +3,7 @@
 /.lapce
 /.idea
 /.zed
+/.claude
 .DS_Store
 rustc-ice*
 *.orig

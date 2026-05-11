@@ -1,0 +1,1143 @@
+//! Engine-owned style tree — the host-agnostic counterpart to Taffy's layout
+//! tree.
+//!
+//! A [`StyleTree`] stores one [`StyleNode`] per styled element, carrying the
+//! node's direct style, applied classes, cached cascade outputs, and the
+//! parent/child edges needed for selector matching (`:first-child`,
+//! `:nth-child`, cascade propagation).
+//!
+//! Hosts (floem, future floem-native) keep a mapping from their own id type
+//! (e.g. `ViewId`) to [`StyleNodeId`] and push state changes here:
+//!
+//! ```text
+//! host creates view   → tree.new_node()          -> StyleNodeId
+//! host adds child     → tree.set_parent(child, parent)
+//!                     → tree.set_children(parent, &[...])
+//! host sets style     → tree.set_direct_style(node, style)
+//! host marks dirty    → tree.mark_dirty(node, reason)
+//! host runs pass      → tree.compute_style(root, &inputs)
+//! host reads result   → tree.computed_style(node)
+//! ```
+//!
+//! The engine carries no host identity — hosts that need to relate a
+//! `StyleNodeId` back to their own view type (floem: `ViewId`) keep a
+//! sidecar mapping, same shape as [`taffy::NodeId`] ↔ host-view.
+
+use rustc_hash::{FxHashMap, FxHashSet};
+use smallvec::SmallVec;
+use slotmap::{SlotMap, new_key_type};
+
+use crate::animation::{Animation, AnimationEvents};
+use crate::builtin_props::Display;
+use crate::cache::{StyleCache, StyleCacheKey};
+use crate::cascade::resolve_nested_maps;
+use crate::interaction::{InheritedInteractionCx, InteractionState};
+use crate::props::StyleClassRef;
+use crate::recalc::StyleReason;
+use crate::selectors::{StyleSelector, StyleSelectors};
+use crate::sink::CascadeInputs;
+use crate::style::Style;
+
+new_key_type! {
+    /// Identity of a node inside a [`StyleTree`]. Dense key backed by
+    /// [`slotmap`]; stable across removals within the same tree but not
+    /// across trees.
+    pub struct StyleNodeId;
+}
+
+/// Per-element state owned by the style engine.
+///
+/// Most fields are caches populated by `compute_style`. Host-pushed inputs
+/// are [`direct_style`](Self::direct_style), [`classes`](Self::classes), the
+/// parent/children edges, and
+/// [`parent_set_style_interaction`](Self::parent_set_style_interaction).
+///
+/// The node carries no host-side identity. Hosts that need to relate a
+/// [`StyleNodeId`] back to their own view/element type keep a sidecar
+/// mapping (taffy-style): forward as `ViewState.style_node:
+/// Option<StyleNodeId>`, reverse as a `FxHashMap<StyleNodeId, ViewId>`
+/// on the host state. The engine's APIs are keyed entirely on
+/// [`StyleNodeId`] — cascade inputs, scheduling, fixed-element
+/// registry, animation hooks.
+#[derive(Debug, Clone)]
+pub struct StyleNode {
+    // ── Tree edges ──────────────────────────────────────────────────────
+    pub(crate) parent: Option<StyleNodeId>,
+    pub(crate) children: Vec<StyleNodeId>,
+
+    // ── Host-pushed inputs ──────────────────────────────────────────────
+    /// Style set directly on this node via the `.style(...)` setter.
+    pub direct_style: Style,
+    /// Classes applied to this node via `.class(...)` / `.apply_class(...)`.
+    pub classes: SmallVec<[StyleClassRef; 4]>,
+    /// Interaction overrides pushed by a parent (e.g. "force-disable
+    /// descendants"). OR'd with inherited parent state during cascade.
+    pub parent_set_style_interaction: InheritedInteractionCx,
+    /// Optional override of the `(child_index, sibling_count)` used for
+    /// `:nth-child` / `:first-child` / `:last-child`. Hosts that use a
+    /// separate DOM tree (e.g. floem's `style_cx_parent` split) push the
+    /// structural position computed from their own tree here. `None`
+    /// means "use the tree's own parent/children edges".
+    pub structural_position_override: Option<(Option<usize>, usize)>,
+
+    // ── Cascade outputs (populated by compute_style — Phase 1b) ────────
+    /// Resolved style after class + selector merging, without inherited
+    /// properties from ancestors. Used for cache keys and child
+    /// propagation.
+    pub(crate) combined_style: Style,
+    /// Final style including inherited properties. This is what prop
+    /// extractors read.
+    pub(crate) computed_style: Style,
+    /// Inherited-only slice of this node's computed style. Passed to
+    /// children as their inherited context.
+    pub(crate) inherited_context: Style,
+    /// Class-map-only slice of this node's direct style. Passed to
+    /// children as their class context.
+    pub(crate) class_context: Style,
+    /// Interaction cx after resolving — becomes the inherited cx for
+    /// children.
+    pub(crate) style_interaction_cx: InheritedInteractionCx,
+    /// Selectors present in this node's style tree, cached for fast-path
+    /// dirty propagation.
+    pub(crate) has_style_selectors: Option<StyleSelectors>,
+
+    // ── Dirty bookkeeping ──────────────────────────────────────────────
+    /// Why this node (or a subtree rooted here) is pending recomputation.
+    /// Empty means the caches are up to date.
+    pub(crate) dirty: StyleReason,
+
+    // ── Animation registry ─────────────────────────────────────────────
+    /// Animations declared on this node. The cascade ticks these during
+    /// [`StyleTree::compute_style`] and folds their interpolated values
+    /// into `combined_style` before the result is propagated to children.
+    ///
+    /// A host may either push animations here directly (standalone
+    /// hosts, tests) or keep its own registry and implement
+    /// [`AnimationBackend`](crate::AnimationBackend); both paths
+    /// coexist and are invoked in order each frame.
+    pub(crate) animations: SmallVec<[Animation; 1]>,
+
+    /// Lifecycle events produced by the most recent tick of this node's
+    /// animations. Hosts drain via
+    /// [`StyleTree::take_animation_events`] to fire their own observers.
+    pub(crate) pending_animation_events: SmallVec<[(usize, AnimationEvents); 1]>,
+}
+
+impl StyleNode {
+    fn new() -> Self {
+        Self {
+            parent: None,
+            children: Vec::new(),
+            direct_style: Style::new(),
+            classes: SmallVec::new(),
+            parent_set_style_interaction: InheritedInteractionCx::default(),
+            structural_position_override: None,
+            combined_style: Style::new(),
+            computed_style: Style::new(),
+            inherited_context: Style::new(),
+            class_context: Style::new(),
+            style_interaction_cx: InheritedInteractionCx::default(),
+            has_style_selectors: None,
+            dirty: StyleReason::style_pass(),
+            animations: SmallVec::new(),
+            pending_animation_events: SmallVec::new(),
+        }
+    }
+
+    pub fn parent(&self) -> Option<StyleNodeId> {
+        self.parent
+    }
+
+    pub fn children(&self) -> &[StyleNodeId] {
+        &self.children
+    }
+}
+
+/// Engine-owned slotmap of [`StyleNode`]s. Cheap to clone if you need a
+/// snapshot (nodes are plain data). Typical use is a single long-lived
+/// instance per host window.
+#[derive(Default, Debug)]
+pub struct StyleTree {
+    nodes: SlotMap<StyleNodeId, StyleNode>,
+    cache: StyleCache,
+    // Per-selector interest registries, populated as the cascade resolves
+    // each node's style. Let descendant-dirty walks skip directly to the
+    // small set of nodes that could possibly match a given selector
+    // instead of traversing the full subtree.
+    responsive_interest: FxHashSet<StyleNodeId>,
+    disabled_interest: FxHashSet<StyleNodeId>,
+    selected_interest: FxHashSet<StyleNodeId>,
+    // Nodes the engine needs a future cascade pass for (animations in
+    // flight, transitions still interpolating). Populated by the cascade
+    // and by `schedule`; drained by the host via [`take_scheduled`] after
+    // each `compute_style` to feed the host's own per-frame work queue.
+    scheduled: FxHashMap<StyleNodeId, StyleReason>,
+    // Authoritative set of nodes whose resolved style has
+    // `position: fixed`. Maintained inline by the cascade; hosts that
+    // need to walk every fixed node (for layout positioning, paint
+    // ordering, etc.) read it via [`Self::fixed_elements`].
+    fixed_elements: FxHashSet<StyleNodeId>,
+    // Transitions from the most recent `compute_style` pass. The host
+    // drains these via [`Self::take_fixed_element_changes`] to trigger
+    // post-cascade side-effects (relayout, box-tree commit), then gets
+    // an empty set next frame until more transitions happen.
+    fixed_elements_added: SmallVec<[StyleNodeId; 2]>,
+    fixed_elements_removed: SmallVec<[StyleNodeId; 2]>,
+    // Set during `compute_style` when the cascade detects a change
+    // that requires the host to re-run layout (e.g. a `display` /
+    // visibility flip). Hosts consume via
+    // [`Self::take_needs_layout`] after each pass.
+    needs_layout: bool,
+    // Nodes the cascade marked dirty during this pass for host-visible
+    // side effects — their computed-style changed in a way the host's
+    // per-view bookkeeping (animations, taffy push, next-frame
+    // traversal) needs to know about. Host drains via
+    // [`Self::take_dirtied_this_pass`] after `compute_style`.
+    dirtied_this_pass: FxHashMap<StyleNodeId, StyleReason>,
+}
+
+impl StyleTree {
+    pub fn new() -> Self {
+        Self {
+            nodes: SlotMap::with_key(),
+            cache: StyleCache::new(),
+            responsive_interest: FxHashSet::default(),
+            disabled_interest: FxHashSet::default(),
+            selected_interest: FxHashSet::default(),
+            scheduled: FxHashMap::default(),
+            fixed_elements: FxHashSet::default(),
+            fixed_elements_added: SmallVec::new(),
+            fixed_elements_removed: SmallVec::new(),
+            needs_layout: false,
+            dirtied_this_pass: FxHashMap::default(),
+        }
+    }
+
+    /// Record that `node` needs a restyle on the next frame. Called by
+    /// the cascade for animation-driven nodes and by prop-extractor
+    /// transition hooks.
+    pub fn schedule(&mut self, node: StyleNodeId, reason: StyleReason) {
+        self.scheduled
+            .entry(node)
+            .and_modify(|existing| existing.merge(reason.clone()))
+            .or_insert(reason);
+    }
+
+    /// Drain every pending engine-originated schedule request. Hosts
+    /// should call this once per cascade pass, immediately after
+    /// `compute_style` returns, and funnel each entry into their own
+    /// per-frame scheduling.
+    pub fn take_scheduled(&mut self) -> impl Iterator<Item = (StyleNodeId, StyleReason)> {
+        std::mem::take(&mut self.scheduled).into_iter()
+    }
+
+    /// Record that `node` resolved to `position: fixed` on the current
+    /// pass. Idempotent: a node already present in the set is a no-op,
+    /// not a reported transition. Addition flips `needs_layout` so the
+    /// host relayouts on the drain.
+    fn register_fixed_element(&mut self, node: StyleNodeId) {
+        if self.fixed_elements.insert(node) {
+            self.fixed_elements_added.push(node);
+            self.needs_layout = true;
+        }
+    }
+
+    /// Record that `node` no longer resolves to `position: fixed`.
+    /// Idempotent: a node already absent is a no-op. Removal flips
+    /// `needs_layout` (the host also needs to reset the box-tree world
+    /// position, surfaced through [`Self::take_fixed_element_changes`]).
+    fn unregister_fixed_element(&mut self, node: StyleNodeId) {
+        if self.fixed_elements.remove(&node) {
+            self.fixed_elements_removed.push(node);
+            self.needs_layout = true;
+        }
+    }
+
+    /// Every node currently resolving to `position: fixed`.
+    pub fn fixed_elements(&self) -> &FxHashSet<StyleNodeId> {
+        &self.fixed_elements
+    }
+
+    /// `(added, removed)` transitions to the fixed-element set since the
+    /// last drain. Hosts call this after `compute_style` to trigger any
+    /// layout / box-tree side effects their fixed-positioning flow
+    /// needs. Subsequent calls return empty sets until more transitions
+    /// happen.
+    pub fn take_fixed_element_changes(
+        &mut self,
+    ) -> (SmallVec<[StyleNodeId; 2]>, SmallVec<[StyleNodeId; 2]>) {
+        (
+            std::mem::take(&mut self.fixed_elements_added),
+            std::mem::take(&mut self.fixed_elements_removed),
+        )
+    }
+
+    /// `true` if the cascade detected a style change that invalidates
+    /// the host's layout (e.g. a `display` / visibility flip). Drained
+    /// each pass so subsequent calls return `false` until the cascade
+    /// asks for another relayout.
+    pub fn take_needs_layout(&mut self) -> bool {
+        std::mem::take(&mut self.needs_layout)
+    }
+
+    /// Drain every `(StyleNodeId, StyleReason)` the cascade surfaced
+    /// during the most recent `compute_style`. Hosts consume these to
+    /// update their own dirty maps — floem translates each to its own
+    /// view id and routes through `WindowState::mark_style_dirty_with`
+    /// so the next frame's traversal covers descendants whose
+    /// inherited / class / visibility context changed this pass.
+    pub fn take_dirtied_this_pass(
+        &mut self,
+    ) -> impl Iterator<Item = (StyleNodeId, StyleReason)> {
+        std::mem::take(&mut self.dirtied_this_pass).into_iter()
+    }
+
+    /// Record that `node` was marked dirty during this cascade pass.
+    /// Merges with any existing entry for the same node.
+    fn record_pass_dirty(&mut self, node: StyleNodeId, reason: StyleReason) {
+        self.dirtied_this_pass
+            .entry(node)
+            .and_modify(|existing| existing.merge(reason.clone()))
+            .or_insert(reason);
+    }
+
+    /// Register an [`Animation`] on `node`. Returns the slot index used
+    /// by later [`Self::set_animation`] / [`Self::update_animation_with`]
+    /// calls. Panics if `node` is unknown.
+    pub fn push_animation(&mut self, node: StyleNodeId, anim: Animation) -> usize {
+        let node = &mut self.nodes[node];
+        let idx = node.animations.len();
+        node.animations.push(anim);
+        idx
+    }
+
+    /// Replace the animation at `slot` on `node`. No-op if `node` or the
+    /// slot is missing.
+    pub fn set_animation(&mut self, node: StyleNodeId, slot: usize, anim: Animation) {
+        if let Some(n) = self.nodes.get_mut(node)
+            && let Some(existing) = n.animations.get_mut(slot)
+        {
+            *existing = anim;
+        }
+    }
+
+    /// Mutate the animation at `slot` on `node` in place (used by
+    /// reactive state commands).
+    pub fn update_animation_with<F>(&mut self, node: StyleNodeId, slot: usize, f: F)
+    where
+        F: FnOnce(&mut Animation),
+    {
+        if let Some(n) = self.nodes.get_mut(node)
+            && let Some(existing) = n.animations.get_mut(slot)
+        {
+            f(existing);
+        }
+    }
+
+    /// Read-only view of every animation registered on `node`.
+    pub fn animations(&self, node: StyleNodeId) -> &[Animation] {
+        self.nodes
+            .get(node)
+            .map(|n| n.animations.as_slice())
+            .unwrap_or(&[])
+    }
+
+    /// Mutable view of every animation registered on `node`.
+    pub fn animations_mut(&mut self, node: StyleNodeId) -> &mut [Animation] {
+        self.nodes
+            .get_mut(node)
+            .map(|n| n.animations.as_mut_slice())
+            .unwrap_or(&mut [])
+    }
+
+    /// Drain animation-lifecycle events produced by the most recent
+    /// [`Self::compute_style`]. Each entry is `(slot_index, events)`
+    /// for the node identified by `node`. Hosts call this to fire their
+    /// own observers (floem: reactive `Trigger`s; native hosts:
+    /// platform-specific notifications).
+    pub fn take_animation_events(
+        &mut self,
+        node: StyleNodeId,
+    ) -> SmallVec<[(usize, AnimationEvents); 1]> {
+        if let Some(n) = self.nodes.get_mut(node) {
+            std::mem::take(&mut n.pending_animation_events)
+        } else {
+            SmallVec::new()
+        }
+    }
+
+    /// Drop every cached cascade result. The host should call this when a
+    /// global input changes such that the cache keys are no longer
+    /// meaningful (OS theme flip, responsive breakpoint change, etc.).
+    pub fn clear_cache(&mut self) {
+        self.cache.clear();
+    }
+
+    /// Read-only view into the cache stats. Primarily for tests/debug.
+    pub fn cache_stats(&self) -> crate::cache::CacheStats {
+        self.cache.stats()
+    }
+
+    /// Update `node`'s entry in the per-selector interest registries to
+    /// match the selector set its style resolved to.
+    fn update_selector_interest(
+        &mut self,
+        node: StyleNodeId,
+        selectors: Option<StyleSelectors>,
+    ) {
+        let has_responsive = selectors.is_some_and(StyleSelectors::has_responsive);
+        let has_disabled = selectors.is_some_and(|s| s.has(StyleSelector::Disabled));
+        let has_selected = selectors.is_some_and(|s| s.has(StyleSelector::Selected));
+        set_membership(&mut self.responsive_interest, node, has_responsive);
+        set_membership(&mut self.disabled_interest, node, has_disabled);
+        set_membership(&mut self.selected_interest, node, has_selected);
+    }
+
+    /// Mark every descendant of `ancestor` that has interest in `selector`
+    /// as dirty and return `(StyleNodeId, reason)` pairs for each so the
+    /// host can feed them into its own per-frame scheduling. Only
+    /// `Selected` and `Disabled` are tracked; other selectors return empty.
+    pub fn mark_descendants_with_selector_dirty(
+        &mut self,
+        ancestor: StyleNodeId,
+        selector: StyleSelector,
+    ) -> SmallVec<[(StyleNodeId, StyleReason); 4]> {
+        let candidates: SmallVec<[StyleNodeId; 4]> = match selector {
+            StyleSelector::Disabled => self.disabled_interest.iter().copied().collect(),
+            StyleSelector::Selected => self.selected_interest.iter().copied().collect(),
+            _ => return SmallVec::new(),
+        };
+        let reason = StyleReason::with_selector(selector);
+        self.dirty_ancestry_matches(&candidates, ancestor, &reason)
+    }
+
+    /// Responsive counterpart of [`Self::mark_descendants_with_selector_dirty`].
+    pub fn mark_descendants_with_responsive_selector_dirty(
+        &mut self,
+        ancestor: StyleNodeId,
+    ) -> SmallVec<[(StyleNodeId, StyleReason); 4]> {
+        let candidates: SmallVec<[StyleNodeId; 4]> =
+            self.responsive_interest.iter().copied().collect();
+        let reason = StyleReason::with_selectors(StyleSelectors::empty().responsive());
+        self.dirty_ancestry_matches(&candidates, ancestor, &reason)
+    }
+
+    /// For each candidate whose parent chain passes through `ancestor`,
+    /// set its dirty bit and collect `(StyleNodeId, reason)`. Shared
+    /// core of both descendant-dirty walks. Skips `ancestor` itself —
+    /// floem's original walk excludes the node that triggered the
+    /// descent.
+    fn dirty_ancestry_matches(
+        &mut self,
+        candidates: &[StyleNodeId],
+        ancestor: StyleNodeId,
+        reason: &StyleReason,
+    ) -> SmallVec<[(StyleNodeId, StyleReason); 4]> {
+        let mut out: SmallVec<[(StyleNodeId, StyleReason); 4]> = SmallVec::new();
+        for &node in candidates {
+            if node != ancestor && self.is_descendant_of(node, ancestor) {
+                self.mark_dirty(node, reason.clone());
+                out.push((node, reason.clone()));
+            }
+        }
+        out
+    }
+
+    /// Allocate a new orphan node. The node has no parent and no
+    /// children until a setter is called. Hosts keep their own
+    /// `ViewId → StyleNodeId` map (taffy-style); the engine itself
+    /// carries no host identity.
+    pub fn new_node(&mut self) -> StyleNodeId {
+        self.nodes.insert(StyleNode::new())
+    }
+
+    /// Remove a node. Detaches from its parent's child list and clears
+    /// each child's `parent` pointer (children are NOT recursively removed
+    /// — hosts are responsible for removing subtrees explicitly).
+    pub fn remove_node(&mut self, id: StyleNodeId) -> Option<StyleNode> {
+        let node = self.nodes.remove(id)?;
+        self.responsive_interest.remove(&id);
+        self.disabled_interest.remove(&id);
+        self.selected_interest.remove(&id);
+        if self.fixed_elements.remove(&id) {
+            self.fixed_elements_removed.push(id);
+            self.needs_layout = true;
+        }
+        if let Some(parent) = node.parent
+            && let Some(parent_node) = self.nodes.get_mut(parent)
+        {
+            parent_node.children.retain(|c| *c != id);
+        }
+        for child in &node.children {
+            if let Some(child_node) = self.nodes.get_mut(*child) {
+                child_node.parent = None;
+            }
+        }
+        Some(node)
+    }
+
+    pub fn contains(&self, id: StyleNodeId) -> bool {
+        self.nodes.contains_key(id)
+    }
+
+    pub fn get(&self, id: StyleNodeId) -> Option<&StyleNode> {
+        self.nodes.get(id)
+    }
+
+    pub fn get_mut(&mut self, id: StyleNodeId) -> Option<&mut StyleNode> {
+        self.nodes.get_mut(id)
+    }
+
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
+    // ── Tree-structure setters ──────────────────────────────────────────
+
+    /// Set `child`'s parent to `parent`. Detaches `child` from any previous
+    /// parent. Panics if either id is unknown or if the operation would
+    /// create a cycle (parent must not be a descendant of child).
+    pub fn set_parent(&mut self, child: StyleNodeId, parent: Option<StyleNodeId>) {
+        assert!(self.contains(child), "unknown child node");
+        if let Some(p) = parent {
+            assert!(self.contains(p), "unknown parent node");
+            debug_assert!(
+                !self.is_descendant_of(p, child),
+                "set_parent would create a cycle"
+            );
+        }
+
+        let old_parent = self.nodes[child].parent;
+        if old_parent == parent {
+            return;
+        }
+
+        if let Some(old) = old_parent
+            && let Some(old_node) = self.nodes.get_mut(old)
+        {
+            old_node.children.retain(|c| *c != child);
+        }
+
+        self.nodes[child].parent = parent;
+        if let Some(p) = parent {
+            self.nodes[p].children.push(child);
+        }
+        let reason = StyleReason::inherited();
+        self.mark_dirty(child, reason);
+    }
+
+    /// Replace `parent`'s child list. Each child's `parent` pointer is
+    /// updated to point at `parent`. Previous children retained in the new
+    /// list keep their position; removed children become orphans.
+    pub fn set_children(&mut self, parent: StyleNodeId, children: &[StyleNodeId]) {
+        assert!(self.contains(parent), "unknown parent node");
+        for c in children {
+            assert!(self.contains(*c), "unknown child node");
+        }
+
+        let old_children = std::mem::take(&mut self.nodes[parent].children);
+        for c in &old_children {
+            if !children.contains(c)
+                && let Some(node) = self.nodes.get_mut(*c)
+            {
+                node.parent = None;
+            }
+        }
+        for c in children {
+            if let Some(node) = self.nodes.get_mut(*c) {
+                if let Some(prev_parent) = node.parent
+                    && prev_parent != parent
+                    && let Some(prev) = self.nodes.get_mut(prev_parent)
+                {
+                    prev.children.retain(|existing| existing != c);
+                }
+                self.nodes[*c].parent = Some(parent);
+            }
+        }
+        self.nodes[parent].children = children.to_vec();
+        self.mark_dirty(parent, StyleReason::inherited());
+    }
+
+    fn is_descendant_of(&self, candidate: StyleNodeId, root: StyleNodeId) -> bool {
+        let mut cursor = Some(candidate);
+        while let Some(id) = cursor {
+            if id == root {
+                return true;
+            }
+            cursor = self.nodes.get(id).and_then(|n| n.parent);
+        }
+        false
+    }
+
+    // ── Style input setters ─────────────────────────────────────────────
+
+    pub fn set_direct_style(&mut self, id: StyleNodeId, style: Style) {
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.direct_style = style;
+            node.dirty.merge(StyleReason::style_pass());
+        }
+    }
+
+    pub fn set_classes(&mut self, id: StyleNodeId, classes: &[StyleClassRef]) {
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.classes.clear();
+            node.classes.extend_from_slice(classes);
+            node.dirty.merge(StyleReason::class_cx(Default::default()));
+        }
+    }
+
+    pub fn set_parent_interaction(
+        &mut self,
+        id: StyleNodeId,
+        interaction: InheritedInteractionCx,
+    ) {
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.parent_set_style_interaction = interaction;
+            node.dirty.merge(StyleReason::style_pass());
+        }
+    }
+
+    /// Override the structural position used for `:nth-child` et al. Hosts
+    /// whose structural-position notion differs from the tree's own
+    /// parent/children edges (e.g. floem's list-item re-parenting) push
+    /// the host-computed `(child_index, sibling_count)` here. Pass `None`
+    /// to defer to the tree's own edges.
+    pub fn set_structural_position_override(
+        &mut self,
+        id: StyleNodeId,
+        pos: Option<(Option<usize>, usize)>,
+    ) {
+        if let Some(node) = self.nodes.get_mut(id) {
+            if node.structural_position_override != pos {
+                node.dirty.merge(StyleReason::style_pass());
+            }
+            node.structural_position_override = pos;
+        }
+    }
+
+    pub fn mark_dirty(&mut self, id: StyleNodeId, reason: StyleReason) {
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.dirty.merge(reason);
+        }
+    }
+
+    pub fn is_dirty(&self, id: StyleNodeId) -> bool {
+        self.nodes
+            .get(id)
+            .map(|n| !n.dirty.is_empty())
+            .unwrap_or(false)
+    }
+
+    // ── Cached-output readers ──────────────────────────────────────────
+
+    /// Final computed style (host-inherited + direct + selectors). Returns
+    /// the *last result of `compute_style`* — will be empty until the
+    /// cascade has run (Phase 1b).
+    pub fn computed_style(&self, id: StyleNodeId) -> Option<&Style> {
+        self.nodes.get(id).map(|n| &n.computed_style)
+    }
+
+    /// The pre-inheritance merged style (classes + selectors resolved) for
+    /// this node. Used for cache keys.
+    pub fn combined_style(&self, id: StyleNodeId) -> Option<&Style> {
+        self.nodes.get(id).map(|n| &n.combined_style)
+    }
+
+    pub fn has_style_selectors(&self, id: StyleNodeId) -> Option<StyleSelectors> {
+        self.nodes.get(id).and_then(|n| n.has_style_selectors)
+    }
+
+    pub fn style_interaction_cx(&self, id: StyleNodeId) -> Option<InheritedInteractionCx> {
+        self.nodes.get(id).map(|n| n.style_interaction_cx)
+    }
+
+    /// Inherited-only slice of the computed style. Hosts copy this to
+    /// their per-view inherited context so children see it on their
+    /// next cascade.
+    pub fn inherited_context(&self, id: StyleNodeId) -> Option<&Style> {
+        self.nodes.get(id).map(|n| &n.inherited_context)
+    }
+
+    /// Class-map-only slice of the direct style, propagated to
+    /// descendants for class resolution.
+    pub fn class_context(&self, id: StyleNodeId) -> Option<&Style> {
+        self.nodes.get(id).map(|n| &n.class_context)
+    }
+
+    // ── Cascade ─────────────────────────────────────────────────────────
+
+    /// Run the style cascade over the subtree rooted at `root`.
+    ///
+    /// For each dirty node in the subtree this resolves classes +
+    /// selectors + inherited context into `combined_style` /
+    /// `computed_style`, derives the child-facing `inherited_context`
+    /// and `class_context`, ticks tree-stored animations and the host's
+    /// optional [`AnimationBackend`](crate::AnimationBackend), and
+    /// records all side-effects (fixed-element transitions, scheduled
+    /// reruns, dirtied descendants, layout invalidations, animation
+    /// events) in tree-owned state.
+    ///
+    /// Callers assemble a [`CascadeInputs`] once per pass with the
+    /// global reads (theme, frame-start, screen-size, etc.) plus a
+    /// per-node interaction closure, then drain every output after the
+    /// call via `tree.take_*` methods.
+    ///
+    /// Clean nodes are traversed (so dirty descendants are visited)
+    /// but their own computed state is not recomputed.
+    ///
+    /// See `tests/mock_sink.rs` and `tests/style_tree_cascade.rs` for
+    /// complete standalone-host examples.
+    pub fn compute_style(&mut self, root: StyleNodeId, inputs: &CascadeInputs<'_>) {
+        if !self.contains(root) {
+            return;
+        }
+        self.compute_subtree(root, inputs);
+    }
+
+    fn compute_subtree(&mut self, id: StyleNodeId, inputs: &CascadeInputs<'_>) {
+        if self.is_dirty(id) {
+            self.compute_one(id, inputs);
+        }
+        // Always descend — a clean parent may have dirty descendants.
+        let children: Vec<StyleNodeId> = self
+            .nodes
+            .get(id)
+            .map(|n| n.children.clone())
+            .unwrap_or_default();
+        for child in children {
+            self.compute_subtree(child, inputs);
+        }
+    }
+
+    fn compute_one(&mut self, id: StyleNodeId, inputs: &CascadeInputs<'_>) {
+        // Gather parent context (or theme defaults if orphan / root).
+        let (parent_inherited, parent_class_cx, parent_interaction_cx) = {
+            let parent_id = self.nodes[id].parent;
+            match parent_id.and_then(|p| self.nodes.get(p)) {
+                Some(p) => (
+                    p.inherited_context.clone(),
+                    p.class_context.clone(),
+                    p.style_interaction_cx,
+                ),
+                None => (
+                    inputs.default_theme_inherited.clone(),
+                    inputs.default_theme_classes.clone(),
+                    InheritedInteractionCx::default(),
+                ),
+            }
+        };
+
+        // Structural position among siblings (1-based; None if orphan).
+        // Honor a host-pushed override if set (floem uses this for list
+        // items whose style-cx parent differs from their DOM parent).
+        let (child_index, sibling_count) = self
+            .nodes
+            .get(id)
+            .and_then(|n| n.structural_position_override)
+            .unwrap_or_else(|| self.structural_position(id));
+
+        // Snapshot node inputs while borrowed immutably.
+        let (direct_style, classes, parent_overrides) = {
+            let node = &self.nodes[id];
+            (
+                node.direct_style.clone(),
+                node.classes.clone(),
+                node.parent_set_style_interaction,
+            )
+        };
+
+        // Pull per-node interaction bits through the one cascade-time
+        // callback the host provides, combine with the parent's
+        // inherited interaction cx and global reads from `inputs`.
+        let per_node = (inputs.interactions)(id);
+        let mut interact_state = InteractionState {
+            is_selected: parent_overrides.selected | parent_interaction_cx.selected,
+            is_disabled: parent_overrides.disabled | parent_interaction_cx.disabled,
+            is_hidden: parent_overrides.hidden | parent_interaction_cx.hidden,
+            is_hovered: per_node.is_hovered,
+            is_focused: per_node.is_focused,
+            is_focus_within: per_node.is_focus_within,
+            is_active: per_node.is_active,
+            is_dark_mode: inputs.is_dark_mode,
+            is_file_hover: per_node.is_file_hover,
+            using_keyboard_navigation: inputs.keyboard_navigation,
+            child_index,
+            sibling_count,
+            window_width: inputs.root_size_width,
+        };
+
+        // Pull the direct style's own disabled/selected/hidden bits into
+        // `interact_state` BEFORE cascading so `:disabled` / `:selected`
+        // selectors activate based on the style itself, not just sink
+        // state inherited from the parent.
+        {
+            let builtin = direct_style.builtin();
+            interact_state.is_disabled |= builtin.set_disabled();
+            interact_state.is_selected |= builtin.set_selected();
+            interact_state.is_hidden |= builtin.display() == Display::None;
+        }
+
+        // Consult the engine-owned style cache. A hit lets us skip the
+        // cascade entirely — it stores `combined_style`,
+        // `has_style_selectors`, and the post-cascade interaction flags.
+        let cacheable = StyleCache::is_cacheable(&direct_style)
+            && !parent_class_cx.has_structural_selectors();
+        let cache_key = cacheable.then(|| {
+            StyleCacheKey::new_from_hash(
+                direct_style.content_hash(),
+                &interact_state,
+                inputs.screen_size_bp,
+                &classes,
+                &parent_class_cx,
+            )
+        });
+
+        let cache_hit = cache_key
+            .as_ref()
+            .and_then(|k| self.cache.get(k, &parent_inherited));
+
+        let (mut combined_style, selectors, post_interact) = if let Some(hit) = cache_hit {
+            let sels = hit.has_style_selectors.unwrap_or_default();
+            let post = hit.post_interact;
+            // Match the OR'ing a cascade would have done so selectors
+            // depending on these bits activate for downstream logic.
+            interact_state.is_disabled |= post.disabled;
+            interact_state.is_selected |= post.selected;
+            interact_state.is_hidden |= post.hidden;
+            (hit.combined_style, sels, post)
+        } else {
+            let (combined_style, selectors) = resolve_nested_maps(
+                direct_style,
+                &mut interact_state,
+                inputs.screen_size_bp,
+                &classes,
+                &parent_inherited,
+                &parent_class_cx,
+            );
+            // After cascade, the combined style may have set_disabled /
+            // set_selected / display:None explicitly (e.g. via a selector
+            // branch). OR those into the interaction cx we store & propagate.
+            {
+                let builtin = combined_style.builtin();
+                interact_state.is_disabled |= builtin.set_disabled();
+                interact_state.is_selected |= builtin.set_selected();
+                interact_state.is_hidden |= builtin.display() == Display::None;
+            }
+            let post_interact = InheritedInteractionCx {
+                hidden: combined_style.builtin().display() == Display::None,
+                selected: combined_style.builtin().set_selected(),
+                disabled: combined_style.builtin().set_disabled(),
+            };
+            if let Some(key) = cache_key {
+                self.cache.insert(
+                    key,
+                    &combined_style,
+                    Some(selectors),
+                    post_interact,
+                    &parent_inherited,
+                );
+            }
+            (combined_style, selectors, post_interact)
+        };
+
+        // Apply animations on top of the cached/cascaded combined_style.
+        // Animations must run AFTER the cache write so the cache holds
+        // pre-animation baselines (per-pass time-varying values can't be
+        // cached), and BEFORE inherited context derivation so animated
+        // inherited props propagate to descendants.
+        //
+        // Two parallel paths coexist:
+        // - Tree-stored animations ticked inline (for standalone hosts
+        //   and tests that push directly via `push_animation`). Events
+        //   are queued on the node for the host to drain via
+        //   `take_animation_events`.
+        // - `StyleSink::apply_animations` for hosts that maintain their
+        //   own registry with reactive wrappers (floem today). This also
+        //   gives native hosts a hook to delegate to a compositor
+        //   animation engine instead of CPU-ticking.
+        let tree_has_active = {
+            let node = &mut self.nodes[id];
+            let mut any_active = false;
+            for (slot, anim) in node.animations.iter_mut().enumerate() {
+                let can_advance = anim.can_advance();
+                let should_apply = anim.should_apply_folded();
+                if !can_advance && !should_apply {
+                    continue;
+                }
+                if can_advance {
+                    any_active = true;
+                    anim.animate_into(&mut combined_style);
+                    let events = anim.advance();
+                    if events.started || events.visual_completed || events.completed {
+                        node.pending_animation_events.push((slot, events));
+                    }
+                } else {
+                    anim.apply_folded(&mut combined_style);
+                }
+            }
+            // Mirror host-apply_animations interact OR'ing.
+            let builtin = combined_style.builtin();
+            interact_state.is_hidden |= builtin.display() == Display::None;
+            interact_state.is_selected |= builtin.set_selected();
+            interact_state.is_disabled |= builtin.set_disabled();
+            any_active
+        };
+
+        let backend_has_active =
+            inputs
+                .animations
+                .apply(id, &mut combined_style, &mut interact_state);
+
+        if tree_has_active || backend_has_active {
+            self.schedule(id, StyleReason::animation());
+        }
+
+        // Merge inherited + combined → computed style for this node.
+        let mut computed_style = parent_inherited.clone();
+        computed_style.apply_mut(&combined_style);
+        let computed_style = computed_style.with_inherited_context(&parent_inherited);
+
+        if computed_style.builtin().is_fixed() {
+            self.register_fixed_element(id);
+        } else {
+            self.unregister_fixed_element(id);
+        }
+
+        // Derive the inherited + class contexts children will see.
+        let mut new_inherited = parent_inherited.clone();
+        Style::apply_only_inherited(&mut new_inherited, &combined_style);
+        let mut new_class_cx = parent_class_cx.clone();
+        Style::apply_only_class_maps(&mut new_class_cx, &combined_style);
+
+        // Did child-facing context change? If so, dirty the children.
+        let old_inherited_id = self.nodes[id].inherited_context.merge_id();
+        let inherited_changed = new_inherited.merge_id() != old_inherited_id;
+        let changed_classes = self
+            .nodes[id]
+            .class_context
+            .class_maps_eq(&new_class_cx);
+        let class_cx_changed = !changed_classes.is_empty();
+
+        // Children see the full post-cascade interaction state — combined
+        // style bits OR'd with parent_set_style_interaction and ancestor
+        // context — so e.g. descendants of a list-selected item inherit
+        // the selected bit. Matches floem's old `style_interaction_cx`
+        // write-back. `post_interact` is still stored separately for
+        // cache validation.
+        let new_interaction_cx = InheritedInteractionCx {
+            disabled: interact_state.is_disabled,
+            selected: interact_state.is_selected,
+            hidden: interact_state.is_hidden,
+        };
+        let _ = post_interact;
+
+        // Snapshot the previous interaction cx + the dirty reason that
+        // drove this compute before we overwrite them below. We use
+        // these for descendant-dirtying side-effects so that e.g. a
+        // view flipping to hidden re-lays out and its kids restyle.
+        let old_interaction_cx = self.nodes[id].style_interaction_cx;
+        let old_dirty_selectors = self.nodes[id].dirty.selectors;
+
+        {
+            let node = &mut self.nodes[id];
+            node.combined_style = combined_style;
+            node.computed_style = computed_style;
+            node.inherited_context = new_inherited;
+            node.class_context = new_class_cx;
+            node.style_interaction_cx = new_interaction_cx;
+            node.has_style_selectors = Some(selectors);
+            node.dirty = StyleReason::empty();
+        }
+
+        if inherited_changed || class_cx_changed {
+            let children: Vec<StyleNodeId> = self.nodes[id].children.clone();
+            let reason = if class_cx_changed {
+                StyleReason::class_cx(changed_classes)
+            } else {
+                StyleReason::inherited()
+            };
+            for child in children {
+                self.mark_dirty(child, reason.clone());
+                // Also surface the dirty so the host's per-view
+                // bookkeeping (floem's `style_dirty` map, driving the
+                // next frame's traversal for animations / taffy push /
+                // etc.) covers descendants whose inherited or class
+                // context just changed.
+                self.record_pass_dirty(child, reason.clone());
+            }
+        }
+
+        // Propagate hidden/selected/disabled flips to descendants.
+        // `mark_descendants_with_selector_dirty` is skipped when the
+        // caller's `dirty` already carried the matching selector — the
+        // descendant walk has already been scheduled in that case.
+        if old_interaction_cx.hidden != new_interaction_cx.hidden {
+            let children: Vec<StyleNodeId> = self.nodes[id].children.clone();
+            for child in children {
+                self.record_pass_dirty(child, StyleReason::visibility());
+            }
+            self.needs_layout = true;
+        }
+        if old_interaction_cx.selected != new_interaction_cx.selected
+            && !old_dirty_selectors.is_some_and(|s| s.has(StyleSelector::Selected))
+        {
+            let dirtied = self
+                .mark_descendants_with_selector_dirty(id, StyleSelector::Selected);
+            for (node_id, reason) in dirtied {
+                self.record_pass_dirty(node_id, reason);
+            }
+        }
+        if old_interaction_cx.disabled != new_interaction_cx.disabled
+            && !old_dirty_selectors.is_some_and(|s| s.has(StyleSelector::Disabled))
+        {
+            let dirtied = self
+                .mark_descendants_with_selector_dirty(id, StyleSelector::Disabled);
+            for (node_id, reason) in dirtied {
+                self.record_pass_dirty(node_id, reason);
+            }
+        }
+
+        // Update this node's entry in the tree's per-selector interest
+        // registries. Subsequent descendant-dirty walks use these to
+        // visit only the subset of nodes that could match.
+        self.update_selector_interest(id, Some(selectors));
+    }
+
+    /// Return `(child_index, sibling_count)` for `id` using the tree's own
+    /// parent/children edges. `child_index` is 1-based to match the CSS
+    /// `:nth-child()` semantics expected by [`crate::cascade`].
+    fn structural_position(&self, id: StyleNodeId) -> (Option<usize>, usize) {
+        match self.nodes.get(id).and_then(|n| n.parent) {
+            Some(parent) => {
+                let siblings = self
+                    .nodes
+                    .get(parent)
+                    .map(|p| p.children.as_slice())
+                    .unwrap_or(&[]);
+                let idx = siblings.iter().position(|c| *c == id).map(|i| i + 1);
+                (idx, siblings.len())
+            }
+            None => (None, 0),
+        }
+    }
+}
+
+fn set_membership(set: &mut FxHashSet<StyleNodeId>, id: StyleNodeId, present: bool) {
+    if present {
+        set.insert(id);
+    } else {
+        set.remove(&id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Phase 1a scaffolding tests: node allocation, parent/child edges,
+    //! style setters. Cascade behavior is covered in Phase 1b tests.
+
+    use super::*;
+    use crate::builtin_props::Background;
+
+    #[test]
+    fn new_node_allocates_a_fresh_id() {
+        let mut st = StyleTree::new();
+        let a = st.new_node();
+        let b = st.new_node();
+        assert_ne!(a, b);
+        assert_eq!(st.len(), 2);
+        assert!(st.contains(a));
+        assert!(st.contains(b));
+    }
+
+    #[test]
+    fn set_parent_updates_both_sides() {
+        let mut st = StyleTree::new();
+        let parent = st.new_node();
+        let child = st.new_node();
+
+        st.set_parent(child, Some(parent));
+        assert_eq!(st.get(child).unwrap().parent(), Some(parent));
+        assert_eq!(st.get(parent).unwrap().children(), &[child]);
+    }
+
+    #[test]
+    fn set_parent_detaches_from_old_parent() {
+        let mut st = StyleTree::new();
+        let p1 = st.new_node();
+        let p2 = st.new_node();
+        let child = st.new_node();
+
+        st.set_parent(child, Some(p1));
+        st.set_parent(child, Some(p2));
+        assert_eq!(st.get(p1).unwrap().children(), &[]);
+        assert_eq!(st.get(p2).unwrap().children(), &[child]);
+    }
+
+    #[test]
+    fn set_children_replaces_and_updates_parents() {
+        let mut st = StyleTree::new();
+        let parent = st.new_node();
+        let c1 = st.new_node();
+        let c2 = st.new_node();
+        let c3 = st.new_node();
+
+        st.set_children(parent, &[c1, c2]);
+        assert_eq!(st.get(parent).unwrap().children(), &[c1, c2]);
+        assert_eq!(st.get(c1).unwrap().parent(), Some(parent));
+        assert_eq!(st.get(c2).unwrap().parent(), Some(parent));
+
+        // Replacing with a different set detaches c2, attaches c3.
+        st.set_children(parent, &[c1, c3]);
+        assert_eq!(st.get(parent).unwrap().children(), &[c1, c3]);
+        assert_eq!(st.get(c2).unwrap().parent(), None);
+        assert_eq!(st.get(c3).unwrap().parent(), Some(parent));
+    }
+
+    #[test]
+    fn remove_node_detaches_from_tree() {
+        let mut st = StyleTree::new();
+        let parent = st.new_node();
+        let child = st.new_node();
+        let grandchild = st.new_node();
+        st.set_parent(child, Some(parent));
+        st.set_parent(grandchild, Some(child));
+
+        let removed = st.remove_node(child);
+        assert!(removed.is_some());
+        assert!(!st.contains(child));
+        // Parent's child list no longer references it.
+        assert_eq!(st.get(parent).unwrap().children(), &[]);
+        // Grandchild is orphaned (not recursively removed).
+        assert_eq!(st.get(grandchild).unwrap().parent(), None);
+    }
+
+    #[test]
+    fn set_direct_style_stores_style_and_marks_dirty() {
+        let mut st = StyleTree::new();
+        let n = st.new_node();
+
+        let style = Style::new().background(peniko::color::palette::css::RED);
+        st.set_direct_style(n, style);
+
+        assert_eq!(
+            st.get(n).unwrap().direct_style.get(Background),
+            Some(peniko::color::palette::css::RED.into())
+        );
+        assert!(st.is_dirty(n));
+    }
+
+    #[test]
+    #[should_panic(expected = "would create a cycle")]
+    fn set_parent_rejects_cycle() {
+        let mut st = StyleTree::new();
+        let a = st.new_node();
+        let b = st.new_node();
+        st.set_parent(b, Some(a));
+        // This would put `a` under its own descendant.
+        st.set_parent(a, Some(b));
+    }
+}

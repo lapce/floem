@@ -358,15 +358,23 @@ impl View for Slider {
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         let style = cx.style();
         let mut paint = false;
+        let mut transitioning = false;
 
         let base_bar_style = style.clone().apply_class(BarClass);
-        paint |= self.base_bar_style.read_style(cx, &base_bar_style);
+        paint |= self
+            .base_bar_style
+            .read_style(cx, &base_bar_style, &mut transitioning);
 
         let accent_bar_style = style.apply_class(AccentBarClass);
-        paint |= self.accent_bar_style.read_style(cx, &accent_bar_style);
-        paint |= self.style.read(cx);
+        paint |= self
+            .accent_bar_style
+            .read_style(cx, &accent_bar_style, &mut transitioning);
+        paint |= self.style.read(cx, &mut transitioning);
         if paint {
             cx.window_state.request_paint(self.id);
+        }
+        if transitioning {
+            cx.request_transition();
         }
     }
 

@@ -221,6 +221,8 @@ pub mod receiver_signal {
 }
 
 pub use box_tree::{BoxTree, ElementId, ElementMeta, FocusNavMeta};
+#[doc(inline)]
+pub use floem_style::{no_debug_view, prop, prop_extractor, style_class, style_debug_group};
 pub(crate) use box_tree::{bump_focus_nav_meta_revision, focus_nav_meta_revision};
 
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
@@ -261,6 +263,7 @@ pub mod prelude {
     pub use crate::event::listener as el;
     pub use crate::event::listener;
     pub use crate::event::listener::EventListenerTrait;
+    pub use crate::style::StyleCustomExt;
     pub use crate::unit::{DurationUnitExt, UnitExt};
     pub use crate::view::IntoViewIter;
     pub use crate::view::ViewTuple;

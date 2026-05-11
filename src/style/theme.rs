@@ -7,7 +7,7 @@ use crate::view::View;
 use crate::views::editor::SelectionColor;
 use crate::views::resizable::{ResizableClass, ResizableHandleClass};
 use crate::{
-    AnyView, prop, style_class, style_debug_group,
+    prop, style_class, style_debug_group,
     views::{
         ButtonClass, CheckboxClass, LabelClass, LabelCustomExprStyle, LabelCustomStyle,
         LabeledCheckboxClass, LabeledRadioButtonClass, ListClass, ListItemClass,
@@ -19,60 +19,60 @@ use crate::{
         slider::{SliderClass, SliderCustomExprStyle, SliderCustomStyle},
     },
 };
-use floem_renderer::text::FontWeight;
 use peniko::{Brush, Color, color::palette::css};
 use smallvec::smallvec;
 
 style_class!(pub HoverTargetClass);
 
+fn debug_view_of<T: PropDebugView>(value: T) -> Option<Box<dyn View>> {
+    value
+        .debug_view(&FloemInspectorRender)
+        .and_then(|any| any.downcast::<Box<dyn View>>().ok().map(|b| *b))
+}
+
 fn border_debug_view(style: &Style) -> Option<Box<dyn View>> {
-    Border {
+    debug_view_of(Border {
         left: style.get_prop::<BorderLeft>(),
         top: style.get_prop::<BorderTop>(),
         right: style.get_prop::<BorderRight>(),
         bottom: style.get_prop::<BorderBottom>(),
-    }
-    .debug_view()
+    })
 }
 
 fn border_color_debug_view(style: &Style) -> Option<Box<dyn View>> {
-    BorderColor {
+    debug_view_of(BorderColor {
         left: style.get_prop::<BorderLeftColor>().flatten(),
         top: style.get_prop::<BorderTopColor>().flatten(),
         right: style.get_prop::<BorderRightColor>().flatten(),
         bottom: style.get_prop::<BorderBottomColor>().flatten(),
-    }
-    .debug_view()
+    })
 }
 
 fn border_radius_debug_view(style: &Style) -> Option<Box<dyn View>> {
-    BorderRadius {
+    debug_view_of(BorderRadius {
         top_left: style.get_prop::<BorderTopLeftRadius>(),
         top_right: style.get_prop::<BorderTopRightRadius>(),
         bottom_left: style.get_prop::<BorderBottomLeftRadius>(),
         bottom_right: style.get_prop::<BorderBottomRightRadius>(),
-    }
-    .debug_view()
+    })
 }
 
 fn padding_debug_view(style: &Style) -> Option<Box<dyn View>> {
-    Padding {
+    debug_view_of(Padding {
         left: style.get_prop::<PaddingLeft>(),
         top: style.get_prop::<PaddingTop>(),
         right: style.get_prop::<PaddingRight>(),
         bottom: style.get_prop::<PaddingBottom>(),
-    }
-    .debug_view()
+    })
 }
 
 fn margin_debug_view(style: &Style) -> Option<Box<dyn View>> {
-    Margin {
+    debug_view_of(Margin {
         left: style.get_prop::<MarginLeft>(),
         top: style.get_prop::<MarginTop>(),
         right: style.get_prop::<MarginRight>(),
         bottom: style.get_prop::<MarginBottom>(),
-    }
-    .debug_view()
+    })
 }
 
 style_debug_group!(
@@ -106,273 +106,7 @@ style_debug_group!(
     view = margin_debug_view
 );
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct DesignSystem {
-    pub bg_base: Color,
-    pub text_base: Color,
-    pub text_lightness: f32,
-    pub primary_base: Color,
-    pub success_base: Color,
-    pub warning_base: Color,
-    pub danger_base: Color,
-    pub is_dark: bool,
-    pub padding: f32,
-    pub border_radius: f32,
-    pub font_size: f64,
-}
-// const BORDER_RADIUS: f32 = 5.0;
-// const FONT_SIZE: f32 = 12.0;
-
-impl DesignSystem {
-    /// Create a light mode design system.
-    pub fn light() -> Self {
-        Self {
-            bg_base: Color::from_rgb8(248, 248, 248),
-            text_base: Color::from_rgb8(0, 0, 0),
-            text_lightness: 0.05,
-            primary_base: Color::from_rgb8(0x18, 0x96, 0xC2),
-            success_base: Color::from_rgb8(0x2D, 0x9D, 0x67),
-            warning_base: Color::from_rgb8(0xE5, 0xA2, 0x23),
-            danger_base: Color::from_rgb8(0xD7, 0x37, 0x45),
-            padding: 5.,
-            border_radius: 5.,
-            font_size: 14.,
-            is_dark: false,
-        }
-    }
-
-    /// Create a dark mode design system.
-    pub fn dark() -> Self {
-        Self {
-            bg_base: Color::from_rgb8(0x24, 0x24, 0x24),
-            text_base: Color::from_rgb8(255, 255, 255),
-            text_lightness: 0.95,
-            primary_base: Color::from_rgb8(0x3A, 0xAA, 0xD8),
-            success_base: Color::from_rgb8(0x4A, 0xBE, 0x8A),
-            warning_base: Color::from_rgb8(0xF5, 0xB8, 0x4E),
-            danger_base: Color::from_rgb8(0xF0, 0x56, 0x54),
-            padding: 5.,
-            border_radius: 5.,
-            font_size: 14.,
-            is_dark: true,
-        }
-    }
-
-    // Background levels
-
-    pub fn bg_base(&self) -> Color {
-        self.bg_base
-    }
-
-    pub fn bg_elevated(&self) -> Color {
-        let adjustment = 0.05;
-        self.bg_base.map_lightness(|l| l + adjustment)
-    }
-
-    pub fn bg_overlay(&self) -> Color {
-        let adjustment = 0.10;
-        self.bg_base.map_lightness(|l| l + adjustment)
-    }
-
-    pub fn bg_disabled(&self) -> Color {
-        let adjustment = if self.is_dark { -0.05 } else { -0.1 };
-        self.bg_base.map_lightness(|l| l + adjustment)
-    }
-
-    // Border
-
-    pub fn border(&self) -> Color {
-        let adjustment = if self.is_dark { 0.25 } else { -0.25 };
-        self.bg_base.map_lightness(|l| l + adjustment)
-    }
-
-    pub fn border_muted(&self) -> Color {
-        let adjustment = if self.is_dark { 0.15 } else { -0.15 };
-        self.border()
-            .map_lightness(|l| l + adjustment)
-            .with_alpha(0.8)
-    }
-
-    // Text
-
-    pub fn text(&self) -> Color {
-        self.text_base.map_lightness(|_| self.text_lightness)
-    }
-
-    pub fn text_muted(&self) -> Color {
-        let adjustment = if self.is_dark { -0.25 } else { 0.25 };
-        self.text_base
-            .map_lightness(|l| l + adjustment)
-            .with_alpha(0.5)
-    }
-
-    // Primary
-
-    pub fn primary(&self) -> Color {
-        self.primary_base
-    }
-
-    pub fn primary_muted(&self) -> Color {
-        self.primary_base.map_lightness(|l| l - 0.05)
-    }
-
-    // Semantic colors
-
-    pub fn success(&self) -> Color {
-        self.success_base
-    }
-
-    pub fn warning(&self) -> Color {
-        self.warning_base
-    }
-
-    pub fn danger(&self) -> Color {
-        self.danger_base
-    }
-
-    pub fn info(&self) -> Color {
-        self.primary_base
-    }
-
-    pub fn padding(&self) -> f32 {
-        self.padding
-    }
-
-    pub fn border_radius(&self) -> f32 {
-        self.border_radius
-    }
-
-    pub fn font_size(&self) -> f64 {
-        self.font_size
-    }
-}
-
-impl StylePropValue for DesignSystem {
-    fn debug_view(&self) -> Option<AnyView> {
-        use crate::prelude::*;
-        use crate::views::Stack;
-
-        let design_system = self.clone();
-        let is_expanded = RwSignal::new(false);
-
-        let color_swatch = |label: &str, color: Color| {
-            Stack::new((
-                label.to_string().style(|s| s.width(120.0).font_size(12.0)),
-                color.debug_view().unwrap(),
-            ))
-            .style(|s| s.flex_row().items_center().gap(8.0).padding_vert(2.0))
-        };
-
-        let scalar_field = |label: &str, value: f64| {
-            Stack::new((
-                label.to_string().style(|s| s.width(120.0).font_size(12.0)),
-                format!("{:.2}", value).style(|s| s.font_size(12.0)),
-            ))
-            .style(|s| s.flex_row().items_center().gap(8.0).padding_vert(2.0))
-        };
-
-        let chevron = move || {
-            if is_expanded.get() {
-                svg(
-                    r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z"/></svg>"#,
-                )
-            } else {
-                svg(
-                    r#"<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6.427 4.427l3.396 3.396a.25.25 0 010 .354l-3.396 3.396A.25.25 0 016 11.396V4.604a.25.25 0 01.427-.177z"/></svg>"#,
-                )
-            }.style(|s| s.size_full().with_theme(|s, t| s.color(t.text())))
-        };
-
-        let header = Stack::new((
-            dyn_view(chevron)
-                .class(ButtonClass)
-                .style(|s| s.size(16.0, 16.0).padding(0.)),
-            "Design System"
-                .to_string()
-                .style(|s| s.font_size(14.0).font_weight(FontWeight::SEMI_BOLD)),
-        ))
-        .action(move || {
-            is_expanded.update(|v| *v = !*v);
-        })
-        .style(|s| {
-            s.flex_row()
-                .items_center()
-                .gap(8.0)
-                .cursor(CursorStyle::Pointer)
-        });
-
-        let content = Stack::new((
-            header,
-            Stack::new((
-                color_swatch("bg_base", design_system.bg_base),
-                color_swatch("text_base", design_system.text_base),
-                color_swatch("primary_base", design_system.primary_base),
-                color_swatch("success_base", design_system.success_base),
-                color_swatch("warning_base", design_system.warning_base),
-                color_swatch("danger_base", design_system.danger_base),
-                scalar_field("text_lightness", f64::from(design_system.text_lightness)),
-                scalar_field("padding", f64::from(design_system.padding)),
-                scalar_field("border_radius", f64::from(design_system.border_radius)),
-                scalar_field("font_size", design_system.font_size),
-                format!("is_dark: {}", design_system.is_dark).style(|s| s.font_size(12.0)),
-            ))
-            .style(move |s| s.flex_col().gap(4.0))
-            .clip()
-            .style(move |s| {
-                s.height_pct(100.)
-                    .apply_if(!is_expanded.get(), |s| s.height_pct(0.))
-                    .transition_height(Transition::ease_in_out(Duration::from_millis(200)))
-            }),
-        ))
-        .style(|s| {
-            // this view here should be getting set to have a height of just the two children combined
-            // I think this is a bug in taffy
-            s.flex_col()
-                .padding(8.0)
-                .border(1.)
-                .border_color(palette::css::WHITE.with_alpha(0.3))
-                .border_radius(6.0)
-                .min_width(280.0)
-                .min_height_pct(0.)
-                .flex_grow(0.)
-                .flex_shrink(1.)
-        });
-
-        Some(content.into_any())
-    }
-
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        use peniko::color::HueDirection;
-        let t = value as f32;
-        let inv_t = 1.0 - t;
-        let t64 = value;
-        let inv_t64 = 1.0 - t64;
-
-        Some(DesignSystem {
-            bg_base: self.bg_base.lerp(other.bg_base, t, HueDirection::default()),
-            text_base: self
-                .text_base
-                .lerp(other.text_base, t, HueDirection::default()),
-            text_lightness: self.text_lightness * inv_t + other.text_lightness * t,
-            primary_base: self
-                .primary_base
-                .lerp(other.primary_base, t, HueDirection::default()),
-            success_base: self
-                .success_base
-                .lerp(other.success_base, t, HueDirection::default()),
-            warning_base: self
-                .warning_base
-                .lerp(other.warning_base, t, HueDirection::default()),
-            danger_base: self
-                .danger_base
-                .lerp(other.danger_base, t, HueDirection::default()),
-            is_dark: if t < 0.5 { self.is_dark } else { other.is_dark },
-            padding: self.padding * inv_t + other.padding * t,
-            border_radius: self.border_radius * inv_t + other.border_radius * t,
-            font_size: self.font_size * inv_t64 + other.font_size * t64,
-        })
-    }
-}
+pub use floem_style::DesignSystem;
 
 prop!(
     pub Theme: DesignSystem { inherited } = DesignSystem::light()

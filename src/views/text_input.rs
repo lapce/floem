@@ -1448,17 +1448,19 @@ impl View for TextInput {
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         let style = cx.style();
+        let mut transitioning = false;
 
         let placeholder_style =
             cx.resolve_nested_maps(Style::new(), &[PlaceholderTextClass::class_ref()], self.id);
-        self.placeholder_style.read_style(cx, &placeholder_style);
+        self.placeholder_style
+            .read_style(cx, &placeholder_style, &mut transitioning);
 
-        if self.font.read(cx) {
+        if self.font.read(cx, &mut transitioning) {
             self.layout_data.borrow_mut().clear_overflow_state();
             self.update_text_layout();
             self.id.request_layout();
         }
-        if self.style.read(cx) {
+        if self.style.read(cx, &mut transitioning) {
             cx.window_state.request_paint(self.id);
 
             // necessary to update the text layout attrs
@@ -1466,7 +1468,12 @@ impl View for TextInput {
             self.update_text_layout();
         }
 
-        self.selection_style.read_style(cx, &style);
+        self.selection_style
+            .read_style(cx, &style, &mut transitioning);
+
+        if transitioning {
+            cx.request_transition();
+        }
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
@@ -1557,7 +1564,7 @@ impl View for TextInput {
                 .id
                 .state()
                 .borrow()
-                .combined_style
+                .style_storage.combined_style
                 .builtin()
                 .cursor_color();
             let cursor_rect = self.get_cursor_rect();

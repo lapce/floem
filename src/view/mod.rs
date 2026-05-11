@@ -76,7 +76,6 @@ use crate::{
         dyn_view,
     },
 };
-use state::ViewStyleProps;
 
 /// type erased [`View`]
 ///
