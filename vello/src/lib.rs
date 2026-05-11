@@ -427,41 +427,49 @@ impl Renderer for VelloRenderer {
         if self.capture {
             self.render_capture_image()
         } else {
-            if let Ok(surface_texture) = self.surface.surface.get_current_texture() {
-                self.renderer
-                    .render_to_texture(
-                        &self.device,
-                        &self.queue,
-                        &self.scene,
-                        &self.surface.target_view,
-                        &vello::RenderParams {
-                            base_color: palette::css::TRANSPARENT, // Background color
-                            width: self.surface.config.width,
-                            height: self.surface.config.height,
-                            antialiasing_method: vello::AaConfig::Msaa16,
-                        },
-                    )
-                    .unwrap();
-
-                // Perform the copy
-                let mut encoder =
-                    self.device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("Surface Blit"),
-                        });
-                self.surface.blitter.copy(
+            let surface_texture = match self.surface.surface.get_current_texture() {
+                Ok(surface_texture) => surface_texture,
+                Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                    self.surface
+                        .surface
+                        .configure(&self.device, &self.surface.config);
+                    return None;
+                }
+                _ => return None,
+            };
+            self.renderer
+                .render_to_texture(
                     &self.device,
-                    &mut encoder,
+                    &self.queue,
+                    &self.scene,
                     &self.surface.target_view,
-                    &surface_texture
-                        .texture
-                        .create_view(&wgpu::TextureViewDescriptor::default()),
-                );
-                self.queue.submit([encoder.finish()]);
+                    &vello::RenderParams {
+                        base_color: palette::css::TRANSPARENT, // Background color
+                        width: self.surface.config.width,
+                        height: self.surface.config.height,
+                        antialiasing_method: vello::AaConfig::Msaa16,
+                    },
+                )
+                .unwrap();
 
-                // Queue the texture to be presented on the surface
-                surface_texture.present();
-            }
+            // Perform the copy
+            let mut encoder =
+                self.device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("Surface Blit"),
+                    });
+            self.surface.blitter.copy(
+                &self.device,
+                &mut encoder,
+                &self.surface.target_view,
+                &surface_texture
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default()),
+            );
+            self.queue.submit([encoder.finish()]);
+
+            // Queue the texture to be presented on the surface
+            surface_texture.present();
             None
         }
     }
