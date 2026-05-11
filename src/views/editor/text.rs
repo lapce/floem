@@ -188,24 +188,44 @@ pub trait Document: DocumentPhantom + ::std::any::Any {
         self.edit(&mut iter, edit_type);
     }
 
+    /// Perform a single edit while preserving editor-specific semantics for the initiating editor.
+    ///
+    /// Use this when a UI action edits the document on behalf of a live editor and should record
+    /// that editor's cursor state for undo.
+    fn edit_single_from(
+        &self,
+        editor: &Editor,
+        selection: Selection,
+        content: &str,
+        edit_type: EditType,
+    ) {
+        let mut iter = std::iter::once((selection, content));
+        self.edit_from(editor, &mut iter, edit_type);
+    }
+
     /// Perform the edit(s) on this document.
     ///
-    /// This intentionally does not require an `Editor` as this is primarily intended for use by
-    /// code that wants to modify the document from 'outside' the usual keybinding/command logic.
+    /// This intentionally does not require an `Editor`. It is the raw document mutation path for
+    /// code that wants to modify text without an initiating editor context.
     ///
-    /// ```rust,ignore
-    /// let editor: TextEditor = text_editor();
-    /// let doc: Rc<dyn Document> = editor.doc();
-    ///
-    /// stack((
-    ///     editor,
-    ///     button(|| "Append 'Hello'").on_click_stop(move |_| {
-    ///         let text = doc.text();
-    ///         doc.edit_single(Selection::caret(text.len()), "Hello", EditType::InsertChars);
-    ///     })
-    /// ))
-    /// ```
+    /// Because it has no initiating editor context, it can't record that editor's cursor history
+    /// for undo. If a UI action is editing on behalf of a live editor, prefer
+    /// [`Document::edit_from`] or [`Document::edit_single_from`] instead.
     fn edit(&self, iter: &mut dyn Iterator<Item = (Selection, &str)>, edit_type: EditType);
+
+    /// Perform the edit(s) on this document using the provided editor as the initiating context.
+    ///
+    /// The default implementation falls back to [`Document::edit`], which keeps this additive for
+    /// custom `Document` implementations that do not yet preserve initiating-editor cursor history
+    /// for undo.
+    fn edit_from(
+        &self,
+        _editor: &Editor,
+        iter: &mut dyn Iterator<Item = (Selection, &str)>,
+        edit_type: EditType,
+    ) {
+        self.edit(iter, edit_type);
+    }
 }
 
 pub trait DocumentPhantom {
@@ -516,8 +536,28 @@ where
         self.doc.edit_single(selection, content, edit_type)
     }
 
+    fn edit_single_from(
+        &self,
+        editor: &Editor,
+        selection: Selection,
+        content: &str,
+        edit_type: EditType,
+    ) {
+        self.doc
+            .edit_single_from(editor, selection, content, edit_type)
+    }
+
     fn edit(&self, iter: &mut dyn Iterator<Item = (Selection, &str)>, edit_type: EditType) {
         self.doc.edit(iter, edit_type)
+    }
+
+    fn edit_from(
+        &self,
+        editor: &Editor,
+        iter: &mut dyn Iterator<Item = (Selection, &str)>,
+        edit_type: EditType,
+    ) {
+        self.doc.edit_from(editor, iter, edit_type)
     }
 }
 impl<D, F> DocumentPhantom for ExtCmdDocument<D, F>
