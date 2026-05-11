@@ -36,8 +36,28 @@ fn text_layout_brush(
     brush
 }
 
-fn text_layout_brush_transform(brush_transform: Option<Affine>) -> Option<Affine> {
-    brush_transform.filter(|transform| *transform != Affine::IDENTITY)
+fn text_layout_brush_transform(transform: Affine) -> Option<Affine> {
+    (transform != Affine::IDENTITY).then_some(transform)
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct BrushStyle<B> {
+    brush: B,
+    transform: Affine,
+}
+
+impl<B> BrushStyle<B> {
+    fn new(brush: B) -> Self {
+        Self {
+            brush,
+            transform: Affine::IDENTITY,
+        }
+    }
+
+    fn with_transform(mut self, transform: Option<Affine>) -> Self {
+        self.transform = transform.unwrap_or(Affine::IDENTITY);
+        self
+    }
 }
 
 /// Shared Parley font context used by Floem text layout construction.
@@ -927,8 +947,8 @@ impl TextLayout {
                     .get(brush_index)
                     .cloned()
                     .unwrap_or_else(default_text_brush);
-                let brush = text_layout_brush(brush, layout_bounds, font_size_cx);
-                (brush, text_layout_brush_transform(brush_transform))
+                BrushStyle::new(text_layout_brush(brush, layout_bounds, font_size_cx))
+                    .with_transform(brush_transform)
             },
         );
     }
@@ -951,7 +971,7 @@ impl TextLayout {
             origin,
             font_embolden,
             effective_scale,
-            |_, _| (brush.clone(), brush_transform),
+            |_, _| BrushStyle::new(brush.clone()).with_transform(brush_transform),
         );
     }
 
@@ -972,7 +992,7 @@ impl TextLayout {
             origin,
             font_embolden,
             effective_scale,
-            |_, _| (brush.clone(), brush_transform),
+            |_, _| BrushStyle::new(brush.clone()).with_transform(brush_transform),
         );
     }
 
@@ -982,7 +1002,7 @@ impl TextLayout {
         origin: Point,
         font_embolden: peniko::kurbo::Vec2,
         effective_scale: f64,
-        mut resolve_brush: impl FnMut(usize, &crate::unit::FontSizeCx) -> (B, Option<Affine>),
+        mut resolve_brush: impl FnMut(usize, &crate::unit::FontSizeCx) -> BrushStyle<B>,
     ) where
         S: PaintSink<F, C, B> + ?Sized,
         B: Clone,
@@ -1011,8 +1031,7 @@ impl TextLayout {
                     f64::from(run.font_size()),
                     f64::from(line_metrics.line_height),
                 );
-                let (brush, brush_transform) =
-                    resolve_brush(glyph_run.style().brush.0, &font_size_cx);
+                let brush_style = resolve_brush(glyph_run.style().brush.0, &font_size_cx);
                 let glyphs = glyph_run.positioned_glyphs().map(|glyph| ImagingGlyph {
                     id: glyph.id,
                     x: glyph.x,
@@ -1020,14 +1039,14 @@ impl TextLayout {
                 });
 
                 painter
-                    .glyphs(run.font(), brush.clone())
+                    .glyphs(run.font(), brush_style.brush.clone())
                     .transform(Affine::translate(origin.to_vec2()))
                     .glyph_transform(glyph_transform)
                     .font_size(run.font_size())
                     .font_embolden(font_embolden)
                     .hint(false)
                     .normalized_coords(normalized_coords.as_ref())
-                    .brush_transform(brush_transform)
+                    .brush_transform(text_layout_brush_transform(brush_style.transform))
                     .draw(&style, glyphs);
             }
         }
