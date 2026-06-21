@@ -359,8 +359,8 @@ impl WindowHandle {
 
         // Run initial style and layout passes
         window_handle.process_update_messages();
-        // Mark root view as needing style so initial style pass runs compute_combined
-        // and populates has_style_selectors for selector detection
+        // Mark root view as needing style so the initial style pass drives the
+        // StyleTree cascade and populates has_style_selectors for selector detection
         window_handle.id.request_style(StyleReason::full_recalc());
         window_handle.process_update_messages();
         window_handle.style();
@@ -606,7 +606,15 @@ impl WindowHandle {
                 break;
             }
 
-            // Style each view in order, passing the global change for first iteration
+            // Sync host state into the engine's StyleTree, run the
+            // cascade, and copy outputs back into each view's
+            // `style_storage`. See `WindowState::run_style_cascade` for
+            // the three-pass breakdown.
+            self.window_state.run_style_cascade(self.id, &traversal);
+
+            // Per-view loop: animations, taffy, View::style_pass. The
+            // cascade has already run; `style_view` reads results from
+            // `style_storage` on the fast path (no `compute_combined`).
             for (view_id, traversal_reason) in traversal {
                 let cx = &mut StyleCx::new(&mut self.window_state, view_id, traversal_reason);
                 cx.style_view();
@@ -1321,8 +1329,8 @@ impl WindowHandle {
                     }
                     UpdateMessage::ViewTransitionAnimComplete(id) => {
                         let num_waiting =
-                            id.state().borrow().num_waiting_animations.saturating_sub(1);
-                        id.state().borrow_mut().num_waiting_animations = num_waiting;
+                            id.state().borrow().style_storage.num_waiting_animations.saturating_sub(1);
+                        id.state().borrow_mut().style_storage.num_waiting_animations = num_waiting;
                     }
                     UpdateMessage::SetTheme(theme) => {
                         self.set_theme(theme, false);

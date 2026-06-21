@@ -1551,6 +1551,7 @@ dependencies = [
  "floem_reactive",
  "floem_renderer",
  "floem_skia_renderer",
+ "floem_style",
  "floem_tiny_skia_renderer",
  "floem_vello_renderer",
  "floem_vger_renderer",
@@ -1601,6 +1602,7 @@ name = "floem-editor-core"
 version = "0.2.0"
 dependencies = [
  "bitflags 2.11.0",
+ "floem_style",
  "itertools 0.14.0",
  "lapce-xi-rope",
  "memchr",
@@ -1862,6 +1864,7 @@ version = "0.2.0"
 dependencies = [
  "crossbeam",
  "floem-winit",
+ "floem_style",
  "fontique",
  "futures",
  "parking_lot",
@@ -1886,6 +1889,23 @@ dependencies = [
  "peniko",
  "raw-window-handle",
  "resvg",
+]
+
+[[package]]
+name = "floem_style"
+version = "0.2.0"
+dependencies = [
+ "bitflags 2.11.0",
+ "imbl",
+ "parley",
+ "paste",
+ "peniko",
+ "rustc-hash 2.1.1",
+ "slotmap",
+ "smallvec",
+ "taffy",
+ "unic-langid",
+ "web-time",
 ]
 
 [[package]]

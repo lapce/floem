@@ -1,0 +1,25 @@
+[package]
+name = "floem_style"
+version.workspace = true
+edition.workspace = true
+repository = "https://github.com/lapce/floem"
+description = "Style engine for Floem UI"
+license.workspace = true
+
+[dependencies]
+bitflags = "2.9"
+taffy = { version = "0.9.2", features = ["grid"] }
+rustc-hash = { workspace = true }
+peniko = { workspace = true }
+parley = { workspace = true }
+smallvec = "1.15"
+paste = "1.0"
+slotmap = "1.0"
+imbl = { workspace = true }
+unic-langid = { version = "0.9", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-time = "1"
+
+[features]
+localization = ["dep:unic-langid"]

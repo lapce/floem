@@ -17,7 +17,6 @@ use crate::{
     reactive::{Effect, ReadSignal, RwSignal, Scope},
     style::{CursorColor, StylePropValue, TextColor},
     text::{Attrs, AttrsList, LineHeightValue, OverflowWrap, TextLayout, TextWrapMode},
-    view::{IntoView, View},
 };
 use floem_editor_core::{
     buffer::rope_text::{RopeText, RopeTextVal},
@@ -65,14 +64,8 @@ use self::{
     },
 };
 
-use super::Label;
-
 prop!(pub WrapProp: WrapMethod {} = WrapMethod::EditorWidth);
-impl StylePropValue for WrapMethod {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(crate::views::Label::new(self).into_any())
-    }
-}
+impl StylePropValue for WrapMethod {}
 prop!(pub CursorSurroundingLines: usize {} = 1);
 prop!(pub ScrollBeyondLastLine: bool {} = false);
 prop!(pub ShowIndentGuide: bool {} = false);
@@ -83,17 +76,8 @@ prop!(pub PhantomColor: Color {} = palette::css::DIM_GRAY);
 prop!(pub PlaceholderColor: Color {} = palette::css::DIM_GRAY);
 prop!(pub PreeditUnderlineColor: Color {} = palette::css::WHITE);
 prop!(pub RenderWhitespaceProp: RenderWhitespace {} = RenderWhitespace::None);
-impl StylePropValue for RenderWhitespace {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(crate::views::Label::new(self).into_any())
-    }
-}
+impl StylePropValue for RenderWhitespace {}
 prop!(pub IndentStyleProp: IndentStyle {} = IndentStyle::Spaces(4));
-impl StylePropValue for IndentStyle {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(Label::new(self).into_any())
-    }
-}
 prop!(pub DropdownShadow: Option<Color> {} = None);
 prop!(pub Foreground: Color { inherited } = Color::from_rgb8(0x38, 0x3A, 0x42));
 prop!(pub Focus: Option<Color> {} = None);

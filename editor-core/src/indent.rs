@@ -25,6 +25,8 @@ impl std::fmt::Display for IndentStyle {
     }
 }
 
+impl floem_style::StylePropValue for IndentStyle {}
+
 impl IndentStyle {
     pub const LONGEST_INDENT: &'static str = "        "; // 8 spaces
     pub const DEFAULT_INDENT: IndentStyle = IndentStyle::Spaces(4);

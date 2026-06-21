@@ -49,7 +49,7 @@ impl Default for GridBreakpoints {
 }
 
 impl GridBreakpoints {
-    pub(crate) fn get_width_bp(&self, width: f64) -> ScreenSizeBp {
+    pub fn get_width_bp(&self, width: f64) -> ScreenSizeBp {
         if self.xs.contains(&width) {
             return ScreenSizeBp::Xs;
         }
@@ -133,7 +133,7 @@ impl ScreenSize {
         Self { flags }
     }
 
-    pub(crate) fn breakpoints(&self) -> Vec<ScreenSizeBp> {
+    pub fn breakpoints(&self) -> Vec<ScreenSizeBp> {
         let mut breakpoints = vec![];
 
         if self.flags.contains(SizeFlags::XS) {

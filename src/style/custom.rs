@@ -5,6 +5,10 @@
 //!
 //! - [`CustomStyle`] - Base trait for defining custom style types
 //! - [`CustomStylable`] - Trait for views that can accept custom styling
+//! - [`StyleCustomExt`] - Extension trait adding `custom`, `apply_custom`, and
+//!   `custom_style_class` to [`Style`]. These methods used to be inherent on
+//!   `Style` but were moved once `Style` itself migrated to `floem_style` (the
+//!   `CustomStyle` bound references a floem-only trait).
 
 use std::rc::Rc;
 
@@ -405,5 +409,65 @@ pub trait CustomStylable<S: CustomStyle + 'static>: IntoView<V = Self::DV> + Siz
         );
         view_state.borrow_mut().style.push(style.into());
         view
+    }
+}
+
+/// Extension trait adding `CustomStyle`-aware builders onto [`Style`].
+///
+/// Lives in `floem` (not `floem_style`) because the `CustomStyle` bound is a
+/// floem-only trait. Call `use floem::style::StyleCustomExt;` at the call
+/// site to bring the methods into scope.
+pub trait StyleCustomExt: Sized {
+    /// Applies a `CustomStyle` type into this style.
+    ///
+    /// # Examples
+    /// ```
+    /// use floem::prelude::*;
+    /// text("test").style(|s| s.custom(|s: LabelCustomStyle| s.selectable(false)));
+    /// ```
+    ///
+    /// See also: [`apply_custom`](Self::apply_custom),
+    /// [`custom_style_class`](Self::custom_style_class)
+    fn custom<CS: CustomStyle>(self, custom: impl FnOnce(CS) -> CS) -> Self;
+
+    /// Applies a `CustomStyle` type into this style.
+    ///
+    /// # Examples
+    /// ```
+    /// use floem::prelude::*;
+    /// use floem::style::StyleCustomExt;
+    /// text("test").style(|s| s.apply_custom(LabelCustomStyle::new().selectable(false)));
+    /// ```
+    ///
+    /// See also: [`custom`](Self::custom), [`custom_style_class`](Self::custom_style_class)
+    fn apply_custom<CS: Into<Style>>(self, custom_style: CS) -> Self;
+
+    /// Applies a `CustomStyle` type to the `CustomStyle`'s associated style class.
+    ///
+    /// For example: if the `CustomStyle` you use is `DropdownCustomStyle` then it
+    /// will apply the custom style to that custom style type's associated style class
+    /// which, in this example, is `DropdownClass`.
+    ///
+    /// This is especially useful when building a stylesheet or targeting a child view.
+    ///
+    /// See also: [`custom`](Self::custom) and [`apply_custom`](Self::apply_custom).
+    fn custom_style_class<CS: CustomStyle>(self, style: impl FnOnce(CS) -> CS) -> Self;
+}
+
+impl StyleCustomExt for Style {
+    fn custom<CS: CustomStyle>(self, custom: impl FnOnce(CS) -> CS) -> Self {
+        self.apply(custom(CS::default()).into())
+    }
+
+    fn apply_custom<CS: Into<Style>>(self, custom_style: CS) -> Self {
+        self.apply(custom_style.into())
+    }
+
+    fn custom_style_class<CS: CustomStyle>(self, style: impl FnOnce(CS) -> CS) -> Self {
+        // We need access to Style's `set_class`, which is private to floem_style.
+        // Equivalent behavior using the public API: merge into the class slot via
+        // the public `class` builder.
+        let over = style(CS::default());
+        self.class(CS::StyleClass::default(), |_| over.into())
     }
 }

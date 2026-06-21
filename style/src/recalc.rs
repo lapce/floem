@@ -12,10 +12,9 @@
 //! The existing [`ChangeFlags`] are binary: a view either needs style recalc or doesn't.
 //! [`StyleRecalcChange`] adds *why* the recalc is needed, enabling optimization decisions.
 
-use crate::{
-    ElementId,
-    style::{StyleClassRef, StyleSelector, StyleSelectors},
-};
+use crate::props::StyleClassRef;
+use crate::selectors::{StyleSelector, StyleSelectors};
+use crate::tree::StyleNodeId;
 
 use bitflags::bitflags;
 use smallvec::SmallVec;
@@ -39,10 +38,10 @@ bitflags! {
         const TRANSITION = 1 << 2;
 
         /// One or more specific sub-element rectangles owned by this view need restyling,
-        /// identified by their `ElementId`. Used when a view owns multiple `ElementId`s
+        /// identified by their `StyleNodeId`. Used when a view owns multiple style nodes
         /// (e.g. a scroll view's content area, vertical scrollbar, horizontal scrollbar)
         /// and only a subset need to be updated. The `targets` vec carries each affected
-        /// `ElementId` and the `StyleReasonSet` describing why that specific element is dirty,
+        /// `StyleNodeId` and the `StyleReasonSet` describing why that specific element is dirty,
         /// allowing `style_pass` to dispatch targeted updates rather than fully restyling
         /// the entire view.
         const TARGET = 1 << 3;
@@ -91,15 +90,13 @@ pub struct StyleReason {
     pub classes_changed: Option<SmallVec<[StyleClassRef; 4]>>,
 
     /// Sub-element rectangles owned by this view that need targeted restyling.
-    /// Each entry is `(element_id, reason)` where `element_id` identifies a specific
-    /// box-tree rectangle (e.g. the vertical scrollbar of a scroll view) and `reason`
+    /// Each entry is `(style_node, reason)` where `style_node` identifies a specific
+    /// style-tree node (e.g. the vertical scrollbar of a scroll view) and `reason`
     /// describes why that rectangle is dirty (typically `SELECTOR` due to hover/press
     /// state change on that specific hit region).
     ///
-    /// Present when `TARGET` is set. `SmallVec<2>` because most views with sub-elements
-    /// have only a small fixed number of them (e.g. scroll view has 3 total, rarely more
-    /// than 2 dirty simultaneously).
-    pub targets: Vec<(crate::ElementId, StyleReason)>,
+    /// Present when `TARGET` is set.
+    pub targets: Vec<(StyleNodeId, StyleReason)>,
 }
 
 impl StyleReason {
@@ -163,7 +160,7 @@ impl StyleReason {
         self.selectors = Some(selectors);
     }
 
-    pub fn add_target(&mut self, id: crate::ElementId, reason: StyleReason) {
+    pub fn add_target(&mut self, id: StyleNodeId, reason: StyleReason) {
         self.flags |= StyleReasonFlags::TARGET;
         self.targets.push((id, reason));
     }
@@ -259,11 +256,11 @@ impl StyleReason {
         self.flags.contains(StyleReasonFlags::TARGET)
     }
 
-    pub fn has_target_id(&self, id: crate::ElementId) -> bool {
+    pub fn has_target_id(&self, id: StyleNodeId) -> bool {
         self.targets.iter().any(|(tid, _)| *tid == id)
     }
 
-    pub fn target_reason(&self, id: crate::ElementId) -> Option<&StyleReason> {
+    pub fn target_reason(&self, id: StyleNodeId) -> Option<&StyleReason> {
         self.targets
             .iter()
             .find(|(tid, _)| *tid == id)
@@ -337,7 +334,7 @@ impl StyleReason {
         }
     }
 
-    pub fn clear_target(&mut self, id: crate::ElementId) {
+    pub fn clear_target(&mut self, id: StyleNodeId) {
         self.targets.retain(|(tid, _)| *tid != id);
         if self.targets.is_empty() {
             self.flags.remove(StyleReasonFlags::TARGET);
@@ -368,15 +365,15 @@ impl StyleReason {
         out
     }
 
-    pub fn with_target(element_id: ElementId, reason: StyleReason) -> Self {
+    pub fn with_target(node: StyleNodeId, reason: StyleReason) -> Self {
         let mut s = Self::empty();
-        s.add_target(element_id, reason);
+        s.add_target(node, reason);
         s
     }
 
-    pub fn with_selectors_and_target(element_id: ElementId, selectors: StyleSelectors) -> Self {
+    pub fn with_selectors_and_target(node: StyleNodeId, selectors: StyleSelectors) -> Self {
         let inner = StyleReason::with_selectors(selectors);
-        Self::with_target(element_id, inner)
+        Self::with_target(node, inner)
     }
 
     /// All flags set — forces a full recalc with no fast paths possible.

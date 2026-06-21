@@ -300,17 +300,17 @@ impl GlobalPaintCx<'_> {
             world_transform,
             layout_rect_local,
             clip,
-            font_size_cx: view_state.borrow().layout_props.font_size_cx(),
+            font_size_cx: view_state.borrow().style_storage.layout_props.font_size_cx(),
         };
 
         if !is_post {
             if element_id.is_view() {
                 let state = view_state.borrow();
-                paint_bg(&mut cx, &state.view_style_props, layout_rect);
+                paint_bg(&mut cx, &state.style_storage.view_style_props, layout_rect);
                 paint_border(
                     &mut cx,
-                    &state.layout_props,
-                    &state.view_style_props,
+                    &state.style_storage.layout_props,
+                    &state.style_storage.view_style_props,
                     layout_rect,
                 );
                 drop(state);
@@ -327,7 +327,7 @@ impl GlobalPaintCx<'_> {
             view.borrow_mut().post_paint(&mut cx);
             if element_id.is_view() {
                 let state = view_state.borrow();
-                paint_outline(&mut cx, &state.view_style_props, layout_rect);
+                paint_outline(&mut cx, &state.style_storage.view_style_props, layout_rect);
             }
         }
     }
