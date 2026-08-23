@@ -321,6 +321,7 @@ impl ApplicationHandle {
             mac_os_config,
             web_config,
             font_embolden,
+            app_id,
         }: WindowConfig,
     ) {
         let logical_size = size.map(|size| LogicalSize::new(size.width, size.height));
@@ -337,6 +338,33 @@ impl ApplicationHandle {
             .with_window_icon(window_icon)
             .with_resizable(resizable)
             .with_enabled_buttons(enabled_buttons);
+
+        // Set the application name so desktop environments can associate the
+        // window with its .desktop entry (dock icon, window grouping, etc).
+        // Without this, winit never calls set_app_id() on Wayland and windows
+        // have no identity at all (see lapce#2199).
+        #[cfg(target_os = "linux")]
+        if let Some(app_id) = app_id.as_deref() {
+            use winit::platform::x11::WindowAttributesExtX11;
+            window_attributes = WindowAttributesExtX11::with_name(window_attributes, app_id, app_id);
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(app_id) = app_id.as_deref() {
+            use winit::platform::wayland::WindowAttributesExtWayland;
+            window_attributes =
+                WindowAttributesExtWayland::with_name(window_attributes, app_id, app_id);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            // Consume the launcher's activation/startup token so the desktop
+            // shell immediately associates the new window with this app
+            // (dock icon, focus) instead of waiting for its timeout.
+            use winit::platform::startup_notify::EventLoopExtStartupNotify;
+            if let Some(token) = event_loop.read_token_from_env() {
+                use winit::platform::startup_notify::WindowAttributesExtStartupNotify;
+                window_attributes = window_attributes.with_activation_token(token);
+            }
+        }
 
         #[cfg(target_arch = "wasm32")]
         {

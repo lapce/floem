@@ -40,6 +40,11 @@ pub struct WindowConfig {
     #[allow(dead_code)]
     pub(crate) mac_os_config: Option<MacOSWindowConfig>,
     pub(crate) web_config: Option<WebWindowConfig>,
+    /// Application identity for the desktop environment (Wayland `app_id` /
+    /// X11 `WM_CLASS`). Should match the application's `.desktop` file id so
+    /// docks/taskbars can associate windows with the app.
+    #[allow(dead_code)]
+    pub(crate) app_id: Option<String>,
 }
 
 impl Default for WindowConfig {
@@ -66,6 +71,7 @@ impl Default for WindowConfig {
             font_embolden: if cfg!(target_os = "macos") { 0.2 } else { 0. },
             mac_os_config: None,
             web_config: None,
+            app_id: None,
         }
     }
 }
@@ -163,6 +169,19 @@ impl WindowConfig {
     #[inline]
     pub fn title(mut self, title: impl Into<String>) -> Self {
         self.title = title.into();
+        self
+    }
+
+    /// Sets the application identity used by desktop environments to
+    /// associate this window with its `.desktop` entry (Wayland `app_id`,
+    /// X11 `WM_CLASS`).
+    ///
+    /// It should match the id of the application's `.desktop` file, e.g.
+    /// `org.gnome.Designer`. When unset, no app_id is requested and X11
+    /// falls back to the binary name.
+    #[inline]
+    pub fn app_id(mut self, app_id: impl Into<String>) -> Self {
+        self.app_id = Some(app_id.into());
         self
     }
 
