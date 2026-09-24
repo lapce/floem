@@ -661,6 +661,12 @@ impl WindowHandle {
         self.window_state.commit_box_tree();
         self.window_state.needs_box_tree_commit = false;
 
+        // Drop any listener whose view no longer exists; asking a dead id for its
+        // layout or window origin panics inside `ViewStorage`.
+        for ids in self.window_state.listeners.values_mut() {
+            ids.retain(|id| id.is_valid());
+        }
+
         let has_layout_listener: smallvec::SmallVec<[ViewId; 64]> = self
             .window_state
             .listeners
@@ -1305,6 +1311,12 @@ impl WindowHandle {
                         self.id.request_all();
                     }
                     UpdateMessage::RegisterListener(key, id) => {
+                        // The view may have been removed by an earlier message in this
+                        // batch. Registering it now would leave a dead id in the
+                        // listener list, which later panics in `commit_box_tree`.
+                        if !id.is_valid() {
+                            continue;
+                        }
                         cx.window_state.listeners.entry(key).or_default().push(id);
                         id.state().borrow_mut().registered_listener_keys.push(key);
                     }
