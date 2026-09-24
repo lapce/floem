@@ -1267,7 +1267,7 @@ impl WindowHandle {
                                 ImeRequest::Disable
                             };
 
-                            self.window.request_ime_update(ime).unwrap();
+                            self.request_ime(ime);
                         }
                     }
                     UpdateMessage::SetImeCursorArea { position, size } => {
@@ -1286,11 +1286,9 @@ impl WindowHandle {
                                 size.width * self.window_state.user_scale,
                                 size.height * self.window_state.user_scale,
                             ));
-                            self.window
-                                .request_ime_update(ImeRequest::Update(
-                                    ImeRequestData::default().with_cursor_area(position, size),
-                                ))
-                                .unwrap();
+                            self.request_ime(ImeRequest::Update(
+                                ImeRequestData::default().with_cursor_area(position, size),
+                            ));
                         }
                     }
                     UpdateMessage::Inspect => {
@@ -1419,6 +1417,17 @@ impl WindowHandle {
                 .map(|m| !m.is_empty())
                 .unwrap_or(false)
         })
+    }
+
+    /// Ask the window to enable, disable or move the IME.
+    ///
+    /// A window that cannot provide an IME, such as the headless mock or a
+    /// platform without one, refuses the request. That is not fatal: the
+    /// view that asked still works, it just gets no composition input, so
+    /// the refusal is dropped rather than unwrapped. Before this, focusing
+    /// any text input under the headless harness panicked.
+    fn request_ime(&self, request: ImeRequest) {
+        let _ = self.window.request_ime_update(request);
     }
 
     fn set_cursor(&mut self) {
