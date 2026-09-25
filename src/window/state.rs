@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, time::Instant};
+use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
     action::exec_after_animation_frame,
@@ -27,6 +27,7 @@ use crate::{
     event::{DragTracker, Event, WindowEvent, clear_hit_test_cache},
     layout::responsive::{GridBreakpoints, ScreenSizeBp},
     message::UpdateMessage,
+    platform::time::Instant,
     style::{CursorStyle, Style, StyleSelector, theme::default_theme},
     view::{LayoutNodeCx, MeasureCx, VIEW_STORAGE, ViewId},
 };

@@ -594,7 +594,7 @@ impl WindowHandle {
         // Capture a single timestamp for the entire style pass.
         // All views in this frame see the same `now`, which is both cheaper
         // (avoids per-view syscall) and more correct (no sub-frame jitter).
-        self.window_state.frame_start = std::time::Instant::now();
+        self.window_state.frame_start = Instant::now();
 
         // Loop until no more views need styling
         // This handles the case where styling a parent marks children dirty
@@ -790,8 +790,8 @@ impl WindowHandle {
         if self.window_state.request_paint && renderer_ready {
             self.window_state.request_paint = false;
             self.paint();
-            self.last_presented_at = Instant::now();
         }
+        self.last_presented_at = Instant::now();
 
         if self.live_resize_active() {
             self.window_state.schedule_paint(self.id);
@@ -1228,6 +1228,7 @@ impl WindowHandle {
                             pos,
                         });
                     }
+                    #[cfg(not(target_arch = "wasm32"))]
                     UpdateMessage::WindowMenu { menu } => {
                         self.window_menu_actions.clear();
                         let (menu, registry) = menu.build();

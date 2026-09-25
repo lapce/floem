@@ -29,6 +29,7 @@ use crate::{
     action::{Timer, TimerToken},
     inspector::{Capture, profiler::Profile},
     platform::clipboard::Clipboard,
+    platform::menu_types::Menu,
     view::IntoView,
     window::{WindowConfig, WindowCreation},
 };
@@ -107,7 +108,7 @@ pub enum AppEvent {
     Reopen { has_visible_windows: bool },
 }
 
-pub(crate) struct MenuWrapper(pub(crate) muda::Menu);
+pub(crate) struct MenuWrapper(pub(crate) Menu);
 // SAFETY: these unsafe wappers are needed so that we can send the muda memu.
 // The muda menu internally uses RC on a String ID and it's Vec of children.
 // This unsafe wrapper is memory safe but the race condition could potentially (unlikely)

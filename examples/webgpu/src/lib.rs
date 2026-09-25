@@ -22,15 +22,22 @@ pub fn app_view() -> impl IntoView {
     // Create a vertical layout
     (
         // The counter value updates automatically, thanks to reactivity
-        Label::derived(move || format!("Value: {}", counter.get())),
+        Label::derived(move || format!("Value: {}", counter.get()))
+            .style(|s| s.font_family("Fira Sans".to_owned())),
         // Create a horizontal layout
         (
-            "Increment".class(ButtonClass).action(move || {
-                counter.update(|value| *value += 1);
-            }),
-            "Decrement".class(ButtonClass).action(move || {
-                counter.update(|value| *value -= 1);
-            }),
+            "Increment"
+                .class(ButtonClass)
+                .style(|s| s.font_family("Fira Sans".to_owned()))
+                .action(move || {
+                    counter.update(|value| *value += 1);
+                }),
+            "Decrement"
+                .class(ButtonClass)
+                .style(|s| s.font_family("Fira Sans".to_owned()))
+                .action(move || {
+                    counter.update(|value| *value -= 1);
+                }),
         ),
     )
         .style(|s| s.flex_col())

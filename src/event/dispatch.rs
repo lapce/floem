@@ -1,6 +1,6 @@
 //! Event dispatch logic for handling events through the view tree.
 
-use std::{rc::Rc, sync::LazyLock, time::Instant};
+use std::{rc::Rc, sync::LazyLock};
 
 use peniko::kurbo::{Affine, Point, Rect};
 use smallvec::SmallVec;
@@ -25,6 +25,7 @@ use crate::{
         DragEvent, DragToken, Event, FocusEvent, InteractionEvent, Phase, PointerCaptureEvent,
         WindowEvent, drag_state::DragEventDispatch, dropped_file::FileDragEvent, path::hit_test,
     },
+    platform::time::Instant,
     style::{StyleSelector, StyleSelectors, recalc::StyleReason},
     view::{VIEW_STORAGE, View},
     window::WindowState,
