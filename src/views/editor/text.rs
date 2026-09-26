@@ -309,6 +309,17 @@ pub trait Styling {
         (1.5 * font_size).round().max(font_size)
     }
 
+    /// Whether every line of the editor has the same height.
+    ///
+    /// When this is true, the default, lines sit on a uniform grid and their
+    /// positions are arithmetic. Return false when [`Styling::line_height`]
+    /// varies from line to line — a markdown editor sizing its headings, say:
+    /// positions are then accumulated from the real heights, which costs a walk
+    /// over the lines above the viewport.
+    fn uniform_line_height(&self, _edid: EditorId) -> bool {
+        true
+    }
+
     fn font_family(&self, _edid: EditorId, _line: usize) -> Cow<'_, [FamilyOwned]> {
         Cow::Borrowed(&[FamilyOwned::SansSerif])
     }

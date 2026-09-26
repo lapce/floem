@@ -772,6 +772,53 @@ impl Editor {
         self.style().line_height(self.id(), line)
     }
 
+    /// Whether line positions must be computed from real per-line heights,
+    /// because [`Styling::line_height`] varies from line to line.
+    pub fn per_line_heights_active(&self) -> bool {
+        !self.style().uniform_line_height(self.id())
+    }
+
+    /// The full height of buffer `line`, every wrapped row included.
+    pub fn line_height_total(&self, line: usize) -> f64 {
+        f64::from(self.line_height(line)) * self.lines.cached_line_count(line) as f64
+    }
+
+    /// The y of the top of `line`: the sum of every real line height above it.
+    pub fn line_y(&self, line: usize) -> f64 {
+        (0..line).map(|l| self.line_height_total(l)).sum()
+    }
+
+    /// The y of the top of a visual line, wrapped rows included.
+    pub fn rvline_y(&self, rvline: RVLine) -> f64 {
+        self.line_y(rvline.line)
+            + rvline.line_index as f64 * f64::from(self.line_height(rvline.line))
+    }
+
+    /// The visual line whose vertical span contains `y`, walking real heights.
+    pub fn rvline_at_y(&self, y: f64) -> RVLine {
+        let heights = (0..=self.last_line()).map(|line| {
+            (
+                f64::from(self.line_height(line)),
+                self.lines.cached_line_count(line),
+            )
+        });
+        row_at_y(heights, y)
+            .map(|(line, index, _)| RVLine::new(line, index))
+            .unwrap_or_else(|| self.last_rvline())
+    }
+
+    /// The height of the whole document: real per-line heights when they vary,
+    /// the uniform grid otherwise.
+    pub fn total_height(&self) -> f64 {
+        if self.per_line_heights_active() {
+            (0..=self.last_line())
+                .map(|line| self.line_height_total(line))
+                .sum()
+        } else {
+            f64::from(self.line_height(0)) * (self.last_vline().get() + 1) as f64
+        }
+    }
+
     // === Line Information ===
 
     /// Iterate over the visual lines in the view, starting at the given line.
@@ -1042,24 +1089,30 @@ impl Editor {
 
     /// Get the actual (line, col) of a particular point within the editor.
     pub fn line_col_of_point_with_phantom(&self, point: Point) -> (usize, usize) {
-        let line_height = f64::from(self.style().line_height(self.id(), 0));
         let info = if point.y <= 0.0 {
             Some(self.first_rvline_info())
         } else {
             self.screen_lines
                 .with_untracked(|sl| {
                     sl.iter_line_info().find(|info| {
-                        info.vline_y <= point.y && info.vline_y + line_height >= point.y
+                        let h = f64::from(
+                            self.style()
+                                .line_height(self.id(), info.vline_info.rvline.line),
+                        );
+                        info.vline_y <= point.y && info.vline_y + h >= point.y
                     })
                 })
                 .map(|info| info.vline_info)
         };
         let info = info.unwrap_or_else(|| {
-            for (y_idx, info) in self.iter_rvlines(false, RVLine::default()).enumerate() {
-                let vline_y = y_idx as f64 * line_height;
-                if vline_y <= point.y && vline_y + line_height >= point.y {
+            // Walk real heights: with variable line heights y_idx * h is wrong.
+            let mut acc_y = 0.0;
+            for info in self.iter_rvlines(false, RVLine::default()) {
+                let h = f64::from(self.style().line_height(self.id(), info.rvline.line));
+                if acc_y <= point.y && acc_y + h >= point.y {
                     return info;
                 }
+                acc_y += h;
             }
 
             self.last_rvline_info()
@@ -1088,25 +1141,30 @@ impl Editor {
         mode: Mode,
         point: Point,
     ) -> ((usize, usize), bool, CursorAffinity) {
-        // TODO: this assumes that line height is constant!
-        let line_height = f64::from(self.style().line_height(self.id(), 0));
         let info = if point.y <= 0.0 {
             Some(self.first_rvline_info())
         } else {
             self.screen_lines
                 .with_untracked(|sl| {
                     sl.iter_line_info().find(|info| {
-                        info.vline_y <= point.y && info.vline_y + line_height >= point.y
+                        let h = f64::from(
+                            self.style()
+                                .line_height(self.id(), info.vline_info.rvline.line),
+                        );
+                        info.vline_y <= point.y && info.vline_y + h >= point.y
                     })
                 })
                 .map(|info| info.vline_info)
         };
         let info = info.unwrap_or_else(|| {
-            for (y_idx, info) in self.iter_rvlines(false, RVLine::default()).enumerate() {
-                let vline_y = y_idx as f64 * line_height;
-                if vline_y <= point.y && vline_y + line_height >= point.y {
+            // Walk real heights: with variable line heights y_idx * h is wrong.
+            let mut acc_y = 0.0;
+            for info in self.iter_rvlines(false, RVLine::default()) {
+                let h = f64::from(self.style().line_height(self.id(), info.rvline.line));
+                if acc_y <= point.y && acc_y + h >= point.y {
                     return info;
                 }
+                acc_y += h;
             }
 
             self.last_rvline_info()
@@ -1622,58 +1680,105 @@ fn create_view_effects(cx: Scope, ed: &Editor) {
     });
 }
 
+/// Walks lines given as `(height, rows)` until `y` falls inside one, and
+/// returns that line, the row of it `y` landed on, and the y of the row's top.
+/// `None` once the walk runs past the end of the document.
+///
+/// Every row of a line shares that line's height — wrapping repeats a line, it
+/// does not resize it.
+fn row_at_y(lines: impl Iterator<Item = (f64, usize)>, y: f64) -> Option<(usize, usize, f64)> {
+    let mut acc = 0.0;
+    for (line, (height, rows)) in lines.enumerate() {
+        let total = height * rows as f64;
+        if acc + total > y {
+            let index = ((y - acc) / height).floor().max(0.0) as usize;
+            let index = index.min(rows.saturating_sub(1));
+            return Some((line, index, acc + index as f64 * height));
+        }
+        acc += total;
+    }
+    None
+}
+
 pub fn normal_compute_screen_lines(
     editor: &Editor,
     base: RwSignal<ScreenLinesBase>,
 ) -> ScreenLines {
     let lines = &editor.lines;
     let style = editor.style.get();
-    // TODO: don't assume universal line height!
+    let variable_heights = editor.per_line_heights_active();
     let line_height = style.line_height(editor.id(), 0);
 
     let (y0, y1) = base.with_untracked(|base| (base.active_viewport.y0, base.active_viewport.y1));
-    // Get the start and end (visual) lines that are visible in the viewport
-    let min_vline = VLine((y0 / line_height as f64).floor() as usize);
-    let max_vline = VLine((y1 / line_height as f64).ceil() as usize);
 
     let cache_rev = editor.doc.get().cache_rev().get();
     editor.lines.check_cache_rev(cache_rev);
 
-    let min_info = editor.iter_vlines(false, min_vline).next();
-
     let mut rvlines = Vec::new();
     let mut info = HashMap::new();
 
-    let Some(min_info) = min_info else {
-        return ScreenLines {
-            lines: Rc::new(rvlines),
-            info: Rc::new(info),
-            diff_sections: None,
-            base,
+    // Where the visible run starts, the y of its top, and how far to walk.
+    // With real heights the run ends at the first line past the viewport, so
+    // the count is open and the loop breaks on y instead.
+    let (start_rvline, mut acc_y, min_vline, count) = if variable_heights {
+        let start = editor.rvline_at_y(y0);
+        (start, editor.rvline_y(start), 0, usize::MAX)
+    } else {
+        // Get the start and end (visual) lines that are visible in the viewport
+        let min_vline = VLine((y0 / line_height as f64).floor() as usize);
+        let max_vline = VLine((y1 / line_height as f64).ceil() as usize);
+
+        let Some(min_info) = editor.iter_vlines(false, min_vline).next() else {
+            return ScreenLines {
+                lines: Rc::new(rvlines),
+                info: Rc::new(info),
+                diff_sections: None,
+                base,
+            };
         };
+
+        // TODO: the original was min_line..max_line + 1, are we iterating too little now?
+        // the iterator is from min_vline..max_vline
+        (
+            min_info.rvline,
+            0.0,
+            min_vline.get(),
+            max_vline.get() - min_vline.get(),
+        )
     };
 
-    // TODO: the original was min_line..max_line + 1, are we iterating too little now?
-    // the iterator is from min_vline..max_vline
-    let count = max_vline.get() - min_vline.get();
     let iter = lines
         .iter_rvlines_init(
             editor.text_prov(),
             cache_rev,
             editor.config_id(),
-            min_info.rvline,
+            start_rvline,
             false,
         )
         .take(count);
 
     for (i, vline_info) in iter.enumerate() {
-        rvlines.push(vline_info.rvline);
-
         let line_height = f64::from(style.line_height(editor.id(), vline_info.rvline.line));
 
-        let y_idx = min_vline.get() + i;
-        let vline_y = y_idx as f64 * line_height;
-        let line_y = vline_y - vline_info.rvline.line_index as f64 * line_height;
+        let (vline_y, line_y) = if variable_heights {
+            if acc_y >= y1 {
+                break;
+            }
+            // Every wrapped row of a line shares that line's height, so the top
+            // of the line is however many rows we are into it.
+            let y = acc_y;
+            acc_y += line_height;
+            (y, y - vline_info.rvline.line_index as f64 * line_height)
+        } else {
+            let y_idx = min_vline + i;
+            let vline_y = y_idx as f64 * line_height;
+            (
+                vline_y,
+                vline_y - vline_info.rvline.line_index as f64 * line_height,
+            )
+        };
+
+        rvlines.push(vline_info.rvline);
 
         // Add the information to make it cheap to get in the future.
         // This y positions are shifted by the baseline y0
@@ -1744,5 +1849,51 @@ impl CursorInfo {
         self.blink_timer.set(TimerToken::INVALID);
 
         self.blink();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::row_at_y;
+
+    /// `(height, rows)` per line, the shape [`row_at_y`] walks.
+    const UNIFORM: [(f64, usize); 3] = [(10.0, 1), (10.0, 1), (10.0, 1)];
+    /// A heading over two body lines: the case a uniform grid gets wrong.
+    const VARIABLE: [(f64, usize); 3] = [(30.0, 1), (20.0, 1), (20.0, 1)];
+    /// A line wrapped onto three rows, then a plain one.
+    const WRAPPED: [(f64, usize); 2] = [(20.0, 3), (20.0, 1)];
+
+    fn at(lines: &[(f64, usize)], y: f64) -> Option<(usize, usize, f64)> {
+        row_at_y(lines.iter().copied(), y)
+    }
+
+    #[test]
+    fn a_uniform_document_lands_where_division_would() {
+        assert_eq!(at(&UNIFORM, 0.0), Some((0, 0, 0.0)));
+        assert_eq!(at(&UNIFORM, 9.9), Some((0, 0, 0.0)));
+        assert_eq!(at(&UNIFORM, 10.0), Some((1, 0, 10.0)));
+        assert_eq!(at(&UNIFORM, 25.0), Some((2, 0, 20.0)));
+    }
+
+    #[test]
+    fn a_tall_line_pushes_the_ones_under_it_down() {
+        assert_eq!(at(&VARIABLE, 29.9), Some((0, 0, 0.0)));
+        assert_eq!(at(&VARIABLE, 30.0), Some((1, 0, 30.0)));
+        assert_eq!(at(&VARIABLE, 55.0), Some((2, 0, 50.0)));
+    }
+
+    #[test]
+    fn a_wrapped_line_owns_a_row_per_wrap() {
+        assert_eq!(at(&WRAPPED, 0.0), Some((0, 0, 0.0)));
+        assert_eq!(at(&WRAPPED, 25.0), Some((0, 1, 20.0)));
+        assert_eq!(at(&WRAPPED, 45.0), Some((0, 2, 40.0)));
+        assert_eq!(at(&WRAPPED, 60.0), Some((1, 0, 60.0)));
+    }
+
+    #[test]
+    fn past_the_last_line_there_is_no_row() {
+        assert_eq!(at(&UNIFORM, 30.0), None);
+        assert_eq!(at(&WRAPPED, 80.0), None);
+        assert_eq!(at(&[], 0.0), None);
     }
 }

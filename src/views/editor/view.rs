@@ -400,7 +400,7 @@ impl EditorView {
                         max_line_width.max(parent_size.width())
                     };
 
-                    let last_line_height = line_height * (editor.last_vline().get() + 1) as f64;
+                    let last_line_height = editor.total_height();
                     let height = last_line_height;
 
                     let margin_bottom =
@@ -996,11 +996,10 @@ impl View for EditorView {
 
             let inner_node = self.inner_node.unwrap();
 
-            // TODO: don't assume there's a constant line height
             let line_height = f64::from(editor.line_height(0));
 
             let width = editor.max_line_width().max(parent_size.width());
-            let last_line_height = line_height * (editor.last_vline().get() + 1) as f64;
+            let last_line_height = editor.total_height();
             let height = last_line_height.max(parent_size.height());
 
             let margin_bottom = if editor.es.with_untracked(|es| es.scroll_beyond_last_line()) {
@@ -1471,14 +1470,18 @@ fn editor_content(
         let LineRegion { x, width, rvline } =
             cursor_caret(&editor, offset, !cursor.is_insert(), cursor.affinity());
 
-        // TODO: don't assume line-height is constant
-        let line_height = f64::from(editor.line_height(0));
-
-        // TODO: is there a good way to avoid the calculation of the vline here?
-        let vline = editor.vline_of_rvline(rvline);
-        let rect =
-            Rect::from_origin_size((x, vline.get() as f64 * line_height), (width, line_height))
-                .inflate(10.0, 1.0);
+        let (caret_y, line_height) = if editor.per_line_heights_active() {
+            (
+                editor.rvline_y(rvline),
+                f64::from(editor.line_height(rvline.line)),
+            )
+        } else {
+            let line_height = f64::from(editor.line_height(0));
+            // TODO: is there a good way to avoid the calculation of the vline here?
+            let vline = editor.vline_of_rvline(rvline);
+            (vline.get() as f64 * line_height, line_height)
+        };
+        let rect = Rect::from_origin_size((x, caret_y), (width, line_height)).inflate(10.0, 1.0);
 
         let viewport = viewport.get_untracked();
         let smallest_distance = (viewport.y0 - rect.y0)

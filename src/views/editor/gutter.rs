@@ -225,7 +225,7 @@ impl EditorGutterView {
 
                 // Height is determined by editor content
                 let line_height = f64::from(editor.line_height(0));
-                let last_line_height = line_height * (editor.last_vline().get() + 1) as f64;
+                let last_line_height = editor.total_height();
                 let margin_bottom = if editor.es.with_untracked(|es| es.scroll_beyond_last_line()) {
                     let parent_size = editor.parent_size.get_untracked();
                     parent_size.height().min(last_line_height) - line_height

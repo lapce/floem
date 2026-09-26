@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Position editor lines by their real heights when a `Styling` reports `uniform_line_height` as false, wrapped lines included [#1084](https://github.com/lapce/floem/pull/1084)
 - Use by default `std::sync::mpsc::channel` and place crossbeam behind the `crossbeam` feature [#775](https://github.com/lapce/floem/pull/775)
 
 ## [0.2.0] - 2024-11-13

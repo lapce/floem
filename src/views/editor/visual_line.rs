@@ -370,6 +370,19 @@ impl Lines {
         self.font_sizes.borrow().font_size(line)
     }
 
+    /// How many visual lines `line` takes up, read off its cached text layout.
+    ///
+    /// A line that has not been laid out yet counts as one, the same assumption
+    /// [`Lines::last_vline`] makes.
+    pub fn cached_line_count(&self, line: usize) -> usize {
+        let font_size = self.font_size(line);
+        self.text_layouts
+            .borrow()
+            .get(font_size, line)
+            .map(|layout| layout.line_count())
+            .unwrap_or(1)
+    }
+
     /// Get the last visual line of the file.
     ///
     /// Cached.
