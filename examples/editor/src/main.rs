@@ -1,10 +1,7 @@
 use floem::{
     prelude::*,
     views::editor::{
-        command::{Command, CommandExecuted},
-        core::{
-            command::EditCommand, cursor::CursorAffinity, editor::EditType, selection::Selection,
-        },
+        core::{cursor::CursorAffinity, editor::EditType, selection::Selection},
         text::{default_dark_color, SimpleStyling},
     },
 };
@@ -23,35 +20,36 @@ fn app_view() -> impl IntoView {
         .style(|s| s.size_full())
         .editor_style(default_dark_color)
         .editor_style(move |s| s.hide_gutter(hide_gutter_a.get()));
+    let focus_editor_a = editor_a.editor().clone();
     let editor_b = editor_a
         .shared_editor()
         .editor_style(default_dark_color)
         .editor_style(move |s| s.hide_gutter(hide_gutter_b.get()))
         .style(|s| s.size_full())
-        .pre_command(|ev| {
-            if matches!(ev.cmd, Command::Edit(EditCommand::Undo)) {
-                println!("Undo command executed on editor B, ignoring!");
-                return CommandExecuted::Yes;
-            }
-            CommandExecuted::No
-        })
         .update(|_| {
             // This hooks up to both editors!
             println!("Editor changed");
         })
         .placeholder("Some placeholder text");
     let doc = editor_a.doc();
+    let clear_editor_a = editor_a.editor().clone();
 
     Stack::new((
         editor_a,
         editor_b,
         Stack::new((
             Button::new("Clear").action(move || {
-                doc.edit_single(
+                doc.edit_single_from(
+                    &clear_editor_a,
                     Selection::region(0, doc.text().len(), CursorAffinity::Backward),
                     "",
                     EditType::DeleteSelection,
                 );
+            }),
+            Button::new("Focus A").action(move || {
+                if let Some(id) = focus_editor_a.editor_view_id.get_untracked() {
+                    id.request_focus();
+                }
             }),
             Button::new("Flip Gutter").action(move || {
                 hide_gutter_a.update(|hide| *hide = !*hide);
