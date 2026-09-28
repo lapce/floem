@@ -1,20 +1,24 @@
+#[cfg(feature = "menus")]
+use crate::context::MenuCallback;
 use crate::{
-    ViewId,
     action::add_update_message,
     animate::Animation,
     context::{
         CleanupListeners, EventCallback, EventCallbackConfig, EventListenerVec, LayoutChanged,
-        MenuCallback, VisualChanged,
+        VisualChanged,
     },
+    ViewId,
+};
+use crate::{
     event::listener::{self, EventListenerKey},
     message::UpdateMessage,
     prop_extractor,
     style::{
-        Background, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
-        BorderLeftColor, BorderRightColor, BorderTopColor, BorderTopLeftRadius,
-        BorderTopRightRadius, BoxShadowProp, CursorStyle, InheritedInteractionCx, LayoutProps,
-        Outline, OutlineColor, Style, StyleClassRef, StyleSelectors, TransformProps,
-        recalc::StyleReason,
+        recalc::StyleReason, Background, BorderBottomColor, BorderBottomLeftRadius,
+        BorderBottomRightRadius, BorderLeftColor, BorderRightColor, BorderTopColor,
+        BorderTopLeftRadius, BorderTopRightRadius, BoxShadowProp, CursorStyle,
+        InheritedInteractionCx, LayoutProps, Outline, OutlineColor, Style, StyleClassRef,
+        StyleSelectors, TransformProps,
     },
     view::LayoutTree,
 };
@@ -393,7 +397,9 @@ pub struct ViewState {
     pub(crate) registered_listener_keys: SmallVec<[listener::EventListenerKey; 2]>,
     pub(crate) layout: Option<LayoutChanged>,
     pub(crate) visual_change: Option<VisualChanged>,
+    #[cfg(feature = "menus")]
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
+    #[cfg(feature = "menus")]
     pub(crate) popout_menu: Option<Rc<MenuCallback>>,
     pub(crate) cleanup_listeners: Rc<RefCell<CleanupListeners>>,
     pub(crate) num_waiting_animations: u16,
@@ -451,7 +457,9 @@ impl ViewState {
             registered_listener_keys: SmallVec::new(),
             layout: None,
             visual_change: None,
+            #[cfg(feature = "menus")]
             context_menu: None,
+            #[cfg(feature = "menus")]
             popout_menu: None,
             child_translation: Vec2::ZERO,
             cleanup_listeners: Default::default(),

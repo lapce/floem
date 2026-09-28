@@ -36,6 +36,7 @@ use crate::{
     window::{WindowConfig, handle::WindowHandle, id::process_window_updates},
 };
 
+#[cfg(feature = "menus")]
 struct PendingContextMenu {
     window_id: WindowId,
     menu: super::MenuWrapper,
@@ -46,6 +47,7 @@ pub(crate) struct ApplicationHandle {
     window_handles: HashMap<winit::window::WindowId, WindowHandle>,
     timers: HashMap<TimerToken, Timer>,
     animating_windows: std::collections::HashSet<winit::window::WindowId>,
+    #[cfg(feature = "menus")]
     pending_context_menus: Vec<PendingContextMenu>,
     pub(crate) event_listener: Option<Box<AppEventCallback>>,
     pub(crate) gpu_resources: Option<GpuResources>,
@@ -60,6 +62,7 @@ impl ApplicationHandle {
             window_handles: HashMap::new(),
             timers: HashMap::new(),
             animating_windows: std::collections::HashSet::new(),
+            #[cfg(feature = "menus")]
             pending_context_menus: Vec::new(),
             event_listener: None,
             gpu_resources: None,
@@ -114,6 +117,7 @@ impl ApplicationHandle {
                     panic!("Sent a gpu resource update after it had already been initialized");
                 }
             }
+            #[cfg(feature = "menus")]
             UserEvent::ShowContextMenu {
                 window_id,
                 menu,
@@ -197,7 +201,7 @@ impl ApplicationHandle {
                         }
                     }
                 }
-                #[cfg(not(target_arch = "wasm32"))]
+                #[cfg(all(feature = "menus", not(target_arch = "wasm32")))]
                 AppUpdateEvent::MenuAction { action_id } => {
                     for handle in self.window_handles.values_mut() {
                         if handle.window_state.context_menu.contains_key(&action_id)
@@ -208,7 +212,7 @@ impl ApplicationHandle {
                         }
                     }
                 }
-                #[cfg(target_arch = "wasm32")]
+                #[cfg(all(feature = "menus", target_arch = "wasm32"))]
                 AppUpdateEvent::MenuAction { action_id } => {
                     for (_, handle) in self.window_handles.iter_mut() {
                         if handle.window_state.context_menu.contains_key(&action_id) {
@@ -822,10 +826,13 @@ impl ApplicationHandle {
     }
 
     pub(crate) fn flush_deferred_context_menus(&mut self) {
-        let pending = std::mem::take(&mut self.pending_context_menus);
-        for item in pending {
-            if let Some(handle) = self.window_handles.get_mut(&item.window_id) {
-                handle.show_context_menu(item.menu.0, item.pos);
+        #[cfg(feature = "menus")]
+        {
+            let pending = std::mem::take(&mut self.pending_context_menus);
+            for item in pending {
+                if let Some(handle) = self.window_handles.get_mut(&item.window_id) {
+                    handle.show_context_menu(item.menu.0, item.pos);
+                }
             }
         }
     }

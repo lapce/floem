@@ -1,4 +1,4 @@
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "menus", not(target_arch = "wasm32")))]
 use std::collections::HashMap;
 use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 
@@ -8,10 +8,11 @@ use crossbeam::channel::bounded as sync_channel;
 use std::sync::mpsc::sync_channel;
 
 use crate::event::{CustomEvent, RouteKind, ScrollTo, UpdatePhaseEvent};
+#[cfg(feature = "menus")]
 use crate::platform::menu_types::{Menu as MudaMenu, MenuId};
 use crate::style::recalc::StyleReason;
 use crate::style::{StyleSelector, StyleSelectors};
-#[cfg(target_os = "windows")]
+#[cfg(all(feature = "menus", target_os = "windows"))]
 use muda::MenuTheme as MudaMenuTheme;
 
 use crate::platform::{Duration, Instant};
@@ -37,15 +38,29 @@ use winit::{
 
 use super::state::WindowState;
 use super::tracking::{remove_window_id_mapping, store_window_id_mapping};
-use crate::app::{MenuWrapper, add_app_update_event};
-#[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+#[cfg(feature = "menus")]
+use crate::app::MenuWrapper;
+use crate::app::add_app_update_event;
+#[cfg(all(
+    feature = "menus",
+    any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")
+))]
 use crate::platform::context_menu::context_menu_view;
-#[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+#[cfg(all(
+    feature = "menus",
+    any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")
+))]
 use crate::reactive::SignalWith;
-#[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+#[cfg(all(
+    feature = "menus",
+    any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")
+))]
 use crate::unit::UnitExt;
 use crate::view::{LayoutTree, VIEW_STORAGE};
-#[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+#[cfg(all(
+    feature = "menus",
+    any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")
+))]
 use crate::views::{Container, Decorators, Stack};
 use crate::{
     Application,
@@ -87,11 +102,14 @@ pub(crate) struct WindowHandle {
     transparent: bool,
     pub(crate) modifiers: Modifiers,
     pub(crate) window_position: Point,
-    #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+    #[cfg(all(
+        feature = "menus",
+        any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")
+    ))]
     pub(crate) context_menu: RwSignal<Option<(MudaMenu, Point, bool)>>,
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(feature = "menus", not(target_arch = "wasm32")))]
     pub(crate) window_menu_actions: HashMap<MenuId, Box<dyn Fn()>>,
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(feature = "menus", not(target_arch = "wasm32")))]
     pub(crate) window_menu: Option<MudaMenu>,
     pub(crate) event_reducer: WindowEventReducer,
     pub(crate) gpu_resources: Option<GpuResources>,
@@ -135,13 +153,22 @@ impl WindowHandle {
 
         set_current_view(id);
 
-        #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+        #[cfg(all(
+            feature = "menus",
+            any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")
+        ))]
         let context_menu = scope.create_rw_signal(None);
 
-        #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")))]
+        #[cfg(not(all(
+            feature = "menus",
+            any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")
+        )))]
         let view = scope.enter(move || view_fn(window_id));
 
-        #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+        #[cfg(all(
+            feature = "menus",
+            any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")
+        ))]
         let view = scope.enter(move || {
             let main_view = view_fn(window_id);
             Stack::new((
@@ -191,11 +218,14 @@ impl WindowHandle {
             profile: None,
             modifiers: Modifiers::default(),
             window_position: Point::ZERO,
-            #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+            #[cfg(all(
+                feature = "menus",
+                any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")
+            ))]
             context_menu,
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(feature = "menus", not(target_arch = "wasm32")))]
             window_menu_actions: HashMap::new(),
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(feature = "menus", not(target_arch = "wasm32")))]
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
             gpu_resources,
@@ -337,11 +367,14 @@ impl WindowHandle {
             profile: None,
             modifiers: Modifiers::default(),
             window_position: Point::ZERO,
-            #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+            #[cfg(all(
+                feature = "menus",
+                any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")
+            ))]
             context_menu: scope.create_rw_signal(None),
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(feature = "menus", not(target_arch = "wasm32")))]
             window_menu_actions: HashMap::new(),
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(feature = "menus", not(target_arch = "wasm32")))]
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
             gpu_resources: None,
@@ -392,16 +425,25 @@ impl WindowHandle {
         set_current_view(self.id.root());
 
         // Check event type for platform-specific context menu handling
-        #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+        #[cfg(all(
+            feature = "menus",
+            any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")
+        ))]
         let is_pointer_down = matches!(&event, Event::Pointer(PointerEvent::Down { .. }));
-        #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+        #[cfg(all(
+            feature = "menus",
+            any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")
+        ))]
         let is_pointer_up = matches!(&event, Event::Pointer(PointerEvent::Up { .. }));
 
         let root_element_id = self.window_state.root_view_id.get_element_id();
         GlobalEventCx::new(&mut self.window_state, root_element_id, event).route_window_event();
 
         // Platform-specific context menu handling
-        #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+        #[cfg(all(
+            feature = "menus",
+            any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")
+        ))]
         {
             if is_pointer_down
                 && self.context_menu.with_untracked(|c| {
@@ -457,7 +499,7 @@ impl WindowHandle {
             if !change_from_os {
                 self.window_state.theme_overriden = true
             }
-            #[cfg(target_os = "windows")]
+            #[cfg(all(feature = "menus", target_os = "windows"))]
             {
                 self.set_menu_theme_for_windows(theme);
             }
@@ -580,7 +622,7 @@ impl WindowHandle {
 
     pub(crate) fn focused(&mut self, focused: bool) {
         if focused {
-            #[cfg(target_os = "macos")]
+            #[cfg(all(feature = "menus", target_os = "macos"))]
             if let Some(window_menu) = &self.window_menu {
                 window_menu.init_for_nsapp();
             }
@@ -1216,6 +1258,7 @@ impl WindowHandle {
                         let scale = cx.window_state.effective_scale();
                         self.paint_state.set_scale(scale);
                     }
+                    #[cfg(feature = "menus")]
                     UpdateMessage::ShowContextMenu { menu, pos } => {
                         let (menu, registry) = menu.build();
                         cx.window_state.context_menu.clear();
@@ -1228,6 +1271,7 @@ impl WindowHandle {
                             pos,
                         });
                     }
+                    #[cfg(all(feature = "menus", not(target_arch = "wasm32")))]
                     UpdateMessage::WindowMenu { menu } => {
                         self.window_menu_actions.clear();
                         let (menu, registry) = menu.build();
@@ -1327,7 +1371,7 @@ impl WindowHandle {
                     UpdateMessage::SetTheme(theme) => {
                         self.set_theme(theme, false);
 
-                        #[cfg(target_os = "windows")]
+                        #[cfg(all(feature = "menus", target_os = "windows"))]
                         if let Some(new) = theme {
                             self.set_menu_theme_for_windows(new);
                         }
@@ -1478,7 +1522,7 @@ impl WindowHandle {
         remove_window_id_mapping(&self.id, &self.window_id);
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(feature = "menus", target_os = "macos"))]
     pub(crate) fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
         use dispatch2::DispatchQueue;
         use muda::{
@@ -1516,7 +1560,7 @@ impl WindowHandle {
         }
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(all(feature = "menus", target_os = "windows"))]
     pub(crate) fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
         use muda::{
             ContextMenu,
@@ -1540,7 +1584,7 @@ impl WindowHandle {
         }
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(all(feature = "menus", target_os = "windows"))]
     fn init_menu_for_windows(&self, menu: &MudaMenu) {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
@@ -1561,7 +1605,7 @@ impl WindowHandle {
         }
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(all(feature = "menus", target_os = "windows"))]
     pub(crate) fn set_menu_theme_for_windows(&self, theme: winit::window::Theme) {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
@@ -1578,7 +1622,10 @@ impl WindowHandle {
         }
     }
 
-    #[cfg(any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32"))]
+    #[cfg(all(
+        feature = "menus",
+        any(target_os = "linux", target_os = "freebsd", target_arch = "wasm32")
+    ))]
     pub(crate) fn show_context_menu(&self, menu: MudaMenu, pos: Option<Point>) {
         let pos = pos.unwrap_or(self.window_state.last_pointer.0);
         let pos = Point::new(
@@ -1588,7 +1635,7 @@ impl WindowHandle {
         self.context_menu.set(Some((menu, pos, false)));
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(feature = "menus", target_arch = "wasm32"))]
     pub(crate) fn menu_action(&mut self, id: &MenuId) {
         set_current_view(self.id);
         if let Some(action) = self.window_state.context_menu.get(id) {
@@ -1597,7 +1644,7 @@ impl WindowHandle {
         }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(feature = "menus", not(target_arch = "wasm32")))]
     pub(crate) fn menu_action(&mut self, id: &MenuId) {
         set_current_view(self.id);
         if let Some(action) = self.window_state.context_menu.get(id) {

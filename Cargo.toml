@@ -119,12 +119,10 @@ understory_event_state = { git = "https://github.com/jrmoulton/understory", rev 
 understory_index = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_index" }
 understory_focus = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_focus" }
 understory_virtual_list = { git = "https://github.com/jrmoulton/understory", rev = "2c2abb8c4bd9", package = "understory_virtual_list" }
-
-[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
-muda = { workspace = true }
+muda = { workspace = true, optional = true }
 
 [target.'cfg(any(target_os = "linux"))'.dependencies]
-muda = { workspace = true, default-features = false, features = ["gtk"] }
+muda = { workspace = true, default-features = false, features = ["gtk"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = { version = "0.4" }
@@ -145,7 +143,7 @@ objc2-app-kit = { version = "0.3", features = [
 dispatch2 = {version = "0.3.0"}
 
 [features]
-default = ["editor", "default-image-formats", "vger", "serde"]
+default = ["editor", "default-image-formats", "vger", "serde", "menus"]
 skia = ["dep:floem_skia_renderer"]
 vello = ["dep:floem_vello_renderer"]
 vger = ["dep:floem_vger_renderer"]
@@ -182,6 +180,7 @@ image-qoi = ["image/qoi"]
 image-tga = ["image/tga"]
 image-tiff = ["image/tiff"]
 image-webp = ["image/webp"]
+menus = ["dep:muda"]
 tokio = ["dep:tokio"]
 # rfd (file dialog) async runtime
 crossbeam = ["dep:crossbeam", "floem_renderer/crossbeam"]

@@ -5,13 +5,14 @@ use peniko::kurbo::{Point, Rect, Size, Vec2};
 use ui_events::pointer::PointerId;
 use winit::window::{ResizeDirection, Theme};
 
+#[cfg(feature = "menus")]
+use crate::platform::menu::Menu;
 use crate::{
-    ElementId,
-    event::{Event, RouteKind, listener},
-    platform::menu::Menu,
+    event::{listener, Event, RouteKind},
     style::recalc::StyleReason,
     view::{AnyView, View, ViewId},
     window::state::WindowState,
+    ElementId,
 };
 
 thread_local! {
@@ -84,11 +85,12 @@ pub enum UpdateMessage {
     DragWindow,
     DragResizeWindow(ResizeDirection),
     SetWindowDelta(Vec2),
+    #[cfg(feature = "menus")]
     ShowContextMenu {
         menu: Menu,
         pos: Option<Point>,
     },
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(feature = "menus", not(target_arch = "wasm32")))]
     WindowMenu {
         menu: Menu,
     },

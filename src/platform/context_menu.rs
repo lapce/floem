@@ -4,9 +4,9 @@
 //! native context menus aren't fully supported by the muda crate.
 
 use floem_reactive::{Effect, RwSignal, Scope, SignalGet, SignalUpdate, SignalWith};
-use peniko::Color;
 use peniko::color::palette;
 use peniko::kurbo::{Point, Size};
+use peniko::Color;
 use ui_events::keyboard::{Key, NamedKey};
 
 use crate::context::VisualChangedListener;
@@ -17,7 +17,7 @@ use crate::style::CursorStyle;
 use crate::platform::menu_types;
 use crate::unit::UnitExt;
 use crate::view::{IntoView, View};
-use crate::views::{Container, Decorators, Label, Stack, svg};
+use crate::views::{svg, Container, Decorators, Label, Stack};
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 enum MenuDisplay {
@@ -105,7 +105,7 @@ pub(crate) fn context_menu_view(
     window_size: RwSignal<Size>,
 ) -> impl IntoView {
     use crate::{
-        app::{AppUpdateEvent, add_app_update_event},
+        app::{add_app_update_event, AppUpdateEvent},
         views::dyn_stack,
     };
 

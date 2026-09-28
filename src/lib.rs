@@ -198,6 +198,7 @@ pub use layout::responsive;
 /// Re-export file module from platform for backward compatibility.
 pub use platform::file;
 /// Re-export menu module from platform for backward compatibility.
+#[cfg(feature = "menus")]
 pub use platform::menu;
 /// Re-export view_tuple module from view for backward compatibility.
 pub use view::tuple as view_tuple;
@@ -230,7 +231,7 @@ pub use floem_renderer::Svg as RendererSvg;
 pub use floem_renderer::gpu_resources::GpuResources;
 pub use imbl;
 pub use layout::ScreenLayout;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "menus", not(target_arch = "wasm32")))]
 pub use muda;
 pub use peniko;
 pub use peniko::kurbo;
@@ -239,6 +240,7 @@ pub use platform::open_file;
 #[cfg(not(target_arch = "wasm32"))]
 pub use platform::save_as;
 pub use platform::{Clipboard, ClipboardError, FileDialogOptions, FileInfo, FileSpec};
+#[cfg(feature = "menus")]
 pub use platform::{Menu, SubMenu};
 pub use taffy;
 pub use ui_events;

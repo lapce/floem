@@ -37,10 +37,11 @@ use crate::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, DeferredChild, DeferredChildren,
         DeferredReactiveSetup, UpdateMessage,
     },
-    platform::menu::Menu,
     style::{Focusable, PointerEvents, Style, StyleClassRef, StyleSelector},
     window::tracking::window_id_for_root,
 };
+#[cfg(feature = "menus")]
+use crate::platform::menu::Menu;
 
 use super::AnyView;
 
@@ -908,6 +909,7 @@ impl ViewId {
     }
 
     /// Set the system context menu that should be shown when this view is right-clicked
+    #[cfg(feature = "menus")]
     pub fn update_context_menu(&self, menu: impl Fn() -> Menu + 'static) {
         self.state().borrow_mut().context_menu = Some(Rc::new(menu));
     }
@@ -915,6 +917,7 @@ impl ViewId {
     /// Set the system popout menu that should be shown when this view is clicked
     ///
     /// Adds a primary-click context menu, which opens below the view.
+    #[cfg(feature = "menus")]
     pub fn update_popout_menu(&self, menu: impl Fn() -> Menu + 'static) {
         self.state().borrow_mut().popout_menu = Some(Rc::new(menu));
     }

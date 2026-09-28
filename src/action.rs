@@ -13,13 +13,14 @@ use peniko::kurbo::{Point, Size, Vec2};
 use winit::window::WindowId;
 use winit::window::{ResizeDirection, Theme};
 
-use crate::IntoView;
 use crate::platform::{Duration, Instant};
+use crate::IntoView;
 
+#[cfg(feature = "menus")]
+use crate::platform::menu::Menu;
 use crate::{
-    app::{AppUpdateEvent, add_app_update_event},
-    message::{UPDATE_MESSAGES, UpdateMessage},
-    platform::menu::Menu,
+    app::{add_app_update_event, AppUpdateEvent},
+    message::{UpdateMessage, UPDATE_MESSAGES},
     view::View,
     view::ViewId,
     views::Decorators,
@@ -260,6 +261,7 @@ where
 /// - Windows: Yes
 /// - macOS: Yes
 /// - Linux: Uses a custom Floem View
+#[cfg(feature = "menus")]
 pub fn show_context_menu(menu: Menu, pos: Option<Point>) {
     add_update_message(UpdateMessage::ShowContextMenu { menu, pos });
 }
@@ -271,7 +273,7 @@ pub fn show_context_menu(menu: Menu, pos: Option<Point>) {
 /// - macOS: Yes
 /// - Linux: No
 /// - wasm32: No
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "menus", not(target_arch = "wasm32")))]
 pub fn set_window_menu(menu: Menu) {
     add_update_message(UpdateMessage::WindowMenu { menu });
 }

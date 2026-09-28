@@ -5,8 +5,8 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use muda::{
-    CheckMenuItem, Icon, IconMenuItem, IsMenuItem, Menu, MenuId, MenuItem, NativeIcon,
-    PredefinedMenuItem, Submenu, accelerator::Accelerator,
+    accelerator::Accelerator, CheckMenuItem, Icon, IconMenuItem, IsMenuItem, Menu, MenuId,
+    MenuItem, NativeIcon, PredefinedMenuItem, Submenu,
 };
 
 // MenuItemKind is only used in context_menu.rs, which is only compiled on Linux/FreeBSD/wasm32

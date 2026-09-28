@@ -1,12 +1,15 @@
-use std::{cell::RefCell, collections::HashMap, time::Instant};
+use std::{cell::RefCell, time::Instant};
+#[cfg(feature = "menus")]
+use std::collections::HashMap;
 
 use crate::{
     action::exec_after_animation_frame,
     inspector::CaptureState,
-    platform::menu_types::MenuId,
     style::{StyleCache, StyleSelectors, recalc::StyleReason},
     view::ViewStorage,
 };
+#[cfg(feature = "menus")]
+use crate::platform::menu_types::MenuId;
 
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Size, Vec2};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -163,6 +166,7 @@ pub struct WindowState {
     pub(crate) last_cursor_icon: CursorIcon,
     pub(crate) last_pointer: (Point, PointerInfo),
     pub(crate) keyboard_navigation: bool,
+    #[cfg(feature = "menus")]
     pub(crate) context_menu: HashMap<MenuId, Box<dyn Fn()>>,
 
     /// This is set if we're currently capturing the window for the inspector.
@@ -245,6 +249,7 @@ impl WindowState {
             ),
             keyboard_navigation: false,
             grid_bps: GridBreakpoints::default(),
+            #[cfg(feature = "menus")]
             context_menu: HashMap::new(),
             capture: None,
             style_cache: StyleCache::new(),
@@ -1322,6 +1327,7 @@ impl WindowState {
         }
     }
 
+    #[cfg(feature = "menus")]
     pub(crate) fn update_context_menu(
         &mut self,
         actions: HashMap<MenuId, Box<dyn Fn() + 'static>>,

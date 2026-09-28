@@ -17,9 +17,10 @@ use understory_focus::{
 };
 use winit::keyboard::KeyCode;
 
+#[cfg(feature = "menus")]
+use crate::action::show_context_menu;
 use crate::{
     BoxTree, ElementId, ElementMeta, ViewId,
-    action::show_context_menu,
     context::Phases,
     event::{
         DragEvent, DragToken, Event, FocusEvent, InteractionEvent, Phase, PointerCaptureEvent,
@@ -1195,13 +1196,16 @@ impl RouteCx<'_, '_> {
         }
 
         // Context / popout menus (platform-specific timing).
-        let pbe = match &self.event {
-            Event::Pointer(PointerEvent::Down(pbe)) if cfg!(target_os = "macos") => Some(pbe),
-            Event::Pointer(PointerEvent::Up(pbe)) if !cfg!(target_os = "macos") => Some(pbe),
-            _ => None,
-        };
-        if let Some(pbe) = pbe {
-            self.handle_menu_events(&pbe.clone());
+        #[cfg(feature = "menus")]
+        {
+            let pbe = match &self.event {
+                Event::Pointer(PointerEvent::Down(pbe)) if cfg!(target_os = "macos") => Some(pbe),
+                Event::Pointer(PointerEvent::Up(pbe)) if !cfg!(target_os = "macos") => Some(pbe),
+                _ => None,
+            };
+            if let Some(pbe) = pbe {
+                self.handle_menu_events(&pbe.clone());
+            }
         }
 
         // Window close — close the window if not prevented.
@@ -1243,6 +1247,7 @@ impl RouteCx<'_, '_> {
         }
     }
 
+    #[cfg(feature = "menus")]
     fn handle_menu_events(&mut self, pbe: &PointerButtonEvent) {
         let Some(button) = pbe.button else { return };
         let Some(hit) = self

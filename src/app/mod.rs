@@ -8,9 +8,11 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+#[cfg(feature = "menus")]
 use crate::platform::menu_types::MenuId;
 #[cfg(feature = "crossbeam")]
 use crossbeam::channel::{Receiver, Sender, unbounded as channel};
+#[cfg(feature = "menus")]
 use peniko::kurbo::Point;
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -107,13 +109,16 @@ pub enum AppEvent {
     Reopen { has_visible_windows: bool },
 }
 
+#[cfg(feature = "menus")]
 pub(crate) struct MenuWrapper(pub(crate) muda::Menu);
 // SAFETY: these unsafe wappers are needed so that we can send the muda memu.
 // The muda menu internally uses RC on a String ID and it's Vec of children.
 // This unsafe wrapper is memory safe but the race condition could potentially (unlikely)
 // lead to bad reference counts and leaked memory.
 // I think this is fine for this case.
+#[cfg(feature = "menus")]
 unsafe impl Send for MenuWrapper {}
+#[cfg(feature = "menus")]
 unsafe impl Sync for MenuWrapper {}
 
 pub(crate) enum UserEvent {
@@ -128,6 +133,7 @@ pub(crate) enum UserEvent {
     GpuResourcesUpdate {
         window_id: WindowId,
     },
+    #[cfg(feature = "menus")]
     ShowContextMenu {
         window_id: WindowId,
         menu: MenuWrapper,
@@ -164,6 +170,7 @@ pub(crate) enum AppUpdateEvent {
     CancelTimer {
         timer: TimerToken,
     },
+    #[cfg(feature = "menus")]
     MenuAction {
         action_id: MenuId,
     },
@@ -282,7 +289,7 @@ impl Application {
         }
         let handle = ApplicationHandle::new(config);
 
-        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        #[cfg(all(feature = "menus", any(target_os = "windows", target_os = "macos")))]
         muda::MenuEvent::set_event_handler(Some(move |event: muda::MenuEvent| {
             add_app_update_event(AppUpdateEvent::MenuAction {
                 action_id: event.id,

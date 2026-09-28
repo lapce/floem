@@ -2,16 +2,19 @@ use peniko::kurbo::{Affine, Point, Rect};
 use smallvec::SmallVec;
 use std::{cell::RefCell, rc::Rc};
 
+#[cfg(feature = "menus")]
+use crate::platform::menu::Menu;
 use crate::{
-    ElementId, custom_event,
+    custom_event,
     event::{EventPropagation, Phase},
-    platform::menu::Menu,
     style::recalc::StyleReason,
     view::ViewId,
+    ElementId,
 };
 
 pub type EventCallback = dyn FnMut(&mut EventCx) -> EventPropagation;
 pub type ResizeCallback = dyn Fn(Rect);
+#[cfg(feature = "menus")]
 pub type MenuCallback = dyn Fn() -> Menu;
 
 bitflags::bitflags! {

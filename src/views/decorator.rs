@@ -14,10 +14,11 @@ use crate::{
     animate::Animation,
     context::EventCallbackConfig,
     event::{EventCx, EventPropagation, listener},
-    platform::menu::Menu,
     style::{Style, StyleClass},
     view::{HasViewId, IntoView},
 };
+#[cfg(feature = "menus")]
+use crate::platform::menu::Menu;
 
 /// A trait that extends the appearance and functionality of Views through styling and event handling.
 ///
@@ -610,7 +611,7 @@ pub trait Decorators: IntoView {
     ///
     /// # Reactivity
     /// The menu function is reactive and will rereun in response to any signal changes in the function.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(feature = "menus", not(target_arch = "wasm32")))]
     fn window_menu(self, menu_fn: impl Fn() -> Menu + 'static) -> Self::Intermediate {
         let intermediate = self.into_intermediate();
         Effect::new(move |_| {
@@ -624,6 +625,7 @@ pub trait Decorators: IntoView {
     ///
     /// # Reactivity
     /// The menu function is not reactive and will not rerun automatically in response to signal changes while the menu is showing and will only update the menu items each time that it is created
+    #[cfg(feature = "menus")]
     fn context_menu(self, menu: impl Fn() -> Menu + 'static) -> Self::Intermediate {
         let intermediate = self.into_intermediate();
         let id = intermediate.view_id();
@@ -635,6 +637,7 @@ pub trait Decorators: IntoView {
     ///
     /// # Reactivity
     /// The menu function is not reactive and will not rerun automatically in response to signal changes while the menu is showing and will only update the menu items each time that it is created
+    #[cfg(feature = "menus")]
     fn popout_menu(self, menu: impl Fn() -> Menu + 'static) -> Self::Intermediate {
         let intermediate = self.into_intermediate();
         let id = intermediate.view_id();
