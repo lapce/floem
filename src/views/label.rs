@@ -14,7 +14,7 @@ use crate::{
     style_class,
     text::{
         Attrs, AttrsList, Cursor, FamilyOwned, TextLayout, TextLayoutState, TextSelection,
-        WordBreakStrength,
+        WordBreak,
     },
     view::{LayoutNodeCx, View},
     views::editor::SelectionColor,
@@ -238,7 +238,7 @@ impl Label {
         }
         attrs = attrs.line_height(self.label_props.line_height());
         if let TextOverflow::Wrap { word_break, .. } = self.label_props.text_overflow()
-            && word_break != WordBreakStrength::Normal
+            && word_break != WordBreak::Normal
         {
             attrs = attrs.word_break(word_break);
         }

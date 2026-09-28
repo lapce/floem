@@ -5,7 +5,7 @@
 //!
 //! # Re-exports
 //!
-//! [`FontStyle`] and [`FontWidth`] come from [`fontique`](https://docs.rs/fontique).
+//! [`FontStyle`] and [`FontWidth`] come from [`parley`](https://docs.rs/parley).
 
 mod attrs;
 
@@ -15,8 +15,8 @@ use peniko::{
 };
 
 pub use attrs::{Attrs, AttrsList, AttrsOwned, FamilyOwned, LineHeightValue};
-pub use fontique::{FontStyle, FontWeight, FontWidth};
 pub use parley::layout::Glyph;
+pub use parley::{FontStyle, FontWeight, FontWidth};
 
 // --- Brush type for Parley ---
 

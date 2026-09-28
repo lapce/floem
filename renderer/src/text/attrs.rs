@@ -1,9 +1,10 @@
+use std::borrow::Cow;
 use std::ops::Range;
 
 use crate::text::TextBrush;
 use crate::text::{FontStyle, FontWeight, FontWidth};
-use fontique::GenericFamily;
-use parley::style::{FontFamily, FontStack, StyleProperty, WordBreakStrength};
+use parley::FontFamilyName;
+use parley::style::{FontFamily, GenericFamily, StyleProperty, WordBreak};
 use peniko::Color;
 
 /// An owned font family identifier.
@@ -68,39 +69,37 @@ impl FamilyOwned {
         }
     }
 
-    /// Converts this owned family to a borrowed Parley [`FontFamily`] reference.
-    fn to_font_family(&self) -> FontFamily<'_> {
+    /// Converts this owned family to a borrowed Parley [`FontFamilyName`] reference.
+    fn to_font_family_name(&self) -> FontFamilyName<'_> {
         match self {
-            FamilyOwned::Name(name) => FontFamily::Named(std::borrow::Cow::Borrowed(name.as_str())),
-            FamilyOwned::Serif => FontFamily::Generic(GenericFamily::Serif),
-            FamilyOwned::SansSerif => FontFamily::Generic(GenericFamily::SansSerif),
-            FamilyOwned::Cursive => FontFamily::Generic(GenericFamily::Cursive),
-            FamilyOwned::Fantasy => FontFamily::Generic(GenericFamily::Fantasy),
-            FamilyOwned::Monospace => FontFamily::Generic(GenericFamily::Monospace),
+            FamilyOwned::Name(name) => FontFamilyName::Named(Cow::Borrowed(name.as_str())),
+            FamilyOwned::Serif => FontFamilyName::Generic(GenericFamily::Serif),
+            FamilyOwned::SansSerif => FontFamilyName::Generic(GenericFamily::SansSerif),
+            FamilyOwned::Cursive => FontFamilyName::Generic(GenericFamily::Cursive),
+            FamilyOwned::Fantasy => FontFamilyName::Generic(GenericFamily::Fantasy),
+            FamilyOwned::Monospace => FontFamilyName::Generic(GenericFamily::Monospace),
         }
     }
 
-    /// Converts a slice of owned families into a Parley [`FontStack`].
+    /// Converts a slice of owned families into a Parley [`FontFamily`].
     ///
-    /// For a single named family, this produces a [`FontStack::Source`] so that
+    /// For a single named family, this produces a [`FontFamily::Source`] so that
     /// Parley can parse comma-separated fallbacks within the name string.
-    /// For a single generic family, it produces [`FontStack::Single`].
-    /// For multiple families, it produces [`FontStack::List`] preserving the
+    /// For a single generic family, it produces [`FontFamily::Single`].
+    /// For multiple families, it produces [`FontFamily::List`] preserving the
     /// full fallback chain.
     /// An empty slice defaults to sans-serif.
-    pub fn to_font_stack(families: &[FamilyOwned]) -> FontStack<'_> {
+    pub fn to_font_family(families: &[FamilyOwned]) -> FontFamily<'_> {
         match families {
-            [] => FontStack::Single(FontFamily::Generic(GenericFamily::SansSerif)),
+            [] => FontFamily::Single(FontFamilyName::Generic(GenericFamily::SansSerif)),
             [single] => match single {
-                FamilyOwned::Name(name) => {
-                    FontStack::Source(std::borrow::Cow::Borrowed(name.as_str()))
-                }
-                other => FontStack::Single(other.to_font_family()),
+                FamilyOwned::Name(name) => FontFamily::Source(Cow::Borrowed(name.as_str())),
+                other => FontFamily::Single(other.to_font_family_name()),
             },
             multiple => {
-                let list: Vec<FontFamily<'_>> =
-                    multiple.iter().map(|f| f.to_font_family()).collect();
-                FontStack::List(std::borrow::Cow::Owned(list))
+                let list: Vec<FontFamilyName<'_>> =
+                    multiple.iter().map(|f| f.to_font_family_name()).collect();
+                FontFamily::List(Cow::Owned(list))
             }
         }
     }
@@ -203,7 +202,7 @@ pub struct Attrs<'a> {
     /// Font width / stretch (e.g. condensed, expanded), or `None` for normal.
     font_width: Option<FontWidth>,
     /// Word break strength used during wrapping, or `None` for Parley's default.
-    word_break: Option<WordBreakStrength>,
+    word_break: Option<WordBreak>,
     /// Application-defined metadata carried through layout without interpretation.
     metadata: Option<usize>,
 }
@@ -272,8 +271,8 @@ impl<'a> Attrs<'a> {
         self
     }
 
-    /// Sets the word break strength used when text wrapping is enabled.
-    pub fn word_break(mut self, word_break: WordBreakStrength) -> Self {
+    /// Sets the word break used when text wrapping is enabled.
+    pub fn word_break(mut self, word_break: WordBreak) -> Self {
         self.word_break = Some(word_break);
         self
     }
@@ -323,8 +322,8 @@ impl<'a> Attrs<'a> {
         self.font_width
     }
 
-    /// Returns the word break strength, or `None` if unset.
-    pub fn get_word_break(&self) -> Option<WordBreakStrength> {
+    /// Returns the word break, or `None` if unset.
+    pub fn get_word_break(&self) -> Option<WordBreak> {
         self.word_break
     }
 
@@ -360,8 +359,8 @@ impl<'a> Attrs<'a> {
             builder.push_default(StyleProperty::Brush(TextBrush(color)));
         }
         if let Some(family) = self.family {
-            let stack = FamilyOwned::to_font_stack(family);
-            builder.push_default(StyleProperty::FontStack(stack));
+            let family = FamilyOwned::to_font_family(family);
+            builder.push_default(StyleProperty::FontFamily(family));
         }
         if let Some(weight) = self.weight {
             builder.push_default(StyleProperty::FontWeight(weight));
@@ -403,8 +402,8 @@ impl<'a> Attrs<'a> {
             builder.push(StyleProperty::Brush(TextBrush(color)), range.clone());
         }
         if let Some(family) = self.family {
-            let stack = FamilyOwned::to_font_stack(family);
-            builder.push(StyleProperty::FontStack(stack), range.clone());
+            let stack = FamilyOwned::to_font_family(family);
+            builder.push(StyleProperty::FontFamily(stack), range.clone());
         }
         if let Some(weight) = self.weight {
             builder.push(StyleProperty::FontWeight(weight), range.clone());
@@ -454,8 +453,8 @@ pub struct AttrsOwned {
     style: Option<FontStyle>,
     /// Font width / stretch (e.g. condensed, expanded), or `None` for normal.
     font_width: Option<FontWidth>,
-    /// Word break strength used during wrapping, or `None` for Parley's default.
-    word_break: Option<WordBreakStrength>,
+    /// Word break used during wrapping, or `None` for Parley's default.
+    word_break: Option<WordBreak>,
     /// Application-defined metadata carried through layout without interpretation.
     metadata: Option<usize>,
 }
@@ -789,15 +788,15 @@ mod tests {
     #[test]
     fn to_font_stack_single_named() {
         let families = vec![FamilyOwned::Name("Inter".to_string())];
-        let stack = FamilyOwned::to_font_stack(&families);
-        assert!(matches!(stack, FontStack::Source(_)));
+        let stack = FamilyOwned::to_font_family(&families);
+        assert!(matches!(stack, FontFamily::Source(_)));
     }
 
     #[test]
     fn to_font_stack_single_generic() {
         let families = vec![FamilyOwned::Monospace];
-        let stack = FamilyOwned::to_font_stack(&families);
-        assert!(matches!(stack, FontStack::Single(_)));
+        let stack = FamilyOwned::to_font_family(&families);
+        assert!(matches!(stack, FontFamily::Single(_)));
     }
 
     #[test]
@@ -807,18 +806,18 @@ mod tests {
             FamilyOwned::Monospace,
             FamilyOwned::SansSerif,
         ];
-        let stack = FamilyOwned::to_font_stack(&families);
+        let stack = FamilyOwned::to_font_family(&families);
         match stack {
-            FontStack::List(list) => {
+            FontFamily::List(list) => {
                 assert_eq!(list.len(), 3, "all families should be preserved");
-                assert!(matches!(list[0], FontFamily::Named(_)));
+                assert!(matches!(list[0], FontFamilyName::Named(_)));
                 assert!(matches!(
                     list[1],
-                    FontFamily::Generic(GenericFamily::Monospace)
+                    FontFamilyName::Generic(GenericFamily::Monospace)
                 ));
                 assert!(matches!(
                     list[2],
-                    FontFamily::Generic(GenericFamily::SansSerif)
+                    FontFamilyName::Generic(GenericFamily::SansSerif)
                 ));
             }
             other => panic!("expected FontStack::List, got {other:?}"),
@@ -831,9 +830,9 @@ mod tests {
             FamilyOwned::Name("Fira Code".to_string()),
             FamilyOwned::Name("Cascadia Code".to_string()),
         ];
-        let stack = FamilyOwned::to_font_stack(&families);
+        let stack = FamilyOwned::to_font_family(&families);
         assert!(
-            matches!(stack, FontStack::List(_)),
+            matches!(stack, FontFamily::List(_)),
             "two families should produce List"
         );
     }
@@ -841,10 +840,10 @@ mod tests {
     #[test]
     fn to_font_stack_empty_defaults_to_sans_serif() {
         let families: Vec<FamilyOwned> = vec![];
-        let stack = FamilyOwned::to_font_stack(&families);
+        let stack = FamilyOwned::to_font_family(&families);
         assert!(matches!(
             stack,
-            FontStack::Single(FontFamily::Generic(GenericFamily::SansSerif))
+            FontFamily::Single(FontFamilyName::Generic(GenericFamily::SansSerif))
         ));
     }
 

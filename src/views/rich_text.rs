@@ -37,7 +37,7 @@ pub fn rich_text(
         data.set_text(&text, attrs_list, None);
         data.set_text_overflow(crate::style::TextOverflow::Wrap {
             overflow_wrap: crate::text::OverflowWrap::Normal,
-            word_break: crate::text::WordBreakStrength::Normal,
+            word_break: crate::text::WordBreak::Normal,
         });
     }
 
@@ -118,7 +118,7 @@ impl View for RichText {
             data.set_text(&text, attrs_list, None);
             data.set_text_overflow(crate::style::TextOverflow::Wrap {
                 overflow_wrap: crate::text::OverflowWrap::Normal,
-                word_break: crate::text::WordBreakStrength::Normal,
+                word_break: crate::text::WordBreak::Normal,
             });
             drop(data);
 

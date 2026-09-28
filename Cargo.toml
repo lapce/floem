@@ -45,8 +45,7 @@ license.workspace = true
 
 [workspace.dependencies]
 peniko = { version = "0.6.0", features = ["serde"] }
-parley = { version = "0.7.0" }
-fontique = { version = "0.7.0" }
+parley = { version = "0.11.0" }
 serde = { version = "1.0" }
 serde_json = { version = "1.0" }
 lapce-xi-rope = "0.4.0"
@@ -84,6 +83,7 @@ unicode-segmentation = { workspace = true }
 peniko = { workspace = true }
 imbl.workspace = true
 parley = { workspace = true }
+swash = { workspace = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true }
 lapce-xi-rope = { workspace = true, optional = true }

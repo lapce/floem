@@ -9,7 +9,6 @@ use std::{
 use floem_renderer::Renderer as _;
 use floem_renderer::text::{AttrsList, GlyphRunProps, TextBrush};
 use parking_lot::Mutex;
-use parley::swash::{FontRef, scale::ScaleContext, zeno};
 use parley::{
     Affinity, Alignment, Cursor, FontContext, LayoutContext, Selection,
     layout::{AlignmentOptions, Layout},
@@ -19,6 +18,7 @@ use peniko::{
     Fill, FontData,
     kurbo::{Affine, Point, Size},
 };
+use swash::{FontRef, scale::ScaleContext, zeno};
 
 use crate::paint::Renderer;
 
@@ -353,11 +353,8 @@ impl TextLayout {
         };
         self.layout.break_all_lines(max_advance);
 
-        if let Some(align) = self.alignment
-            && let Some(width) = width
-        {
-            self.layout
-                .align(Some(width), align, AlignmentOptions::default());
+        if let Some(align) = self.alignment {
+            self.layout.align(align, AlignmentOptions::default());
         }
     }
 
@@ -538,9 +535,9 @@ impl TextLayout {
                 .get(mid)
                 .map_or(std::cmp::Ordering::Greater, |line| {
                     let metrics = line.metrics();
-                    if cursor_y < metrics.min_coord {
+                    if cursor_y < metrics.block_min_coord {
                         std::cmp::Ordering::Greater
-                    } else if cursor_y >= metrics.max_coord {
+                    } else if cursor_y >= metrics.block_max_coord {
                         std::cmp::Ordering::Less
                     } else {
                         std::cmp::Ordering::Equal
@@ -637,7 +634,8 @@ impl TextLayout {
     /// This is the geometry helper to use for painted selection backgrounds.
     ///
     /// Compared with [`selection_geometry_with`](Self::selection_geometry_with), this method:
-    /// - expands each rectangle vertically to the containing line's full `min_coord..max_coord`
+    /// - expands each rectangle vertically to the containing line's full
+    ///   `block_min_coord..block_max_coord`
     /// - expands horizontal bounds to the actual glyph outline bounds of the selected text
     ///
     /// The vertical expansion is important for consistent full-line selection backgrounds.
@@ -718,7 +716,12 @@ impl TextLayout {
                         run_offset += run.advance() as f64;
                     }
 
-                    f(min_x, m.min_coord as f64, max_x, m.max_coord as f64);
+                    f(
+                        min_x,
+                        m.block_min_coord as f64,
+                        max_x,
+                        m.block_max_coord as f64,
+                    );
                 } else {
                     f(bbox.x0, bbox.y0, bbox.x1, bbox.y1);
                 }
@@ -752,8 +755,8 @@ impl TextLayout {
         for i in 0..self.layout.len() {
             if let Some(line) = self.layout.get(i) {
                 let m = line.metrics();
-                min_y = min_y.min(m.min_coord);
-                max_y = max_y.max(m.max_coord);
+                min_y = min_y.min(m.block_min_coord);
+                max_y = max_y.max(m.block_max_coord);
             }
         }
 

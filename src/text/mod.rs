@@ -22,7 +22,7 @@ pub use layout::{FONT_CONTEXT, TextLayout, TextSelection};
 pub use layout_state::{TextLayoutState, TextOverflowChanged};
 pub use parley::Alignment;
 pub use parley::layout::{Affinity, Cursor, Selection};
-pub use parley::style::{OverflowWrap, TextWrapMode, WordBreakStrength};
+pub use parley::style::{OverflowWrap, TextWrapMode, WordBreak};
 
 /// Returns the byte ranges of the source text's logical paragraphs.
 ///

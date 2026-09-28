@@ -4,7 +4,7 @@
 //! CSS properties like borders and padding.
 
 use floem_renderer::text::FontWeight;
-use parley::style::{OverflowWrap, WordBreakStrength};
+use parley::style::{OverflowWrap, WordBreak};
 use peniko::color::palette;
 use peniko::kurbo::Stroke;
 use peniko::{Brush, Color};
@@ -29,7 +29,7 @@ pub enum TextOverflow {
     NoWrap(NoWrapOverflow),
     Wrap {
         overflow_wrap: OverflowWrap,
-        word_break: WordBreakStrength,
+        word_break: WordBreak,
     },
 }
 

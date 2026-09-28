@@ -157,7 +157,7 @@ use taffy::{
 use crate::layout::responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp};
 
 use crate::style::components::Focus;
-use crate::text::{OverflowWrap, WordBreakStrength};
+use crate::text::{OverflowWrap, WordBreak};
 use crate::views::editor::SelectionColor;
 // Import macros from crate root (they are #[macro_export] in props.rs)
 use crate::{prop, prop_extractor};
@@ -3447,7 +3447,7 @@ impl Style {
     pub fn text_wrap(self) -> Self {
         self.text_overflow(TextOverflow::Wrap {
             overflow_wrap: OverflowWrap::Normal,
-            word_break: WordBreakStrength::Normal,
+            word_break: WordBreak::Normal,
         })
     }
 
