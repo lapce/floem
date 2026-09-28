@@ -3,7 +3,7 @@ use std::{borrow::Cow, fmt::Debug, ops::Range, rc::Rc};
 use crate::{
     peniko::Color,
     peniko::color::palette,
-    reactive::{RwSignal, Scope},
+    reactive::{Memo, RwSignal, Scope},
     text::{Attrs, AttrsList, FamilyOwned, FontWeight, FontWidth},
     views::EditorCustomStyle,
 };
@@ -206,6 +206,17 @@ pub trait Document: DocumentPhantom + ::std::any::Any {
     /// ))
     /// ```
     fn edit(&self, iter: &mut dyn Iterator<Item = (Selection, &str)>, edit_type: EditType);
+
+    /// Reactive dirty state for the document.
+    fn dirty(&self) -> Memo<bool>;
+
+    /// Whether the document has been modified since it was last marked pristine.
+    fn is_dirty(&self) -> bool {
+        self.dirty().get_untracked()
+    }
+
+    /// Mark the current state as the pristine (saved) baseline.
+    fn mark_pristine(&self) {}
 }
 
 pub trait DocumentPhantom {
@@ -518,6 +529,18 @@ where
 
     fn edit(&self, iter: &mut dyn Iterator<Item = (Selection, &str)>, edit_type: EditType) {
         self.doc.edit(iter, edit_type)
+    }
+
+    fn dirty(&self) -> Memo<bool> {
+        self.doc.dirty()
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.doc.is_dirty()
+    }
+
+    fn mark_pristine(&self) {
+        self.doc.mark_pristine()
     }
 }
 impl<D, F> DocumentPhantom for ExtCmdDocument<D, F>

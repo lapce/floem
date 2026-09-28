@@ -15,7 +15,9 @@ use floem_editor_core::{
     selection::Selection,
     word::WordCursor,
 };
-use floem_reactive::{Effect, RwSignal, Scope, SignalGet, SignalTrack, SignalUpdate, SignalWith};
+use floem_reactive::{
+    Effect, Memo, RwSignal, Scope, SignalGet, SignalTrack, SignalUpdate, SignalWith,
+};
 use lapce_xi_rope::{Rope, RopeDelta};
 use smallvec::{SmallVec, smallvec};
 use ui_events::keyboard::Modifiers;
@@ -58,6 +60,7 @@ impl<'a> OnUpdate<'a> {
 pub struct TextDocument {
     buffer: RwSignal<Buffer>,
     cache_rev: RwSignal<u64>,
+    dirty: Memo<bool>,
     preedit: PreeditData,
 
     /// Whether to keep the indent of the previous line when inserting a new line
@@ -77,7 +80,8 @@ pub struct TextDocument {
 impl TextDocument {
     pub fn new(cx: Scope, text: impl Into<Rope>) -> TextDocument {
         let text = text.into();
-        let buffer = Buffer::new(text);
+        let buffer = cx.create_rw_signal(Buffer::new(text));
+        let dirty = cx.create_memo(move |_| !buffer.with(Buffer::is_pristine));
         let preedit = PreeditData {
             preedit: cx.create_rw_signal(None),
         };
@@ -94,8 +98,9 @@ impl TextDocument {
         });
 
         TextDocument {
-            buffer: cx.create_rw_signal(buffer),
+            buffer,
             cache_rev,
+            dirty,
             preedit,
             keep_indent: Cell::new(true),
             auto_indent: Cell::new(false),
@@ -240,6 +245,14 @@ impl Document for TextDocument {
         self.update_cache_rev();
         self.on_update(None, deltas);
     }
+
+    fn dirty(&self) -> Memo<bool> {
+        self.dirty
+    }
+
+    fn mark_pristine(&self) {
+        self.buffer.update(Buffer::set_pristine);
+    }
 }
 impl DocumentPhantom for TextDocument {
     fn phantom_text(&self, edid: EditorId, styling: &EditorStyle, line: usize) -> PhantomTextLine {
@@ -364,5 +377,46 @@ impl std::fmt::Debug for TextDocument {
         let mut s = f.debug_struct("TextDocument");
         s.field("text", &self.text());
         s.finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use floem_editor_core::{cursor::CursorAffinity, editor::EditType, selection::Selection};
+    use floem_reactive::{Scope, SignalGet};
+
+    use super::TextDocument;
+    use crate::views::editor::text::Document;
+
+    #[test]
+    fn dirty_tracking_respects_pristine_baseline() {
+        let cx = Scope::new();
+        let doc = TextDocument::new(cx, "abc");
+        let dirty = doc.dirty();
+
+        assert!(!doc.is_dirty());
+        assert!(!dirty.get_untracked());
+
+        doc.edit_single(
+            Selection::caret(3, CursorAffinity::Backward),
+            "d",
+            EditType::InsertChars,
+        );
+        assert!(doc.is_dirty());
+        assert!(dirty.get_untracked());
+
+        let marked_rev = doc.cache_rev().get_untracked();
+        doc.mark_pristine();
+        assert!(!doc.is_dirty());
+        assert!(!dirty.get_untracked());
+        assert_eq!(doc.cache_rev().get_untracked(), marked_rev);
+
+        doc.edit_single(
+            Selection::caret(4, CursorAffinity::Backward),
+            "e",
+            EditType::InsertChars,
+        );
+        assert!(doc.is_dirty());
+        assert!(dirty.get_untracked());
     }
 }
