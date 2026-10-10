@@ -2,9 +2,9 @@
 //! Scroll View
 
 use floem_reactive::Effect;
-use peniko::kurbo::{Affine, Axis, Point, Rect, RoundedRect, RoundedRectRadii, Stroke, Vec2};
+use peniko::kurbo::{Affine, Axis, Point, Rect, RoundedRect, RoundedRectRadii, Size, Stroke, Vec2};
 use peniko::{Brush, Color};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{cell::RefCell, rc::Rc};
 use taffy::Overflow;
 use ui_events::pointer::{PointerButton, PointerEvent, PointerId};
@@ -15,7 +15,7 @@ use crate::event::{
 };
 use crate::prelude::EventListenerTrait;
 use crate::prelude::el::UpdatePhaseLayout;
-use crate::style::ScrollbarWidth;
+use crate::style::{DirectTransition, ScrollbarWidth, StylePropValue, Transition};
 use crate::{
     BoxTree, ElementId, Renderer,
     context::{EventCx, PaintCx, StyleCx},
@@ -54,6 +54,7 @@ enum ScrollState {
     ScrollTo(Point),
     ScrollToPercent(f32),
     ScrollToElement(ElementId),
+    AnimTick,
 }
 
 struct ScrollEventResult {
@@ -76,6 +77,19 @@ impl Vec2Ext for Vec2 {
 
     fn min_by_component(self, other: Self) -> Self {
         Vec2::new(self.x.min(other.x), self.y.min(other.y))
+    }
+}
+
+/// Wrapper for target scroll delta
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScrollVec2(pub Vec2);
+
+impl StylePropValue for ScrollVec2 {
+    fn interpolate(&self, other: &Self, t: f64) -> Option<Self> {
+        Some(ScrollVec2(Vec2::new(
+            self.0.x * (1.0 - t) + other.0.x * t,
+            self.0.y * (1.0 - t) + other.0.y * t,
+        )))
     }
 }
 
@@ -530,6 +544,11 @@ prop!(
     pub VerticalScrollAsHorizontal: bool {} = false
 );
 
+prop!(
+    /// Configures the scroll wheel animation. Pass `None` to disable smooth scrolling.
+    pub ScrollAnimation: Option<Transition> {} = Some(Transition::linear(Duration::from_millis(100)))
+);
+
 prop_extractor!(ScrollStyle {
     vertical_bar_inset: VerticalInset,
     horizontal_bar_inset: HorizontalInset,
@@ -540,6 +559,7 @@ prop_extractor!(ScrollStyle {
     overflow_x: OverflowX,
     overflow_y: OverflowY,
     scrollbar_width: ScrollbarWidth,
+    scroll_animation: ScrollAnimation,
 });
 
 const HANDLE_COLOR: Brush = Brush::Solid(Color::from_rgba8(0, 0, 0, 120));
@@ -560,6 +580,10 @@ pub struct Scroll {
     v_track: ScrollTrack,
     h_track: ScrollTrack,
     scroll_style: ScrollStyle,
+    cached_viewport: Rect,
+    cached_full_rect: Rect,
+    cached_content_size: peniko::kurbo::Size,
+    scroll_anim: DirectTransition<ScrollVec2>,
 }
 
 /// Create a new scroll view
@@ -600,6 +624,13 @@ impl Scroll {
             v_handle,
             h_handle,
             scroll_style: Default::default(),
+            cached_viewport: Rect::ZERO,
+            cached_full_rect: Rect::ZERO,
+            cached_content_size: Size::ZERO,
+            scroll_anim: DirectTransition::new(
+                ScrollVec2(Vec2::ZERO),
+                Some(Transition::linear(Duration::from_millis(100))),
+            ),
         }
         .class(ScrollClass)
     }
@@ -730,7 +761,7 @@ impl Scroll {
         }
 
         if change {
-            self.set_positions();
+            self.id.request_layout();
             Some(self.scroll_offset - old_scroll_offset)
         } else {
             None
@@ -839,9 +870,9 @@ impl Scroll {
     }
 
     fn set_positions(&mut self) {
-        let viewport = self.id.get_content_rect_local();
-        let full_rect = self.id.get_layout_rect_local();
-        let content_size = self.child.get_layout_rect_local().size();
+        let viewport = self.cached_viewport;
+        let full_rect = self.cached_full_rect;
+        let content_size = self.cached_content_size;
         let scrollbar_width = self.scroll_style.scrollbar_width().0;
         let v_bar_inset = self.scroll_style.vertical_bar_inset().0;
         let h_bar_inset = self.scroll_style.horizontal_bar_inset().0;
@@ -877,6 +908,17 @@ impl Scroll {
             scrollbar_width,
             h_bar_inset,
         );
+    }
+
+    /// Helper function to clamp the scroll target so that it doesn't move out of bounds.
+    fn clamp_scroll(&self, offset: Vec2) -> Vec2 {
+        let viewport_size = self.id.get_content_rect_local().size();
+        let content_size = self.child.get_layout_rect_local().size();
+
+        let max_x = (content_size.width - viewport_size.width).max(0.0);
+        let max_y = (content_size.height - viewport_size.height).max(0.0);
+
+        Vec2::new(offset.x.clamp(0.0, max_x), offset.y.clamp(0.0, max_y))
     }
 }
 
@@ -926,13 +968,28 @@ impl View for Scroll {
                 ScrollState::ScrollToElement(id) => {
                     self.do_scroll_to_element(ScrollTo { id, rect: None });
                 }
+                ScrollState::AnimTick => {
+                    let now = Instant::now();
+                    if self.scroll_anim.step(&now) {
+                        let new_pos = self.scroll_anim.get().0;
+                        let delta = new_pos - self.scroll_offset;
+                        self.apply_scroll_delta(delta);
+                        self.id.update_state_deferred(ScrollState::AnimTick);
+                    }
+                }
             }
             self.id.request_box_tree_update_for_view();
+            self.id.request_paint();
         }
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         self.scroll_style.read(cx);
+
+        if self.scroll_style.read(cx) {
+            self.scroll_anim
+                .set_transition(self.scroll_style.scroll_animation());
+        }
 
         // If the reason implies nested style maps must be resolved, restyle everything.
         if cx.reason.needs_resolve_nested_maps() {
@@ -959,6 +1016,14 @@ impl View for Scroll {
     fn event(&mut self, cx: &mut EventCx) -> EventPropagation {
         // in order to use this we had to set `id.has_layout_listener`.
         if UpdatePhaseLayout::extract(&cx.event).is_some() {
+            // queries while tree is still clean
+            self.cached_viewport = self.id.get_content_rect_local();
+            self.cached_full_rect = self.id.get_layout_rect_local();
+            self.cached_content_size = self.child.get_layout_rect_local().size();
+
+            // this apply scroll delta of zero is cheap.
+            // it is here in the case that the available delta changed, this will catch it and update it to a better size
+            self.apply_scroll_delta(Vec2::ZERO);
             self.set_positions();
             return EventPropagation::Stop;
         }
@@ -975,6 +1040,10 @@ impl View for Scroll {
                         .apply_scroll_delta(new_offset - self.scroll_offset)
                         .is_some()
                 {
+                    self.cached_viewport = self.id.get_content_rect_local();
+                    self.cached_full_rect = self.id.get_layout_rect_local();
+                    self.cached_content_size = self.child.get_layout_rect_local().size();
+                    self.set_positions();
                     cx.window_state.request_paint(self.id);
                 }
                 return result.propagation;
@@ -986,6 +1055,10 @@ impl View for Scroll {
                         .apply_scroll_delta(new_offset - self.scroll_offset)
                         .is_some()
                 {
+                    self.cached_viewport = self.id.get_content_rect_local();
+                    self.cached_full_rect = self.id.get_layout_rect_local();
+                    self.cached_content_size = self.child.get_layout_rect_local().size();
+                    self.set_positions();
                     cx.window_state.request_paint(self.id);
                 }
                 return result.propagation;
@@ -997,6 +1070,10 @@ impl View for Scroll {
                         .apply_scroll_delta(new_offset - self.scroll_offset)
                         .is_some()
                 {
+                    self.cached_viewport = self.id.get_content_rect_local();
+                    self.cached_full_rect = self.id.get_layout_rect_local();
+                    self.cached_content_size = self.child.get_layout_rect_local().size();
+                    self.set_positions();
                     cx.window_state.request_paint(self.id);
                 }
                 return result.propagation;
@@ -1008,6 +1085,10 @@ impl View for Scroll {
                         .apply_scroll_delta(new_offset - self.scroll_offset)
                         .is_some()
                 {
+                    self.cached_viewport = self.id.get_content_rect_local();
+                    self.cached_full_rect = self.id.get_layout_rect_local();
+                    self.cached_content_size = self.child.get_layout_rect_local().size();
+                    self.set_positions();
                     cx.window_state.request_paint(self.id);
                 }
                 return result.propagation;
@@ -1015,7 +1096,10 @@ impl View for Scroll {
         }
 
         // Handle scroll wheel events in bubble phase
-        if let Event::Pointer(PointerEvent::Scroll(pse)) = &cx.event {
+        // Only handle this in the bubble phase, otherwise it fires multiple times
+        if cx.phase == Phase::Bubble
+            && let Event::Pointer(PointerEvent::Scroll(pse)) = &cx.event
+        {
             let size = self.id.get_layout_rect_local().size();
             let delta = pse.resolve_to_points(None, Some(size));
             let delta = -if self.scroll_style.vertical_scroll_as_horizontal()
@@ -1027,27 +1111,37 @@ impl View for Scroll {
                 delta
             };
 
-            let change = self.apply_scroll_delta(delta);
+            let new_target = self.clamp_scroll(self.scroll_anim.target().0 + delta);
 
-            if change.is_some() {
-                cx.window_state.request_paint(self.id);
+            // If target didn't move, propagate to parent if configured
+            if new_target == self.scroll_anim.target().0 && !self.scroll_anim.is_active() {
+                return if self.scroll_style.propagate_pointer_wheel() {
+                    EventPropagation::Continue
+                } else {
+                    EventPropagation::Stop
+                };
             }
 
-            return if self.scroll_style.propagate_pointer_wheel() && change.is_none() {
-                EventPropagation::Continue
+            let started = self.scroll_anim.transition_to(ScrollVec2(new_target));
+            if started {
+                self.id.update_state(ScrollState::AnimTick);
             } else {
-                EventPropagation::Stop
-            };
+                let delta = new_target - self.scroll_offset;
+                let change = self.apply_scroll_delta(delta);
+                return if self.scroll_style.propagate_pointer_wheel() && change.is_none() {
+                    EventPropagation::Continue
+                } else {
+                    EventPropagation::Stop
+                };
+            }
+
+            return EventPropagation::Stop;
         }
 
         EventPropagation::Continue
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        // this apply scroll delta of zero is cheap.
-        // it is here in the case that the available delta changed, this will catch it and update it to a better size
-        self.apply_scroll_delta(Vec2::ZERO);
-
         // Check which visual node we're painting
         // Scroll view creates multiple visual IDs for scrollbars/tracks
         if cx.target_id == self.id.get_element_id() {
@@ -1214,6 +1308,12 @@ impl ScrollCustomStyle {
     /// Controls whether scroll bars are shown when not scrolling. When false, bars are only shown during scroll interactions.
     pub fn show_bars_when_idle(mut self, show: impl Into<bool>) -> Self {
         self = Self(self.0.set(ShowBarsWhenIdle, show));
+        self
+    }
+
+    /// Pass a `Transition` to enable smooth scrolling, or `None` to disable it.
+    pub fn scroll_animation(mut self, transition: Option<Transition>) -> Self {
+        self = Self(self.0.set(ScrollAnimation, transition));
         self
     }
 }

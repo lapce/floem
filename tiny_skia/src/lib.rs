@@ -369,14 +369,12 @@ impl Layer {
                     Transform::identity(),
                 );
             }
+        } else if clip.simple_rect.is_some() {
+            self.fill_mask_rect(clip.rect);
         } else {
-            if clip.simple_rect.is_some() {
-                self.fill_mask_rect(clip.rect);
-            } else {
-                self.mask.clear();
-                self.mask
-                    .fill_path(&clip.path, FillRule::Winding, false, Transform::identity());
-            }
+            self.mask.clear();
+            self.mask
+                .fill_path(&clip.path, FillRule::Winding, false, Transform::identity());
         }
 
         self.clip = Some(clip_rect);
