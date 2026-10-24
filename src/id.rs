@@ -50,6 +50,13 @@ impl ViewId {
                     children.retain(|c| c != self);
                 }
             }
+            // Clean up all SecondaryMap entries for this view to prevent
+            // stale data and memory leaks when slots are removed.
+            // SecondaryMaps do not auto-clean when the primary SlotMap key is removed.
+            s.children.remove(*self);
+            s.parent.remove(*self);
+            s.states.remove(*self);
+            s.views.remove(*self);
             s.view_ids.remove(*self);
         });
     }
@@ -587,5 +594,33 @@ impl ViewId {
     /// Get a layout in screen-coordinates for this view, if possible.
     pub fn screen_layout(&self) -> Option<ScreenLayout> {
         crate::screen_layout::try_create_screen_layout(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::views::empty;
+
+    #[test]
+    fn remove_cleans_up_all_secondary_maps() {
+        let view = empty();
+        let id = view.id();
+        id.set_view(Box::new(view));
+        let _ = id.state();
+        VIEW_STORAGE.with_borrow(|s| {
+            assert!(s.view_ids.contains_key(id));
+            assert!(s.states.contains_key(id));
+            assert!(s.views.contains_key(id));
+        });
+        id.remove();
+        VIEW_STORAGE.with_borrow(|s| {
+            assert!(!s.view_ids.contains_key(id));
+            assert!(!s.states.contains_key(id));
+            assert!(!s.views.contains_key(id));
+            assert!(!s.children.contains_key(id));
+            assert!(!s.parent.contains_key(id));
+            assert!(!s.root.contains_key(id));
+        });
     }
 }
