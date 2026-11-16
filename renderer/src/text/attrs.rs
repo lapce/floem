@@ -1,9 +1,12 @@
+use std::borrow::Cow;
 use std::ops::Range;
 
 use crate::text::TextBrush;
 use crate::text::{FontStyle, FontWeight, FontWidth};
 use fontique::GenericFamily;
-use parley::style::{FontFamily, FontStack, StyleProperty, WordBreakStrength};
+use parley::style::{
+    FontFamily, FontSettings, FontStack, FontVariation, StyleProperty, WordBreakStrength,
+};
 use peniko::Color;
 
 /// An owned font family identifier.
@@ -161,16 +164,18 @@ impl From<i32> for LineHeightValue {
 ///
 /// # Defaults
 ///
-/// | Property    | Default                           |
-/// |-------------|-----------------------------------|
-/// | font_size   | `16.0`                            |
-/// | line_height | `LineHeightValue::Normal(1.0)`    |
-/// | color       | `None` (inherits from context)    |
-/// | family      | `None` (system default)           |
-/// | weight      | `None` (normal)                   |
-/// | style       | `None` (normal)                   |
-/// | font_width  | `None` (normal)                   |
-/// | metadata    | `None`                            |
+/// | Property        | Default                           |
+/// |-----------------|-----------------------------------|
+/// | font_size       | `16.0`                            |
+/// | line_height     | `LineHeightValue::Normal(1.0)`    |
+/// | color           | `None` (inherits from context)    |
+/// | family          | `None` (system default)           |
+/// | weight          | `None` (normal)                   |
+/// | style           | `None` (normal)                   |
+/// | font_width      | `None` (normal)                   |
+/// | letter_spacing  | `None` (font default)             |
+/// | font_variations | `None` (font default axes)        |
+/// | metadata        | `None`                            |
 ///
 /// # Example
 ///
@@ -204,6 +209,10 @@ pub struct Attrs<'a> {
     font_width: Option<FontWidth>,
     /// Word break strength used during wrapping, or `None` for Parley's default.
     word_break: Option<WordBreakStrength>,
+    /// Additional spacing between letters in pixels, or `None` for the font's default.
+    letter_spacing: Option<f32>,
+    /// Variation axis settings for variable fonts, or `None` for the font's default axes.
+    font_variations: Option<FontSettings<'a, FontVariation>>,
     /// Application-defined metadata carried through layout without interpretation.
     metadata: Option<usize>,
 }
@@ -226,6 +235,8 @@ impl<'a> Attrs<'a> {
             style: None,
             font_width: None,
             word_break: None,
+            letter_spacing: None,
+            font_variations: None,
             metadata: None,
         }
     }
@@ -284,6 +295,47 @@ impl<'a> Attrs<'a> {
         self
     }
 
+    /// Sets additional letter spacing (tracking) in pixels.
+    ///
+    /// Positive values spread letters apart; negative values tighten them.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use floem_renderer::text::Attrs;
+    ///
+    /// let attrs = Attrs::new().font_size(13.0).letter_spacing(0.5);
+    /// ```
+    pub fn letter_spacing(mut self, letter_spacing: f32) -> Self {
+        self.letter_spacing = Some(letter_spacing);
+        self
+    }
+
+    /// Sets variation axis values for variable fonts.
+    ///
+    /// Accepts either a CSS `font-variation-settings` string or a slice of
+    /// [`FontVariation`] values.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use floem_renderer::text::{Attrs, FontVariation};
+    ///
+    /// // CSS syntax: select the "Text" optical size and a slightly bolder weight.
+    /// let attrs = Attrs::new().font_variations("'opsz' 17, 'wght' 450");
+    ///
+    /// // Typed syntax.
+    /// let variations = [FontVariation::from(("wght", 650.0))];
+    /// let attrs = Attrs::new().font_variations(variations.as_slice());
+    /// ```
+    pub fn font_variations(
+        mut self,
+        variations: impl Into<FontSettings<'a, FontVariation>>,
+    ) -> Self {
+        self.font_variations = Some(variations.into());
+        self
+    }
+
     /// Sets an opaque metadata value that is carried through layout.
     ///
     /// This can be used to associate application-specific data (e.g. a span
@@ -326,6 +378,16 @@ impl<'a> Attrs<'a> {
     /// Returns the word break strength, or `None` if unset.
     pub fn get_word_break(&self) -> Option<WordBreakStrength> {
         self.word_break
+    }
+
+    /// Returns the letter spacing in pixels, or `None` if unset.
+    pub fn get_letter_spacing(&self) -> Option<f32> {
+        self.letter_spacing
+    }
+
+    /// Returns the font variation settings, or `None` if unset.
+    pub fn get_font_variations(&self) -> Option<&FontSettings<'a, FontVariation>> {
+        self.font_variations.as_ref()
     }
 
     /// Returns the metadata value, or `None` if unset.
@@ -375,6 +437,12 @@ impl<'a> Attrs<'a> {
         if let Some(word_break) = self.word_break {
             builder.push_default(StyleProperty::WordBreak(word_break));
         }
+        if let Some(letter_spacing) = self.letter_spacing {
+            builder.push_default(StyleProperty::LetterSpacing(letter_spacing));
+        }
+        if let Some(variations) = &self.font_variations {
+            builder.push_default(StyleProperty::FontVariations(variations.clone()));
+        }
     }
 
     /// Pushes style properties for a specific byte range onto a Parley [`RangedBuilder`].
@@ -416,7 +484,13 @@ impl<'a> Attrs<'a> {
             builder.push(StyleProperty::FontWidth(width), range.clone());
         }
         if let Some(word_break) = self.word_break {
-            builder.push(StyleProperty::WordBreak(word_break), range);
+            builder.push(StyleProperty::WordBreak(word_break), range.clone());
+        }
+        if let Some(letter_spacing) = self.letter_spacing {
+            builder.push(StyleProperty::LetterSpacing(letter_spacing), range.clone());
+        }
+        if let Some(variations) = &self.font_variations {
+            builder.push(StyleProperty::FontVariations(variations.clone()), range);
         }
     }
 }
@@ -456,6 +530,10 @@ pub struct AttrsOwned {
     font_width: Option<FontWidth>,
     /// Word break strength used during wrapping, or `None` for Parley's default.
     word_break: Option<WordBreakStrength>,
+    /// Additional spacing between letters in pixels, or `None` for the font's default.
+    letter_spacing: Option<f32>,
+    /// Owned variation axis settings for variable fonts, or `None` for the font's default axes.
+    font_variations: Option<FontSettings<'static, FontVariation>>,
     /// Application-defined metadata carried through layout without interpretation.
     metadata: Option<usize>,
 }
@@ -472,6 +550,13 @@ impl AttrsOwned {
             style: attrs.style,
             font_width: attrs.font_width,
             word_break: attrs.word_break,
+            letter_spacing: attrs.letter_spacing,
+            font_variations: attrs.font_variations.map(|fs| match fs {
+                FontSettings::Source(source) => {
+                    FontSettings::Source(Cow::Owned(source.into_owned()))
+                }
+                FontSettings::List(list) => FontSettings::List(Cow::Owned(list.into_owned())),
+            }),
             metadata: attrs.metadata,
         }
     }
@@ -487,6 +572,13 @@ impl AttrsOwned {
             style: self.style,
             font_width: self.font_width,
             word_break: self.word_break,
+            letter_spacing: self.letter_spacing,
+            font_variations: self.font_variations.as_ref().map(|fs| match fs {
+                FontSettings::Source(source) => {
+                    FontSettings::Source(Cow::Borrowed(source.as_ref()))
+                }
+                FontSettings::List(list) => FontSettings::List(Cow::Borrowed(list.as_ref())),
+            }),
             metadata: self.metadata,
         }
     }
@@ -884,6 +976,45 @@ mod tests {
         assert_eq!(a.get_stretch(), Some(FontWidth::CONDENSED));
         assert_eq!(a.get_line_height(), LineHeightValue::Pt(24.0));
         assert_eq!(a.get_metadata(), Some(42));
+    }
+
+    #[test]
+    fn attrs_letter_spacing_and_variations_from_css() {
+        let a = Attrs::new()
+            .letter_spacing(0.5)
+            .font_variations("'opsz' 17, 'wght' 450");
+        assert_eq!(a.get_letter_spacing(), Some(0.5));
+        assert!(matches!(
+            a.get_font_variations(),
+            Some(FontSettings::Source(_))
+        ));
+    }
+
+    #[test]
+    fn attrs_font_variations_typed_list() {
+        let variations = [FontVariation::from(("wght", 650.0))];
+        let a = Attrs::new().font_variations(variations.as_slice());
+        match a.get_font_variations() {
+            Some(FontSettings::List(list)) => assert_eq!(list.len(), 1),
+            other => panic!("expected FontSettings::List, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn attrs_owned_preserves_letter_spacing_and_variations() {
+        let variations = [FontVariation::from(("opsz", 17.0))];
+        let a = Attrs::new()
+            .letter_spacing(-0.25)
+            .font_variations(variations.as_slice());
+        let owned = AttrsOwned::new(a);
+        let back = owned.as_attrs();
+        assert_eq!(back.get_letter_spacing(), Some(-0.25));
+        match back.get_font_variations() {
+            Some(FontSettings::List(list)) => {
+                assert_eq!(list.as_ref(), variations.as_slice());
+            }
+            other => panic!("expected FontSettings::List, got {other:?}"),
+        }
     }
 
     #[test]

@@ -17,6 +17,7 @@ use peniko::{
 pub use attrs::{Attrs, AttrsList, AttrsOwned, FamilyOwned, LineHeightValue};
 pub use fontique::{FontStyle, FontWeight, FontWidth};
 pub use parley::layout::Glyph;
+pub use parley::style::{FontSettings, FontVariation};
 
 // --- Brush type for Parley ---
 

@@ -236,6 +236,13 @@ impl Label {
         if let Some(font_weight) = self.font_props.weight() {
             attrs = attrs.weight(font_weight);
         }
+        if let Some(letter_spacing) = self.font_props.letter_spacing() {
+            attrs = attrs.letter_spacing(letter_spacing as f32);
+        }
+        let font_variations = self.font_props.font_variations();
+        if let Some(variations) = font_variations.as_deref() {
+            attrs = attrs.font_variations(variations);
+        }
         attrs = attrs.line_height(self.label_props.line_height());
         if let TextOverflow::Wrap { word_break, .. } = self.label_props.text_overflow()
             && word_break != WordBreakStrength::Normal

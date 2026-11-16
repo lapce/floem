@@ -774,6 +774,14 @@ impl TextInput {
             attrs = attrs.family(font_family);
         }
 
+        if let Some(letter_spacing) = self.font.letter_spacing() {
+            attrs = attrs.letter_spacing(letter_spacing as f32);
+        }
+        let font_variations = self.font.font_variations();
+        if let Some(variations) = font_variations.as_deref() {
+            attrs = attrs.font_variations(variations);
+        }
+
         AttrsList::new(attrs)
     }
 
@@ -795,6 +803,13 @@ impl TextInput {
         }
         if let Some(font_weight) = self.font.weight() {
             attrs = attrs.weight(font_weight);
+        }
+        if let Some(letter_spacing) = self.font.letter_spacing() {
+            attrs = attrs.letter_spacing(letter_spacing as f32);
+        }
+        let font_variations = self.font.font_variations();
+        if let Some(variations) = font_variations.as_deref() {
+            attrs = attrs.font_variations(variations);
         }
         AttrsList::new(attrs)
     }
