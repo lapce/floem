@@ -2,6 +2,7 @@
 
 ## Unreleased
 - Use by default `std::sync::mpsc::channel` and place crossbeam behind the `crossbeam` feature [#775](https://github.com/lapce/floem/pull/775)
+- Add `letter_spacing` and `font_variations` style properties (and the matching `Attrs` builders), exposing Parley's letter spacing and variable font axis support
 
 ## [0.2.0] - 2024-11-13
 

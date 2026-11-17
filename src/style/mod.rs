@@ -2004,6 +2004,19 @@ define_builtin_props!(
     /// This property is inherited by child views.
     FontStyle font_style { }: Option<crate::text::FontStyle> [crate::text::FontStyle] { inherited } = None,
 
+    /// Sets additional spacing between letters (tracking) for text content, in pixels.
+    ///
+    /// Positive values spread letters apart; negative values tighten them.
+    ///
+    /// This property is inherited by child views.
+    LetterSpacing letter_spacing { tr }: Option<f64> [f64] { inherited } = None,
+
+    /// Sets variation axis values for variable fonts, using CSS
+    /// `font-variation-settings` syntax (e.g. `"'wght' 650, 'opsz' 17"`).
+    ///
+    /// This property is inherited by child views.
+    FontVariations font_variations { }: Option<String> [String] { inherited } = None,
+
     /// Sets the color of the text cursor.
     ///
     /// Visible when text input views have focus.
@@ -2201,6 +2214,8 @@ prop_extractor! {
         pub family: FontFamily,
         pub weight: FontWeight,
         pub style: FontStyle,
+        pub letter_spacing: LetterSpacing,
+        pub font_variations: FontVariations,
     }
 }
 
